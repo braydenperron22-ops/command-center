@@ -11,6 +11,7 @@ EMPTY_STATE = {
     "calendar_events": [],
     "email_highlights": [],
     "alerts": [],
+    "commute": None,
 }
 
 

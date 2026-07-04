@@ -51,16 +51,26 @@ Weather, calendar, and email data come from `data/state.json`, which is written 
     "is_day": true
   },
   "calendar_events": [
-    {"time": "2:00 PM", "title": "Dentist appointment"}
+    {"time": "2:00 PM", "title": "Dentist appointment", "eta_minutes": 22, "leave_by": "1:33 PM"}
   ],
   "email_highlights": [
     {"from": "Air Canada", "subject": "Your flight is confirmed"}
   ],
+  "commute": {"minutes": 24, "destination": "103 Laurentian Ave, North Bay"},
   "alerts": [
     {"severity": "red", "message": "Severe thunderstorm warning with tornado risk this afternoon near North Bay."}
   ]
 }
 ```
+
+`eta_minutes`/`leave_by` are computed per-event (when the event has a location) by
+geocoding via Nominatim and routing via OSRM from home. `commute` is the standing
+Corbeil → 103 Laurentian Ave (North Bay) drive time, checked every sync; over 25
+minutes adds a yellow alert, over 30 adds red (Brayden leaves 30 min before things).
+
+The sync also scans Gmail for concrete future appointments (with an explicit
+date+time) and creates matching Google Calendar events automatically, skipping
+duplicates and anything without a clear date/time.
 
 `weather.code` (raw WMO code) and `weather.is_day` drive the animated background
 scene in [scenery.py](scenery.py) — sky gradient, sun/moon/stars, drifting clouds,
