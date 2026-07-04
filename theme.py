@@ -42,6 +42,14 @@ html, body, [class^="st-"], [class*=" st-"], .stMarkdown, .stTextInput, .stButto
     border: 1px solid rgba(255,255,255,0.08) !important;
 }
 
+.cc-upcoming { margin-top: 14px; padding: 10px 12px; border-radius: 12px;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); }
+.cc-upcoming-label { font-size: 0.62rem; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase;
+    color: rgba(255,255,255,0.32); margin-bottom: 6px; }
+.cc-upcoming .cc-row { padding: 6px 0; font-size: 0.82rem; }
+.cc-upcoming .cc-row-title { color: rgba(255,255,255,0.68); font-weight: 400; }
+.cc-upcoming .cc-row-meta { color: rgba(255,255,255,0.36); font-size: 0.72rem; }
+
 .cc-row { display: flex; justify-content: space-between; align-items: baseline; padding: 9px 0;
     border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.92rem; }
 .cc-row:last-child { border-bottom: none; }

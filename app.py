@@ -74,36 +74,56 @@ st.markdown("<hr/>", unsafe_allow_html=True)
 
 col_agenda, col_email = st.columns(2, gap="medium")
 
-def _day_label(date_str: str | None) -> str:
+def _event_date(date_str: str | None):
     if not date_str:
-        return ""
+        return None
     try:
-        d = datetime.fromisoformat(date_str).date()
+        return datetime.fromisoformat(date_str).date()
     except ValueError:
-        return ""
+        return None
+
+
+def _upcoming_label(d) -> str:
     today = now.date()
-    if d == today:
-        return ""
     if d == today + timedelta(days=1):
-        return "Tomorrow · "
-    return d.strftime("%a %b %-d · ")
+        return "Tomorrow"
+    return d.strftime("%a, %b %-d")
+
+
+def _row_html(e: dict, meta_prefix: str = "") -> str:
+    meta = f"{meta_prefix}{e.get('time','')}"
+    if e.get("leave_by"):
+        meta += f' · leave by {e["leave_by"]}'
+    return (
+        f'<div class="cc-row"><span class="cc-row-title">{e.get("title","")}</span>'
+        f'<span class="cc-row-meta">{meta}</span></div>'
+    )
 
 
 with col_agenda:
     with st.container(border=True, key="agenda_card"):
-        st.markdown('<div class="cc-section-label">Agenda</div>', unsafe_allow_html=True)
+        st.markdown('<div class="cc-section-label">Today</div>', unsafe_allow_html=True)
         events = state.get("calendar_events", [])
-        if events:
-            rows = "".join(
-                f'<div class="cc-row"><span class="cc-row-title">{e.get("title","")}</span>'
-                f'<span class="cc-row-meta">{_day_label(e.get("date"))}{e.get("time","")}'
-                + (f' · leave by {e["leave_by"]}' if e.get("leave_by") else '')
-                + '</span></div>'
-                for e in events
-            )
-            st.markdown(rows, unsafe_allow_html=True)
+        today_events = [e for e in events if _event_date(e.get("date")) == now.date()]
+        upcoming_events = sorted(
+            (e for e in events if (d := _event_date(e.get("date"))) and d > now.date()),
+            key=lambda e: (e.get("date"), e.get("time") or ""),
+        )
+
+        if today_events:
+            st.markdown("".join(_row_html(e) for e in today_events), unsafe_allow_html=True)
         else:
-            st.markdown('<div class="cc-empty">Nothing on the calendar</div>', unsafe_allow_html=True)
+            st.markdown('<div class="cc-empty">Nothing today</div>', unsafe_allow_html=True)
+
+        if upcoming_events:
+            upcoming_rows = "".join(
+                _row_html(e, meta_prefix=f"{_upcoming_label(_event_date(e['date']))} · ")
+                for e in upcoming_events
+            )
+            st.markdown(
+                f'<div class="cc-upcoming"><div class="cc-upcoming-label">Upcoming</div>{upcoming_rows}</div>',
+                unsafe_allow_html=True,
+            )
 
 with col_email:
     with st.container(border=True, key="email_card"):
