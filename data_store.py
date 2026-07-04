@@ -12,6 +12,8 @@ EMPTY_STATE = {
     "email_highlights": [],
     "alerts": [],
     "commute": None,
+    "outlook": [],
+    "deliveries": [],
 }
 
 
