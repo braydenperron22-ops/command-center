@@ -17,8 +17,13 @@ EMPTY_STATE = {
 def load_state() -> dict:
     if not STATE_PATH.exists():
         return dict(EMPTY_STATE)
-    with open(STATE_PATH) as f:
-        data = json.load(f)
+    try:
+        with open(STATE_PATH) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        # A partially-written or corrupted file shouldn't crash the dashboard —
+        # fall back to empty state until the next sync overwrites it cleanly.
+        return dict(EMPTY_STATE)
     return {**EMPTY_STATE, **data}
 
 
