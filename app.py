@@ -1,5 +1,5 @@
 """Brayden's Command Center — always-on personal dashboard."""
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
@@ -74,14 +74,29 @@ st.markdown("<hr/>", unsafe_allow_html=True)
 
 col_agenda, col_email = st.columns(2, gap="medium")
 
+def _day_label(date_str: str | None) -> str:
+    if not date_str:
+        return ""
+    try:
+        d = datetime.fromisoformat(date_str).date()
+    except ValueError:
+        return ""
+    today = now.date()
+    if d == today:
+        return ""
+    if d == today + timedelta(days=1):
+        return "Tomorrow · "
+    return d.strftime("%a %b %-d · ")
+
+
 with col_agenda:
     with st.container(border=True, key="agenda_card"):
-        st.markdown('<div class="cc-section-label">Today</div>', unsafe_allow_html=True)
+        st.markdown('<div class="cc-section-label">Agenda</div>', unsafe_allow_html=True)
         events = state.get("calendar_events", [])
         if events:
             rows = "".join(
                 f'<div class="cc-row"><span class="cc-row-title">{e.get("title","")}</span>'
-                f'<span class="cc-row-meta">{e.get("time","")}'
+                f'<span class="cc-row-meta">{_day_label(e.get("date"))}{e.get("time","")}'
                 + (f' · leave by {e["leave_by"]}' if e.get("leave_by") else '')
                 + '</span></div>'
                 for e in events
