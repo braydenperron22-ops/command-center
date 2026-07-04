@@ -1,20 +1,16 @@
-"""Generates a CSS background scene reflecting current weather + time of day."""
+"""Generates a soft, abstract CSS background reflecting current weather + time of day."""
 
-# WMO weather_code buckets -> a scene category
-def _condition_category(code: int) -> str:
+
+def condition_category(code: int) -> str:
     if code == 0:
         return "clear"
     if code in (1, 2, 3):
         return "cloudy"
     if code in (45, 48):
         return "fog"
-    if code in range(51, 68):
+    if code in range(51, 68) or code in (80, 81, 82):
         return "rain"
-    if code in range(71, 78):
-        return "snow"
-    if code in (80, 81, 82):
-        return "rain"
-    if code in (85, 86):
+    if code in range(71, 78) or code in (85, 86):
         return "snow"
     if code in range(95, 100):
         return "storm"
@@ -22,61 +18,63 @@ def _condition_category(code: int) -> str:
 
 
 _SKY_GRADIENTS = {
-    ("clear", True): "linear-gradient(180deg, #4a90d9 0%, #87ceeb 55%, #d4ecf7 100%)",
-    ("clear", False): "linear-gradient(180deg, #01020a 0%, #0b1030 55%, #1b2452 100%)",
-    ("cloudy", True): "linear-gradient(180deg, #7d8ea0 0%, #a9b7c2 55%, #cfd8dd 100%)",
-    ("cloudy", False): "linear-gradient(180deg, #14161f 0%, #262b38 55%, #3a4150 100%)",
-    ("fog", True): "linear-gradient(180deg, #b9bdc2 0%, #d3d6d8 60%, #e7e9ea 100%)",
-    ("fog", False): "linear-gradient(180deg, #1b1d21 0%, #2c2e33 60%, #40434a 100%)",
-    ("rain", True): "linear-gradient(180deg, #4a5866 0%, #6b7d8c 55%, #8a9aa6 100%)",
-    ("rain", False): "linear-gradient(180deg, #05070c 0%, #10151f 55%, #1c2430 100%)",
-    ("snow", True): "linear-gradient(180deg, #9fb3c8 0%, #cfe0ec 55%, #f2f7fb 100%)",
-    ("snow", False): "linear-gradient(180deg, #0c1018 0%, #1c2431 55%, #2f3a4a 100%)",
-    ("storm", True): "linear-gradient(180deg, #33394a 0%, #4d5468 55%, #6b7180 100%)",
-    ("storm", False): "linear-gradient(180deg, #04040a 0%, #0c0e1a 55%, #171a2b 100%)",
+    ("clear", True): "linear-gradient(160deg, #0e1c33 0%, #1c3a5e 45%, #3f6d95 100%)",
+    ("clear", False): "linear-gradient(160deg, #05060d 0%, #0a0f1e 55%, #131a2e 100%)",
+    ("cloudy", True): "linear-gradient(160deg, #1a2230 0%, #2c3a4a 50%, #4a5a68 100%)",
+    ("cloudy", False): "linear-gradient(160deg, #0a0c12 0%, #171b24 55%, #262c37 100%)",
+    ("fog", True): "linear-gradient(160deg, #2b3038 0%, #454b52 55%, #656b71 100%)",
+    ("fog", False): "linear-gradient(160deg, #101216 0%, #1e2126 55%, #2e3238 100%)",
+    ("rain", True): "linear-gradient(160deg, #131b26 0%, #24313e 50%, #3c4a58 100%)",
+    ("rain", False): "linear-gradient(160deg, #04060a 0%, #0c1017 55%, #161d26 100%)",
+    ("snow", True): "linear-gradient(160deg, #1c2733 0%, #33465a 50%, #5b7488 100%)",
+    ("snow", False): "linear-gradient(160deg, #0a0d14 0%, #171e28 55%, #252f3c 100%)",
+    ("storm", True): "linear-gradient(160deg, #14161f 0%, #262a38 50%, #3a3f4e 100%)",
+    ("storm", False): "linear-gradient(160deg, #030308 0%, #090a12 55%, #12141f 100%)",
+}
+
+_ACCENT = {
+    "clear": "rgba(255, 214, 130, 0.16)",
+    "cloudy": "rgba(180, 195, 210, 0.10)",
+    "fog": "rgba(200, 205, 210, 0.08)",
+    "rain": "rgba(120, 160, 200, 0.14)",
+    "snow": "rgba(210, 225, 240, 0.14)",
+    "storm": "rgba(160, 140, 210, 0.14)",
 }
 
 
-def _overlay_layer(category: str, is_day: bool) -> str:
-    """Returns the extra animated HTML layer (clouds, rain, snow, stars) for the scene."""
-    if category == "clear" and not is_day:
-        stars = "".join(
-            f'<div class="cc-star" style="left:{(i * 37) % 100}%;top:{(i * 53) % 70}%;'
-            f'animation-delay:{(i % 5) * 0.7}s;"></div>'
-            for i in range(40)
-        )
-        return f'<div class="cc-moon"></div>{stars}'
-    if category == "clear" and is_day:
-        return '<div class="cc-sun"></div>'
-    if category in ("cloudy", "fog", "storm"):
+def _particles(category: str) -> str:
+    if category == "rain" or category == "storm":
         return "".join(
-            f'<div class="cc-cloud" style="top:{8 + (i * 11) % 40}%;'
-            f'animation-duration:{40 + (i * 7) % 30}s;animation-delay:-{(i * 5) % 20}s;'
-            f'transform:scale({0.7 + (i % 4) * 0.2});opacity:{0.5 + (i % 3) * 0.15};"></div>'
-            for i in range(6)
-        )
-    if category == "rain":
-        drops = "".join(
             f'<div class="cc-drop" style="left:{(i * 13) % 100}%;'
-            f'animation-duration:{0.5 + (i % 5) * 0.15}s;animation-delay:-{(i % 10) * 0.1}s;"></div>'
-            for i in range(40)
+            f'animation-duration:{0.6 + (i % 5) * 0.15}s;animation-delay:-{(i % 10) * 0.1}s;"></div>'
+            for i in range(28)
         )
-        return drops
     if category == "snow":
-        flakes = "".join(
+        return "".join(
             f'<div class="cc-flake" style="left:{(i * 17) % 100}%;'
-            f'animation-duration:{6 + (i % 6)}s;animation-delay:-{(i % 10) * 0.6}s;"></div>'
-            for i in range(35)
+            f'animation-duration:{7 + (i % 6)}s;animation-delay:-{(i % 10) * 0.6}s;"></div>'
+            for i in range(24)
         )
-        return flakes
     return ""
 
 
+def _stars(is_day: bool, category: str) -> str:
+    if is_day or category != "clear":
+        return ""
+    return "".join(
+        f'<div class="cc-star" style="left:{(i * 37) % 100}%;top:{(i * 53) % 65}%;'
+        f'animation-delay:{(i % 5) * 0.9}s;"></div>'
+        for i in range(30)
+    )
+
+
 def background_css_and_html(weather_code: int, is_day: bool) -> str:
-    """Full <style> + layer HTML for an animated full-page weather scene."""
-    category = _condition_category(weather_code)
+    """Full <style> + particle layer HTML for a soft, abstract ambient scene."""
+    category = condition_category(weather_code)
     sky = _SKY_GRADIENTS[(category, is_day)]
-    overlay = _overlay_layer(category, is_day)
+    accent = _ACCENT[category]
+    particles = _particles(category)
+    stars = _stars(is_day, category)
 
     return f"""
     <style>
@@ -84,65 +82,40 @@ def background_css_and_html(weather_code: int, is_day: bool) -> str:
         background: {sky};
         background-attachment: fixed;
     }}
-    [data-testid="stHeader"] {{
-        background: transparent;
+    [data-testid="stHeader"] {{ background: transparent; }}
+    .cc-scene {{ position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }}
+    .cc-glow {{
+        position: absolute; width: 60vw; height: 60vw; border-radius: 50%;
+        background: radial-gradient(circle, {accent} 0%, rgba(0,0,0,0) 70%);
+        filter: blur(10px);
+        animation: cc-drift-slow 50s ease-in-out infinite;
     }}
-    .cc-scene {{
-        position: fixed;
-        inset: 0;
-        z-index: 0;
-        overflow: hidden;
-        pointer-events: none;
-    }}
-    .cc-sun {{
-        position: absolute; top: 8%; right: 12%;
-        width: 90px; height: 90px; border-radius: 50%;
-        background: radial-gradient(circle, #fff6d0 0%, #ffe066 60%, rgba(255,224,102,0) 100%);
-        box-shadow: 0 0 60px 20px rgba(255, 230, 130, 0.5);
-    }}
-    .cc-moon {{
-        position: absolute; top: 8%; right: 14%;
-        width: 60px; height: 60px; border-radius: 50%;
-        background: #f2f2e6;
-        box-shadow: inset -12px -4px 0 0 #cfcfbf, 0 0 30px 8px rgba(240,240,220,0.3);
+    .cc-glow.a {{ top: -20%; right: -10%; }}
+    .cc-glow.b {{ bottom: -25%; left: -15%; animation-duration: 65s; animation-direction: reverse; }}
+    @keyframes cc-drift-slow {{
+        0%, 100% {{ transform: translate(0, 0) scale(1); }}
+        50% {{ transform: translate(-4%, 3%) scale(1.06); }}
     }}
     .cc-star {{
-        position: absolute; width: 3px; height: 3px; border-radius: 50%;
-        background: white; animation: cc-twinkle 3s ease-in-out infinite;
+        position: absolute; width: 2px; height: 2px; border-radius: 50%;
+        background: white; animation: cc-twinkle 4s ease-in-out infinite;
     }}
-    @keyframes cc-twinkle {{ 0%, 100% {{ opacity: 0.2; }} 50% {{ opacity: 1; }} }}
-    .cc-cloud {{
-        position: absolute; left: -20%; width: 220px; height: 70px;
-        background: rgba(255,255,255,0.75); border-radius: 50px;
-        animation: cc-drift linear infinite;
-    }}
-    .cc-cloud::before, .cc-cloud::after {{
-        content: ""; position: absolute; background: inherit; border-radius: 50%;
-    }}
-    .cc-cloud::before {{ width: 110px; height: 110px; top: -50px; left: 25px; }}
-    .cc-cloud::after {{ width: 90px; height: 90px; top: -35px; right: 25px; }}
-    @keyframes cc-drift {{ from {{ left: -25%; }} to {{ left: 120%; }} }}
+    @keyframes cc-twinkle {{ 0%, 100% {{ opacity: 0.15; }} 50% {{ opacity: 0.9; }} }}
     .cc-drop {{
-        position: absolute; top: -5%; width: 2px; height: 18px;
-        background: rgba(190, 215, 235, 0.7);
+        position: absolute; top: -5%; width: 1.5px; height: 16px;
+        background: rgba(180, 205, 230, 0.45);
         animation: cc-fall linear infinite;
     }}
     @keyframes cc-fall {{ from {{ transform: translateY(0); }} to {{ transform: translateY(110vh); }} }}
     .cc-flake {{
-        position: absolute; top: -5%; width: 6px; height: 6px; border-radius: 50%;
-        background: rgba(255,255,255,0.9);
+        position: absolute; top: -5%; width: 4px; height: 4px; border-radius: 50%;
+        background: rgba(255,255,255,0.75);
         animation: cc-snowfall linear infinite;
     }}
     @keyframes cc-snowfall {{
         from {{ transform: translate(0, 0); }}
-        to {{ transform: translate(30px, 110vh); }}
-    }}
-    .st-key-weather_card, .st-key-agenda_card, .st-key-email_card, .st-key-tasks_card {{
-        background: rgba(20, 24, 33, 0.55) !important;
-        backdrop-filter: blur(10px);
-        border-radius: 14px !important;
-        border: 1px solid rgba(255,255,255,0.12) !important;
+        to {{ transform: translate(24px, 110vh); }}
     }}
     </style>
-    <div class="cc-scene">{overlay}</div>
+    <div class="cc-scene"><div class="cc-glow a"></div><div class="cc-glow b"></div>{stars}{particles}</div>
     """

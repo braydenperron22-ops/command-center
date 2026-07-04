@@ -15,6 +15,11 @@ Leave the browser tab open on the always-on laptop/monitor. It auto-refreshes ev
 
 Tasks/reminders are added directly in the app UI and stored in `data/tasks.json`.
 
+The look is built on [theme.py](theme.py) (typography, hidden Streamlit chrome, glass
+card styling), [scenery.py](scenery.py) (soft ambient gradient + particles reacting to
+weather), and [icons.py](icons.py) (minimal line-art weather icons) — deliberately
+understated rather than a busy dashboard.
+
 Weather, calendar, and email data come from `data/state.json`, which is written by a
 **scheduled Claude task** (not this app) running every 20 minutes. That task:
 
@@ -26,9 +31,12 @@ Weather, calendar, and email data come from `data/state.json`, which is written 
    only ones that (a) are addressed to Brayden personally (not bulk/cc'd/newsletter)
    or (b) look like something he genuinely needs to catch up on (time-sensitive,
    from a real person, action needed) — not every unread email, just the necessities.
-4. Checks for noteworthy weather statements, local traffic incidents, and breaking
-   news (financial markets, national/world, local North Bay/Ontario) and classifies
-   each as `red` (urgent), `yellow` (moderate), or `neutral` (FYI).
+4. Checks for noteworthy weather statements (live Environment Canada alerts page),
+   traffic on the Corbeil–North Bay Highway 17 stretch specifically (live 511 Ontario
+   API), and breaking news (financial markets, national/world, local North Bay/Ontario),
+   classifying each as `red` (urgent), `yellow` (moderate), or `neutral` (FYI). Weather
+   and traffic use live authoritative endpoints, not web search, since search results
+   can surface stale articles that look current but aren't.
 5. Writes the result to `data/state.json` in this shape:
 
 ```json
