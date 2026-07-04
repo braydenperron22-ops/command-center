@@ -35,12 +35,24 @@ html, body, [class^="st-"], [class*=" st-"], .stMarkdown, .stTextInput, .stButto
 .st-key-glance_row .stColumn, .cc-panel { background: rgba(22, 26, 34, 0.42) !important; backdrop-filter: blur(16px);
     border-radius: 18px !important; border: 1px solid rgba(255,255,255,0.08) !important; }
 
-.st-key-agenda_card, .st-key-email_card {
+.st-key-agenda_card, .st-key-email_card, .st-key-commute_card, .st-key-indices_card {
     background: rgba(22, 26, 34, 0.42) !important;
     backdrop-filter: blur(16px);
     border-radius: 18px !important;
     border: 1px solid rgba(255,255,255,0.08) !important;
 }
+
+.cc-stat-value { font-size: 2.2rem; font-weight: 300; color: #f5f6f8; line-height: 1; }
+.cc-stat-sub { font-size: 0.78rem; color: rgba(255,255,255,0.45); margin-top: 4px; }
+
+.cc-index-row { display: flex; align-items: baseline; padding: 7px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06); }
+.cc-index-row:last-child { border-bottom: none; }
+.cc-index-name { flex: 1; color: rgba(255,255,255,0.75); font-size: 0.88rem; font-weight: 500; }
+.cc-index-price { color: rgba(255,255,255,0.55); font-size: 0.85rem; margin-right: 14px; }
+.cc-index-change { font-size: 0.85rem; font-weight: 600; min-width: 58px; text-align: right; }
+.cc-up { color: #6fd68f; }
+.cc-down { color: #ff8080; }
 
 .cc-upcoming { margin-top: 14px; padding: 10px 12px; border-radius: 12px;
     background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); }

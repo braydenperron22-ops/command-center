@@ -96,15 +96,12 @@ if weather:
 else:
     weather_html = '<div class="cc-empty">No weather yet</div>'
 
-commute = state.get("commute")
-commute_str = f" · {commute['minutes']} min to {commute['destination']}" if commute else ""
-
 st.markdown(
     '<div class="cc-hero">'
     '<div>'
     f'<div class="cc-clock">{now.strftime("%-I:%M")}</div>'
     f'<div class="cc-date">{now.strftime("%A, %B %-d")}</div>'
-    f'<div class="cc-synced">{synced_caption} · {LOCATION_NAME}{commute_str}</div>'
+    f'<div class="cc-synced">{synced_caption} · {LOCATION_NAME}</div>'
     '</div>'
     f'{weather_html}'
     '</div>',
@@ -132,6 +129,39 @@ if leave_candidates:
     else:
         urgency, label = "yellow", f"Leave in {int(minutes_until)} min"
     render_alert_bar([{"severity": urgency, "message": f"{label} — {event.get('title','')}"}])
+
+commute = state.get("commute")
+indices = state.get("indices", [])
+
+if commute or indices:
+    col_commute, col_indices = st.columns([1, 2], gap="medium")
+
+    with col_commute:
+        with st.container(border=True, key="commute_card"):
+            st.markdown('<div class="cc-section-label">Commute to North Bay</div>', unsafe_allow_html=True)
+            if commute:
+                st.markdown(
+                    f'<div class="cc-stat-value">{commute["minutes"]} min</div>'
+                    f'<div class="cc-stat-sub">{commute["destination"]}</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown('<div class="cc-empty">No commute data yet</div>', unsafe_allow_html=True)
+
+    with col_indices:
+        with st.container(border=True, key="indices_card"):
+            st.markdown('<div class="cc-section-label">Markets</div>', unsafe_allow_html=True)
+            if indices:
+                rows = "".join(
+                    f'<div class="cc-index-row"><span class="cc-index-name">{i.get("name","")}</span>'
+                    f'<span class="cc-index-price">{i.get("price","—")}</span>'
+                    f'<span class="cc-index-change {"cc-up" if i.get("change_pct", 0) >= 0 else "cc-down"}">'
+                    f'{"+" if i.get("change_pct", 0) >= 0 else ""}{i.get("change_pct", "—")}%</span></div>'
+                    for i in indices
+                )
+                st.markdown(rows, unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="cc-empty">No market data yet</div>', unsafe_allow_html=True)
 
 st.markdown("<hr/>", unsafe_allow_html=True)
 

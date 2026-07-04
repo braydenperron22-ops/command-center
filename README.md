@@ -53,7 +53,10 @@ minutes. Each run:
 6. **Weather statements** — live Environment Canada alerts page (not web search,
    which surfaces stale articles that look current).
 7. **News** — breaking financial/national/local news, only when genuinely current.
-8. Any **red-severity alert** also triggers an immediate push notification (not just
+8. **Market indices** — S&P 500, Nasdaq, Dow, TSX via Yahoo Finance's public chart
+   endpoint (no key). Shown in a dedicated Markets card next to a prominent Commute
+   tile (its own tile now, not buried in the header caption).
+9. Any **red-severity alert** also triggers an immediate push notification (not just
    a dashboard entry) — Brayden may not be looking at the screen.
 
 ### Self-healing sync
@@ -78,7 +81,8 @@ silent and only re-pings once every 24h rather than every run. Recovery is silen
   ],
   "email_highlights": [{"from": "Air Canada", "subject": "Your flight is confirmed"}],
   "commute": {"minutes": 24, "destination": "103 Laurentian Ave, North Bay"},
-  "alerts": [{"severity": "red", "message": "Severe thunderstorm warning with tornado risk this afternoon near North Bay."}]
+  "alerts": [{"severity": "red", "message": "Severe thunderstorm warning with tornado risk this afternoon near North Bay."}],
+  "indices": [{"name": "S&P 500", "price": "7,483.24", "change_pct": 0.12}]
 }
 ```
 

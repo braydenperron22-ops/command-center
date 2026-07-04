@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 .venv/
 data/state.json
+data/sync_health.json
