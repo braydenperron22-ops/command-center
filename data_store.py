@@ -10,6 +10,7 @@ EMPTY_STATE = {
     "weather": None,
     "calendar_events": [],
     "email_highlights": [],
+    "alerts": [],
 }
 
 
