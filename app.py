@@ -87,17 +87,17 @@ if weather:
     category = condition_category(weather.get("code", 0))
     icon_svg = icon_for(category, weather.get("is_day", True))
     precip_note = f'<div class="cc-weather-range">{weather["precip_soon"]}</div>' if weather.get("precip_soon") else ""
-    weather_html = f"""
-    <div class="cc-weather-inline">
-        <div class="cc-weather-icon">{icon_svg}</div>
-        <div>
-            <div class="cc-weather-temp">{weather.get('temp_now', '—')}°</div>
-            <div class="cc-weather-meta">{weather.get('condition_now', '')}</div>
-            <div class="cc-weather-range">H {weather.get('temp_high', '—')}° · L {weather.get('temp_low', '—')}°</div>
-            {precip_note}
-        </div>
-    </div>
-    """
+    weather_html = (
+        '<div class="cc-weather-inline">'
+        f'<div class="cc-weather-icon">{icon_svg}</div>'
+        '<div>'
+        f'<div class="cc-weather-temp">{weather.get("temp_now", "—")}°</div>'
+        f'<div class="cc-weather-meta">{weather.get("condition_now", "")}</div>'
+        f'<div class="cc-weather-range">H {weather.get("temp_high", "—")}° · L {weather.get("temp_low", "—")}°</div>'
+        f'{precip_note}'
+        '</div>'
+        '</div>'
+    )
 else:
     weather_html = '<div class="cc-empty">No weather yet</div>'
 
@@ -105,16 +105,14 @@ commute = state.get("commute")
 commute_str = f" · {commute['minutes']} min to {commute['destination']}" if commute else ""
 
 st.markdown(
-    f"""
-    <div class="cc-hero">
-        <div>
-            <div class="cc-clock">{now.strftime('%-I:%M')}</div>
-            <div class="cc-date">{now.strftime('%A, %B %-d')}</div>
-            <div class="cc-synced">{synced_caption} · {LOCATION_NAME}{commute_str}</div>
-        </div>
-        {weather_html}
-    </div>
-    """,
+    '<div class="cc-hero">'
+    '<div>'
+    f'<div class="cc-clock">{now.strftime("%-I:%M")}</div>'
+    f'<div class="cc-date">{now.strftime("%A, %B %-d")}</div>'
+    f'<div class="cc-synced">{synced_caption} · {LOCATION_NAME}{commute_str}</div>'
+    '</div>'
+    f'{weather_html}'
+    '</div>',
     unsafe_allow_html=True,
 )
 
