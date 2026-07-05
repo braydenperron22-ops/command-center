@@ -10,7 +10,7 @@ from streamlit_autorefresh import st_autorefresh
 import fred_client
 import statcan_client
 import theme
-from config import COUNTRY_META, INDICATORS, MARKET_INDEX, ROTATION_SECONDS, TIMEZONE
+from config import COUNTRY_META, INDICATORS, MARKET_INDEX, ROTATION_SECONDS, TIMEZONE, UV_HIGH_THRESHOLD
 from flags import flag_for
 from icons import icon_for
 import market_client
@@ -60,9 +60,19 @@ st.markdown(background_css_and_html(weather["weather_code"] if weather else 0, p
 weather_block = ""
 if weather:
     icon_svg = icon_for(category, phase)
+
+    extras = []
+    if weather["rain_in_hours"] is not None:
+        h = weather["rain_in_hours"]
+        label = f"{int(h * 60)}m" if h < 1 else f"{h:.0f}h"
+        extras.append(f'<span class="weather-extra weather-rain">Rain in {label}</span>')
+    if weather["uv_index"] is not None and weather["uv_index"] > UV_HIGH_THRESHOLD:
+        extras.append(f'<span class="weather-extra weather-uv">UV {weather["uv_index"]:.0f}</span>')
+    extras_html = f'<div class="weather-extras">{"".join(extras)}</div>' if extras else ""
+
     weather_block = f"""<div class="hero-weather">
         <div class="clock weather-condition"><span class="weather-icon">{icon_svg}</span>{weather['temp_c']:.0f}°C</div>
-        <div class="date-sub">North Bay</div>
+        <div class="date-sub">North Bay</div>{extras_html}
     </div>"""
 
 st.markdown(
@@ -125,7 +135,10 @@ else:
     for i, ind in enumerate(INDICATORS[country]):
         key = (country, ind["key"])
         with cols[i]:
-            render_tile(ind["label"], ind["unit"], readings[key], is_new=new_flags[key])
+            render_tile(
+                ind["label"], ind["unit"], readings[key],
+                good_direction=ind.get("good_direction"), is_new=new_flags[key],
+            )
 
     schedule = ticker.build_schedule(readings, FRED_API_KEY)
 

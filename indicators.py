@@ -44,14 +44,18 @@ def build_reading(dates: list[str], values: list[float], transform: str) -> dict
     trend_mean = statistics.fmean(trend_window)
     trend_stdev = statistics.pstdev(trend_window) if len(trend_window) > 1 else 0.0
 
+    # Direction-neutral: "above"/"below" trend, no judgment of good/bad here.
+    # Whether "above" is favorable depends on the indicator (e.g. above-trend
+    # GDP is good, above-trend unemployment is bad) — that mapping lives in
+    # tiles.py via each indicator's configured good_direction.
     z = 0.0
     classification = "in-line"
     if trend_stdev > 0:
         z = (current - trend_mean) / trend_stdev
         if z >= HOT_COOL_THRESHOLD:
-            classification = "hot"
+            classification = "above"
         elif z <= -HOT_COOL_THRESHOLD:
-            classification = "cool"
+            classification = "below"
 
     return {
         "current": current,
