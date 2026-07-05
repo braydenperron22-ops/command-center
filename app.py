@@ -1,199 +1,151 @@
-"""Brayden's Command Center — always-on personal dashboard."""
-from datetime import datetime, timedelta
+"""Personal command-center dashboard: rotating US/Canada macro data, clock, weather."""
+
+import time
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
-from alerts import render_alert_bar
-from config import DASHBOARD_REFRESH_SECONDS, LEAVE_SOON_MINUTES, LOCATION_NAME, SYNC_INTERVAL_MINUTES, TIMEZONE
-from data_store import load_state
+import fred_client
+import statcan_client
+import theme
+from config import COUNTRY_META, INDICATORS, MARKET_INDEX, ROTATION_SECONDS, TIMEZONE
 from icons import icon_for
-from scenery import background_css_and_html, condition_category
-from theme import inject_theme
+import market_client
+import news
+from scenery import background_css_and_html, condition_category, phase_for
+import ticker
+from tiles import render_tile
+from weather_client import fetch_weather
 
 st.set_page_config(page_title="Command Center", layout="wide")
-st_autorefresh(interval=DASHBOARD_REFRESH_SECONDS * 1000, key="dashboard_refresh")
+theme.inject()
 
-inject_theme()
+FRED_API_KEY = st.secrets.get("FRED_API_KEY")
 
-state = load_state()
-# Hosted deployments (Streamlit Cloud) don't run on Eastern time like the
-# local laptop setup did — datetime.now() would silently use the server's
-# own timezone instead. Pin explicitly to Toronto, then drop tzinfo so it
-# stays comparable with the naive datetimes parsed from state.json below.
+# Ticking clock every second; rotation derived from elapsed real time so it
+# survives Streamlit Cloud sleep/wake without drifting into a fast-forward.
+st_autorefresh(interval=1000, key="clock_tick")
+
+# Hosted deployments (Streamlit Cloud) run on the server's own timezone
+# (typically UTC), not North Bay's — pin explicitly rather than trusting
+# datetime.now(), then drop tzinfo so it stays comparable with the naive
+# sunrise/sunset values Open-Meteo returns for the same zone.
 now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
-weather = state.get("weather") or {}
-# Fallback used only if weather has never synced successfully even once —
-# guess day/night from the clock instead of hardcoding day, so a genuine
-# no-data state doesn't render a bright sunny-day background at 3am.
-_fallback_is_day = 6 <= now.hour < 20
 
+rotation_index = int(time.time() // ROTATION_SECONDS) % 2
+country = "us" if rotation_index == 0 else "ca"
+meta = COUNTRY_META[country]
 
-def _event_date(date_str):
-    if not date_str:
-        return None
-    try:
-        return datetime.fromisoformat(date_str).date()
-    except ValueError:
-        return None
+# Only play the crossfade when the country actually changes — the whole
+# script reruns every second for the clock tick, so without this the fade
+# animation was restarting every single second instead of just on rotation.
+country_changed = st.session_state.get("last_country") != country
+st.session_state["last_country"] = country
+country_anim_class = "fade-wrap" if country_changed else ""
 
-
-def _upcoming_label(d) -> str:
-    today = now.date()
-    if d == today + timedelta(days=1):
-        return "Tomorrow"
-    return d.strftime("%a, %b %-d")
-
-
-def _row_html(e: dict, meta_prefix: str = "") -> str:
-    meta = f"{meta_prefix}{e.get('time','')}"
-    if e.get("weather_note"):
-        meta += f' · {e["weather_note"]}'
-    if e.get("leave_by"):
-        meta += f' · leave by {e["leave_by"]}'
-    return (
-        f'<div class="cc-row"><span class="cc-row-title">{e.get("title","")}</span>'
-        f'<span class="cc-row-meta">{meta}</span></div>'
-    )
-
-
-def _parse_leave_by(event: dict):
-    date_str, leave_by = event.get("date"), event.get("leave_by")
-    if not date_str or not leave_by:
-        return None
-    d = _event_date(date_str)
-    if not d:
-        return None
-    try:
-        parsed = datetime.strptime(leave_by.strip(), "%I:%M %p")
-    except ValueError:
-        return None
-    return datetime.combine(d, parsed.time())
-
-
-st.markdown(
-    background_css_and_html(weather.get("code", 0), weather.get("is_day", _fallback_is_day)),
-    unsafe_allow_html=True,
-)
-
-last_synced = state.get("last_synced")
-synced_caption = "Waiting on first sync…"
-if last_synced:
-    synced_dt = datetime.fromisoformat(last_synced)
-    stale_minutes = (now - synced_dt.replace(tzinfo=None)).total_seconds() / 60
-    if stale_minutes > SYNC_INTERVAL_MINUTES * 2:
-        synced_caption = f"Sync stalled — last update {int(stale_minutes)} min ago"
-    else:
-        synced_caption = f"Synced {synced_dt.strftime('%-I:%M %p')}"
+weather = fetch_weather()
 
 if weather:
-    category = condition_category(weather.get("code", 0))
-    icon_svg = icon_for(category, weather.get("is_day", _fallback_is_day))
-    precip_note = f'<div class="cc-weather-range">{weather["precip_soon"]}</div>' if weather.get("precip_soon") else ""
-    weather_html = (
-        '<div class="cc-weather-inline">'
-        f'<div class="cc-weather-icon">{icon_svg}</div>'
-        '<div>'
-        f'<div class="cc-weather-temp">{weather.get("temp_now", "—")}°</div>'
-        f'<div class="cc-weather-meta">{weather.get("condition_now", "")}</div>'
-        f'<div class="cc-weather-range">H {weather.get("temp_high", "—")}° · L {weather.get("temp_low", "—")}°</div>'
-        f'{precip_note}'
-        '</div>'
-        '</div>'
-    )
+    phase = phase_for(now, weather["sunrise"], weather["sunset"])
+    category = condition_category(weather["weather_code"])
 else:
-    weather_html = '<div class="cc-empty">No weather yet</div>'
+    phase = "day" if 6 <= now.hour < 20 else "night"
+    category = "cloudy"
+
+st.markdown(background_css_and_html(weather["weather_code"] if weather else 0, phase), unsafe_allow_html=True)
+
+weather_block = ""
+if weather:
+    icon_svg = icon_for(category, phase)
+    weather_block = f"""<div class="hero-weather">
+        <div class="clock weather-condition"><span class="weather-icon">{icon_svg}</span>{weather['temp_c']:.0f}°C</div>
+        <div class="date-sub">North Bay</div>
+    </div>"""
 
 st.markdown(
-    '<div class="cc-hero">'
-    '<div>'
-    f'<div class="cc-clock">{now.strftime("%-I:%M")}</div>'
-    f'<div class="cc-date">{now.strftime("%A, %B %-d")}</div>'
-    f'<div class="cc-synced">{synced_caption} · {LOCATION_NAME}</div>'
-    '</div>'
-    f'{weather_html}'
-    '</div>',
+    f"""<div class="hero-row">
+        <div class="hero-time">
+            <div class="clock">{now.strftime('%I:%M %p').lstrip('0')}</div>
+            <div class="date-sub">{now.strftime('%A, %B %d')}</div>
+        </div>{weather_block}
+    </div>""",
     unsafe_allow_html=True,
 )
 
-render_alert_bar(state.get("alerts", []))
-
-# "Leave now" — surfaces the nearest event whose leave_by time is imminent.
-all_events = state.get("calendar_events", [])
-leave_candidates = []
-for e in all_events:
-    leave_dt = _parse_leave_by(e)
-    if leave_dt:
-        minutes_until = (leave_dt - now).total_seconds() / 60
-        if -20 <= minutes_until <= LEAVE_SOON_MINUTES:
-            leave_candidates.append((minutes_until, e))
-
-if leave_candidates:
-    minutes_until, event = min(leave_candidates, key=lambda x: x[0])
-    if minutes_until <= 0:
-        urgency, label = "red", "Leave now"
-    elif minutes_until <= 5:
-        urgency, label = "red", f"Leave in {int(minutes_until)} min"
-    else:
-        urgency, label = "yellow", f"Leave in {int(minutes_until)} min"
-    render_alert_bar([{"severity": urgency, "message": f"{label} — {event.get('title','')}"}])
-
-commute = state.get("commute")
-indices = state.get("indices", [])
-
-if commute or indices:
-    col_commute, col_indices = st.columns([1, 2], gap="medium")
-
-    with col_commute:
-        with st.container(border=True, key="commute_card"):
-            st.markdown('<div class="cc-section-label">Commute to North Bay</div>', unsafe_allow_html=True)
-            if commute:
-                st.markdown(
-                    f'<div class="cc-stat-value">{commute["minutes"]} min</div>'
-                    f'<div class="cc-stat-sub">{commute["destination"]}</div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown('<div class="cc-empty">No commute data yet</div>', unsafe_allow_html=True)
-
-    with col_indices:
-        with st.container(border=True, key="indices_card"):
-            st.markdown('<div class="cc-section-label">Markets</div>', unsafe_allow_html=True)
-            if indices:
-                rows = "".join(
-                    f'<div class="cc-index-row"><span class="cc-index-name">{i.get("name","")}</span>'
-                    f'<span class="cc-index-price">{i.get("price","—")}</span>'
-                    f'<span class="cc-index-change {"cc-up" if i.get("change_pct", 0) >= 0 else "cc-down"}">'
-                    f'{"+" if i.get("change_pct", 0) >= 0 else ""}{i.get("change_pct", "—")}%</span></div>'
-                    for i in indices
-                )
-                st.markdown(rows, unsafe_allow_html=True)
-            else:
-                st.markdown('<div class="cc-empty">No market data yet</div>', unsafe_allow_html=True)
-
-st.markdown("<hr/>", unsafe_allow_html=True)
-
-with st.container(border=True, key="agenda_card"):
-    st.markdown('<div class="cc-section-label">Today</div>', unsafe_allow_html=True)
-    events = state.get("calendar_events", [])
-    today_events = [e for e in events if _event_date(e.get("date")) == now.date()]
-    upcoming_events = sorted(
-        (e for e in events if (d := _event_date(e.get("date"))) and d > now.date()),
-        key=lambda e: (e.get("date"), e.get("time") or ""),
-    )
-
-    if today_events:
-        st.markdown("".join(_row_html(e) for e in today_events), unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="cc-empty">Nothing today</div>', unsafe_allow_html=True)
-
-    if upcoming_events:
-        upcoming_rows = "".join(
-            _row_html(e, meta_prefix=f"{_upcoming_label(_event_date(e['date']))} · ")
-            for e in upcoming_events
+market_html = ""
+if FRED_API_KEY:
+    market = market_client.fetch_ytd_return(MARKET_INDEX[country]["series_id"], FRED_API_KEY)
+    if market:
+        direction_class = "market-up" if market["ytd_pct"] >= 0 else "market-down"
+        sign = "+" if market["ytd_pct"] >= 0 else ""
+        market_html = (
+            f'<div class="market-pill"><span class="market-pill-label">{MARKET_INDEX[country]["label"]} YTD</span>'
+            f'<span class="market-pill-value {direction_class}">{sign}{market["ytd_pct"]:.1f}%</span></div>'
         )
-        st.markdown(
-            f'<div class="cc-upcoming"><div class="cc-upcoming-label">Upcoming</div>{upcoming_rows}</div>',
-            unsafe_allow_html=True,
-        )
+
+st.markdown(
+    f"""<div class="{country_anim_class}" style="text-align:center; margin: 0.8rem 0 1.2rem;">
+        <div class="flag-badge">{meta['flag']}</div>
+        <div class="country-name">{meta['name']}</div>{market_html}
+    </div>""",
+    unsafe_allow_html=True,
+)
+
+if not FRED_API_KEY:
+    st.error("FRED_API_KEY is not set in Streamlit secrets.")
+else:
+    seen_as_of = st.session_state.setdefault("seen_as_of", {})
+
+    readings = {}
+    new_flags = {}
+    for c, indicators in INDICATORS.items():
+        for ind in indicators:
+            if ind.get("source") == "statcan":
+                reading = statcan_client.build_indicator_reading(ind["vector_id"], ind["transform"])
+            else:
+                reading = fred_client.build_indicator_reading(ind["series_id"], FRED_API_KEY, ind["transform"])
+            key = (c, ind["key"])
+            readings[key] = reading
+
+            # Flag as "new" only if this session already had a prior value for
+            # this indicator and it just changed — first-ever load establishes
+            # the baseline instead of flashing everything as new.
+            is_new = False
+            if reading:
+                prior = seen_as_of.get(key)
+                if prior is not None and prior != reading["as_of"]:
+                    is_new = True
+                seen_as_of[key] = reading["as_of"]
+            new_flags[key] = is_new
+
+    cols = st.columns(len(INDICATORS[country]))
+    for i, ind in enumerate(INDICATORS[country]):
+        key = (country, ind["key"])
+        with cols[i]:
+            render_tile(ind["label"], ind["unit"], readings[key], is_new=new_flags[key])
+
+    schedule = ticker.build_schedule(readings, FRED_API_KEY)
+
+# News alerts: strictly-filtered items queue up and take over the bottom
+# bar (normally the release calendar) for TOAST_SECONDS each, breaking-news
+# style, before control returns to the calendar ticker.
+news_queue = st.session_state.setdefault("news_queue", [])
+news_queue.extend(news.get_new_alerts())
+
+now_ts = time.time()
+current_alert, elapsed = None, None
+if news_queue:
+    current_alert = news_queue[0]
+    if "shown_at" not in current_alert:
+        current_alert["shown_at"] = now_ts
+    elapsed = now_ts - current_alert["shown_at"]
+    if elapsed > news.TOAST_SECONDS:
+        news_queue.pop(0)
+        current_alert, elapsed = None, None
+
+if current_alert:
+    news.render_alert_bar(current_alert)
+elif FRED_API_KEY:
+    st.markdown(ticker.render_html(schedule, now), unsafe_allow_html=True)

@@ -1,7 +1,5 @@
 __pycache__/
 *.pyc
 .venv/
-data/state.json
-data/sync_health.json
-data/*.log
-data/*.tmp
+.DS_Store
+.streamlit/secrets.toml

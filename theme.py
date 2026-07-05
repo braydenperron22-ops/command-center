@@ -1,78 +1,314 @@
-"""Global visual theme: typography, chrome removal, base surface styling."""
-import streamlit as st
+"""Apple-style dark glass CSS injected once at app start."""
 
-_CSS = """
+CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400;500;600;700&display=swap');
-
-html, body, [class^="st-"], [class*=" st-"], .stMarkdown, .stTextInput, .stButton, p, span, div {
-    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif !important;
+#MainMenu, header, footer { visibility: hidden; }
+.block-container {
+    padding-top: 1.4rem;
+    padding-bottom: 3.2rem;
+    max-width: 1300px;
+    min-height: calc(100vh - 4.6rem) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
 }
 
-#MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden; height: 0; }
-[data-testid="stAppViewContainer"] > .main { padding-top: 1.5rem; }
-.block-container { padding-top: 1rem; max-width: 1100px; }
-
-.cc-hero { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 24px; margin-bottom: 6px; }
-.cc-clock { font-size: 4.2rem; font-weight: 200; color: #f5f6f8; line-height: 1; letter-spacing: -1px; }
-.cc-date { font-size: 0.95rem; font-weight: 500; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 6px; }
-.cc-synced { font-size: 0.78rem; color: rgba(255,255,255,0.35); margin-top: 2px; }
-
-.cc-weather-inline { display: flex; align-items: center; gap: 14px; }
-.cc-weather-icon { width: 52px; height: 52px; opacity: 0.92; }
-.cc-weather-temp { font-size: 2.6rem; font-weight: 300; color: #f5f6f8; line-height: 1; }
-.cc-weather-meta { font-size: 0.85rem; color: rgba(255,255,255,0.6); font-weight: 500; }
-.cc-weather-range { font-size: 0.78rem; color: rgba(255,255,255,0.4); }
-
-.cc-chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 4px; }
-.cc-chip { display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px;
-    font-size: 0.83rem; font-weight: 500; backdrop-filter: blur(6px); }
-.cc-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-
-.cc-section-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 1.8px; text-transform: uppercase;
-    color: rgba(255,255,255,0.42); margin-bottom: 10px; }
-
-.st-key-glance_row .stColumn, .cc-panel { background: rgba(22, 26, 34, 0.42) !important; backdrop-filter: blur(16px);
-    border-radius: 18px !important; border: 1px solid rgba(255,255,255,0.08) !important; }
-
-.st-key-agenda_card, .st-key-commute_card, .st-key-indices_card {
-    background: rgba(22, 26, 34, 0.42) !important;
-    backdrop-filter: blur(16px);
-    border-radius: 18px !important;
-    border: 1px solid rgba(255,255,255,0.08) !important;
+.block-container > div {
+    flex-shrink: 0;
 }
 
-.cc-stat-value { font-size: 2.2rem; font-weight: 300; color: #f5f6f8; line-height: 1; }
-.cc-stat-sub { font-size: 0.78rem; color: rgba(255,255,255,0.45); margin-top: 4px; }
+html, body, [class*="css"] {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+}
 
-.cc-index-row { display: flex; align-items: baseline; padding: 7px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.06); }
-.cc-index-row:last-child { border-bottom: none; }
-.cc-index-name { flex: 1; color: rgba(255,255,255,0.75); font-size: 0.88rem; font-weight: 500; }
-.cc-index-price { color: rgba(255,255,255,0.55); font-size: 0.85rem; margin-right: 14px; }
-.cc-index-change { font-size: 0.85rem; font-weight: 600; min-width: 58px; text-align: right; }
-.cc-up { color: #6fd68f; }
-.cc-down { color: #ff8080; }
+.hero-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.6rem;
+}
 
-.cc-upcoming { margin-top: 14px; padding: 10px 12px; border-radius: 12px;
-    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); }
-.cc-upcoming-label { font-size: 0.62rem; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase;
-    color: rgba(255,255,255,0.32); margin-bottom: 6px; }
-.cc-upcoming .cc-row { padding: 6px 0; font-size: 0.82rem; }
-.cc-upcoming .cc-row-title { color: rgba(255,255,255,0.68); font-weight: 400; }
-.cc-upcoming .cc-row-meta { color: rgba(255,255,255,0.36); font-size: 0.72rem; }
+.hero-weather {
+    text-align: right;
+}
 
-.cc-row { display: flex; justify-content: space-between; align-items: baseline; padding: 9px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.92rem; }
-.cc-row:last-child { border-bottom: none; }
-.cc-row-title { color: rgba(255,255,255,0.85); font-weight: 500; }
-.cc-row-meta { color: rgba(255,255,255,0.4); font-size: 0.78rem; white-space: nowrap; margin-left: 12px; }
-.cc-empty { color: rgba(255,255,255,0.35); font-size: 0.88rem; font-style: normal; padding: 4px 0; }
+.weather-condition {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.4rem;
+}
 
-hr { border-color: rgba(255,255,255,0.08) !important; margin: 1.6rem 0 !important; }
+.clock {
+    font-size: 2.6rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: #F5F5F7;
+    line-height: 1.1;
+}
+
+.date-sub {
+    font-size: 1rem;
+    color: #8E8E93;
+    font-weight: 400;
+}
+
+.weather-icon svg {
+    width: 2rem;
+    height: 2rem;
+    display: block;
+    vertical-align: middle;
+}
+
+.flag-badge {
+    font-size: 1.9rem;
+    transition: opacity 0.6s ease;
+}
+
+.market-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.09);
+    backdrop-filter: blur(24px) saturate(1.1);
+    border-radius: 16px;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.8rem;
+}
+
+.market-pill-label { color: #8E8E93; }
+.market-pill-value { font-weight: 600; }
+.market-up { color: #32D74B; }
+.market-down { color: #FF6961; }
+
+.country-name {
+    font-size: 0.9rem;
+    color: #8E8E93;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 0.15rem;
+}
+
+.fade-wrap {
+    animation: fadeIn 0.9s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.tile {
+    position: relative;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.09);
+    backdrop-filter: blur(24px) saturate(1.1);
+    border-radius: 16px;
+    padding: 0.95rem 1rem;
+    height: 100%;
+}
+
+.tile-flash-hot { animation: tile-pulse-hot 1.8s ease-in-out infinite; }
+.tile-flash-cool { animation: tile-pulse-cool 1.8s ease-in-out infinite; }
+
+@keyframes tile-pulse-hot {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(255,69,58,0.25), 0 0 0 0 rgba(255,69,58,0); }
+    50% { box-shadow: 0 0 0 1px rgba(255,69,58,0.55), 0 0 22px 4px rgba(255,69,58,0.35); }
+}
+
+@keyframes tile-pulse-cool {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(10,132,255,0.25), 0 0 0 0 rgba(10,132,255,0); }
+    50% { box-shadow: 0 0 0 1px rgba(10,132,255,0.55), 0 0 22px 4px rgba(10,132,255,0.35); }
+}
+
+.new-badge {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.7rem;
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: #FFD60A;
+    background: rgba(255,214,10,0.14);
+    border-radius: 8px;
+    padding: 0.12rem 0.4rem;
+    animation: new-badge-fade 3s ease-in-out infinite;
+}
+
+@keyframes new-badge-fade {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
+}
+
+.tile-label {
+    font-size: 0.72rem;
+    color: #8E8E93;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.3rem;
+}
+
+.tile-value {
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: #F5F5F7;
+    letter-spacing: -0.01em;
+}
+
+.tile-prev {
+    font-size: 0.72rem;
+    color: #6E6E73;
+    margin-top: 0.15rem;
+}
+
+.badge {
+    display: inline-block;
+    margin-top: 0.5rem;
+    padding: 0.12rem 0.55rem;
+    border-radius: 10px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.badge-hot { background: rgba(255,69,58,0.18); color: #FF6961; }
+.badge-cool { background: rgba(10,132,255,0.18); color: #5AC8FA; }
+.badge-inline { background: rgba(255,255,255,0.08); color: #AEAEB2; }
+
+.ticker-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(18px);
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding: 0.5rem 0;
+    overflow: hidden;
+}
+
+.ticker-track {
+    display: flex;
+    width: max-content;
+    animation: ticker-scroll 55s linear infinite;
+}
+
+.ticker-content {
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+    padding-right: 2rem;
+}
+
+.ticker-item {
+    font-size: 0.8rem;
+    color: #C7C7CC;
+    padding: 0 0.6rem;
+}
+
+.ticker-sep {
+    color: #48484A;
+}
+
+.ticker-item-soon {
+    color: #FFD60A;
+    font-weight: 600;
+    animation: ticker-soon-fade 1.6s ease-in-out infinite;
+}
+
+@keyframes ticker-soon-fade {
+    0%, 100% { opacity: 0.75; }
+    50% { opacity: 1; }
+}
+
+@keyframes ticker-scroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+}
+
+/* Breaking-news bar: takes over the same bottom strip as the release
+   ticker whenever a strictly-filtered alert is active. */
+.news-alert-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.65rem 1.2rem;
+    border-top: 1px solid rgba(255,255,255,0.15);
+    backdrop-filter: blur(18px);
+    animation: news-bar-in 0.5s ease, news-bar-pulse 2.4s ease-in-out infinite 0.5s;
+}
+
+@keyframes news-bar-in {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+@keyframes news-bar-pulse {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.18); }
+}
+
+.news-alert-tag {
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: rgba(0,0,0,0.35);
+    border-radius: 8px;
+    padding: 0.25rem 0.6rem;
+}
+
+.news-alert-headline {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #FFFFFF;
+}
+
+.news-cat-fed-boc { background: rgba(191,90,242,0.85); color: #2b0f3d; }
+.news-cat-data-surprise { background: rgba(90,200,250,0.85); color: #0a2c3d; }
+.news-cat-earnings { background: rgba(50,215,75,0.85); color: #0b2b12; }
+.news-cat-macro-shock { background: rgba(255,105,97,0.9); color: #3d0b08; }
+
+.severity-track {
+    position: relative;
+    margin-top: 0.4rem;
+    height: 4px;
+    width: 100%;
+    background: rgba(255,255,255,0.08);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.severity-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-radius: 3px;
+}
+
+.severity-fill-hot { background: #FF6961; }
+.severity-fill-cool { background: #5AC8FA; }
+.severity-fill-inline { background: #AEAEB2; }
+
+.severity-caption {
+    margin-top: 0.3rem;
+    font-size: 0.65rem;
+    color: #6E6E73;
+}
 </style>
 """
 
 
-def inject_theme() -> None:
-    st.markdown(_CSS, unsafe_allow_html=True)
+def inject():
+    import streamlit as st
+    st.markdown(CSS, unsafe_allow_html=True)
