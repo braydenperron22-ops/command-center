@@ -10,12 +10,16 @@ from streamlit_autorefresh import st_autorefresh
 import fred_client
 import statcan_client
 import theme
-from config import COUNTRY_META, INDICATORS, MARKET_INDEX, ROTATION_SECONDS, TIMEZONE, UV_HIGH_THRESHOLD
+from config import (
+    COUNTRY_META, INDICATORS, MARKET_INDEX, ROTATION_SECONDS, TIMEZONE,
+    UV_HIGH_THRESHOLD, YIELD_SPREAD_SERIES_ID,
+)
 from flags import flag_for
 from icons import icon_for
 import market_client
 import news
 from scenery import background_css_and_html, condition_category, phase_for
+import sync
 import ticker
 from tiles import render_tile
 from weather_client import fetch_weather
@@ -95,6 +99,9 @@ if FRED_API_KEY:
             f'<div class="market-pill"><span class="market-pill-label">{MARKET_INDEX[country]["label"]} YTD</span>'
             f'<span class="market-pill-value {direction_class}">{sign}{market["ytd_pct"]:.1f}%</span></div>'
         )
+    synced_min = sync.minutes_since_sync()
+    synced_label = "Synced just now" if synced_min < 1 else f"Synced {synced_min}m ago"
+    market_html += f'<div class="market-pill"><span class="market-pill-label">{synced_label}</span></div>'
 
 st.markdown(
     f"""<div class="{country_anim_class}" style="text-align:center; margin: 0.8rem 0 1.2rem;">
@@ -131,13 +138,21 @@ else:
                 seen_as_of[key] = reading["as_of"]
             new_flags[key] = is_new
 
+    yield_spread = None
+    if country == "us":
+        yield_spread = fred_client.fetch_latest_value(YIELD_SPREAD_SERIES_ID, FRED_API_KEY)
+
     cols = st.columns(len(INDICATORS[country]))
     for i, ind in enumerate(INDICATORS[country]):
         key = (country, ind["key"])
+        extra_line = None
+        if ind["key"] == "yield_10y" and yield_spread is not None:
+            extra_line = f"10Y–2Y spread: {yield_spread:+.2f}pp"
         with cols[i]:
             render_tile(
                 ind["label"], ind["unit"], readings[key],
                 good_direction=ind.get("good_direction"), is_new=new_flags[key],
+                extra_line=extra_line,
             )
 
     schedule = ticker.build_schedule(readings, FRED_API_KEY)

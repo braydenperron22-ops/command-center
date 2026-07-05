@@ -59,3 +59,9 @@ MARKET_INDEX = {
     "us": {"label": "S&P 500", "series_id": "SP500"},
     "ca": {"label": "Canada Share Price Index (TSX proxy)", "series_id": "SPASTT01CAM661N"},
 }
+
+# FRED has no Canada 2-year yield series, so the 10Y-2Y spread (classic
+# recession-warning signal) is US-only — shown as a quiet extra line inside
+# the existing 10-Year Yield tile rather than a 6th tile, to keep both
+# countries' grids symmetric.
+YIELD_SPREAD_SERIES_ID = "T10Y2Y"

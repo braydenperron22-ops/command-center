@@ -221,11 +221,39 @@ html, body, [class*="css"] {
     margin-bottom: 0.45rem;
 }
 
+.tile-value-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
 .tile-value {
     font-size: 2.6rem;
     font-weight: 600;
     color: #F5F5F7;
     letter-spacing: -0.01em;
+}
+
+.sparkline {
+    width: 4.5rem;
+    height: 1.75rem;
+    flex-shrink: 0;
+    opacity: 0.75;
+    margin-bottom: 0.4rem;
+}
+
+.tile-extra {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    height: 1.2em;
+    font-size: 0.8rem;
+    color: #ABB2C4;
+    box-sizing: content-box;
+}
+
+.tile-extra:not(:empty) {
+    border-top: 1px solid rgba(255,255,255,0.08);
 }
 
 .tile-prev {

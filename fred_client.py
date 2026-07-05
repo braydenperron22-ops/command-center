@@ -36,6 +36,13 @@ def build_indicator_reading(series_id: str, api_key: str, transform: str) -> dic
     return build_reading(dates, values, transform)
 
 
+def fetch_latest_value(series_id: str, api_key: str) -> float | None:
+    """Most recent value of a series that's already exactly what it claims
+    to be (e.g. T10Y2Y is already the 10Y-2Y spread, not a raw yield)."""
+    observations = fetch_series(series_id, api_key)
+    return float(observations[-1]["value"]) if observations else None
+
+
 @st.cache_data(ttl=12 * 60 * 60, show_spinner=False)
 def fetch_next_release_date(release_id: int, api_key: str) -> str | None:
     """The next confirmed date on FRED's official release calendar for this release."""

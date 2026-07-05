@@ -109,7 +109,7 @@ def background_css_and_html(weather_code: int, phase: str) -> str:
     [data-testid="stAppViewContainer"] {{
         background: {sky};
         background-attachment: fixed;
-        transition: background 3s ease;
+        transition: background 1200s ease-in-out;
     }}
     [data-testid="stHeader"] {{ background: transparent; }}
     .cc-scene {{ position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }}

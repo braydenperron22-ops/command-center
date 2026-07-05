@@ -5,6 +5,7 @@ import statistics
 from config import HOT_COOL_THRESHOLD
 
 TREND_WINDOW = 6  # months of history used to build the trailing trend band
+SPARKLINE_POINTS = 12  # readings shown in each tile's trend sparkline
 
 
 def _yoy_series(values: list[float], periods_per_year: int) -> list[float]:
@@ -63,4 +64,5 @@ def build_reading(dates: list[str], values: list[float], transform: str) -> dict
         "classification": classification,
         "as_of": series_dates[-1],
         "z_score": z,
+        "history": series[-SPARKLINE_POINTS:],
     }
