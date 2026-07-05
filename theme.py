@@ -103,14 +103,44 @@ html, body, [class*="css"] {
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* Streamlit's column row is already a flexbox, but the columns and their
+   inner blocks don't stretch to a common height by default — without
+   this, tiles end up as tall as their own content (varying with label
+   wrap and whether "significant move" text is present), which read as
+   jankily mismatched. Force the whole chain to stretch uniformly. */
+[data-testid="stHorizontalBlock"] {
+    align-items: stretch;
+}
+[data-testid="column"] {
+    display: flex;
+}
+[data-testid="column"] > div {
+    width: 100%;
+    display: flex;
+}
+[data-testid="column"] [data-testid="stVerticalBlock"] {
+    height: 100%;
+}
+
 .tile {
     position: relative;
+    display: flex;
+    flex-direction: column;
     background: rgba(0,0,0,0.4);
     border: 1px solid rgba(255,255,255,0.09);
     backdrop-filter: blur(24px) saturate(1.1);
     border-radius: 16px;
     padding: 1.6rem 1.5rem;
     height: 100%;
+    box-sizing: border-box;
+}
+
+.tile-label {
+    min-height: 2.6em;
+}
+
+.severity-caption {
+    min-height: 2.6em;
 }
 
 .tile-flash-hot { animation: tile-pulse-hot 1.8s ease-in-out infinite; }
