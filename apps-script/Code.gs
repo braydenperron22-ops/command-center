@@ -59,9 +59,11 @@ const GUIDANCE_RULES = [
 const BULK_SENDER_PATTERNS = [
   "noreply", "no-reply", "newsletter", "marketing", "notification@",
   "digest", "unsubscribe", "deals@", "offers@", "promo",
+  "borrowell", "seekingalpha",
 ];
 const BULK_SUBJECT_PATTERNS = [
   "% off", "sale", "deal", "discount", "giveaway", "win a", "limited time",
+  "credit score", "keep your", "celebrate!",
 ];
 
 function runSync() {
