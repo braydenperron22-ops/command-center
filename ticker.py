@@ -2,8 +2,9 @@
 
 from datetime import date, datetime, timedelta
 
+from flags import flag_for
 import fred_client
-from config import COUNTDOWN_WINDOW_HOURS, COUNTRY_META, INDICATORS
+from config import COUNTDOWN_WINDOW_HOURS, INDICATORS
 
 MONTH_DAY = "%b %d"
 
@@ -25,7 +26,6 @@ def build_schedule(readings: dict, api_key: str) -> list[dict]:
     """readings: {(country, key): reading_dict} already fetched for the tiles."""
     items = []
     for country, indicators in INDICATORS.items():
-        flag = COUNTRY_META[country]["flag"]
         for ind in indicators:
             reading = readings.get((country, ind["key"]))
             if ind.get("source") == "statcan" or "release_id" not in ind:
@@ -39,7 +39,7 @@ def build_schedule(readings: dict, api_key: str) -> list[dict]:
                 if not next_date:
                     continue
             items.append({
-                "flag": flag,
+                "country": country,
                 "label": ind["label"],
                 "date": next_date,
                 "confirmed": confirmed,
@@ -61,15 +61,16 @@ def render_html(items: list[dict], now: datetime) -> str:
         target = datetime.combine(release_date, datetime.min.time()) + timedelta(hours=8, minutes=30)
         hours_away = (target - now).total_seconds() / 3600
         suffix = "" if it["confirmed"] else " (est.)"
+        flag_svg = f'<span class="ticker-flag">{flag_for(it["country"])}</span>'
 
         if 0 <= hours_away <= COUNTDOWN_WINDOW_HOURS:
             h = int(hours_away)
             m = int((hours_away - h) * 60)
-            body = f'{it["flag"]} {it["label"]} — in {h}h {m:02d}m{suffix}'
+            body = f'{flag_svg} {it["label"]} — in {h}h {m:02d}m{suffix}'
             parts.append(f'<span class="ticker-item ticker-item-soon">{body}</span>')
         else:
             d = target.strftime(MONTH_DAY)
-            parts.append(f'<span class="ticker-item">{it["flag"]} {it["label"]} — {d}{suffix}</span>')
+            parts.append(f'<span class="ticker-item">{flag_svg} {it["label"]} — {d}{suffix}</span>')
 
     # Duplicate the content once so the marquee loop has no visible seam.
     strip = '<span class="ticker-sep">•</span>'.join(parts)

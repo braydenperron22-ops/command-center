@@ -4,9 +4,9 @@ CSS = """
 <style>
 #MainMenu, header, footer { visibility: hidden; }
 .block-container {
-    padding-top: 1.4rem;
-    padding-bottom: 3.2rem;
-    max-width: 1300px;
+    padding-top: 1.8rem;
+    padding-bottom: 4.6rem;
+    max-width: 1450px;
     min-height: calc(100vh - 4.6rem) !important;
     display: flex !important;
     flex-direction: column !important;
@@ -25,7 +25,7 @@ html, body, [class*="css"] {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 0.6rem;
+    margin-bottom: 1rem;
 }
 
 .hero-weather {
@@ -36,11 +36,11 @@ html, body, [class*="css"] {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 0.4rem;
+    gap: 0.6rem;
 }
 
 .clock {
-    font-size: 2.6rem;
+    font-size: 4.2rem;
     font-weight: 600;
     letter-spacing: -0.02em;
     color: #F5F5F7;
@@ -48,34 +48,37 @@ html, body, [class*="css"] {
 }
 
 .date-sub {
-    font-size: 1rem;
+    font-size: 1.35rem;
     color: #8E8E93;
     font-weight: 400;
 }
 
 .weather-icon svg {
-    width: 2rem;
-    height: 2rem;
+    width: 3.2rem;
+    height: 3.2rem;
     display: block;
     vertical-align: middle;
 }
 
-.flag-badge {
-    font-size: 1.9rem;
+.flag-badge svg {
+    width: 4.6rem;
+    height: auto;
+    display: inline-block;
+    border-radius: 4px;
     transition: opacity 0.6s ease;
 }
 
 .market-pill {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+    gap: 0.6rem;
+    margin-top: 0.7rem;
     background: rgba(0,0,0,0.4);
     border: 1px solid rgba(255,255,255,0.09);
     backdrop-filter: blur(24px) saturate(1.1);
-    border-radius: 16px;
-    padding: 0.35rem 0.85rem;
-    font-size: 0.8rem;
+    border-radius: 18px;
+    padding: 0.5rem 1.1rem;
+    font-size: 1.05rem;
 }
 
 .market-pill-label { color: #8E8E93; }
@@ -84,11 +87,11 @@ html, body, [class*="css"] {
 .market-down { color: #FF6961; }
 
 .country-name {
-    font-size: 0.9rem;
+    font-size: 1.25rem;
     color: #8E8E93;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    margin-top: 0.15rem;
+    margin-top: 0.25rem;
 }
 
 .fade-wrap {
@@ -105,8 +108,8 @@ html, body, [class*="css"] {
     background: rgba(0,0,0,0.4);
     border: 1px solid rgba(255,255,255,0.09);
     backdrop-filter: blur(24px) saturate(1.1);
-    border-radius: 16px;
-    padding: 0.95rem 1rem;
+    border-radius: 18px;
+    padding: 1.6rem 1.5rem;
     height: 100%;
 }
 
@@ -125,15 +128,15 @@ html, body, [class*="css"] {
 
 .new-badge {
     position: absolute;
-    top: 0.6rem;
-    right: 0.7rem;
-    font-size: 0.58rem;
+    top: 0.8rem;
+    right: 0.9rem;
+    font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.05em;
     color: #FFD60A;
     background: rgba(255,214,10,0.14);
     border-radius: 8px;
-    padding: 0.12rem 0.4rem;
+    padding: 0.15rem 0.5rem;
     animation: new-badge-fade 3s ease-in-out infinite;
 }
 
@@ -143,32 +146,32 @@ html, body, [class*="css"] {
 }
 
 .tile-label {
-    font-size: 0.72rem;
+    font-size: 1rem;
     color: #8E8E93;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.45rem;
 }
 
 .tile-value {
-    font-size: 1.6rem;
+    font-size: 2.6rem;
     font-weight: 600;
     color: #F5F5F7;
     letter-spacing: -0.01em;
 }
 
 .tile-prev {
-    font-size: 0.72rem;
+    font-size: 0.95rem;
     color: #6E6E73;
-    margin-top: 0.15rem;
+    margin-top: 0.25rem;
 }
 
 .badge {
     display: inline-block;
-    margin-top: 0.5rem;
-    padding: 0.12rem 0.55rem;
-    border-radius: 10px;
-    font-size: 0.68rem;
+    margin-top: 0.65rem;
+    padding: 0.18rem 0.7rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
     font-weight: 600;
     letter-spacing: 0.03em;
     text-transform: uppercase;
@@ -187,7 +190,7 @@ html, body, [class*="css"] {
     background: rgba(0,0,0,0.55);
     backdrop-filter: blur(18px);
     border-top: 1px solid rgba(255,255,255,0.08);
-    padding: 0.5rem 0;
+    padding: 0.75rem 0;
     overflow: hidden;
 }
 
@@ -205,9 +208,19 @@ html, body, [class*="css"] {
 }
 
 .ticker-item {
-    font-size: 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 1.05rem;
     color: #C7C7CC;
-    padding: 0 0.6rem;
+    padding: 0 0.7rem;
+}
+
+.ticker-flag svg {
+    width: 1.3rem;
+    height: auto;
+    vertical-align: middle;
+    border-radius: 2px;
 }
 
 .ticker-sep {
@@ -240,8 +253,8 @@ html, body, [class*="css"] {
     z-index: 15;
     display: flex;
     align-items: center;
-    gap: 0.9rem;
-    padding: 0.65rem 1.2rem;
+    gap: 1.1rem;
+    padding: 0.9rem 1.5rem;
     border-top: 1px solid rgba(255,255,255,0.15);
     backdrop-filter: blur(18px);
     animation: news-bar-in 0.5s ease, news-bar-pulse 2.4s ease-in-out infinite 0.5s;
@@ -259,17 +272,17 @@ html, body, [class*="css"] {
 
 .news-alert-tag {
     flex-shrink: 0;
-    font-size: 0.72rem;
+    font-size: 0.95rem;
     font-weight: 800;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     background: rgba(0,0,0,0.35);
     border-radius: 8px;
-    padding: 0.25rem 0.6rem;
+    padding: 0.3rem 0.75rem;
 }
 
 .news-alert-headline {
-    font-size: 0.95rem;
+    font-size: 1.3rem;
     font-weight: 600;
     color: #FFFFFF;
 }
@@ -281,8 +294,8 @@ html, body, [class*="css"] {
 
 .severity-track {
     position: relative;
-    margin-top: 0.4rem;
-    height: 4px;
+    margin-top: 0.55rem;
+    height: 6px;
     width: 100%;
     background: rgba(255,255,255,0.08);
     border-radius: 3px;
@@ -301,8 +314,8 @@ html, body, [class*="css"] {
 .severity-fill-inline { background: #AEAEB2; }
 
 .severity-caption {
-    margin-top: 0.3rem;
-    font-size: 0.65rem;
+    margin-top: 0.4rem;
+    font-size: 0.85rem;
     color: #6E6E73;
 }
 </style>

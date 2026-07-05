@@ -11,6 +11,7 @@ import fred_client
 import statcan_client
 import theme
 from config import COUNTRY_META, INDICATORS, MARKET_INDEX, ROTATION_SECONDS, TIMEZONE
+from flags import flag_for
 from icons import icon_for
 import market_client
 import news
@@ -87,7 +88,7 @@ if FRED_API_KEY:
 
 st.markdown(
     f"""<div class="{country_anim_class}" style="text-align:center; margin: 0.8rem 0 1.2rem;">
-        <div class="flag-badge">{meta['flag']}</div>
+        <div class="flag-badge">{flag_for(country)}</div>
         <div class="country-name">{meta['name']}</div>{market_html}
     </div>""",
     unsafe_allow_html=True,

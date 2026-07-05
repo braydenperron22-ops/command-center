@@ -37,8 +37,8 @@ INDICATORS = {
 }
 
 COUNTRY_META = {
-    "us": {"flag": "🇺🇸", "name": "United States"},
-    "ca": {"flag": "🇨🇦", "name": "Canada"},
+    "us": {"name": "United States"},
+    "ca": {"name": "Canada"},
 }
 
 # Simple YTD return strip. FRED has no direct S&P/TSX 60 series, so Canada
