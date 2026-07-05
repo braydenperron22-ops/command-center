@@ -275,13 +275,18 @@ function computeEta(location) {
 // ---- Email ----
 
 function fetchEmail() {
-  const threads = GmailApp.search("newer_than:14d in:inbox", 0, 30);
+  // category:primary leans on Gmail's own classifier to keep out promotions/
+  // social/updates/forums mail before our own (much weaker) rules even run.
+  const threads = GmailApp.search("newer_than:14d in:inbox category:primary", 0, 30);
+  const myEmail = Session.getActiveUser().getEmail().toLowerCase();
   const highlights = [];
   const kept = [];
   for (const thread of threads) {
     const msg = thread.getMessages()[thread.getMessageCount() - 1];
     const from = msg.getFrom();
-    const subject = msg.getSubject();
+    const subject = (msg.getSubject() || "").trim();
+    if (!subject) continue; // empty-subject mail is almost always noise (drafts, self-forwards)
+    if (from.toLowerCase().includes(myEmail)) continue; // skip self-sent
     if (isBulk(from, subject)) continue;
     kept.push(thread);
     if (highlights.length < 6) {
