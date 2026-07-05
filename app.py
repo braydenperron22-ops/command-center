@@ -1,11 +1,12 @@
 """Brayden's Command Center — always-on personal dashboard."""
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from alerts import render_alert_bar
-from config import DASHBOARD_REFRESH_SECONDS, LEAVE_SOON_MINUTES, LOCATION_NAME, SYNC_INTERVAL_MINUTES
+from config import DASHBOARD_REFRESH_SECONDS, LEAVE_SOON_MINUTES, LOCATION_NAME, SYNC_INTERVAL_MINUTES, TIMEZONE
 from data_store import load_state
 from icons import icon_for
 from scenery import background_css_and_html, condition_category
@@ -17,7 +18,11 @@ st_autorefresh(interval=DASHBOARD_REFRESH_SECONDS * 1000, key="dashboard_refresh
 inject_theme()
 
 state = load_state()
-now = datetime.now()
+# Hosted deployments (Streamlit Cloud) don't run on Eastern time like the
+# local laptop setup did — datetime.now() would silently use the server's
+# own timezone instead. Pin explicitly to Toronto, then drop tzinfo so it
+# stays comparable with the naive datetimes parsed from state.json below.
+now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
 weather = state.get("weather") or {}
 
 
