@@ -76,7 +76,7 @@ html, body, [class*="css"] {
     background: rgba(0,0,0,0.4);
     border: 1px solid rgba(255,255,255,0.09);
     backdrop-filter: blur(24px) saturate(1.1);
-    border-radius: 18px;
+    border-radius: 16px;
     padding: 0.5rem 1.1rem;
     font-size: 1.05rem;
 }
@@ -108,7 +108,7 @@ html, body, [class*="css"] {
     background: rgba(0,0,0,0.4);
     border: 1px solid rgba(255,255,255,0.09);
     backdrop-filter: blur(24px) saturate(1.1);
-    border-radius: 18px;
+    border-radius: 16px;
     padding: 1.6rem 1.5rem;
     height: 100%;
 }
@@ -135,7 +135,7 @@ html, body, [class*="css"] {
     letter-spacing: 0.05em;
     color: #FFD60A;
     background: rgba(255,214,10,0.14);
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 0.15rem 0.5rem;
     animation: new-badge-fade 3s ease-in-out infinite;
 }
@@ -147,7 +147,7 @@ html, body, [class*="css"] {
 
 .tile-label {
     font-size: 1rem;
-    color: #8E8E93;
+    color: #ECECF1;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     margin-bottom: 0.45rem;
@@ -170,7 +170,7 @@ html, body, [class*="css"] {
     display: inline-block;
     margin-top: 0.65rem;
     padding: 0.18rem 0.7rem;
-    border-radius: 12px;
+    border-radius: 10px;
     font-size: 0.85rem;
     font-weight: 600;
     letter-spacing: 0.03em;
@@ -244,7 +244,12 @@ html, body, [class*="css"] {
 }
 
 /* Breaking-news bar: takes over the same bottom strip as the release
-   ticker whenever a strictly-filtered alert is active. */
+   ticker whenever a strictly-filtered alert is active. Solid red, with
+   "BREAKING NEWS" stretching into view then sliding aside to reveal the
+   category tag + headline underneath. Positions are set inline per-render
+   as a function of elapsed time (see news.render_alert_bar) rather than
+   via CSS keyframes, since the whole app reruns every second for the
+   clock tick and a keyframe would restart on every one of those reruns. */
 .news-alert-bar {
     position: fixed;
     left: 0;
@@ -255,19 +260,23 @@ html, body, [class*="css"] {
     align-items: center;
     gap: 1.1rem;
     padding: 0.9rem 1.5rem;
-    border-top: 1px solid rgba(255,255,255,0.15);
-    backdrop-filter: blur(18px);
-    animation: news-bar-in 0.5s ease, news-bar-pulse 2.4s ease-in-out infinite 0.5s;
+    background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
+    border-top: 2px solid rgba(255,255,255,0.25);
+    box-shadow: 0 -4px 24px rgba(179,20,20,0.35);
+    overflow: hidden;
 }
 
-@keyframes news-bar-in {
-    from { transform: translateY(100%); }
-    to { transform: translateY(0); }
-}
-
-@keyframes news-bar-pulse {
-    0%, 100% { filter: brightness(1); }
-    50% { filter: brightness(1.18); }
+.news-breaking-label {
+    position: absolute;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #FFFFFF;
+    text-transform: uppercase;
+    transition: opacity 1s linear, transform 1s linear, letter-spacing 1s linear;
+    pointer-events: none;
 }
 
 .news-alert-tag {
@@ -277,20 +286,22 @@ html, body, [class*="css"] {
     letter-spacing: 0.08em;
     text-transform: uppercase;
     background: rgba(0,0,0,0.35);
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 0.3rem 0.75rem;
+    transition: opacity 1s linear, transform 1s linear;
 }
 
 .news-alert-headline {
     font-size: 1.3rem;
     font-weight: 600;
     color: #FFFFFF;
+    transition: opacity 1s linear, transform 1s linear;
 }
 
-.news-cat-fed-boc { background: rgba(191,90,242,0.85); color: #2b0f3d; }
-.news-cat-data-surprise { background: rgba(90,200,250,0.85); color: #0a2c3d; }
-.news-cat-earnings { background: rgba(50,215,75,0.85); color: #0b2b12; }
-.news-cat-macro-shock { background: rgba(255,105,97,0.9); color: #3d0b08; }
+.news-cat-fed-boc { background: rgba(191,90,242,0.9); color: #2b0f3d; }
+.news-cat-data-surprise { background: rgba(90,200,250,0.9); color: #0a2c3d; }
+.news-cat-earnings { background: rgba(50,215,75,0.9); color: #0b2b12; }
+.news-cat-macro-shock { background: rgba(255,255,255,0.9); color: #7a0f10; }
 
 .severity-track {
     position: relative;

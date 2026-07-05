@@ -19,7 +19,15 @@ FEEDS = [
     "https://finance.yahoo.com/news/rssindex",
 ]
 
-TOAST_SECONDS = 15
+TOAST_SECONDS = 30
+
+# Intro sequencing: "BREAKING NEWS" stretches into view, holds, then slides
+# aside to reveal the headline underneath. Positions are computed as a pure
+# function of elapsed time (not a replaying CSS keyframe) because the whole
+# app reruns every second for the clock tick — a keyframe animation would
+# restart on every one of those reruns instead of playing through once.
+STRETCH_END = 1.8
+SLIDE_END = 3.0
 
 FED_BOC_INCLUDE = [
     "fomc statement", "fomc meeting", "rate decision", "interest rate decision",
@@ -125,15 +133,29 @@ def get_new_alerts() -> list[dict]:
     return alerts
 
 
-def render_alert_bar(alert: dict):
-    """Breaking-news style bar that takes over the bottom strip (normally
-    the release-calendar ticker) for the duration this alert is shown.
+def render_alert_bar(alert: dict, elapsed: float):
+    """Red breaking-news bar that takes over the bottom strip (normally the
+    release-calendar ticker): "BREAKING NEWS" stretches into view, holds,
+    then slides aside to reveal the category tag + headline underneath.
     """
+    if elapsed < STRETCH_END:
+        label_progress = elapsed / STRETCH_END
+        label_style = f"opacity: {label_progress:.2f}; transform: translateY(0); letter-spacing: {0.5 * label_progress:.2f}em;"
+        headline_style = "opacity: 0; transform: translateX(16px);"
+    elif elapsed < SLIDE_END:
+        slide_progress = (elapsed - STRETCH_END) / (SLIDE_END - STRETCH_END)
+        label_style = f"opacity: {max(1 - slide_progress * 1.3, 0):.2f}; transform: translateX({-140 * slide_progress:.0f}%); letter-spacing: 0.5em;"
+        headline_style = f"opacity: {min(slide_progress * 1.3, 1):.2f}; transform: translateX({16 * (1 - slide_progress):.0f}px);"
+    else:
+        label_style = "opacity: 0; transform: translateX(-140%);"
+        headline_style = "opacity: 1; transform: translateX(0);"
+
     category_class = "news-cat-" + alert["category"].lower().replace("/", "-").replace(" ", "-")
     st.markdown(
-        f"""<div class="news-alert-bar {category_class}">
-            <span class="news-alert-tag">{alert['category']}</span>
-            <span class="news-alert-headline">{alert['headline']}</span>
+        f"""<div class="news-alert-bar">
+            <span class="news-breaking-label" style="{label_style}">BREAKING NEWS</span>
+            <span class="news-alert-tag {category_class}" style="{headline_style}">{alert['category']}</span>
+            <span class="news-alert-headline" style="{headline_style}">{alert['headline']}</span>
         </div>""",
         unsafe_allow_html=True,
     )

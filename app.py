@@ -147,6 +147,6 @@ if news_queue:
         current_alert, elapsed = None, None
 
 if current_alert:
-    news.render_alert_bar(current_alert)
+    news.render_alert_bar(current_alert, elapsed)
 elif FRED_API_KEY:
     st.markdown(ticker.render_html(schedule, now), unsafe_allow_html=True)
