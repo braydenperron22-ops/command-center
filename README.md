@@ -4,7 +4,17 @@ Always-on personal dashboard: date/time, weather, calendar agenda (with per-even
 and weather-at-tee-time), email highlights, and commute tracking. Single page, no
 clutter — no tasks list, no rotating secondary view.
 
-## Running it
+## Two ways to run this
+
+**Fully remote, no laptop needed** — see [README-apps-script.md](README-apps-script.md).
+The dashboard reads `data_store.load_state()` from a Google Apps Script endpoint
+(set via `APPS_SCRIPT_URL` in Streamlit secrets or the environment) instead of a
+local file, and the sync itself runs serverless on a Google account, not a device.
+This is a rule-based rewrite of the sync logic (no LLM judgment) — read that doc
+for what changed.
+
+**Local, laptop-hosted** (the original setup, LLM-judged sync via a Claude
+scheduled task):
 
 ```
 pip install -r requirements.txt
@@ -12,7 +22,10 @@ streamlit run app.py
 ```
 
 Leave the browser tab open on the always-on laptop/monitor. It auto-refreshes every
-15 seconds, fast enough for the "leave now" countdown to feel live.
+15 seconds, fast enough for the "leave now" countdown to feel live. This mode
+requires `APPS_SCRIPT_URL` to be unset (or unreachable) — `data_store.py` falls
+back to reading the local `data/state.json` written by the Claude scheduled
+task automatically whenever no remote URL is configured.
 
 ## The look
 
