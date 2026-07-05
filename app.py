@@ -24,6 +24,10 @@ state = load_state()
 # stays comparable with the naive datetimes parsed from state.json below.
 now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
 weather = state.get("weather") or {}
+# Fallback used only if weather has never synced successfully even once —
+# guess day/night from the clock instead of hardcoding day, so a genuine
+# no-data state doesn't render a bright sunny-day background at 3am.
+_fallback_is_day = 6 <= now.hour < 20
 
 
 def _event_date(date_str):
@@ -69,7 +73,7 @@ def _parse_leave_by(event: dict):
 
 
 st.markdown(
-    background_css_and_html(weather.get("code", 0), weather.get("is_day", True)),
+    background_css_and_html(weather.get("code", 0), weather.get("is_day", _fallback_is_day)),
     unsafe_allow_html=True,
 )
 
@@ -85,7 +89,7 @@ if last_synced:
 
 if weather:
     category = condition_category(weather.get("code", 0))
-    icon_svg = icon_for(category, weather.get("is_day", True))
+    icon_svg = icon_for(category, weather.get("is_day", _fallback_is_day))
     precip_note = f'<div class="cc-weather-range">{weather["precip_soon"]}</div>' if weather.get("precip_soon") else ""
     weather_html = (
         '<div class="cc-weather-inline">'

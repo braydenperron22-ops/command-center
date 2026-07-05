@@ -17,13 +17,18 @@ const NTFY_TOPIC = "brayden-command-center-6513";
 
 function runSync() {
   const health = loadHealth();
+  // A single transient failure shouldn't wipe out last-known-good data —
+  // start from whatever was already stored and only overwrite fields that
+  // actually succeeded this run.
+  const previousRaw = PropertiesService.getScriptProperties().getProperty("state");
+  const previous = previousRaw ? JSON.parse(previousRaw) : {};
   const state = {
     last_synced: Utilities.formatDate(new Date(), "America/Toronto", "yyyy-MM-dd'T'HH:mm:ss"),
-    weather: null,
-    calendar_events: [],
-    commute: null,
+    weather: previous.weather || null,
+    calendar_events: previous.calendar_events || [],
+    commute: previous.commute || null,
     alerts: [],
-    indices: [],
+    indices: previous.indices || [],
   };
 
   const weather = withHealth(health, "weather", fetchWeather);
