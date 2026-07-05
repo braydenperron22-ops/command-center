@@ -13,7 +13,6 @@ EMPTY_STATE = {
     "last_synced": None,
     "weather": None,
     "calendar_events": [],
-    "email_highlights": [],
     "alerts": [],
     "commute": None,
     "indices": [],

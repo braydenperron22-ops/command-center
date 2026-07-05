@@ -2,17 +2,9 @@
  * Brayden's Command Center — serverless sync engine.
  *
  * Runs entirely in Google's cloud on a time-driven trigger (no laptop needed).
- * Fetches weather/commute/markets/calendar/email, writes the result as JSON
- * into Script Properties, and serves it via doGet() as a Web App endpoint
- * that the Streamlit dashboard polls.
- *
- * Setup (see README-apps-script.md for full steps):
- *   1. Paste this into a new Apps Script project (script.google.com).
- *   2. Set the NTFY_TOPIC constant below to a unique, hard-to-guess string.
- *   3. Run `runSync` once manually to authorize Gmail/Calendar access.
- *   4. Add a time-driven trigger for `runSync` (every 15 min).
- *   5. Deploy > New deployment > Web app > Execute as Me > Access: Anyone.
- *   6. Copy the deployment URL into the Streamlit app's secrets as APPS_SCRIPT_URL.
+ * Fetches weather/commute/markets/calendar, writes the result as JSON into
+ * Script Properties, and serves it via doGet() as a Web App endpoint that
+ * the Streamlit dashboard polls.
  */
 
 // ---- Config ----
@@ -21,50 +13,7 @@ const HOME_LON = -79.2526926;
 const DEST_LAT = 46.3204083;
 const DEST_LON = -79.4397409;
 const DEST_LABEL = "103 Laurentian Ave, North Bay";
-const NTFY_TOPIC = "brayden-command-center-CHANGE-ME"; // change to something unguessable
-
-// Known senders whose bookings should auto-create calendar events, with a
-// regex to pull date/time out of the plain-text body. Extend this list as
-// new recurring confirmation senders show up.
-const BOOKING_SENDERS = [
-  {
-    match: "messaging.squareup.com",
-    label: "Chatters Hair Salon",
-    dateTimeRegex: /([A-Z][a-z]+ \d{1,2}, \d{4}),?\s+(\d{1,2}:\d{2}\s*[AP]M)/,
-    durationMinutes: 30,
-  },
-  {
-    match: "tee-on.com",
-    label: "Golf tee time — Highview Golf Course",
-    dateTimeRegex: /(\d{1,2}:\d{2}\s*[ap]\.?m\.?) tee time on ([A-Za-z]+, [A-Za-z]+ \d{1,2}(?:st|nd|rd|th)?)/i,
-    durationMinutes: 240,
-  },
-];
-
-// Known standing personal guidance, matched to a live condition. Extend this
-// list by hand as new recurring senders/conditions come up — there's no LLM
-// here to infer new ones automatically.
-const GUIDANCE_RULES = [
-  {
-    senderMatch: "cfclinic@toh.ca",
-    subjectOrBodyKeywords: ["hot", "hydrat", "electrolyte"],
-    conditionCheck: (weather) => weather.temp_now >= 26,
-    message: (weather) => `High of ${weather.temp_high}°C today — stay hydrated with fluids and electrolytes (per your CF Clinic).`,
-    severity: "yellow",
-  },
-];
-
-// Rough bulk-mail filter — sender/subject patterns that disqualify an email
-// from "necessities" regardless of read/unread status.
-const BULK_SENDER_PATTERNS = [
-  "noreply", "no-reply", "newsletter", "marketing", "notification@",
-  "digest", "unsubscribe", "deals@", "offers@", "promo",
-  "borrowell", "seekingalpha",
-];
-const BULK_SUBJECT_PATTERNS = [
-  "% off", "sale", "deal", "discount", "giveaway", "win a", "limited time",
-  "credit score", "keep your", "celebrate!",
-];
+const NTFY_TOPIC = "brayden-command-center-6513";
 
 function runSync() {
   const health = loadHealth();
@@ -72,7 +21,6 @@ function runSync() {
     last_synced: Utilities.formatDate(new Date(), "America/Toronto", "yyyy-MM-dd'T'HH:mm:ss"),
     weather: null,
     calendar_events: [],
-    email_highlights: [],
     commute: null,
     alerts: [],
     indices: [],
@@ -83,12 +31,6 @@ function runSync() {
 
   const calendarEvents = withHealth(health, "calendar", () => fetchCalendarEvents(weather));
   if (calendarEvents) state.calendar_events = calendarEvents;
-
-  const emailResult = withHealth(health, "gmail", () => fetchEmail());
-  if (emailResult) {
-    state.email_highlights = emailResult.highlights;
-    createEventsFromBookings(emailResult.threads);
-  }
 
   const commute = withHealth(health, "traffic", fetchCommute);
   if (commute) {
@@ -106,12 +48,7 @@ function runSync() {
   const indices = withHealth(health, "markets", fetchMarketIndices);
   if (indices) state.indices = indices;
 
-  if (weather) {
-    GUIDANCE_RULES.forEach((rule) => {
-      if (rule.conditionCheck(weather)) {
-        state.alerts.push({ severity: rule.severity, message: rule.message(weather) });
-      }
-    });
+  if (state.weather) {
     delete state.weather._hourly; // internal-only field, don't leak it to the dashboard
   }
 
@@ -272,71 +209,6 @@ function computeEta(location) {
   } catch (e) {
     return null;
   }
-}
-
-// ---- Email ----
-
-function fetchEmail() {
-  // category:primary leans on Gmail's own classifier to keep out promotions/
-  // social/updates/forums mail before our own (much weaker) rules even run.
-  const threads = GmailApp.search("newer_than:14d in:inbox category:primary", 0, 30);
-  const myEmail = Session.getActiveUser().getEmail().toLowerCase();
-  const highlights = [];
-  const kept = [];
-  for (const thread of threads) {
-    const msg = thread.getMessages()[thread.getMessageCount() - 1];
-    const from = msg.getFrom();
-    const subject = (msg.getSubject() || "").trim();
-    if (!subject) continue; // empty-subject mail is almost always noise (drafts, self-forwards)
-    if (from.toLowerCase().includes(myEmail)) continue; // skip self-sent
-    if (isBulk(from, subject)) continue;
-    kept.push(thread);
-    if (highlights.length < 6) {
-      highlights.push({ from: extractName(from), subject: subject });
-    }
-  }
-  return { highlights: highlights, threads: kept };
-}
-
-function isBulk(from, subject) {
-  const lowerFrom = from.toLowerCase();
-  const lowerSubject = subject.toLowerCase();
-  if (BULK_SENDER_PATTERNS.some((p) => lowerFrom.includes(p))) return true;
-  if (BULK_SUBJECT_PATTERNS.some((p) => lowerSubject.includes(p))) return true;
-  return false;
-}
-
-function extractName(from) {
-  const match = from.match(/^"?([^"<]+)"?\s*</);
-  return match ? match[1].trim() : from;
-}
-
-function createEventsFromBookings(threads) {
-  const cal = CalendarApp.getDefaultCalendar();
-  threads.forEach((thread) => {
-    const msg = thread.getMessages()[thread.getMessageCount() - 1];
-    const from = msg.getFrom().toLowerCase();
-    const sender = BOOKING_SENDERS.find((s) => from.includes(s.match));
-    if (!sender) return;
-    const body = msg.getPlainBody();
-    const m = body.match(sender.dateTimeRegex);
-    if (!m) return;
-    const parsed = tryParseDate(m[0]);
-    if (!parsed) return;
-    const existing = cal.getEventsForDay(parsed).filter((e) =>
-      Math.abs(e.getStartTime().getTime() - parsed.getTime()) < 30 * 60000
-    );
-    if (existing.length) return;
-    const end = new Date(parsed.getTime() + sender.durationMinutes * 60000);
-    cal.createEvent(sender.label, parsed, end, {
-      description: `Auto-created from an email confirmation (${sender.match}).`,
-    });
-  });
-}
-
-function tryParseDate(text) {
-  const d = new Date(text);
-  return isNaN(d.getTime()) ? null : d;
 }
 
 // ---- Traffic ----

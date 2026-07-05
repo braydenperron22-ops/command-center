@@ -170,43 +170,26 @@ if commute or indices:
 
 st.markdown("<hr/>", unsafe_allow_html=True)
 
-col_agenda, col_email = st.columns(2, gap="medium")
+with st.container(border=True, key="agenda_card"):
+    st.markdown('<div class="cc-section-label">Today</div>', unsafe_allow_html=True)
+    events = state.get("calendar_events", [])
+    today_events = [e for e in events if _event_date(e.get("date")) == now.date()]
+    upcoming_events = sorted(
+        (e for e in events if (d := _event_date(e.get("date"))) and d > now.date()),
+        key=lambda e: (e.get("date"), e.get("time") or ""),
+    )
 
-with col_agenda:
-    with st.container(border=True, key="agenda_card"):
-        st.markdown('<div class="cc-section-label">Today</div>', unsafe_allow_html=True)
-        events = state.get("calendar_events", [])
-        today_events = [e for e in events if _event_date(e.get("date")) == now.date()]
-        upcoming_events = sorted(
-            (e for e in events if (d := _event_date(e.get("date"))) and d > now.date()),
-            key=lambda e: (e.get("date"), e.get("time") or ""),
+    if today_events:
+        st.markdown("".join(_row_html(e) for e in today_events), unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="cc-empty">Nothing today</div>', unsafe_allow_html=True)
+
+    if upcoming_events:
+        upcoming_rows = "".join(
+            _row_html(e, meta_prefix=f"{_upcoming_label(_event_date(e['date']))} · ")
+            for e in upcoming_events
         )
-
-        if today_events:
-            st.markdown("".join(_row_html(e) for e in today_events), unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="cc-empty">Nothing today</div>', unsafe_allow_html=True)
-
-        if upcoming_events:
-            upcoming_rows = "".join(
-                _row_html(e, meta_prefix=f"{_upcoming_label(_event_date(e['date']))} · ")
-                for e in upcoming_events
-            )
-            st.markdown(
-                f'<div class="cc-upcoming"><div class="cc-upcoming-label">Upcoming</div>{upcoming_rows}</div>',
-                unsafe_allow_html=True,
-            )
-
-with col_email:
-    with st.container(border=True, key="email_card"):
-        st.markdown('<div class="cc-section-label">Needs a look</div>', unsafe_allow_html=True)
-        emails = state.get("email_highlights", [])
-        if emails:
-            rows = "".join(
-                f'<div class="cc-row"><span class="cc-row-title">{e.get("subject","")}</span>'
-                f'<span class="cc-row-meta">{e.get("from","")}</span></div>'
-                for e in emails
-            )
-            st.markdown(rows, unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="cc-empty">Inbox is clear</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="cc-upcoming"><div class="cc-upcoming-label">Upcoming</div>{upcoming_rows}</div>',
+            unsafe_allow_html=True,
+        )

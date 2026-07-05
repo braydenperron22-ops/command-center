@@ -35,7 +35,7 @@ html, body, [class^="st-"], [class*=" st-"], .stMarkdown, .stTextInput, .stButto
 .st-key-glance_row .stColumn, .cc-panel { background: rgba(22, 26, 34, 0.42) !important; backdrop-filter: blur(16px);
     border-radius: 18px !important; border: 1px solid rgba(255,255,255,0.08) !important; }
 
-.st-key-agenda_card, .st-key-email_card, .st-key-commute_card, .st-key-indices_card {
+.st-key-agenda_card, .st-key-commute_card, .st-key-indices_card {
     background: rgba(22, 26, 34, 0.42) !important;
     backdrop-filter: blur(16px);
     border-radius: 18px !important;
