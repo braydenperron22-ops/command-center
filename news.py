@@ -140,11 +140,15 @@ CLICKBAIT_TERMS = [
     "should you buy", "should you sell", "is it too late to buy",
     "is it time to buy", "is it time to sell", "time to buy", "time to sell",
     "worth buying", "worth watching", "worth a look",
-    # Superlative/listicle clickbait.
+    # Superlative/listicle clickbait — the "N best/top X stocks to buy"
+    # shape itself is caught by CLICKBAIT_PATTERNS below (a literal
+    # phrase like "best stocks to buy" breaks the instant a headline
+    # inserts an adjective: "best DIVIDEND stocks to buy" doesn't contain
+    # "best stocks to buy" as an exact substring). These are the fixed
+    # phrases that don't have that gap-insertion problem.
     "top picks include", "stocks to buy now", "stocks to watch",
-    "best stocks to buy", "stocks that benefit", "no-brainer stock",
-    "millionaire maker", "must-watch stock", "hidden gem stock",
-    "hottest stock",
+    "stocks that benefit", "no-brainer stock", "millionaire maker",
+    "must-watch stock", "hidden gem stock", "hottest stock",
     # Forecast/projection phrasing — a prediction, not an event.
     "expected to", "projected to", "forecast to", "poised to",
     "on track to", "gearing up to", "likely to",
@@ -161,6 +165,11 @@ CLICKBAIT_PATTERNS = [
     re.compile(r"\b\d+\s+(things?|reasons?|ways?|takeaways?|stocks?)\s+that\b"),
     re.compile(r"\bthis\s+(?:\w+\s+){0,2}stocks?\b"),
     re.compile(r"\bthese\s+(?:\w+\s+){0,2}stocks?\b"),
+    # Numbered listicle leads ("3 Best Dividend Stocks to Buy", "5 Top
+    # Growth Stocks for 2026") — allows a gap so an inserted adjective
+    # ("best DIVIDEND stocks") doesn't slip past a literal phrase match.
+    re.compile(r"^\d+\s+(best|top|worst|hot|great)\b"),
+    re.compile(r"\b(best|top|worst)\s+(?:\w+\s+){0,3}stocks?\s+to\s+buy\b"),
     # Bare "could"/"might" — modal words that hedge an outcome rather
     # than report one ("stocks could rally", "Fed might cut rates").
     # "may"/"would" are ambiguous on their own (the month "May", quoted
