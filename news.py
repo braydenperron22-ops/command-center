@@ -1,4 +1,5 @@
-"""RSS-based, keyword-filtered news alerts for the side toast.
+"""RSS-based, keyword-filtered news — powers breaking-news alerts AND the
+News page's rolling 24h feed, plus keyword-scanning for the Conflicts page.
 
 No API key: pulls from the Fed's own press-release feed (zero-noise, it IS
 the source) plus a few general finance RSS feeds, then applies a strict
@@ -7,6 +8,7 @@ mega-cap earnings, and clear macro shocks ever qualify.
 """
 
 import hashlib
+import re
 from xml.etree import ElementTree
 
 import requests
@@ -71,9 +73,48 @@ MACRO_SHOCK_TERMS = [
     "credit downgrade", "circuit breaker", "market meltdown", "stocks tumble",
 ]
 
+# Deliberately looser than the breaking-news categories above — those
+# require a topic AND a surprise/magnitude qualifier together, which is
+# right for something worth interrupting the screen for, but far too
+# narrow for a general news feed. These RSS feeds mix real financial
+# content with lifestyle/celebrity fluff (weddings, parenting advice,
+# travel pieces), so this still requires ONE real market/finance signal —
+# just not the strict pairing — to keep the feed relevant without being
+# nearly empty.
+#
+# Deliberately excludes bare "fed"/"federal reserve" — the Fed's own feed is
+# mostly routine bank-supervision paperwork (same issue as the breaking-news
+# filter), and matching on those terms let dozens of procedural notices
+# crowd out more relevant content. Genuinely policy-relevant Fed news still
+# qualifies via FED_BOC_INCLUDE below.
+GENERAL_MARKET_TERMS = [
+    "stock", "shares", "earnings", "ipo", "buy rating", "sell rating",
+    "price target", "outperform", "underperform", "upgrade", "downgrade",
+    "dividend", "etf", "market cap", "rate",
+    "inflation", "cpi", "gdp", "jobs report", "unemployment", "recession",
+    "economy", "economic", "rally", "sell-off", "selloff", "surge", "plunge",
+    "futures", "wall street", "dow jones", "s&p", "nasdaq", "oil", "opec",
+    "crude", "takeover", "acquisition", "merger", "analyst", "valuation",
+    "jim cramer", "warren buffett", "buffett", "hedge fund", "portfolio",
+]
+TICKER_PATTERN = re.compile(r"\([A-Z]{2,5}\)")
+
 
 def _contains_any(text: str, terms: list[str]) -> bool:
-    return any(t in text for t in terms)
+    """Whole-word/phrase match — plain substring matching let terms like
+    "shares" match inside unrelated words ("Bankshares", "Bancshares")."""
+    return any(re.search(r"\b" + re.escape(t) + r"\b", text) for t in terms)
+
+
+def is_market_relevant(headline: str) -> bool:
+    """Looser filter for the News page: any real finance/market signal
+    qualifies, not just the narrow topic+surprise combos above."""
+    if TICKER_PATTERN.search(headline):
+        return True
+    h = headline.lower()
+    if _contains_any(h, FED_BOC_INCLUDE) and not _contains_any(h, FED_BOC_EXCLUDE):
+        return True
+    return _contains_any(h, GENERAL_MARKET_TERMS)
 
 
 def classify(headline: str) -> str | None:

@@ -65,3 +65,109 @@ MARKET_INDEX = {
 # the existing 10-Year Yield tile rather than a 6th tile, to keep both
 # countries' grids symmetric.
 YIELD_SPREAD_SERIES_ID = "T10Y2Y"
+
+# --- Multi-page ambient rotation -------------------------------------------
+# Home / Conflicts / News / Markets cycle the same way US/CA already does:
+# a time.time()-based index, no Streamlit multipage chrome, no scrolling.
+PAGES = ["home", "conflicts", "news", "markets"]
+PAGE_ROTATION_SECONDS = 90
+
+# Twelve Data free tier caps at 8 credits/minute — a single batched request
+# every 20 minutes stays far under that regardless of per-call cost.
+TWELVEDATA_TTL_SECONDS = 20 * 60
+
+# Conflicts page is fully dynamic — no fixed list. GDELT turned out
+# unreliable (persistent rate-limiting), so this scans the same free RSS
+# pool that powers the news alerts: any headline mentioning one of these
+# countries/regions alongside a conflict-indicator term counts as a hit,
+# grouped by which countries co-occur (so e.g. "Ukraine"+"Russia" in the
+# same headline forms one two-flag group), then ranked by hit count —
+# whatever's most documented right now surfaces automatically, and a
+# conflict that goes quiet naturally drops off.
+#
+# Name variants map to the same flag code so "Congo"/"DRC" etc. all match.
+CONFLICT_COUNTRIES = {
+    "ukraine": "ua", "russia": "ru", "russian": "ru",
+    "israel": "il", "gaza": "ps", "palestinian": "ps", "palestine": "ps",
+    "sudan": "sd", "south sudan": "ss",
+    "myanmar": "mm", "burma": "mm",
+    "syria": "sy", "syrian": "sy",
+    "iraq": "iq", "iraqi": "iq",
+    "iran": "ir", "iranian": "ir",
+    "yemen": "ye", "yemeni": "ye",
+    "lebanon": "lb", "lebanese": "lb", "hezbollah": "lb",
+    "saudi arabia": "sa", "saudi": "sa",
+    "turkey": "tr", "turkish": "tr",
+    "ethiopia": "et", "ethiopian": "et",
+    "somalia": "so", "somali": "so",
+    "congo": "cd", "drc": "cd",
+    "mali": "ml",
+    "niger": "ne",
+    "nigeria": "ng", "nigerian": "ng",
+    "libya": "ly", "libyan": "ly",
+    "chad": "td",
+    "central african republic": "cf",
+    "mozambique": "mz",
+    "cameroon": "cm",
+    "afghanistan": "af", "afghan": "af", "taliban": "af",
+    "pakistan": "pk", "pakistani": "pk",
+    "north korea": "kp",
+    "south korea": "kr",
+    "taiwan": "tw", "taiwanese": "tw",
+    "china": "cn", "chinese": "cn",
+    "philippines": "ph", "filipino": "ph",
+    "georgia": "ge", "georgian": "ge",
+    "armenia": "am", "armenian": "am",
+    "azerbaijan": "az",
+    "serbia": "rs", "serbian": "rs",
+    "kosovo": "xk",
+    "venezuela": "ve", "venezuelan": "ve",
+    "colombia": "co", "colombian": "co",
+    "mexico": "mx", "mexican": "mx",
+    "haiti": "ht", "haitian": "ht",
+    "ecuador": "ec", "ecuadorian": "ec",
+    "india": "in", "indian": "in",
+    "japan": "jp", "japanese": "jp",
+}
+
+# One canonical display name per flag code, for labeling groups (several
+# keyword variants above map to the same code, e.g. "russia"/"russian").
+FLAG_CODE_NAME = {
+    "ua": "Ukraine", "ru": "Russia", "il": "Israel", "ps": "Gaza/Palestine",
+    "sd": "Sudan", "ss": "South Sudan", "mm": "Myanmar", "sy": "Syria",
+    "iq": "Iraq", "ir": "Iran", "ye": "Yemen", "lb": "Lebanon",
+    "sa": "Saudi Arabia", "tr": "Turkey", "et": "Ethiopia", "so": "Somalia",
+    "cd": "DR Congo", "ml": "Mali", "ne": "Niger", "ng": "Nigeria",
+    "ly": "Libya", "td": "Chad", "cf": "Central African Republic",
+    "mz": "Mozambique", "cm": "Cameroon", "af": "Afghanistan", "pk": "Pakistan",
+    "kp": "North Korea", "kr": "South Korea", "tw": "Taiwan", "cn": "China",
+    "ph": "Philippines", "ge": "Georgia", "am": "Armenia", "az": "Azerbaijan",
+    "rs": "Serbia", "xk": "Kosovo", "ve": "Venezuela", "co": "Colombia",
+    "mx": "Mexico", "ht": "Haiti", "ec": "Ecuador", "in": "India", "jp": "Japan",
+}
+
+CONFLICT_TERMS = [
+    "war", "conflict", "clashes", "clash", "airstrike", "air strike",
+    "rebels", "rebel", "insurgency", "insurgent", "ceasefire", "invasion",
+    "civil war", "militant", "offensive", "shelling", "missile strike",
+    "drone strike", "junta", "coup", "troops", "strikes kill", "attack",
+]
+
+MAX_CONFLICTS_SHOWN = 6
+
+# Headlines accumulate in session state over this many days so a quiet news
+# day doesn't make an ongoing conflict vanish from the page.
+CONFLICT_WINDOW_DAYS = 7
+
+# Twelve Data's free tier doesn't include raw index symbols (SPX/DJI/IXIC),
+# so major ETFs stand in as proxies for the indices/oil — same spirit as the
+# FRED/StatCan proxies used elsewhere, just not called out in the label.
+MARKET_INSTRUMENTS = [
+    {"key": "sp500", "label": "S&P 500", "symbol": "SPY"},
+    {"key": "dow", "label": "Dow Jones", "symbol": "DIA"},
+    {"key": "nasdaq", "label": "Nasdaq", "symbol": "QQQ"},
+    {"key": "tsx", "label": "Canada", "symbol": "EWC"},
+    {"key": "usdcad", "label": "USD/CAD", "symbol": "USD/CAD"},
+    {"key": "gold", "label": "Gold", "symbol": "XAU/USD"},
+    {"key": "oil", "label": "Crude Oil", "symbol": "USO"},
+]

@@ -117,6 +117,25 @@ html, body, [class*="css"] {
 .market-up { color: #32D74B; }
 .market-down { color: #FF6961; }
 
+.market-metric {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0.55rem 0;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.market-metric-label {
+    font-size: 0.85rem;
+    color: #ABB2C4;
+}
+
+.market-metric-value {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: #F5F5F7;
+}
+
 .country-name {
     font-size: 1.25rem;
     color: #8E8E93;
@@ -268,6 +287,11 @@ html, body, [class*="css"] {
     color: #D6D6DC;
     margin-top: 0.25rem;
 }
+
+.tile-prev.market-up { color: #32D74B; }
+.tile-prev.market-down { color: #FF6961; }
+.tile-value.market-up { color: #32D74B; }
+.tile-value.market-down { color: #FF6961; }
 
 .badge {
     display: inline-block;
@@ -433,6 +457,74 @@ html, body, [class*="css"] {
     margin-top: 0.4rem;
     font-size: 0.85rem;
     color: #D6D6DC;
+}
+
+.page-title {
+    text-align: center;
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: #F5F5F7;
+    letter-spacing: -0.01em;
+    margin: 0.4rem 0 1.3rem;
+}
+
+.conflict-headlines {
+    margin-top: 0.7rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.conflict-headline {
+    font-size: 0.82rem;
+    color: #D6D6DC;
+    line-height: 1.4;
+    margin-bottom: 0.4rem;
+}
+
+.conflict-flags {
+    margin-bottom: 0.6rem;
+}
+
+.conflict-flag svg {
+    width: 2.2rem;
+    height: auto;
+    border-radius: 3px;
+    margin-right: 0.4rem;
+    vertical-align: middle;
+}
+
+.news-feed-list {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.09);
+    backdrop-filter: blur(24px) saturate(1.1);
+    border-radius: 16px;
+    padding: 0.4rem 1.5rem;
+}
+
+.news-feed-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding: 0.85rem 0 0.85rem 0.9rem;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    border-left: 3px solid rgba(90,200,250,0.55);
+}
+
+.news-feed-row:last-child {
+    border-bottom: none;
+}
+
+.news-feed-headline {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #F5F5F7;
+}
+
+.news-feed-meta {
+    flex-shrink: 0;
+    font-size: 0.85rem;
+    color: #ABB2C4;
 }
 </style>
 """

@@ -1,4 +1,5 @@
-"""Personal command-center dashboard: rotating US/Canada macro data, clock, weather."""
+"""Personal command-center dashboard: ambient rotation across Home (macro
+data), Conflicts, News, and Markets — clock/weather header stays constant."""
 
 import time
 from datetime import datetime
@@ -7,26 +8,23 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
-import fred_client
-import statcan_client
-import theme
-from config import (
-    COUNTRY_META, INDICATORS, MARKET_INDEX, ROTATION_SECONDS, TIMEZONE,
-    UV_HIGH_THRESHOLD, YIELD_SPREAD_SERIES_ID,
-)
-from flags import flag_for
-from icons import icon_for
-import market_client
 import news
-from scenery import background_css_and_html, condition_category, phase_for
+import pages_conflicts
+import pages_home
+import pages_markets
+import pages_news
+import theme
+from config import PAGE_ROTATION_SECONDS, PAGES, TIMEZONE, UV_HIGH_THRESHOLD
+from icons import icon_for
+from scenery import FADE_SECONDS, background_css_and_html, condition_category, phase_for
 import ticker
-from tiles import render_tile
 from weather_client import fetch_weather
 
 st.set_page_config(page_title="Command Center", layout="wide")
 theme.inject()
 
 FRED_API_KEY = st.secrets.get("FRED_API_KEY")
+TWELVEDATA_API_KEY = st.secrets.get("TWELVEDATA_API_KEY")
 
 # Ticking clock every second; rotation derived from elapsed real time so it
 # survives Streamlit Cloud sleep/wake without drifting into a fast-forward.
@@ -38,17 +36,6 @@ st_autorefresh(interval=1000, key="clock_tick")
 # sunrise/sunset values Open-Meteo returns for the same zone.
 now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
 
-rotation_index = int(time.time() // ROTATION_SECONDS) % 2
-country = "us" if rotation_index == 0 else "ca"
-meta = COUNTRY_META[country]
-
-# Only play the crossfade when the country actually changes — the whole
-# script reruns every second for the clock tick, so without this the fade
-# animation was restarting every single second instead of just on rotation.
-country_changed = st.session_state.get("last_country") != country
-st.session_state["last_country"] = country
-country_anim_class = "fade-wrap" if country_changed else ""
-
 weather = fetch_weather()
 
 if weather:
@@ -58,7 +45,22 @@ else:
     phase = "day" if 6 <= now.hour < 20 else "night"
     category = "cloudy"
 
-st.markdown(background_css_and_html(weather["weather_code"] if weather else 0, phase), unsafe_allow_html=True)
+# The sky fade is computed here (not left to a CSS transition, which can't
+# survive this app's 1-second autorefresh — confirmed it snaps instantly
+# rather than animating, the same class of bug as the country-fade one).
+# Track when the phase last changed and blend server-side by elapsed time.
+if phase != st.session_state.get("bg_phase"):
+    st.session_state["bg_fade_from"] = st.session_state.get("bg_phase", phase)
+    st.session_state["bg_phase_changed_at"] = time.time()
+    st.session_state["bg_phase"] = phase
+
+bg_fade_from = st.session_state.get("bg_fade_from", phase)
+bg_blend = min((time.time() - st.session_state.get("bg_phase_changed_at", 0)) / FADE_SECONDS, 1.0)
+
+st.markdown(
+    background_css_and_html(weather["weather_code"] if weather else 0, phase, bg_fade_from, bg_blend),
+    unsafe_allow_html=True,
+)
 
 weather_block = ""
 if weather:
@@ -88,74 +90,34 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-market_html = ""
+# The release-calendar ticker at the bottom is global (useful regardless of
+# which page is showing), so macro readings are fetched unconditionally.
+readings, new_flags = ({}, {})
 if FRED_API_KEY:
-    market = market_client.fetch_ytd_return(MARKET_INDEX[country]["series_id"], FRED_API_KEY)
-    if market:
-        direction_class = "market-up" if market["ytd_pct"] >= 0 else "market-down"
-        sign = "+" if market["ytd_pct"] >= 0 else ""
-        market_html = (
-            f'<div class="market-pill"><span class="market-pill-label">{MARKET_INDEX[country]["label"]} YTD</span>'
-            f'<span class="market-pill-value {direction_class}">{sign}{market["ytd_pct"]:.1f}%</span></div>'
-        )
+    readings, new_flags = pages_home.fetch_readings(FRED_API_KEY)
 
-st.markdown(
-    f"""<div class="{country_anim_class}" style="text-align:center; margin: 0.8rem 0 1.2rem;">
-        <div class="flag-badge">{flag_for(country)}</div>
-        <div class="country-name">{meta['name']}</div>{market_html}
-    </div>""",
-    unsafe_allow_html=True,
-)
+page_index = int(time.time() // PAGE_ROTATION_SECONDS) % len(PAGES)
+page = PAGES[page_index]
 
-if not FRED_API_KEY:
-    st.error("FRED_API_KEY is not set in Streamlit secrets.")
-else:
-    seen_as_of = st.session_state.setdefault("seen_as_of", {})
-
-    readings = {}
-    new_flags = {}
-    for c, indicators in INDICATORS.items():
-        for ind in indicators:
-            if ind.get("source") == "statcan":
-                reading = statcan_client.build_indicator_reading(ind["vector_id"], ind["transform"])
-            else:
-                reading = fred_client.build_indicator_reading(ind["series_id"], FRED_API_KEY, ind["transform"])
-            key = (c, ind["key"])
-            readings[key] = reading
-
-            # Flag as "new" only if this session already had a prior value for
-            # this indicator and it just changed — first-ever load establishes
-            # the baseline instead of flashing everything as new.
-            is_new = False
-            if reading:
-                prior = seen_as_of.get(key)
-                if prior is not None and prior != reading["as_of"]:
-                    is_new = True
-                seen_as_of[key] = reading["as_of"]
-            new_flags[key] = is_new
-
-    yield_spread = None
-    if country == "us":
-        yield_spread = fred_client.fetch_latest_value(YIELD_SPREAD_SERIES_ID, FRED_API_KEY)
-
-    cols = st.columns(len(INDICATORS[country]))
-    for i, ind in enumerate(INDICATORS[country]):
-        key = (country, ind["key"])
-        extra_line = None
-        if ind["key"] == "yield_10y" and yield_spread is not None:
-            extra_line = f"10Y–2Y spread: {yield_spread:+.2f}pp"
-        with cols[i]:
-            render_tile(
-                ind["label"], ind["unit"], readings[key],
-                good_direction=ind.get("good_direction"), is_new=new_flags[key],
-                extra_line=extra_line,
-            )
-
-    schedule = ticker.build_schedule(readings, FRED_API_KEY)
+if page == "home":
+    if not FRED_API_KEY:
+        st.error("FRED_API_KEY is not set in Streamlit secrets.")
+    else:
+        pages_home.render(FRED_API_KEY, readings, new_flags)
+elif page == "conflicts":
+    pages_conflicts.render()
+elif page == "news":
+    pages_news.render()
+elif page == "markets":
+    if not TWELVEDATA_API_KEY:
+        st.error("TWELVEDATA_API_KEY is not set in Streamlit secrets.")
+    else:
+        pages_markets.render(TWELVEDATA_API_KEY)
 
 # News alerts: strictly-filtered items queue up and take over the bottom
 # bar (normally the release calendar) for TOAST_SECONDS each, breaking-news
-# style, before control returns to the calendar ticker.
+# style, before control returns to the calendar ticker. This happens
+# regardless of which page is active.
 news_queue = st.session_state.setdefault("news_queue", [])
 news_queue.extend(news.get_new_alerts())
 
@@ -172,5 +134,6 @@ if news_queue:
 
 if current_alert:
     news.render_alert_bar(current_alert, elapsed)
-elif FRED_API_KEY:
+elif FRED_API_KEY and readings:
+    schedule = ticker.build_schedule(readings, FRED_API_KEY)
     st.markdown(ticker.render_html(schedule, now), unsafe_allow_html=True)
