@@ -76,7 +76,9 @@ else:
     night_dim = 0.0
 
 if night_dim > 0:
-    brightness = 1 - night_dim * 0.32
+    # This runs 24/7 in a bedroom — night needs to be genuinely dim enough
+    # to sleep next to, not just "a bit darker."
+    brightness = 1 - night_dim * 0.82
     st.markdown(
         f'<style>[data-testid="stMain"] {{ filter: brightness({brightness:.3f}); }}</style>',
         unsafe_allow_html=True,

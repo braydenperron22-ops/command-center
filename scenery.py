@@ -13,6 +13,8 @@ the phase flips rather than an animated fade (the same class of bug fixed
 earlier for the country-rotation crossfade and the breaking-news bar).
 """
 
+from datetime import timedelta
+
 FADE_SECONDS = 90  # quick, not an abrupt cut, but no lingering brightness
 
 
@@ -32,21 +34,31 @@ def condition_category(code: int) -> str:
     return "cloudy"
 
 
-def phase_for(now, sunrise, sunset, transition_minutes: int = 40) -> str:
+def phase_for(now, sunrise, sunset, transition_minutes: int = 40, earliest_sunrise_hour: int = 7) -> str:
     """Classify the moment as day / night / sunrise / sunset from real solar times.
 
     The warm transition only leads UP TO sunset/sunrise — once the actual
     moment passes, it's immediately night/day. No lingering bright "sunset"
     window afterward (a pitch-black room shouldn't still be lit up warm
     40 minutes after the sun's actually down).
+
+    This runs 24/7 in a bedroom, so the sunrise brightening is also clamped
+    to never start before `earliest_sunrise_hour` regardless of the real
+    astronomical sunrise (which can be well before 6am in summer) — actual
+    sunrise still applies as-is if it's naturally later than that floor
+    (e.g. winter mornings).
     """
-    minutes_to_sunrise = (sunrise - now).total_seconds() / 60
+    earliest_sunrise = now.replace(hour=earliest_sunrise_hour, minute=0, second=0, microsecond=0)
+    earliest_sunrise += timedelta(minutes=transition_minutes)
+    effective_sunrise = max(sunrise, earliest_sunrise)
+
+    minutes_to_sunrise = (effective_sunrise - now).total_seconds() / 60
     minutes_to_sunset = (sunset - now).total_seconds() / 60
     if 0 <= minutes_to_sunset <= transition_minutes:
         return "sunset"
     if 0 <= minutes_to_sunrise <= transition_minutes:
         return "sunrise"
-    if sunrise <= now < sunset:
+    if effective_sunrise <= now < sunset:
         return "day"
     return "night"
 
