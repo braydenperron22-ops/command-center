@@ -7,6 +7,7 @@ visual hierarchy instead of treating all three timeframes equally.
 
 import streamlit as st
 
+import tiles
 import twelvedata_client
 from config import MARKET_INSTRUMENTS
 
@@ -23,7 +24,7 @@ def _metric_row(label: str, pct: float | None) -> str:
 
 
 def render(api_key: str):
-    st.markdown('<div class="page-title">Markets</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-title page-title-markets">Markets</div>', unsafe_allow_html=True)
 
     symbols = tuple(inst["symbol"] for inst in MARKET_INSTRUMENTS)
     quotes = twelvedata_client.fetch_quotes(symbols, api_key)
@@ -43,14 +44,18 @@ def render(api_key: str):
                 continue
 
             intraday = quote["intraday"]
-            direction_class = "market-up" if intraday >= 0 else "market-down"
-            accent_class = "tile-accent-good" if intraday >= 0 else "tile-accent-bad"
+            tone = "good" if intraday >= 0 else "bad"
+            direction_class = f"market-{'up' if tone == 'good' else 'down'}"
+            accent_class = f"tile-accent-{tone}"
             sign = "+" if intraday >= 0 else ""
+            sparkline = tiles.sparkline_svg(quote.get("history", []), tone)
 
             st.markdown(
                 f"""<div class="tile {accent_class}">
                     <div class="tile-label">{inst['label']}</div>
-                    <div class="tile-value market-hero-value {direction_class}">{sign}{intraday:.2f}%</div>
+                    <div class="tile-value-row">
+                        <div class="tile-value market-hero-value {direction_class}">{sign}{intraday:.2f}%</div>{sparkline}
+                    </div>
                     <div class="tile-prev">Intraday change</div>
                     {_metric_row("1 Month", quote["one_month"])}
                     {_metric_row("YTD", quote["ytd"])}

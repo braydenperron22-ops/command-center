@@ -28,7 +28,7 @@ def _tone(classification: str, good_direction: str | None) -> tuple[str, str]:
     return ("improving", "good") if favorable else ("worsening", "bad")
 
 
-def _sparkline_svg(history: list[float], tone: str, width: int = 72, height: int = 28) -> str:
+def sparkline_svg(history: list[float], tone: str, width: int = 72, height: int = 28) -> str:
     """A quiet, minimal trend line — no axes/ticks/labels, just the shape."""
     if not history or len(history) < 2:
         return ""
@@ -81,7 +81,7 @@ def render_tile(
         new_badge = '<div class="new-badge">NEW DATA</div>' if is_new else ""
         badge_class = "badge-inline" if tone == "inline" else f"badge-{tone}"
         fill_class = "severity-fill-inline" if tone == "inline" else f"severity-fill-{tone}"
-        sparkline = _sparkline_svg(reading.get("history", []), tone)
+        sparkline = sparkline_svg(reading.get("history", []), tone)
         # Always reserve this slot's height, populated or not — relying on
         # cross-tile flex stretch to equalize a genuinely-taller tile against
         # its siblings proved unreliable through Streamlit's internal DOM.

@@ -22,11 +22,15 @@ import streamlit as st
 
 from config import TOP_ALERT_HOLD_SECONDS
 
+# (feed URL, display name) — unlike the Conflicts page's Google News
+# search (which already gets a " - Publisher" suffix baked into every
+# title by Google), these feeds' own <title> tags carry no source
+# attribution at all, so it has to come from knowing which feed it was.
 FEEDS = [
-    "https://www.federalreserve.gov/feeds/press_all.xml",
-    "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114",
-    "https://feeds.marketwatch.com/marketwatch/topstories/",
-    "https://finance.yahoo.com/news/rssindex",
+    ("https://www.federalreserve.gov/feeds/press_all.xml", "Federal Reserve"),
+    ("https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114", "CNBC"),
+    ("https://feeds.marketwatch.com/marketwatch/topstories/", "MarketWatch"),
+    ("https://finance.yahoo.com/news/rssindex", "Yahoo Finance"),
 ]
 
 TOAST_SECONDS = 30
@@ -185,7 +189,7 @@ def category_class(category: str) -> str:
 @st.cache_data(ttl=3 * 60, show_spinner=False)
 def fetch_headlines() -> list[dict]:
     items = []
-    for url in FEEDS:
+    for url, source in FEEDS:
         try:
             resp = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
             resp.raise_for_status()
@@ -194,7 +198,7 @@ def fetch_headlines() -> list[dict]:
                 title = (item.findtext("title") or "").strip()
                 link = (item.findtext("link") or "").strip()
                 if title:
-                    items.append({"headline": title, "link": link})
+                    items.append({"headline": title, "link": link, "source": source})
         except Exception:
             continue  # one dead/slow feed shouldn't take down the others
     return items

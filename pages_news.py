@@ -27,8 +27,14 @@ def _relative_time(seconds_ago: float) -> str:
     return f"{hours}h ago"
 
 
+def _meta_text(entry: dict, now_ts: float) -> str:
+    relative = _relative_time(now_ts - entry["first_seen"])
+    source = entry.get("source")
+    return f"{source} · {relative}" if source else relative
+
+
 def render():
-    st.markdown('<div class="page-title">Market News — Last 24 Hours</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-title page-title-news">Market News — Last 24 Hours</div>', unsafe_allow_html=True)
 
     seen_at = st.session_state.setdefault("news_feed_seen_at", {})
     now_ts = time.time()
@@ -39,7 +45,12 @@ def render():
         h = hashlib.sha1(item["headline"].encode()).hexdigest()
         if h not in seen_at:
             category = news.classify(item["headline"]) or "Market News"
-            seen_at[h] = {"headline": item["headline"], "first_seen": now_ts, "category": category}
+            seen_at[h] = {
+                "headline": item["headline"],
+                "first_seen": now_ts,
+                "category": category,
+                "source": item.get("source", ""),
+            }
 
     for h in [h for h, entry in seen_at.items() if now_ts - entry["first_seen"] > WINDOW_SECONDS]:
         del seen_at[h]
@@ -56,7 +67,7 @@ def render():
     rows = "".join(
         f"""<div class="news-feed-row {news.category_class(e.get('category', 'Market News'))}">
             <div class="news-feed-headline">{e['headline']}</div>
-            <div class="news-feed-meta">{_relative_time(now_ts - e['first_seen'])}</div>
+            <div class="news-feed-meta">{_meta_text(e, now_ts)}</div>
         </div>"""
         for e in entries
     )

@@ -13,6 +13,7 @@ from config import TWELVEDATA_TTL_SECONDS
 
 TIME_SERIES_URL = "https://api.twelvedata.com/time_series"
 ONE_MONTH_TRADING_DAYS = 21
+SPARKLINE_TRADING_DAYS = 12  # matches the Home page tiles' trend sparkline length
 
 # Same reasoning as fred_client: never let a transient hiccup blank the
 # Markets page — fall back to the last successfully fetched batch.
@@ -43,7 +44,11 @@ def _compute_metrics(values: list[dict]) -> dict | None:
     ytd_base = next((c for d, c in closes if d < year_start), None)
     ytd = _pct_change(latest_close, ytd_base)
 
-    return {"intraday": intraday, "one_month": one_month, "ytd": ytd}
+    # closes is newest-first; the sparkline (like tiles.py's) wants
+    # oldest-first so it reads left-to-right as it would on a chart.
+    history = [c for _, c in closes[:SPARKLINE_TRADING_DAYS]][::-1]
+
+    return {"intraday": intraday, "one_month": one_month, "ytd": ytd, "history": history}
 
 
 @st.cache_data(ttl=TWELVEDATA_TTL_SECONDS, show_spinner=False)

@@ -548,6 +548,34 @@ html, body, [class*="css"] {
     margin: 0.4rem 0 1.3rem;
 }
 
+/* A small colored beacon per page — same "quiet color cue" language as
+   the tile accent strips and the alert-bar dots, here used for
+   wayfinding: a glance tells you which page you're on even mid-blink,
+   without reading the title text. Home has no page-title (it shows the
+   country flag/name instead), so it doesn't need one. */
+.page-title::before {
+    content: "";
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+    margin-right: 0.6rem;
+    vertical-align: middle;
+    margin-bottom: 0.15em;
+}
+.page-title-conflicts::before {
+    background: #FF6961;
+    box-shadow: 0 0 8px 1px rgba(255,105,97,0.5);
+}
+.page-title-news::before {
+    background: #FFD60A;
+    box-shadow: 0 0 8px 1px rgba(255,214,10,0.5);
+}
+.page-title-markets::before {
+    background: #32D74B;
+    box-shadow: 0 0 8px 1px rgba(50,215,75,0.5);
+}
+
 .conflict-headlines {
     margin-top: 0.7rem;
     padding-top: 0.6rem;

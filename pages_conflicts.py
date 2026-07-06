@@ -65,7 +65,7 @@ def _detect_conflicts(headlines: list[dict]) -> list[dict]:
 
 
 def render():
-    st.markdown('<div class="page-title">Ongoing Conflicts — Last 7 Days</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-title page-title-conflicts">Ongoing Conflicts — Last 7 Days</div>', unsafe_allow_html=True)
 
     headline_pool = conflict_news.fetch_conflict_headlines()
     entries = _detect_conflicts(headline_pool)
