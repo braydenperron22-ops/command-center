@@ -152,20 +152,29 @@ def _stars(phase: str) -> str:
 
 
 def sky_style(weather_code: int, phase: str, from_phase: str, blend: float) -> str:
-    """The sky background — a plain color gradient, no sun/cloud shapes.
-    Those were tried as separate DOM elements (flashed on every rerun)
-    and then as extra background-image layers baked into this same
+    """The sky background — a plain color gradient plus a vignette, both
+    as layers on the same persistent background property. No sun/cloud
+    shapes: those were tried as separate DOM elements (flashed on every
+    rerun) and then as extra background-image layers baked into this same
     property (still visibly popped) — removed entirely rather than kept
-    chasing the rendering glitch, since this app's forced full-page
-    rerun every second makes any element or layer riding on the
-    constantly-recomputed background fundamentally fragile. The gradient
-    itself has been stable throughout, so it's what's left.
+    chasing the rendering glitch, since this app's forced full-page rerun
+    every second makes any element or layer riding on the
+    constantly-recomputed background fundamentally fragile.
+
+    The vignette used to be its own DOM div (in `scene_html`) and had the
+    exact same problem — it got fully re-inserted every second right
+    alongside the sun/clouds, visibly flashing at the screen edges even
+    though it never changes. Moved here as a second background-image
+    layer for the same reason the sky gradient itself has always been
+    stable: updating a background *property* on an element that already
+    exists is just a style change, not a mount/unmount.
     """
     category = condition_category(weather_code)
     sky = blended_sky(category, from_phase, phase, blend)
+    vignette = "radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.28) 100%)"
     return f"""<style>
     [data-testid="stAppViewContainer"] {{
-        background: {sky};
+        background-image: {vignette}, {sky};
         background-attachment: fixed;
     }}
     [data-testid="stHeader"] {{ background: transparent; }}
@@ -174,9 +183,10 @@ def sky_style(weather_code: int, phase: str, from_phase: str, blend: float) -> s
 
 def scene_html(weather_code: int, phase: str) -> str:
     """Static CSS rules + decorative scene HTML: stars and rain/snow
-    particles (sun/cloud shapes were removed — see `sky_style`). Depends
-    only on weather category and phase, not elapsed time, so it stays
-    byte-identical between reruns except when phase/condition changes.
+    particles (sun/cloud shapes and the vignette live in `sky_style`
+    instead). Depends only on weather category and phase, not elapsed
+    time, so it stays byte-identical between reruns except when
+    phase/condition changes.
     """
     category = condition_category(weather_code)
     particles = _particles(category)
@@ -206,11 +216,6 @@ def scene_html(weather_code: int, phase: str) -> str:
         from {{ transform: translate(0, 0); }}
         to {{ transform: translate(24px, 110vh); }}
     }}
-
-    .cc-vignette {{
-        position: absolute; inset: 0;
-        background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.28) 100%);
-    }}
     </style>
-    <div class="cc-scene">{stars}{particles}<div class="cc-vignette"></div></div>
+    <div class="cc-scene">{stars}{particles}</div>
     """
