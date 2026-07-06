@@ -9,6 +9,24 @@ UV_HIGH_THRESHOLD = 5
 RAIN_PROBABILITY_THRESHOLD = 50  # percent, for the "Rain in Xh" nowcast label
 RAIN_LOOKAHEAD_HOURS = 12
 
+# Environment Canada's public alert regions are free, no-key ATOM feeds at
+# weather.gc.ca/rss/battleboard/{code}_e.xml — "onrm119" is the North Bay -
+# Powassan - Mattawa region (found via weather.gc.ca/warnings/report_e.html
+# for North Bay's coordinates).
+EC_ALERT_REGION_CODE = "onrm119"
+
+# Our own fallback extreme-heat/extreme-cold banner only shows when EC has
+# no official alert active — thresholds are a rough approximation of EC's
+# own criteria for this region (a genuine EC warning always takes priority
+# and has more precise, locally-tuned criteria than we can replicate here).
+EXTREME_HEAT_THRESHOLD_C = 28
+EXTREME_COLD_THRESHOLD_C = -28
+
+# Once a breaking (red) headline comes in, it holds the top banner for up
+# to this long, or until the next red headline replaces it — whichever
+# comes first.
+TOP_ALERT_HOLD_SECONDS = 2 * 60 * 60
+
 ROTATION_SECONDS = 120
 
 # Standard-deviation band used to classify a reading vs its trailing trend

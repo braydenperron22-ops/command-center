@@ -14,6 +14,7 @@ import pages_home
 import pages_markets
 import pages_news
 import theme
+import weather_alerts_bar
 from config import PAGE_ROTATION_SECONDS, PAGES, TIMEZONE, UV_HIGH_THRESHOLD
 from icons import icon_for
 from scenery import FADE_SECONDS, condition_category, phase_for, scene_html, sky_style
@@ -88,6 +89,15 @@ if night_dim > 0:
         unsafe_allow_html=True,
     )
 
+# Fetched once per rerun and reused below both to update/render the
+# persistent top banner and to feed the bottom rotating alert bar —
+# get_new_alerts() marks headlines as seen as a side effect, so it must
+# only be called once per script run.
+new_alerts = news.get_new_alerts()
+news.update_top_alert(new_alerts)
+news.render_top_alert_bar()
+weather_alerts_bar.render(weather)
+
 weather_block = ""
 if weather:
     icon_svg = icon_for(category, phase)
@@ -160,7 +170,7 @@ with st.container(key="page_body"):
 # style, before control returns to the calendar ticker. This happens
 # regardless of which page is active.
 news_queue = st.session_state.setdefault("news_queue", [])
-news_queue.extend(news.get_new_alerts())
+news_queue.extend(new_alerts)
 
 now_ts = time.time()
 current_alert, elapsed = None, None

@@ -32,7 +32,7 @@ def fetch_weather() -> dict | None:
         "longitude": WEATHER_LON,
         "current": "temperature_2m,weather_code,uv_index",
         "hourly": "precipitation_probability",
-        "daily": "sunrise,sunset",
+        "daily": "sunrise,sunset,temperature_2m_max,temperature_2m_min",
         "temperature_unit": "celsius",
         "timezone": TIMEZONE,
         "forecast_days": 2,
@@ -53,6 +53,9 @@ def fetch_weather() -> dict | None:
     sunset = datetime.fromisoformat(daily["sunset"][0])
     rain_in_hours = _next_rain_hours(datetime.fromisoformat(current["time"]), hourly)
 
+    highs = daily.get("temperature_2m_max") or []
+    lows = daily.get("temperature_2m_min") or []
+
     return {
         "temp_c": current["temperature_2m"],
         "weather_code": current.get("weather_code", 0),
@@ -60,4 +63,6 @@ def fetch_weather() -> dict | None:
         "sunrise": sunrise,
         "sunset": sunset,
         "rain_in_hours": rain_in_hours,
+        "forecast_high_c": highs[0] if highs else None,
+        "forecast_low_c": lows[0] if lows else None,
     }

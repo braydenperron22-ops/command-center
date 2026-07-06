@@ -13,10 +13,13 @@ headlines their own tag; anything else market-relevant is tagged
 
 import hashlib
 import re
+import time
 from xml.etree import ElementTree
 
 import requests
 import streamlit as st
+
+from config import TOP_ALERT_HOLD_SECONDS
 
 FEEDS = [
     "https://www.federalreserve.gov/feeds/press_all.xml",
@@ -242,6 +245,37 @@ def render_alert_bar(alert: dict, elapsed: float):
             <span class="news-breaking-label" style="{label_style}">{label_text}</span>
             <span class="news-alert-tag {category_class}" style="{headline_style}">{alert['category']}</span>
             <span class="news-alert-headline" style="{headline_style}">{alert['headline']}</span>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+
+def update_top_alert(new_alerts: list[dict]) -> None:
+    """Whenever a fresh important (red) headline comes through, it takes
+    over the persistent top banner, replacing whatever was there before —
+    "the next red headline" is exactly the next call here where an alert
+    has important=True. Call once per rerun with whatever `get_new_alerts`
+    just returned."""
+    for alert in new_alerts:
+        if alert.get("important"):
+            st.session_state["top_alert"] = {**alert, "set_at": time.time()}
+
+
+def render_top_alert_bar() -> None:
+    """Renders the persistent top banner if a red headline is still
+    within its hold window (TOP_ALERT_HOLD_SECONDS) — a plain static bar
+    in normal document flow, not fixed/animated, since it needs to sit
+    there unchanged for up to two hours rather than play an intro."""
+    top_alert = st.session_state.get("top_alert")
+    if not top_alert:
+        return
+    if time.time() - top_alert["set_at"] > TOP_ALERT_HOLD_SECONDS:
+        del st.session_state["top_alert"]
+        return
+    st.markdown(
+        f"""<div class="top-alert-bar">
+            <span class="top-alert-label">Breaking</span>
+            <span class="top-alert-headline">{top_alert['headline']}</span>
         </div>""",
         unsafe_allow_html=True,
     )

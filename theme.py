@@ -407,6 +407,63 @@ html, body, [class*="css"] {
     box-shadow: 0 -4px 24px rgba(0,0,0,0.45);
 }
 
+/* Persistent top banner: holds the latest red (important) headline for
+   up to TOP_ALERT_HOLD_SECONDS, or until the next one replaces it. Sits
+   in normal document flow above the hero row (not fixed/overlaid) — it's
+   static content, so there's no animation or backdrop-filter here to
+   fight the per-second rerun the way the bottom bar's intro sequence did. */
+.top-alert-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.7rem 1.5rem;
+    margin-bottom: 0.9rem;
+    border-radius: 12px;
+    background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
+    box-shadow: 0 2px 16px rgba(179,20,20,0.3);
+}
+.top-alert-label {
+    flex-shrink: 0;
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #FFFFFF;
+}
+.top-alert-headline {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #FFFFFF;
+}
+
+/* Weather-statement banner: an active Environment Canada alert (any
+   severity — special weather statement up to warning) takes priority;
+   our own extreme-heat/extreme-cold fallback only ever shows when EC has
+   nothing active, so the two never appear at once. */
+.weather-statement-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.7rem 1.5rem;
+    margin-bottom: 0.9rem;
+    border-radius: 12px;
+    background: rgba(255,159,10,0.16);
+    border: 1px solid rgba(255,159,10,0.4);
+}
+.weather-statement-label {
+    flex-shrink: 0;
+    font-size: 0.85rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #FF9F0A;
+}
+.weather-statement-text {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #F5D6A8;
+}
+
 .news-breaking-label {
     position: absolute;
     left: 0;
