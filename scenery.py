@@ -224,7 +224,7 @@ def background_css_and_html(weather_code: int, phase: str, from_phase: str, blen
         background-attachment: fixed;
     }}
     [data-testid="stHeader"] {{ background: transparent; }}
-    .cc-scene {{ position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }}
+    .cc-scene {{ position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }}
 
     .cc-haze {{
         position: absolute; border-radius: 50%;
