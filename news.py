@@ -120,30 +120,70 @@ GENERAL_MARKET_TERMS = [
     "economy", "economic", "rally", "sell-off", "selloff", "surge", "plunge",
     "futures", "wall street", "dow jones", "s&p", "nasdaq", "oil", "opec",
     "crude", "takeover", "acquisition", "merger", "analyst", "valuation",
-    "jim cramer", "warren buffett", "buffett", "hedge fund", "portfolio",
+    "warren buffett", "buffett", "hedge fund", "portfolio",
 ]
 TICKER_PATTERN = re.compile(r"\([A-Z]{2,5}\)")
 
-# Clickbait tells — vague teaser phrasing that promises an answer instead
-# of stating one ("here's what it means", "here's how"), and headlines
-# that hide the actual subject behind a pronoun instead of naming it
-# ("this streaming stock", "these stocks that benefit from ___") rather
-# than just saying which stock. A question mark is included outright: a
-# real news headline states a fact, it doesn't ask "Is the Fed done
-# hiking?" — that phrasing exists to make you click, not to inform you.
+# Clickbait/speculation tells. The goal: "what just happened," not "what
+# if" — a real news headline reports a fact that already occurred, it
+# doesn't tease an answer, hedge with a maybe, or dress up someone's
+# opinion as if it were the story. Grouped by what kind of non-news each
+# pattern is aimed at, since "just add more keywords" stops being
+# reviewable past a certain point otherwise:
 CLICKBAIT_TERMS = [
-    "here's what it means", "here's what this means", "what this means for",
-    "here's how", "here's why", "here's what you need to know",
-    "you need to know", "top picks include", "stocks to buy now",
-    "stocks to watch", "best stocks to buy", "stocks that benefit",
-    "here are the", "here's every", "here's a closer look", "a closer look at",
-    "could send", "could soar", "could skyrocket",
+    # Teaser phrasing that promises an answer instead of stating one. Bare
+    # "here's"/"here are" catches every variant ("here's our plan", "here's
+    # a closer look", "here are the details") without enumerating each one.
+    "here's", "here are", "what this means for", "you need to know",
+    # Direct reader-address / advice-column framing — telling you what to
+    # do with your money is not the same as reporting what happened.
+    "should you buy", "should you sell", "is it too late to buy",
+    "is it time to buy", "is it time to sell", "time to buy", "time to sell",
+    "worth buying", "worth watching", "worth a look",
+    # Superlative/listicle clickbait.
+    "top picks include", "stocks to buy now", "stocks to watch",
+    "best stocks to buy", "stocks that benefit", "no-brainer stock",
+    "millionaire maker", "must-watch stock", "hidden gem stock",
+    "hottest stock",
+    # Forecast/projection phrasing — a prediction, not an event.
+    "expected to", "projected to", "forecast to", "poised to",
+    "on track to", "gearing up to", "likely to",
+    # Analyst-opinion/content-mill brand names — commentary and stock
+    # picks packaged to look like news. (jim cramer moved here from the
+    # inclusion list above — his segments are opinion/recommendation
+    # content, not reporting.)
+    "jim cramer", "motley fool", "insider monkey", "simply wall st",
+    "zacks", "benzinga",
+    # Explicit opinion-column labeling.
+    "opinion:", "analysis:", "commentary:",
 ]
 CLICKBAIT_PATTERNS = [
-    re.compile(r"\b\d+\s+things?\s+that\b"),
+    re.compile(r"\b\d+\s+(things?|reasons?|ways?|takeaways?|stocks?)\s+that\b"),
     re.compile(r"\bthis\s+(?:\w+\s+){0,2}stocks?\b"),
     re.compile(r"\bthese\s+(?:\w+\s+){0,2}stocks?\b"),
-    re.compile(r"\b\d+\s+stocks?\s+that\b"),
+    # Bare "could"/"might" — modal words that hedge an outcome rather
+    # than report one ("stocks could rally", "Fed might cut rates").
+    # "may"/"would" are ambiguous on their own (the month "May", quoted
+    # factual statements like "said it would close in Q3"), so those are
+    # only excluded when paired with a market-moving verb below.
+    re.compile(r"\bcould\b"),
+    re.compile(r"\bmight\b"),
+    re.compile(
+        r"\b(?:may|would)\s+(rise|fall|climb|drop|surge|plunge|gain|lose|"
+        r"benefit|hurt|impact|affect|help|drive|boost|hit|see|face|sink|"
+        r"soar|tumble|jump)\b"
+    ),
+    # Auto-generated daily commodity/price-recap template ("Gold prices
+    # today, Monday, July 6: ...") — a routine wrapper, not a story.
+    re.compile(r"\bprices?\s+today,?\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"),
+    # Active-voice forecasting ("analysts expect the Fed to cut rates") —
+    # "expected to" above only catches the passive form.
+    re.compile(r"\bexpects?\b.{0,40}\bto\b"),
+    # Explainer/analysis framing ("Why Iran may find it difficult to...",
+    # "'Quote here': Why the market is rethinking...") — this is analysis
+    # of why something might be true, not a report of what happened.
+    re.compile(r"^why\s"),
+    re.compile(r":\s*why\s"),
 ]
 
 
