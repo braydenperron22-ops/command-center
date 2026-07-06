@@ -382,7 +382,7 @@ html, body, [class*="css"] {
    as a function of elapsed time (see news.render_alert_bar) rather than
    via CSS keyframes, since the whole app reruns every second for the
    clock tick and a keyframe would restart on every one of those reruns. */
-.news-alert-bar {
+.news-alert-bar, .news-alert-bar-market {
     position: fixed;
     left: 0;
     right: 0;
@@ -392,10 +392,19 @@ html, body, [class*="css"] {
     align-items: center;
     gap: 1.1rem;
     padding: 0.9rem 1.5rem;
-    background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
     border-top: 2px solid rgba(255,255,255,0.25);
-    box-shadow: 0 -4px 24px rgba(179,20,20,0.35);
     overflow: hidden;
+}
+.news-alert-bar {
+    background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
+    box-shadow: 0 -4px 24px rgba(179,20,20,0.35);
+}
+/* Generic market-news items aren't a surprise worth a red alert, but
+   should still visibly take over the strip like breaking news does —
+   solid black instead signals "new headline" without false urgency. */
+.news-alert-bar-market {
+    background: linear-gradient(90deg, #0a0a0c 0%, #1c1c20 50%, #0a0a0c 100%);
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.45);
 }
 
 .news-breaking-label {

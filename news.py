@@ -194,9 +194,15 @@ def get_new_alerts() -> list[dict]:
 
 
 def render_alert_bar(alert: dict, elapsed: float):
-    """Red breaking-news bar that takes over the bottom strip (normally the
-    release-calendar ticker): "BREAKING NEWS" stretches into view, holds,
-    then slides aside to reveal the category tag + headline underneath.
+    """Bottom-strip takeover bar (normally the release-calendar ticker): a
+    label stretches into view, holds, then slides aside to reveal the
+    category tag + headline underneath.
+
+    Red "BREAKING NEWS" for the strictly-classified categories (Fed/BoC,
+    Data Surprise, Earnings, Macro Shock — genuinely surprising by
+    definition), black "MARKET NEWS" for the generic catch-all tag, so
+    the bar's own color signals how urgent a given item actually is
+    before you even read the headline.
     """
     if elapsed < STRETCH_END:
         label_progress = elapsed / STRETCH_END
@@ -210,10 +216,13 @@ def render_alert_bar(alert: dict, elapsed: float):
         label_style = "opacity: 0; transform: translateX(-140%);"
         headline_style = "opacity: 1; transform: translateX(0);"
 
+    is_breaking = alert["category"] != "Market News"
+    bar_class = "news-alert-bar" if is_breaking else "news-alert-bar-market"
+    label_text = "BREAKING NEWS" if is_breaking else "MARKET NEWS"
     category_class = "news-cat-" + alert["category"].lower().replace("/", "-").replace(" ", "-")
     st.markdown(
-        f"""<div class="news-alert-bar">
-            <span class="news-breaking-label" style="{label_style}">BREAKING NEWS</span>
+        f"""<div class="{bar_class}">
+            <span class="news-breaking-label" style="{label_style}">{label_text}</span>
             <span class="news-alert-tag {category_class}" style="{headline_style}">{alert['category']}</span>
             <span class="news-alert-headline" style="{headline_style}">{alert['headline']}</span>
         </div>""",
