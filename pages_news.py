@@ -38,7 +38,8 @@ def render():
             continue
         h = hashlib.sha1(item["headline"].encode()).hexdigest()
         if h not in seen_at:
-            seen_at[h] = {"headline": item["headline"], "first_seen": now_ts}
+            category = news.classify(item["headline"]) or "Market News"
+            seen_at[h] = {"headline": item["headline"], "first_seen": now_ts, "category": category}
 
     for h in [h for h, entry in seen_at.items() if now_ts - entry["first_seen"] > WINDOW_SECONDS]:
         del seen_at[h]
@@ -53,7 +54,7 @@ def render():
         return
 
     rows = "".join(
-        f"""<div class="news-feed-row">
+        f"""<div class="news-feed-row {news.category_class(e.get('category', 'Market News'))}">
             <div class="news-feed-headline">{e['headline']}</div>
             <div class="news-feed-meta">{_relative_time(now_ts - e['first_seen'])}</div>
         </div>"""

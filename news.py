@@ -161,6 +161,13 @@ def classify(headline: str) -> str | None:
     return None
 
 
+def category_class(category: str) -> str:
+    """CSS class for a classify()/"Market News" category — shared so the
+    News page's row accent color and the alert bar's tag color are always
+    the same mapping, not two copies that could drift apart."""
+    return "news-cat-" + category.lower().replace("/", "-").replace(" ", "-")
+
+
 @st.cache_data(ttl=3 * 60, show_spinner=False)
 def fetch_headlines() -> list[dict]:
     items = []
@@ -239,11 +246,10 @@ def render_alert_bar(alert: dict, elapsed: float):
     is_breaking = alert.get("important", alert["category"] != "Market News")
     bar_class = "news-alert-bar" if is_breaking else "news-alert-bar-market"
     label_text = "BREAKING NEWS" if is_breaking else "MARKET NEWS"
-    category_class = "news-cat-" + alert["category"].lower().replace("/", "-").replace(" ", "-")
     st.markdown(
         f"""<div class="{bar_class}">
             <span class="news-breaking-label" style="{label_style}">{label_text}</span>
-            <span class="news-alert-tag {category_class}" style="{headline_style}">{alert['category']}</span>
+            <span class="news-alert-tag {category_class(alert['category'])}" style="{headline_style}">{alert['category']}</span>
             <span class="news-alert-headline" style="{headline_style}">{alert['headline']}</span>
         </div>""",
         unsafe_allow_html=True,

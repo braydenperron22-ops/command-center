@@ -490,11 +490,14 @@ html, body, [class*="css"] {
     transition: opacity 1s linear, transform 1s linear;
 }
 
-.news-cat-fed-boc { background: rgba(191,90,242,0.9); color: #2b0f3d; }
-.news-cat-data-surprise { background: rgba(90,200,250,0.9); color: #0a2c3d; }
-.news-cat-earnings { background: rgba(50,215,75,0.9); color: #0b2b12; }
-.news-cat-macro-shock { background: rgba(255,255,255,0.9); color: #7a0f10; }
-.news-cat-market-news { background: rgba(255,214,10,0.9); color: #4d3c00; }
+/* Scoped to .news-alert-tag specifically — these category classes are
+   reused on .news-feed-row (below) for just a left-border accent color,
+   and that row must NOT pick up this solid pill background too. */
+.news-alert-tag.news-cat-fed-boc { background: rgba(191,90,242,0.9); color: #2b0f3d; }
+.news-alert-tag.news-cat-data-surprise { background: rgba(90,200,250,0.9); color: #0a2c3d; }
+.news-alert-tag.news-cat-earnings { background: rgba(50,215,75,0.9); color: #0b2b12; }
+.news-alert-tag.news-cat-macro-shock { background: rgba(255,255,255,0.9); color: #7a0f10; }
+.news-alert-tag.news-cat-market-news { background: rgba(255,214,10,0.9); color: #4d3c00; }
 
 .severity-track {
     position: relative;
@@ -569,8 +572,18 @@ html, body, [class*="css"] {
     gap: 1.5rem;
     padding: 0.85rem 0 0.85rem 0.9rem;
     border-bottom: 1px solid rgba(255,255,255,0.07);
-    border-left: 3px solid rgba(90,200,250,0.55);
+    border-left: 3px solid rgba(255,255,255,0.18);
 }
+
+/* Same category → color mapping as the breaking-news tag above, so a
+   glance at the left edge of a row tells you what kind of story it is
+   without reading the headline — consistent language across the whole
+   News feed and the alert bars instead of every row looking the same. */
+.news-feed-row.news-cat-fed-boc { border-left-color: #BF5AF2; }
+.news-feed-row.news-cat-data-surprise { border-left-color: #5AC8FA; }
+.news-feed-row.news-cat-earnings { border-left-color: #32D74B; }
+.news-feed-row.news-cat-macro-shock { border-left-color: #FFFFFF; }
+.news-feed-row.news-cat-market-news { border-left-color: #FFD60A; }
 
 .news-feed-row:last-child {
     border-bottom: none;
