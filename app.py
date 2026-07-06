@@ -179,20 +179,6 @@ if FRED_API_KEY:
 page_index = int(time.time() // PAGE_ROTATION_SECONDS) % len(PAGES)
 page = PAGES[page_index]
 
-# Seamless crossfade between pages — same trick as the country rotation:
-# a CSS `animation` can't survive this app's 1-second autorefresh (the
-# whole script re-executes, and testing confirmed the animation restarts
-# every render if the class is always present), so only inject the
-# fade-in rule for the one render where the page actually changed, onto a
-# fixed-key container that persists across reruns otherwise.
-page_changed = page != st.session_state.get("last_page")
-st.session_state["last_page"] = page
-if page_changed:
-    st.markdown(
-        '<style>.st-key-page_body { animation: fadeIn 0.6s ease; }</style>',
-        unsafe_allow_html=True,
-    )
-
 with st.container(key="page_body"):
     if page == "home":
         if not FRED_API_KEY:

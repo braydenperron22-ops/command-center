@@ -143,15 +143,6 @@ html, body, [class*="css"] {
     margin-top: 0.25rem;
 }
 
-.fade-wrap {
-    animation: fadeIn 0.9s ease;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
 /* Streamlit's column row is already a flexbox, but the columns and their
    inner blocks don't stretch to a common height by default — without
    this, tiles end up as tall as their own content (varying with label

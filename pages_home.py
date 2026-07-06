@@ -49,14 +49,6 @@ def render(fred_api_key: str, readings: dict, new_flags: dict):
     country = current_country()
     meta = COUNTRY_META[country]
 
-    # Only play the crossfade when the country actually changes — the whole
-    # script reruns every second for the clock tick, so without this the
-    # fade animation was restarting every single second instead of just on
-    # rotation.
-    country_changed = st.session_state.get("last_country") != country
-    st.session_state["last_country"] = country
-    country_anim_class = "fade-wrap" if country_changed else ""
-
     market_html = ""
     market = market_client.fetch_ytd_return(MARKET_INDEX[country]["series_id"], fred_api_key)
     if market:
@@ -68,7 +60,7 @@ def render(fred_api_key: str, readings: dict, new_flags: dict):
         )
 
     st.markdown(
-        f"""<div class="{country_anim_class}" style="text-align:center; margin: 0.8rem 0 1.2rem;">
+        f"""<div style="text-align:center; margin: 0.8rem 0 1.2rem;">
             <div class="flag-badge">{flag_for(country)}</div>
             <div class="country-name">{meta['name']}</div>{market_html}
         </div>""",
