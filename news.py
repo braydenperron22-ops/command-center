@@ -127,6 +127,24 @@ def is_market_relevant(headline: str) -> bool:
     return _contains_any(h, GENERAL_MARKET_TERMS)
 
 
+# "This headline matters enough to go red" words — every term across the
+# topic/qualifier categories above, checked as a simple membership test
+# rather than requiring the topic+qualifier pairing classify() needs.
+# Anything from the News feed that hits one of these is a breaking-red
+# item; everything else market-relevant is black.
+IMPORTANT_OTHER_TERMS = DATA_PRINT_TERMS + SURPRISE_TERMS + EARNINGS_COMPANIES + MACRO_SHOCK_TERMS
+
+
+def is_important(headline: str) -> bool:
+    """True if the headline references one of our important target
+    words — decides red (breaking) vs black (market news) in the alert
+    bar, independent of the category label classify() picks."""
+    h = headline.lower()
+    if _contains_any(h, FED_BOC_INCLUDE) and not _contains_any(h, FED_BOC_EXCLUDE):
+        return True
+    return _contains_any(h, IMPORTANT_OTHER_TERMS)
+
+
 def classify(headline: str) -> str | None:
     h = headline.lower()
     if _contains_any(h, FED_BOC_INCLUDE) and not _contains_any(h, FED_BOC_EXCLUDE):
@@ -187,7 +205,7 @@ def get_new_alerts() -> list[dict]:
             continue
         seen.add(h)
         if baseline_done:
-            alerts.append({**item, "category": category})
+            alerts.append({**item, "category": category, "important": is_important(item["headline"])})
 
     st.session_state["news_baseline_done"] = True
     return alerts
@@ -198,11 +216,10 @@ def render_alert_bar(alert: dict, elapsed: float):
     label stretches into view, holds, then slides aside to reveal the
     category tag + headline underneath.
 
-    Red "BREAKING NEWS" for the strictly-classified categories (Fed/BoC,
-    Data Surprise, Earnings, Macro Shock — genuinely surprising by
-    definition), black "MARKET NEWS" for the generic catch-all tag, so
-    the bar's own color signals how urgent a given item actually is
-    before you even read the headline.
+    Red "BREAKING NEWS" when the headline references one of our
+    important target words (`is_important`), black "MARKET NEWS"
+    otherwise, so the bar's own color signals how urgent a given item
+    actually is before you even read the headline.
     """
     if elapsed < STRETCH_END:
         label_progress = elapsed / STRETCH_END
@@ -216,7 +233,7 @@ def render_alert_bar(alert: dict, elapsed: float):
         label_style = "opacity: 0; transform: translateX(-140%);"
         headline_style = "opacity: 1; transform: translateX(0);"
 
-    is_breaking = alert["category"] != "Market News"
+    is_breaking = alert.get("important", alert["category"] != "Market News")
     bar_class = "news-alert-bar" if is_breaking else "news-alert-bar-market"
     label_text = "BREAKING NEWS" if is_breaking else "MARKET NEWS"
     category_class = "news-cat-" + alert["category"].lower().replace("/", "-").replace(" ", "-")
