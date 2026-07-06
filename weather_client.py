@@ -9,6 +9,12 @@ from config import RAIN_LOOKAHEAD_HOURS, RAIN_PROBABILITY_THRESHOLD, TIMEZONE, W
 
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 
+# This is called unconditionally at the very top of app.py, before any
+# page renders — an uncaught exception here used to take down the entire
+# app (background, clock, every page), not just the weather widget. Falls
+# back to the last successfully fetched reading rather than raising.
+_last_good_weather: dict | None = None
+
 
 def _next_rain_hours(now: datetime, hourly: dict) -> float | None:
     """Hours from now until the next hour with a real chance of rain, within
@@ -26,7 +32,7 @@ def _next_rain_hours(now: datetime, hourly: dict) -> float | None:
 
 
 @st.cache_data(ttl=15 * 60, show_spinner=False)
-def fetch_weather() -> dict | None:
+def _fetch_weather_raw() -> dict | None:
     params = {
         "latitude": WEATHER_LAT,
         "longitude": WEATHER_LON,
@@ -66,3 +72,14 @@ def fetch_weather() -> dict | None:
         "forecast_high_c": highs[0] if highs else None,
         "forecast_low_c": lows[0] if lows else None,
     }
+
+
+def fetch_weather() -> dict | None:
+    global _last_good_weather
+    try:
+        result = _fetch_weather_raw()
+    except (requests.RequestException, ValueError, KeyError):
+        return _last_good_weather
+    if result is not None:
+        _last_good_weather = result
+    return result if result is not None else _last_good_weather

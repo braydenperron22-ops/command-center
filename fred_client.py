@@ -10,10 +10,20 @@ from indicators import build_reading
 FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
 FRED_RELEASE_DATES_URL = "https://api.stlouisfed.org/fred/release/dates"
 
+# This runs 24/7 unattended — a transient network hiccup or a FRED outage
+# must never crash a page (blank screen until the next rerun happens to
+# succeed). The raw fetch stays cached-and-raising (so Streamlit doesn't
+# cache a failure and a fresh retry happens on the very next rerun); the
+# public function catches that and falls back to the last value that DID
+# fetch successfully, so a tile keeps showing slightly-stale data instead
+# of nothing. Module-level rather than st.session_state since this
+# process serves one continuously-running display, not per-user sessions.
+_last_good_series: dict[str, list[dict]] = {}
+_last_good_release_date: dict[int, str | None] = {}
+
 
 @st.cache_data(ttl=60 * 60, show_spinner=False)
-def fetch_series(series_id: str, api_key: str) -> list[dict]:
-    """Return recent observations for a FRED series, oldest first."""
+def _fetch_series_raw(series_id: str, api_key: str) -> list[dict]:
     params = {
         "series_id": series_id,
         "api_key": api_key,
@@ -26,6 +36,16 @@ def fetch_series(series_id: str, api_key: str) -> list[dict]:
     observations = resp.json().get("observations", [])
     observations = [o for o in observations if o.get("value") not in (None, ".")]
     observations.reverse()
+    return observations
+
+
+def fetch_series(series_id: str, api_key: str) -> list[dict]:
+    """Return recent observations for a FRED series, oldest first."""
+    try:
+        observations = _fetch_series_raw(series_id, api_key)
+    except (requests.RequestException, ValueError, KeyError):
+        return _last_good_series.get(series_id, [])
+    _last_good_series[series_id] = observations
     return observations
 
 
@@ -44,8 +64,7 @@ def fetch_latest_value(series_id: str, api_key: str) -> float | None:
 
 
 @st.cache_data(ttl=12 * 60 * 60, show_spinner=False)
-def fetch_next_release_date(release_id: int, api_key: str) -> str | None:
-    """The next confirmed date on FRED's official release calendar for this release."""
+def _fetch_next_release_date_raw(release_id: int, api_key: str) -> str | None:
     params = {
         "release_id": release_id,
         "api_key": api_key,
@@ -59,3 +78,13 @@ def fetch_next_release_date(release_id: int, api_key: str) -> str | None:
     resp.raise_for_status()
     dates = resp.json().get("release_dates", [])
     return dates[0]["date"] if dates else None
+
+
+def fetch_next_release_date(release_id: int, api_key: str) -> str | None:
+    """The next confirmed date on FRED's official release calendar for this release."""
+    try:
+        result = _fetch_next_release_date_raw(release_id, api_key)
+    except (requests.RequestException, ValueError, KeyError):
+        return _last_good_release_date.get(release_id)
+    _last_good_release_date[release_id] = result
+    return result

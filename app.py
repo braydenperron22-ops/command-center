@@ -15,7 +15,7 @@ import pages_markets
 import pages_news
 import theme
 import weather_alerts_bar
-from config import PAGE_ROTATION_SECONDS, PAGES, TIMEZONE, UV_HIGH_THRESHOLD
+from config import MAX_BURST_ALERTS, PAGE_ROTATION_SECONDS, PAGES, TIMEZONE, UV_HIGH_THRESHOLD
 from icons import icon_for
 from scenery import FADE_SECONDS, condition_category, phase_for, scene_html, sky_style
 import ticker
@@ -37,7 +37,10 @@ st_autorefresh(interval=1000, key="clock_tick")
 # sunrise/sunset values Open-Meteo returns for the same zone.
 now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
 
-weather = fetch_weather()
+try:
+    weather = fetch_weather()
+except Exception:
+    weather = None
 
 if weather:
     phase = phase_for(now, weather["sunrise"], weather["sunset"])
@@ -46,57 +49,76 @@ else:
     phase = "day" if 6 <= now.hour < 20 else "night"
     category = "cloudy"
 
-# The sky fade is computed here (not left to a CSS transition, which can't
-# survive this app's 1-second autorefresh — confirmed it snaps instantly
-# rather than animating, the same class of bug as the country-fade one).
-# Track when the phase last changed and blend server-side by elapsed time.
-if phase != st.session_state.get("bg_phase"):
-    st.session_state["bg_fade_from"] = st.session_state.get("bg_phase", phase)
-    st.session_state["bg_phase_changed_at"] = time.time()
-    st.session_state["bg_phase"] = phase
+# Background/scenery rendering never touches the network (weather is
+# already fetched above), but this whole block still runs before any page
+# content — wrapped so a bug here can't blank the entire dashboard, only
+# lose the decorative background for that one render.
+try:
+    # The sky fade is computed here (not left to a CSS transition, which
+    # can't survive this app's 1-second autorefresh — confirmed it snaps
+    # instantly rather than animating, the same class of bug as the
+    # country-fade one). Track when the phase last changed and blend
+    # server-side by elapsed time.
+    if phase != st.session_state.get("bg_phase"):
+        st.session_state["bg_fade_from"] = st.session_state.get("bg_phase", phase)
+        st.session_state["bg_phase_changed_at"] = time.time()
+        st.session_state["bg_phase"] = phase
 
-bg_fade_from = st.session_state.get("bg_fade_from", phase)
-bg_blend = min((time.time() - st.session_state.get("bg_phase_changed_at", 0)) / FADE_SECONDS, 1.0)
+    bg_fade_from = st.session_state.get("bg_fade_from", phase)
+    bg_blend = min((time.time() - st.session_state.get("bg_phase_changed_at", 0)) / FADE_SECONDS, 1.0)
 
-st.markdown(
-    sky_style(weather["weather_code"] if weather else 0, phase, bg_fade_from, bg_blend),
-    unsafe_allow_html=True,
-)
-st.markdown(
-    scene_html(weather["weather_code"] if weather else 0, phase),
-    unsafe_allow_html=True,
-)
-
-# Dim the whole UI at night — not just the background, since bright white
-# tile text/badges in a pitch-black room is still harsh even with a black
-# sky behind them. Ramps with the same fade progress already tracked above
-# rather than snapping dim on/off at the phase boundary.
-if phase == "night" and bg_fade_from == "night":
-    night_dim = 1.0
-elif phase == "night":
-    night_dim = bg_blend
-elif bg_fade_from == "night":
-    night_dim = 1.0 - bg_blend
-else:
-    night_dim = 0.0
-
-if night_dim > 0:
-    # This runs 24/7 in a bedroom — night needs to be genuinely dim enough
-    # to sleep next to, not just "a bit darker."
-    brightness = 1 - night_dim * 0.82
     st.markdown(
-        f'<style>[data-testid="stMain"] {{ filter: brightness({brightness:.3f}); }}</style>',
+        sky_style(weather["weather_code"] if weather else 0, phase, bg_fade_from, bg_blend),
         unsafe_allow_html=True,
     )
+    st.markdown(
+        scene_html(weather["weather_code"] if weather else 0, phase),
+        unsafe_allow_html=True,
+    )
+
+    # Dim the whole UI at night — not just the background, since bright
+    # white tile text/badges in a pitch-black room is still harsh even
+    # with a black sky behind them. Ramps with the same fade progress
+    # already tracked above rather than snapping dim on/off at the phase
+    # boundary.
+    if phase == "night" and bg_fade_from == "night":
+        night_dim = 1.0
+    elif phase == "night":
+        night_dim = bg_blend
+    elif bg_fade_from == "night":
+        night_dim = 1.0 - bg_blend
+    else:
+        night_dim = 0.0
+
+    if night_dim > 0:
+        # This runs 24/7 in a bedroom — night needs to be genuinely dim
+        # enough to sleep next to, not just "a bit darker."
+        brightness = 1 - night_dim * 0.82
+        st.markdown(
+            f'<style>[data-testid="stMain"] {{ filter: brightness({brightness:.3f}); }}</style>',
+            unsafe_allow_html=True,
+        )
+except Exception:
+    pass
 
 # Fetched once per rerun and reused below both to update/render the
 # persistent top banner and to feed the bottom rotating alert bar —
 # get_new_alerts() marks headlines as seen as a side effect, so it must
-# only be called once per script run.
-new_alerts = news.get_new_alerts()
-news.update_top_alert(new_alerts)
-news.render_top_alert_bar()
-weather_alerts_bar.render(weather)
+# only be called once per script run. Wrapped since a bug in either the
+# top-alert or weather-statement logic shouldn't stop the clock/hero row
+# and every page below it from rendering.
+new_alerts = []
+try:
+    new_alerts = news.get_new_alerts()
+    news.update_top_alert(new_alerts)
+    news.render_top_alert_bar()
+except Exception:
+    pass
+
+try:
+    weather_alerts_bar.render(weather)
+except Exception:
+    pass
 
 weather_block = ""
 if weather:
@@ -126,11 +148,33 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+def _safe_render(render_fn, *args) -> None:
+    """Runs a page's render function, catching anything unexpected rather
+    than letting it crash the whole script. The individual data clients
+    already fall back to last-known-good values on network errors, but
+    this is the last line of defense for a genuine bug — a bad page
+    should never blank the entire dashboard (clock, weather, ticker all
+    keep working) when it runs unattended 24/7.
+    """
+    try:
+        render_fn(*args)
+    except Exception:
+        st.markdown(
+            '<div class="tile"><div class="tile-prev">'
+            "This page hit an unexpected error and will retry automatically."
+            "</div></div>",
+            unsafe_allow_html=True,
+        )
+
+
 # The release-calendar ticker at the bottom is global (useful regardless of
 # which page is showing), so macro readings are fetched unconditionally.
 readings, new_flags = ({}, {})
 if FRED_API_KEY:
-    readings, new_flags = pages_home.fetch_readings(FRED_API_KEY)
+    try:
+        readings, new_flags = pages_home.fetch_readings(FRED_API_KEY)
+    except Exception:
+        pass
 
 page_index = int(time.time() // PAGE_ROTATION_SECONDS) % len(PAGES)
 page = PAGES[page_index]
@@ -154,37 +198,47 @@ with st.container(key="page_body"):
         if not FRED_API_KEY:
             st.error("FRED_API_KEY is not set in Streamlit secrets.")
         else:
-            pages_home.render(FRED_API_KEY, readings, new_flags)
+            _safe_render(pages_home.render, FRED_API_KEY, readings, new_flags)
     elif page == "conflicts":
-        pages_conflicts.render()
+        _safe_render(pages_conflicts.render)
     elif page == "news":
-        pages_news.render()
+        _safe_render(pages_news.render)
     elif page == "markets":
         if not TWELVEDATA_API_KEY:
             st.error("TWELVEDATA_API_KEY is not set in Streamlit secrets.")
         else:
-            pages_markets.render(TWELVEDATA_API_KEY)
+            _safe_render(pages_markets.render, TWELVEDATA_API_KEY)
 
 # News alerts: strictly-filtered items queue up and take over the bottom
 # bar (normally the release calendar) for TOAST_SECONDS each, breaking-news
 # style, before control returns to the calendar ticker. This happens
 # regardless of which page is active.
-news_queue = st.session_state.setdefault("news_queue", [])
-news_queue.extend(new_alerts)
+#
+# A feed outage that recovers can surface dozens of headlines in one
+# batch (everything that was never marked "seen" while it was down) —
+# capped to the most recent MAX_BURST_ALERTS so that doesn't turn into
+# hours of backlog playing through this bar one at a time.
+try:
+    news_queue = st.session_state.setdefault("news_queue", [])
+    if len(new_alerts) > MAX_BURST_ALERTS:
+        new_alerts = new_alerts[-MAX_BURST_ALERTS:]
+    news_queue.extend(new_alerts)
 
-now_ts = time.time()
-current_alert, elapsed = None, None
-if news_queue:
-    current_alert = news_queue[0]
-    if "shown_at" not in current_alert:
-        current_alert["shown_at"] = now_ts
-    elapsed = now_ts - current_alert["shown_at"]
-    if elapsed > news.TOAST_SECONDS:
-        news_queue.pop(0)
-        current_alert, elapsed = None, None
+    now_ts = time.time()
+    current_alert, elapsed = None, None
+    if news_queue:
+        current_alert = news_queue[0]
+        if "shown_at" not in current_alert:
+            current_alert["shown_at"] = now_ts
+        elapsed = now_ts - current_alert["shown_at"]
+        if elapsed > news.TOAST_SECONDS:
+            news_queue.pop(0)
+            current_alert, elapsed = None, None
 
-if current_alert:
-    news.render_alert_bar(current_alert, elapsed)
-elif FRED_API_KEY and readings:
-    schedule = ticker.build_schedule(readings, FRED_API_KEY)
-    st.markdown(ticker.render_html(schedule, now), unsafe_allow_html=True)
+    if current_alert:
+        news.render_alert_bar(current_alert, elapsed)
+    elif FRED_API_KEY and readings:
+        schedule = ticker.build_schedule(readings, FRED_API_KEY)
+        st.markdown(ticker.render_html(schedule, now), unsafe_allow_html=True)
+except Exception:
+    pass

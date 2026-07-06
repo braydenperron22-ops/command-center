@@ -27,6 +27,15 @@ EXTREME_COLD_THRESHOLD_C = -28
 # comes first.
 TOP_ALERT_HOLD_SECONDS = 2 * 60 * 60
 
+# If the RSS feeds were unreachable for a while and then recover, every
+# headline still in the feed that was never marked "seen" during the
+# outage arrives as a single burst — without a cap, that becomes hours of
+# backlog playing through the bottom toast bar at TOAST_SECONDS each. Only
+# the most recent items from any one burst are worth surfacing as if they
+# just broke; the rest are still marked seen (won't re-alert later) but
+# skipped rather than queued.
+MAX_BURST_ALERTS = 6
+
 ROTATION_SECONDS = 120
 
 # Standard-deviation band used to classify a reading vs its trailing trend

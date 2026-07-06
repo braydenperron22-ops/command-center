@@ -14,6 +14,10 @@ from config import TWELVEDATA_TTL_SECONDS
 TIME_SERIES_URL = "https://api.twelvedata.com/time_series"
 ONE_MONTH_TRADING_DAYS = 21
 
+# Same reasoning as fred_client: never let a transient hiccup blank the
+# Markets page — fall back to the last successfully fetched batch.
+_last_good_quotes: dict = {}
+
 
 def _pct_change(latest: float, base: float | None) -> float | None:
     if not base:
@@ -43,7 +47,7 @@ def _compute_metrics(values: list[dict]) -> dict | None:
 
 
 @st.cache_data(ttl=TWELVEDATA_TTL_SECONDS, show_spinner=False)
-def fetch_quotes(symbols: tuple, api_key: str) -> dict:
+def _fetch_quotes_raw(symbols: tuple, api_key: str) -> dict:
     """{symbol: {"intraday": float, "one_month": float, "ytd": float} | None}"""
     resp = requests.get(TIME_SERIES_URL, params={
         "symbol": ",".join(symbols),
@@ -68,4 +72,13 @@ def fetch_quotes(symbols: tuple, api_key: str) -> dict:
             results[symbol] = _compute_metrics(entry["values"])
         except (KeyError, TypeError, ValueError):
             results[symbol] = None
+    return results
+
+
+def fetch_quotes(symbols: tuple, api_key: str) -> dict:
+    try:
+        results = _fetch_quotes_raw(symbols, api_key)
+    except (requests.RequestException, ValueError, KeyError):
+        return _last_good_quotes.get(symbols, {symbol: None for symbol in symbols})
+    _last_good_quotes[symbols] = results
     return results
