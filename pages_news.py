@@ -52,7 +52,16 @@ def render():
                 "source": item.get("source", ""),
             }
 
-    for h in [h for h, entry in seen_at.items() if now_ts - entry["first_seen"] > WINDOW_SECONDS]:
+    # Age out old entries, AND re-check every remaining one against
+    # today's is_market_relevant() — this kiosk keeps the same browser
+    # session open for hours/days, so a headline that qualified under a
+    # since-tightened filter would otherwise just sit here, correctly
+    # filtered out for every *new* headline but never swept from what's
+    # already stored, until its 24h window happened to expire on its own.
+    for h in [
+        h for h, entry in seen_at.items()
+        if now_ts - entry["first_seen"] > WINDOW_SECONDS or not news.is_market_relevant(entry["headline"])
+    ]:
         del seen_at[h]
 
     entries = sorted(seen_at.values(), key=lambda e: e["first_seen"], reverse=True)[:MAX_SHOWN]

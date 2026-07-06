@@ -392,7 +392,14 @@ def render_top_alert_bar() -> None:
     top_alert = st.session_state.get("top_alert")
     if not top_alert:
         return
-    if time.time() - top_alert["set_at"] > TOP_ALERT_HOLD_SECONDS:
+    expired = time.time() - top_alert["set_at"] > TOP_ALERT_HOLD_SECONDS
+    # Re-checked against today's filters, not just re-fetched under them —
+    # this kiosk keeps one browser session open for hours/days, so a
+    # headline queued under a since-tightened filter would otherwise keep
+    # showing for its full 2-hour hold even though it'd never qualify if
+    # seen fresh right now.
+    stale = not is_market_relevant(top_alert["headline"]) or not is_important(top_alert["headline"])
+    if expired or stale:
         del st.session_state["top_alert"]
         return
     st.markdown(
