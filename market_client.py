@@ -8,7 +8,7 @@ import streamlit as st
 FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
 
 
-@st.cache_data(ttl=6 * 60 * 60, show_spinner=False)
+@st.cache_data(ttl=60 * 60, show_spinner=False)
 def fetch_ytd_return(series_id: str, api_key: str) -> dict | None:
     """Latest value vs. the last available value from the prior year-end."""
     params = {

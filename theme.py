@@ -61,20 +61,27 @@ html, body, [class*="css"] {
 }
 
 .weather-extra {
-    font-size: 0.9rem;
-    font-weight: 600;
-    padding: 0.15rem 0.55rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    padding: 0.3rem 0.75rem;
     border-radius: 10px;
+    border: 1px solid currentColor;
+    animation: weather-extra-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes weather-extra-pulse {
+    0%, 100% { opacity: 0.82; }
+    50% { opacity: 1; }
 }
 
 .weather-rain {
-    color: #5AC8FA;
-    background: rgba(90,200,250,0.14);
+    color: #64D2FF;
+    background: rgba(100,210,255,0.22);
 }
 
 .weather-uv {
-    color: #FF9F0A;
-    background: rgba(255,159,10,0.14);
+    color: #FFB340;
+    background: rgba(255,179,64,0.22);
 }
 
 .weather-icon svg {

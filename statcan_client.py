@@ -8,7 +8,7 @@ from indicators import build_reading
 STATCAN_URL = "https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorsAndLatestNPeriods"
 
 
-@st.cache_data(ttl=6 * 60 * 60, show_spinner=False)
+@st.cache_data(ttl=60 * 60, show_spinner=False)
 def fetch_vector(vector_id: int, latest_n: int = 30) -> list[dict]:
     """Return recent observations for a StatCan vector, oldest first."""
     body = [{"vectorId": vector_id, "latestN": latest_n}]

@@ -25,7 +25,7 @@ def _next_rain_hours(now: datetime, hourly: dict) -> float | None:
     return None
 
 
-@st.cache_data(ttl=60 * 60, show_spinner=False)
+@st.cache_data(ttl=15 * 60, show_spinner=False)
 def fetch_weather() -> dict | None:
     params = {
         "latitude": WEATHER_LAT,

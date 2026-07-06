@@ -11,7 +11,7 @@ FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
 FRED_RELEASE_DATES_URL = "https://api.stlouisfed.org/fred/release/dates"
 
 
-@st.cache_data(ttl=6 * 60 * 60, show_spinner=False)
+@st.cache_data(ttl=60 * 60, show_spinner=False)
 def fetch_series(series_id: str, api_key: str) -> list[dict]:
     """Return recent observations for a FRED series, oldest first."""
     params = {
