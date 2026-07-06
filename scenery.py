@@ -1,18 +1,16 @@
 """Renders a scene reflecting current weather + time of day: a realistic
-gradient sky (lighter near the horizon, deeper at the zenith), a glowing
-sun with atmospheric haze around it, soft multi-layer clouds with subtle
-shading, rain/snow particles, a light vignette for depth, and — at night —
-pure flat black with stars scattered across it, no gradient.
+gradient sky (lighter near the horizon, deeper at the zenith), rain/snow
+particles, a light vignette for depth, and — at night — pure flat black
+with stars scattered across it, no gradient.
 
-Sun and clouds are baked directly into the sky's own CSS background-image
-(stacked radial-gradient layers), not separate DOM elements — this app
-reruns its whole script every second for the clock tick, and any DOM
-element there (even a static, unanimated one) visibly flashed on every
-rerun once the sky color changed alongside it. A background-image change
-on an element that already exists is just a style update, not a
-mount/unmount, so it doesn't flash. Only rain/snow/star twinkle remain as
-actual elements with animation, since those read fine even when restarted
-each second (small, subtle, tileable).
+No sun or cloud shapes: they were tried both as DOM elements and as
+background-image layers baked into the sky gradient, and both still
+visibly flashed/popped every second (this app reruns its whole script
+every second for the clock tick, which makes anything riding on the
+constantly-recomputed background fragile). Dropped entirely in favor of
+just the gradient, which has been stable throughout. Rain/snow/star
+twinkle remain as actual elements with animation, since those read fine
+even when restarted each second (small, subtle, tileable).
 
 The sky color is computed as a server-side interpolation between the
 previous phase's colors and the current one, blended by elapsed real
@@ -91,23 +89,6 @@ _SKY_STOPS = {
     "night": ("#000000", "#000000", "#000000"),
 }
 
-_CLOUD_COLOR = {
-    "cloudy": "rgba(235, 240, 245, 0.55)",
-    "fog": "rgba(220, 225, 228, 0.7)",
-    "rain": "rgba(90, 100, 112, 0.75)",
-    "snow": "rgba(245, 248, 250, 0.7)",
-    "storm": "rgba(45, 48, 56, 0.85)",
-}
-_CLOUD_COUNT = {"cloudy": 5, "fog": 7, "rain": 6, "snow": 5, "storm": 7}
-
-# Sun position as an "x% y%" pair for radial-gradient(circle at ...),
-# shared by the sun disc and the atmospheric glow behind it so they align.
-_SUN_POSITION = {
-    "day": ("88%", "24%"),
-    "sunrise": ("8%", "82%"),
-    "sunset": ("92%", "82%"),
-}
-
 
 def _stops_for(category: str, phase: str) -> tuple[str, str, str]:
     if phase == "night":
@@ -142,56 +123,6 @@ def blended_sky(category: str, from_phase: str, to_phase: str, t: float) -> str:
     return f"linear-gradient(160deg, {stops[0]} 0%, {stops[1]} 50%, {stops[2]} 100%)"
 
 
-_SUN_LAYERS = {
-    "day": (
-        "#fffdf2 0%, rgba(255,244,214,0.9) 3%, rgba(255,224,150,0.3) 6%, rgba(255,224,150,0) 9%",
-        "rgba(255,250,225,0.4) 0%, rgba(255,235,190,0.14) 15%, rgba(255,235,190,0) 26%",
-    ),
-    "sunset": (
-        "#ffe9c2 0%, rgba(255,200,130,0.75) 5%, rgba(255,150,90,0.28) 9%, rgba(255,150,90,0) 13%",
-        "rgba(255,185,120,0.45) 0%, rgba(255,130,80,0.16) 18%, rgba(255,130,80,0) 30%",
-    ),
-    "sunrise": (
-        "#fff3ec 0%, rgba(255,215,205,0.78) 5%, rgba(240,160,170,0.28) 9%, rgba(240,160,170,0) 13%",
-        "rgba(255,215,205,0.42) 0%, rgba(240,160,180,0.15) 18%, rgba(240,160,180,0) 30%",
-    ),
-}
-
-
-def _sun_layers(phase: str) -> list[str]:
-    """A glowing sun baked in as two stacked radial-gradient background
-    layers (sharp core + wide atmospheric haze) rather than DOM elements —
-    high in the sky by day, low at the horizon during sunrise/sunset,
-    absent at night. Applied directly to the same persistent background
-    property the sky gradient already uses, so it updates in place every
-    render with no element to mount/unmount (see `sky_style`)."""
-    if phase == "night":
-        return []
-    x, y = _SUN_POSITION[phase]
-    core, haze = _SUN_LAYERS[phase]
-    return [
-        f"radial-gradient(circle at {x} {y}, {core})",
-        f"radial-gradient(circle at {x} {y}, {haze})",
-    ]
-
-
-def _cloud_layers(category: str) -> list[str]:
-    """Static cloud puffs as soft-edged radial-gradient background layers
-    (same reasoning as `_sun_layers` — no DOM elements to remount)."""
-    color = _CLOUD_COLOR.get(category)
-    if not color:
-        return []
-    count = _CLOUD_COUNT[category]
-    layers = []
-    for i in range(count):
-        left = (i * 29 + 5) % 90
-        top = 6 + (i * 13) % 30
-        w = 11 + (i % 4) * 2.5
-        h = w * 0.4
-        layers.append(f"radial-gradient(ellipse {w:.1f}vw {h:.1f}vw at {left}% {top}%, {color} 0%, transparent 70%)")
-    return layers
-
-
 def _particles(category: str) -> str:
     if category == "rain" or category == "storm":
         return "".join(
@@ -221,22 +152,20 @@ def _stars(phase: str) -> str:
 
 
 def sky_style(weather_code: int, phase: str, from_phase: str, blend: float) -> str:
-    """The full background: sky gradient plus sun/cloud glow layers, all as
-    stacked CSS background-image values on the same persistent container.
-    This whole block legitimately changes every render (the sky blend is a
-    function of real elapsed time during a fade) — but since sun/clouds
-    are baked in here as background layers instead of separate DOM
-    elements, updating it is just a style-property change on an element
-    that already exists, not a mount/unmount, so nothing flashes.
+    """The sky background — a plain color gradient, no sun/cloud shapes.
+    Those were tried as separate DOM elements (flashed on every rerun)
+    and then as extra background-image layers baked into this same
+    property (still visibly popped) — removed entirely rather than kept
+    chasing the rendering glitch, since this app's forced full-page
+    rerun every second makes any element or layer riding on the
+    constantly-recomputed background fundamentally fragile. The gradient
+    itself has been stable throughout, so it's what's left.
     """
     category = condition_category(weather_code)
     sky = blended_sky(category, from_phase, phase, blend)
-    sun_layers = _sun_layers(phase)
-    cloud_layers = _cloud_layers(category) if phase != "night" else []
-    layers = sun_layers + cloud_layers + [sky]
     return f"""<style>
     [data-testid="stAppViewContainer"] {{
-        background-image: {", ".join(layers)};
+        background: {sky};
         background-attachment: fixed;
     }}
     [data-testid="stHeader"] {{ background: transparent; }}
@@ -244,11 +173,9 @@ def sky_style(weather_code: int, phase: str, from_phase: str, blend: float) -> s
 
 
 def scene_html(weather_code: int, phase: str) -> str:
-    """Static CSS rules + decorative scene HTML: stars, rain/snow, and the
-    vignette. Sun and clouds live in `sky_style` instead (baked into the
-    background rather than mounted as elements) since those were flashing
-    every time the sky color updated. This is left depending only on
-    weather category and phase — not elapsed time — so it stays
+    """Static CSS rules + decorative scene HTML: stars and rain/snow
+    particles (sun/cloud shapes were removed — see `sky_style`). Depends
+    only on weather category and phase, not elapsed time, so it stays
     byte-identical between reruns except when phase/condition changes.
     """
     category = condition_category(weather_code)
