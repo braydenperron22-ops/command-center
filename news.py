@@ -117,6 +117,28 @@ GENERAL_MARKET_TERMS = [
 ]
 TICKER_PATTERN = re.compile(r"\([A-Z]{2,5}\)")
 
+# Clickbait tells — vague teaser phrasing that promises an answer instead
+# of stating one ("here's what it means", "here's how"), and headlines
+# that hide the actual subject behind a pronoun instead of naming it
+# ("this streaming stock", "these stocks that benefit from ___") rather
+# than just saying which stock. A question mark is included outright: a
+# real news headline states a fact, it doesn't ask "Is the Fed done
+# hiking?" — that phrasing exists to make you click, not to inform you.
+CLICKBAIT_TERMS = [
+    "here's what it means", "here's what this means", "what this means for",
+    "here's how", "here's why", "here's what you need to know",
+    "you need to know", "top picks include", "stocks to buy now",
+    "stocks to watch", "best stocks to buy", "stocks that benefit",
+    "here are the", "here's every", "here's a closer look", "a closer look at",
+    "could send", "could soar", "could skyrocket",
+]
+CLICKBAIT_PATTERNS = [
+    re.compile(r"\b\d+\s+things?\s+that\b"),
+    re.compile(r"\bthis\s+(?:\w+\s+){0,2}stocks?\b"),
+    re.compile(r"\bthese\s+(?:\w+\s+){0,2}stocks?\b"),
+    re.compile(r"\b\d+\s+stocks?\s+that\b"),
+]
+
 
 def _contains_any(text: str, terms: list[str]) -> bool:
     """Whole-word/phrase match — plain substring matching let terms like
@@ -125,9 +147,23 @@ def _contains_any(text: str, terms: list[str]) -> bool:
 
 
 @functools.lru_cache(maxsize=2048)
+def is_clickbait(headline: str) -> bool:
+    """True for teaser-style headlines that ask a question or hide their
+    subject behind a vague pronoun instead of just stating the fact."""
+    if "?" in headline:
+        return True
+    h = headline.lower()
+    if _contains_any(h, CLICKBAIT_TERMS):
+        return True
+    return any(p.search(h) for p in CLICKBAIT_PATTERNS)
+
+
+@functools.lru_cache(maxsize=2048)
 def is_market_relevant(headline: str) -> bool:
     """Looser filter for the News page: any real finance/market signal
-    qualifies, not just the narrow topic+surprise combos above.
+    qualifies, not just the narrow topic+surprise combos above — except
+    clickbait, which is excluded outright regardless of what else it
+    matches (see is_clickbait).
 
     Cached: this app reruns its whole script every second for the clock
     tick, and `fetch_headlines()` only changes every 3 minutes (its own
@@ -136,6 +172,8 @@ def is_market_relevant(headline: str) -> bool:
     for no reason. The input is just a string, so a plain function cache
     is safe (no session/request state involved).
     """
+    if is_clickbait(headline):
+        return False
     if TICKER_PATTERN.search(headline):
         return True
     h = headline.lower()
