@@ -66,12 +66,6 @@ html, body, [class*="css"] {
     padding: 0.3rem 0.75rem;
     border-radius: 10px;
     border: 1px solid currentColor;
-    animation: weather-extra-pulse 2.4s ease-in-out infinite;
-}
-
-@keyframes weather-extra-pulse {
-    0%, 100% { opacity: 0.82; }
-    50% { opacity: 1; }
 }
 
 .weather-rain {
@@ -104,9 +98,6 @@ html, body, [class*="css"] {
     align-items: center;
     gap: 0.6rem;
     margin-top: 0.7rem;
-    background: rgba(12,12,16,0.86);
-    border: 1px solid rgba(255,255,255,0.09);
-    border-radius: 16px;
     padding: 0.5rem 1.1rem;
     font-size: 1.05rem;
 }
@@ -168,45 +159,54 @@ html, body, [class*="css"] {
     flex-direction: column;
 }
 
+/* Shared "premium glass" card treatment — every panel in the app (tiles,
+   the market pill, the news feed list) uses this exact recipe so the
+   whole dashboard reads as one consistent surface language rather than
+   a set of ad hoc boxes. The shadow is static (a fixed value, not a
+   keyframe) since this app reruns its whole script every second for the
+   clock tick and an animated shadow here would fight that the same way
+   the old background elements did — depth without motion. */
+.tile, .market-pill, .news-feed-list {
+    background: rgba(12,12,16,0.86);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
 .tile {
     position: relative;
     display: flex;
     flex-direction: column;
-    background: rgba(12,12,16,0.86);
-    border: 1px solid rgba(255,255,255,0.09);
-    border-radius: 16px;
-    padding: 1.6rem 1.5rem;
+    padding: 1.7rem 1.5rem 1.5rem;
     height: 100%;
     box-sizing: border-box;
+    overflow: hidden;
 }
 
-.tile-label {
+/* A quiet top accent strip always reflects this tile's tone (good/bad/
+   neutral/in-line) so it reads at a glance from across the room without
+   needing to find and read the badge text. A "significant move" widens
+   and brightens it — a static, confident cue instead of the pulsing
+   glow this used to be (which just added visual noise when several
+   tiles were flashing on screen at once). */
+.tile::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--tile-accent, rgba(255,255,255,0.14));
+}
+.tile-accent-good { --tile-accent: #32D74B; }
+.tile-accent-bad { --tile-accent: #FF6961; }
+.tile-accent-neutral { --tile-accent: #5AC8FA; }
+.tile-significant::before {
+    height: 5px;
+    box-shadow: 0 0 14px 1px var(--tile-accent, transparent);
+}
+
+.tile-label, .severity-caption {
     height: 3.1em;
     overflow: hidden;
-}
-
-.severity-caption {
-    height: 3.2em;
-    overflow: hidden;
-}
-
-.tile-flash-bad { animation: tile-pulse-bad 1.8s ease-in-out infinite; }
-.tile-flash-good { animation: tile-pulse-good 1.8s ease-in-out infinite; }
-.tile-flash-neutral { animation: tile-pulse-neutral 1.8s ease-in-out infinite; }
-
-@keyframes tile-pulse-bad {
-    0%, 100% { box-shadow: 0 0 0 1px rgba(255,69,58,0.25), 0 0 0 0 rgba(255,69,58,0); }
-    50% { box-shadow: 0 0 0 1px rgba(255,69,58,0.55), 0 0 22px 4px rgba(255,69,58,0.35); }
-}
-
-@keyframes tile-pulse-good {
-    0%, 100% { box-shadow: 0 0 0 1px rgba(50,215,75,0.25), 0 0 0 0 rgba(50,215,75,0); }
-    50% { box-shadow: 0 0 0 1px rgba(50,215,75,0.55), 0 0 22px 4px rgba(50,215,75,0.35); }
-}
-
-@keyframes tile-pulse-neutral {
-    0%, 100% { box-shadow: 0 0 0 1px rgba(10,132,255,0.25), 0 0 0 0 rgba(10,132,255,0); }
-    50% { box-shadow: 0 0 0 1px rgba(10,132,255,0.55), 0 0 22px 4px rgba(10,132,255,0.35); }
 }
 
 .new-badge {
@@ -217,15 +217,10 @@ html, body, [class*="css"] {
     font-weight: 700;
     letter-spacing: 0.05em;
     color: #FFD60A;
-    background: rgba(255,214,10,0.14);
+    background: rgba(255,214,10,0.16);
+    border: 1px solid rgba(255,214,10,0.3);
     border-radius: 10px;
     padding: 0.15rem 0.5rem;
-    animation: new-badge-fade 3s ease-in-out infinite;
-}
-
-@keyframes new-badge-fade {
-    0%, 100% { opacity: 0.7; }
-    50% { opacity: 1; }
 }
 
 .tile-label {
@@ -353,12 +348,6 @@ html, body, [class*="css"] {
 .ticker-item-soon {
     color: #FFD60A;
     font-weight: 600;
-    animation: ticker-soon-fade 1.6s ease-in-out infinite;
-}
-
-@keyframes ticker-soon-fade {
-    0%, 100% { opacity: 0.75; }
-    50% { opacity: 1; }
 }
 
 @keyframes ticker-scroll {
@@ -413,6 +402,16 @@ html, body, [class*="css"] {
     background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
     box-shadow: 0 2px 16px rgba(179,20,20,0.3);
 }
+.top-alert-dot, .weather-statement-dot {
+    flex-shrink: 0;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+}
+.top-alert-dot {
+    background: #FFFFFF;
+    box-shadow: 0 0 10px 2px rgba(255,255,255,0.65);
+}
 .top-alert-label {
     flex-shrink: 0;
     font-size: 0.95rem;
@@ -440,6 +439,10 @@ html, body, [class*="css"] {
     border-radius: 12px;
     background: rgba(255,159,10,0.16);
     border: 1px solid rgba(255,159,10,0.4);
+}
+.weather-statement-dot {
+    background: #FF9F0A;
+    box-shadow: 0 0 10px 2px rgba(255,159,10,0.55);
 }
 .weather-statement-label {
     flex-shrink: 0;
@@ -556,9 +559,6 @@ html, body, [class*="css"] {
 }
 
 .news-feed-list {
-    background: rgba(12,12,16,0.86);
-    border: 1px solid rgba(255,255,255,0.09);
-    border-radius: 16px;
     padding: 0.4rem 1.5rem;
 }
 

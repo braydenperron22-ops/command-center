@@ -37,6 +37,7 @@ def render(weather: dict | None) -> None:
 
     st.markdown(
         f"""<div class="weather-statement-bar">
+            <span class="weather-statement-dot"></span>
             <span class="weather-statement-label">{label}</span>
             <span class="weather-statement-text">{text}</span>
         </div>""",

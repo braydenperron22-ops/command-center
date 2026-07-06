@@ -44,10 +44,11 @@ def render(api_key: str):
 
             intraday = quote["intraday"]
             direction_class = "market-up" if intraday >= 0 else "market-down"
+            accent_class = "tile-accent-good" if intraday >= 0 else "tile-accent-bad"
             sign = "+" if intraday >= 0 else ""
 
             st.markdown(
-                f"""<div class="tile">
+                f"""<div class="tile {accent_class}">
                     <div class="tile-label">{inst['label']}</div>
                     <div class="tile-value market-hero-value {direction_class}">{sign}{intraday:.2f}%</div>
                     <div class="tile-prev">Intraday change</div>

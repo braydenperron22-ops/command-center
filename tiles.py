@@ -76,7 +76,8 @@ def render_tile(
             fill_style = f"left: {50 - magnitude_pct:.1f}%; width: {magnitude_pct:.1f}%;"
 
         significant = abs(z) >= SIGNIFICANT_Z
-        flash_class = f"tile-flash-{tone}" if significant and tone != "inline" else ""
+        accent_class = "" if tone == "inline" else f"tile-accent-{tone}"
+        significant_class = "tile-significant" if significant and tone != "inline" else ""
         new_badge = '<div class="new-badge">NEW DATA</div>' if is_new else ""
         badge_class = "badge-inline" if tone == "inline" else f"badge-{tone}"
         fill_class = "severity-fill-inline" if tone == "inline" else f"severity-fill-{tone}"
@@ -87,7 +88,7 @@ def render_tile(
         extra_line_html = f'<div class="tile-extra">{extra_line or ""}</div>'
 
         st.markdown(
-            f"""<div class="tile {flash_class}">{new_badge}
+            f"""<div class="tile {accent_class} {significant_class}">{new_badge}
                 <div class="tile-label">{label}</div>
                 <div class="tile-value-row">
                     <div class="tile-value">{reading['current']:.1f}{unit}</div>{sparkline}

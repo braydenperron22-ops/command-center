@@ -274,6 +274,7 @@ def render_top_alert_bar() -> None:
         return
     st.markdown(
         f"""<div class="top-alert-bar">
+            <span class="top-alert-dot"></span>
             <span class="top-alert-label">Breaking</span>
             <span class="top-alert-headline">{top_alert['headline']}</span>
         </div>""",

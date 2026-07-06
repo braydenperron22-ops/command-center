@@ -84,7 +84,7 @@ def render():
 
         with cols[i]:
             st.markdown(
-                f"""<div class="tile">
+                f"""<div class="tile tile-accent-{tone}">
                     <div class="conflict-flags">{flags_html}</div>
                     <div class="tile-label">{entry['label']}</div>
                     <div class="badge {badge_class}">{label}</div>
