@@ -1,7 +1,8 @@
 """Renders a scene reflecting current weather + time of day: a realistic
-gradient sky (lighter near the horizon, deeper at the zenith), rain/snow
-particles, a light vignette for depth, and — at night — pure flat black
-with stars scattered across it, no gradient.
+4-stop gradient sky (deep at the zenith, glowing hazier right at the
+horizon), a faint fixed grain texture, rain/snow particles, a sky-tinted
+vignette for depth, and — at night — pure flat black with stars scattered
+across it, no gradient.
 
 No sun or cloud shapes: they were tried both as DOM elements and as
 background-image layers baked into the sky gradient, and both still
@@ -71,26 +72,27 @@ def phase_for(now, sunrise, sunset, transition_minutes: int = 40, earliest_sunri
     return "night"
 
 
-# Three stops each (zenith -> mid -> horizon) for a realistic sky, since
-# real skies actually do get lighter/hazier toward the horizon and deeper
-# toward the zenith — a single flat color reads as fake. Night is the one
-# exception: pure flat black (all three stops identical), per request.
+# Four stops each (zenith -> upper -> lower -> horizon glow) for a
+# realistic sky — real skies get lighter/hazier toward the horizon (a thin
+# brighter atmospheric band right at the edge) and deeper toward the
+# zenith, so a 3-stop gradient without that final glow read a bit flat.
+# Night is the one exception: pure flat black (all four stops identical).
 _SKY_STOPS = {
-    ("clear", "day"): ("#1c3a5e", "#2f6294", "#5b9bc9"),
-    ("cloudy", "day"): ("#2c3a4a", "#46596d", "#6c8298"),
-    ("fog", "day"): ("#454e58", "#626d78", "#879098"),
-    ("rain", "day"): ("#24313e", "#3c4f60", "#5a7182"),
-    ("snow", "day"): ("#33465a", "#526e86", "#82a3b8"),
-    ("storm", "day"): ("#262a38", "#3d4456", "#565f74"),
+    ("clear", "day"): ("#16304f", "#1c3a5e", "#5b9bc9", "#bcd9e8"),
+    ("cloudy", "day"): ("#242e3a", "#2c3a4a", "#6c8298", "#8fa0ae"),
+    ("fog", "day"): ("#3c444d", "#454e58", "#879098", "#a8b0b8"),
+    ("rain", "day"): ("#1c2734", "#24313e", "#5a7182", "#71889a"),
+    ("snow", "day"): ("#2a3c4d", "#33465a", "#82a3b8", "#aecbdb"),
+    ("storm", "day"): ("#1f222e", "#262a38", "#565f74", "#6b7690"),
     # Sunrise: cooler, crisper morning light — dusty pink/lavender rather
     # than sunset's deeper, richer orange/red dusk tones.
-    "sunrise": ("#2a2648", "#8a6a92", "#f4b876"),
-    "sunset": ("#1b2038", "#c1604f", "#ec9f5c"),
-    "night": ("#000000", "#000000", "#000000"),
+    "sunrise": ("#221f3c", "#2a2648", "#f4b876", "#fdd9a0"),
+    "sunset": ("#151a2e", "#1b2038", "#ec9f5c", "#f8c27a"),
+    "night": ("#000000", "#000000", "#000000", "#000000"),
 }
 
 
-def _stops_for(category: str, phase: str) -> tuple[str, str, str]:
+def _stops_for(category: str, phase: str) -> tuple[str, str, str, str]:
     if phase == "night":
         return _SKY_STOPS["night"]
     if phase in ("sunrise", "sunset"):
@@ -112,15 +114,17 @@ def _lerp_hex(a: str, b: str, t: float) -> str:
     return f"#{r:02x}{g:02x}{bl:02x}"
 
 
-def blended_sky(category: str, from_phase: str, to_phase: str, t: float) -> str:
-    """t=0 is fully from_phase, t=1 is fully to_phase. Returns a CSS
-    gradient string (night's stops are all black, so it degrades to a
-    flat color naturally without any special-casing here)."""
+def _blended_stops(category: str, from_phase: str, to_phase: str, t: float) -> list[str]:
+    """t=0 is fully from_phase, t=1 is fully to_phase — the blended
+    4-color stop list. Night's stops are all black, so it degrades to a
+    flat color naturally without any special-casing here. Used by
+    sky_style for both the gradient itself and the vignette tint, so
+    there's one source of truth for "what color is the sky right now."
+    """
     t = max(0.0, min(1.0, t))
     from_stops = _stops_for(category, from_phase)
     to_stops = _stops_for(category, to_phase)
-    stops = [_lerp_hex(f, s, t) for f, s in zip(from_stops, to_stops)]
-    return f"linear-gradient(160deg, {stops[0]} 0%, {stops[1]} 50%, {stops[2]} 100%)"
+    return [_lerp_hex(f, s, t) for f, s in zip(from_stops, to_stops)]
 
 
 def _particles(category: str) -> str:
@@ -170,8 +174,17 @@ def sky_style(weather_code: int, phase: str, from_phase: str, blend: float) -> s
     exists is just a style change, not a mount/unmount.
     """
     category = condition_category(weather_code)
-    sky = blended_sky(category, from_phase, phase, blend)
-    vignette = "radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.28) 100%)"
+    stops = _blended_stops(category, from_phase, phase, blend)
+    sky = (
+        f"linear-gradient(160deg, {stops[0]} 0%, {stops[1]} 45%, "
+        f"{stops[2]} 88%, {stops[3]} 100%)"
+    )
+    # Tinted with the sky's own zenith tone (darkened) rather than flat
+    # black — a vignette that's just a shade of the same sky it's edging
+    # reads as depth; pure black against a warm sunset sky looked muddy.
+    zr, zg, zb = _hex_to_rgb(stops[0])
+    vignette_tint = f"rgba({zr // 3}, {zg // 3}, {zb // 3}, 0.5)"
+    vignette = f"radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, {vignette_tint} 100%)"
     return f"""<style>
     [data-testid="stAppViewContainer"] {{
         background-image: {vignette}, {sky};
@@ -196,6 +209,17 @@ def scene_html(weather_code: int, phase: str) -> str:
     <style>
     .cc-scene {{ position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }}
 
+    /* A faint fixed grain over the whole sky — real skies (and good
+       wallpaper) aren't perfectly smooth gradients, they have a little
+       texture. Purely static (same on every render, no variables), so
+       it's exactly as safe as the stars/particles above. */
+    .cc-grain {{
+        position: absolute; inset: 0;
+        background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
+        background-size: 3px 3px;
+        opacity: 0.5;
+    }}
+
     .cc-star {{
         position: absolute; width: 2px; height: 2px; border-radius: 50%;
         background: white; animation: cc-twinkle 4s ease-in-out infinite;
@@ -217,5 +241,5 @@ def scene_html(weather_code: int, phase: str) -> str:
         to {{ transform: translate(24px, 110vh); }}
     }}
     </style>
-    <div class="cc-scene">{stars}{particles}</div>
+    <div class="cc-scene">{stars}{particles}<div class="cc-grain"></div></div>
     """

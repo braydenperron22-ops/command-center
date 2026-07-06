@@ -16,7 +16,7 @@ import pages_news
 import theme
 import weather_alerts_bar
 from config import MAX_BURST_ALERTS, PAGE_ROTATION_SECONDS, PAGES, TIMEZONE, UV_HIGH_THRESHOLD
-from icons import icon_for
+from icons import icon_for, label_for
 from scenery import FADE_SECONDS, condition_category, phase_for, scene_html, sky_style
 import ticker
 from weather_client import fetch_weather
@@ -123,6 +123,12 @@ except Exception:
 weather_block = ""
 if weather:
     icon_svg = icon_for(category, phase)
+    condition_label = label_for(weather["weather_code"])
+
+    hilo_html = ""
+    high, low = weather.get("forecast_high_c"), weather.get("forecast_low_c")
+    if high is not None and low is not None:
+        hilo_html = f' · <span class="weather-hilo">H:{high:.0f}° L:{low:.0f}°</span>'
 
     extras = []
     if weather["rain_in_hours"] is not None:
@@ -135,7 +141,8 @@ if weather:
 
     weather_block = f"""<div class="hero-weather">
         <div class="clock weather-condition"><span class="weather-icon">{icon_svg}</span>{weather['temp_c']:.0f}°C</div>
-        <div class="date-sub">North Bay</div>{extras_html}
+        <div class="weather-condition-label">{condition_label}</div>
+        <div class="date-sub">North Bay{hilo_html}</div>{extras_html}
     </div>"""
 
 st.markdown(

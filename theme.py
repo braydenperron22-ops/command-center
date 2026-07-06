@@ -53,6 +53,18 @@ html, body, [class*="css"] {
     font-weight: 400;
 }
 
+.weather-condition-label {
+    font-size: 1.4rem;
+    font-weight: 500;
+    color: #C7C7CC;
+    margin-top: 0.1rem;
+}
+
+.weather-hilo {
+    color: #ABB2C4;
+    font-weight: 500;
+}
+
 .weather-extras {
     display: flex;
     justify-content: flex-end;

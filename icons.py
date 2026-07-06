@@ -23,3 +23,24 @@ def icon_for(category: str, phase: str) -> str:
             return _ICONS["sunset"]
         return _ICONS["clear_day"] if phase == "day" else _ICONS["clear_night"]
     return _ICONS.get(category, _ICONS["cloudy"])
+
+
+# Open-Meteo's WMO weather codes, at the granularity a human actually
+# wants ("Light Rain" vs "Heavy Rain") — coarser than condition_category()
+# in scenery.py, which only needs six buckets to pick a sky palette.
+_CONDITION_LABELS = {
+    0: "Clear", 1: "Mostly Clear", 2: "Partly Cloudy", 3: "Cloudy",
+    45: "Foggy", 48: "Foggy",
+    51: "Light Drizzle", 53: "Drizzle", 55: "Heavy Drizzle",
+    56: "Freezing Drizzle", 57: "Freezing Drizzle",
+    61: "Light Rain", 63: "Rain", 65: "Heavy Rain",
+    66: "Freezing Rain", 67: "Freezing Rain",
+    71: "Light Snow", 73: "Snow", 75: "Heavy Snow", 77: "Snow Grains",
+    80: "Rain Showers", 81: "Rain Showers", 82: "Heavy Showers",
+    85: "Snow Showers", 86: "Snow Showers",
+    95: "Thunderstorm", 96: "Thunderstorm", 99: "Thunderstorm",
+}
+
+
+def label_for(weather_code: int) -> str:
+    return _CONDITION_LABELS.get(weather_code, "Cloudy")
