@@ -1,9 +1,9 @@
 """News page: general market/finance headlines from the free RSS feeds.
 
-Deliberately looser than the breaking-news alert bar — that requires a
-topic AND a surprise/magnitude qualifier together (right for something
-worth interrupting the screen for), but this just needs one real finance
-signal, since these feeds mix genuine market content with lifestyle pieces.
+Uses `news.is_market_relevant` — the same filter that drives the
+breaking-news bar, so that bar is effectively this page's feed surfaced
+the moment each headline first appears rather than something separately
+and more strictly curated.
 """
 
 import hashlib

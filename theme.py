@@ -434,6 +434,7 @@ html, body, [class*="css"] {
 .news-cat-data-surprise { background: rgba(90,200,250,0.9); color: #0a2c3d; }
 .news-cat-earnings { background: rgba(50,215,75,0.9); color: #0b2b12; }
 .news-cat-macro-shock { background: rgba(255,255,255,0.9); color: #7a0f10; }
+.news-cat-market-news { background: rgba(255,214,10,0.9); color: #4d3c00; }
 
 .severity-track {
     position: relative;

@@ -2,9 +2,13 @@
 News page's rolling 24h feed, plus keyword-scanning for the Conflicts page.
 
 No API key: pulls from the Fed's own press-release feed (zero-noise, it IS
-the source) plus a few general finance RSS feeds, then applies a strict
-keyword filter so only Fed/BoC policy, surprising CPI/jobs/GDP prints,
-mega-cap earnings, and clear macro shocks ever qualify.
+the source) plus a few general finance RSS feeds. The breaking-news bar
+uses the exact same `is_market_relevant` filter as the News page — it's
+the same headline pool, just surfaced immediately as each one first
+appears rather than waiting to be read on the News page. `classify()`
+still runs to give Fed/BoC, Data Surprise, Earnings, and Macro Shock
+headlines their own tag; anything else market-relevant is tagged
+"Market News" instead of being dropped.
 """
 
 import hashlib
@@ -155,7 +159,16 @@ def fetch_headlines() -> list[dict]:
 
 
 def get_new_alerts() -> list[dict]:
-    """Classify fresh headlines; only returns ones not already seen this session.
+    """Flags fresh headlines that qualify for the News page; only returns
+    ones not already seen this session. Uses the same `is_market_relevant`
+    filter as the News page itself (rather than the narrower `classify()`
+    categories) so the breaking-news bar is just the News page's feed,
+    surfaced the moment each headline first appears.
+
+    `classify()` still runs for a more specific tag (Fed/BoC, Data
+    Surprise, Earnings, Macro Shock) when a headline happens to match one
+    of those; anything else that's still market-relevant is tagged
+    generically so it isn't dropped.
 
     The very first call establishes a baseline (marks whatever already
     qualifies as "seen" without alerting) so opening the dashboard doesn't
@@ -166,9 +179,9 @@ def get_new_alerts() -> list[dict]:
 
     alerts = []
     for item in fetch_headlines():
-        category = classify(item["headline"])
-        if not category:
+        if not is_market_relevant(item["headline"]):
             continue
+        category = classify(item["headline"]) or "Market News"
         h = hashlib.sha1(item["headline"].encode()).hexdigest()
         if h in seen:
             continue
