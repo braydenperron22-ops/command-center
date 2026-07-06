@@ -259,6 +259,13 @@ html, body, [class*="css"] {
     font-weight: 600;
     color: #F5F5F7;
     letter-spacing: -0.01em;
+    white-space: nowrap;
+}
+
+/* Markets has 7 columns (vs. Home's 5) — narrower tiles need a smaller
+   hero value so e.g. "-24.25%" doesn't wrap onto two lines. */
+.market-hero-value {
+    font-size: 1.9rem;
 }
 
 .sparkline {

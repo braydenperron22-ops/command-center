@@ -36,7 +36,8 @@ FED_BOC_INCLUDE = [
     "rate hike", "rate cut", "raises rates", "cuts rates", "holds rates", "holds interest rates",
     "jerome powell", "bank of canada", "boc rate", "tiff macklem", "fed chair",
     "takes oath of office", "sworn in as chair", "steps down as chair", "resigns as chair",
-    "named fed chair", "confirmed as fed chair",
+    "named fed chair", "confirmed as fed chair", "quantitative easing", "quantitative tightening",
+    "dot plot", "emergency meeting", "emergency rate", "press conference",
 ]
 # The Fed's own RSS feed is mostly routine bank-supervision paperwork —
 # these show up alongside genuine policy news and would otherwise slip
@@ -50,27 +51,32 @@ FED_BOC_EXCLUDE = [
 DATA_PRINT_TERMS = [
     "cpi", "consumer price index", "inflation data", "jobs report",
     "nonfarm payrolls", "unemployment rate", "gdp growth", "employment situation",
-    "gross domestic product", "inflation report",
+    "gross domestic product", "inflation report", "retail sales", "ppi",
+    "producer price index", "consumer confidence", "housing starts",
 ]
 SURPRISE_TERMS = [
     "unexpectedly", "surprise", "beats estimates", "misses estimates",
     "higher than expected", "lower than expected", "surges", "plunges",
     "hotter than expected", "cooler than expected", "tops forecast", "misses forecast",
-    "jumps", "tumbles", "slows more than",
+    "jumps", "tumbles", "slows more than", "sharply higher", "sharply lower",
+    "sinks", "soars", "spikes",
 ]
 EARNINGS_COMPANIES = [
     "apple", "aapl", "microsoft", "msft", "nvidia", "nvda",
     "amazon", "amzn", "alphabet", "google", "googl", "meta platforms",
     "jpmorgan", "jp morgan", "bank of america", "bofa",
+    "tesla", "tsla", "netflix", "nflx", "broadcom", "avgo", "berkshire hathaway",
 ]
 EARNINGS_TERMS = [
     "earnings", "quarterly results", "beats estimates", "misses estimates",
     "guidance", "q1 results", "q2 results", "q3 results", "q4 results", "profit",
+    "revenue", "quarterly report",
 ]
 MACRO_SHOCK_TERMS = [
     "recession fears", "banking crisis", "financial crisis", "market crash",
     "stocks plunge", "stock market sell-off", "bear market", "debt default",
     "credit downgrade", "circuit breaker", "market meltdown", "stocks tumble",
+    "flash crash", "contagion fears", "systemic risk",
 ]
 
 # Deliberately looser than the breaking-news categories above — those

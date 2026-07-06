@@ -49,7 +49,7 @@ def render(api_key: str):
             st.markdown(
                 f"""<div class="tile">
                     <div class="tile-label">{inst['label']}</div>
-                    <div class="tile-value {direction_class}">{sign}{intraday:.2f}%</div>
+                    <div class="tile-value market-hero-value {direction_class}">{sign}{intraday:.2f}%</div>
                     <div class="tile-prev">Intraday change</div>
                     {_metric_row("1 Month", quote["one_month"])}
                     {_metric_row("YTD", quote["ytd"])}

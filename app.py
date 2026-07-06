@@ -62,6 +62,26 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# Dim the whole UI at night — not just the background, since bright white
+# tile text/badges in a pitch-black room is still harsh even with a black
+# sky behind them. Ramps with the same fade progress already tracked above
+# rather than snapping dim on/off at the phase boundary.
+if phase == "night" and bg_fade_from == "night":
+    night_dim = 1.0
+elif phase == "night":
+    night_dim = bg_blend
+elif bg_fade_from == "night":
+    night_dim = 1.0 - bg_blend
+else:
+    night_dim = 0.0
+
+if night_dim > 0:
+    brightness = 1 - night_dim * 0.32
+    st.markdown(
+        f'<style>[data-testid="stMain"] {{ filter: brightness({brightness:.3f}); }}</style>',
+        unsafe_allow_html=True,
+    )
+
 weather_block = ""
 if weather:
     icon_svg = icon_for(category, phase)
@@ -99,20 +119,35 @@ if FRED_API_KEY:
 page_index = int(time.time() // PAGE_ROTATION_SECONDS) % len(PAGES)
 page = PAGES[page_index]
 
-if page == "home":
-    if not FRED_API_KEY:
-        st.error("FRED_API_KEY is not set in Streamlit secrets.")
-    else:
-        pages_home.render(FRED_API_KEY, readings, new_flags)
-elif page == "conflicts":
-    pages_conflicts.render()
-elif page == "news":
-    pages_news.render()
-elif page == "markets":
-    if not TWELVEDATA_API_KEY:
-        st.error("TWELVEDATA_API_KEY is not set in Streamlit secrets.")
-    else:
-        pages_markets.render(TWELVEDATA_API_KEY)
+# Seamless crossfade between pages — same trick as the country rotation:
+# a CSS `animation` can't survive this app's 1-second autorefresh (the
+# whole script re-executes, and testing confirmed the animation restarts
+# every render if the class is always present), so only inject the
+# fade-in rule for the one render where the page actually changed, onto a
+# fixed-key container that persists across reruns otherwise.
+page_changed = page != st.session_state.get("last_page")
+st.session_state["last_page"] = page
+if page_changed:
+    st.markdown(
+        '<style>.st-key-page_body { animation: fadeIn 0.6s ease; }</style>',
+        unsafe_allow_html=True,
+    )
+
+with st.container(key="page_body"):
+    if page == "home":
+        if not FRED_API_KEY:
+            st.error("FRED_API_KEY is not set in Streamlit secrets.")
+        else:
+            pages_home.render(FRED_API_KEY, readings, new_flags)
+    elif page == "conflicts":
+        pages_conflicts.render()
+    elif page == "news":
+        pages_news.render()
+    elif page == "markets":
+        if not TWELVEDATA_API_KEY:
+            st.error("TWELVEDATA_API_KEY is not set in Streamlit secrets.")
+        else:
+            pages_markets.render(TWELVEDATA_API_KEY)
 
 # News alerts: strictly-filtered items queue up and take over the bottom
 # bar (normally the release calendar) for TOAST_SECONDS each, breaking-news
