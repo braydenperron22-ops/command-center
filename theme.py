@@ -104,9 +104,8 @@ html, body, [class*="css"] {
     align-items: center;
     gap: 0.6rem;
     margin-top: 0.7rem;
-    background: rgba(0,0,0,0.4);
+    background: rgba(12,12,16,0.86);
     border: 1px solid rgba(255,255,255,0.09);
-    backdrop-filter: blur(24px) saturate(1.1);
     border-radius: 16px;
     padding: 0.5rem 1.1rem;
     font-size: 1.05rem;
@@ -182,9 +181,8 @@ html, body, [class*="css"] {
     position: relative;
     display: flex;
     flex-direction: column;
-    background: rgba(0,0,0,0.4);
+    background: rgba(12,12,16,0.86);
     border: 1px solid rgba(255,255,255,0.09);
-    backdrop-filter: blur(24px) saturate(1.1);
     border-radius: 16px;
     padding: 1.6rem 1.5rem;
     height: 100%;
@@ -322,8 +320,7 @@ html, body, [class*="css"] {
     right: 0;
     bottom: 0;
     z-index: 10;
-    background: rgba(0,0,0,0.55);
-    backdrop-filter: blur(18px);
+    background: rgba(8,8,11,0.92);
     border-top: 1px solid rgba(255,255,255,0.08);
     padding: 0.75rem 0;
     overflow: hidden;
@@ -501,9 +498,8 @@ html, body, [class*="css"] {
 }
 
 .news-feed-list {
-    background: rgba(0,0,0,0.4);
+    background: rgba(12,12,16,0.86);
     border: 1px solid rgba(255,255,255,0.09);
-    backdrop-filter: blur(24px) saturate(1.1);
     border-radius: 16px;
     padding: 0.4rem 1.5rem;
 }
