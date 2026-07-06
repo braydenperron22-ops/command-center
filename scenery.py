@@ -203,15 +203,34 @@ def _stars(phase: str) -> str:
     )
 
 
-def background_css_and_html(weather_code: int, phase: str, from_phase: str, blend: float) -> str:
-    """Full <style> + scene HTML: gradient sky (flat black at night), glowing
-    sun, layered clouds, precipitation, stars, and a soft vignette.
-
-    `blend` (0..1) is how far through the fade from `from_phase` to `phase`
-    we are, computed by the caller from real elapsed time.
+def sky_style(weather_code: int, phase: str, from_phase: str, blend: float) -> str:
+    """Just the sky-color <style> block — isolated from the decorative
+    scene elements below because this one legitimately changes every
+    render (it's a function of real elapsed time during a fade). Kept
+    separate so updating it doesn't force the browser to re-parse/replace
+    the clouds/sun/stars markup too, which was causing them to visibly
+    flash every second during the ~90s window after any phase change.
     """
     category = condition_category(weather_code)
     sky = blended_sky(category, from_phase, phase, blend)
+    return f"""<style>
+    [data-testid="stAppViewContainer"] {{
+        background: {sky};
+        background-attachment: fixed;
+    }}
+    [data-testid="stHeader"] {{ background: transparent; }}
+    </style>"""
+
+
+def scene_html(weather_code: int, phase: str) -> str:
+    """Static CSS rules + decorative scene HTML (sun, clouds, stars, rain/
+    snow, vignette). Depends only on weather category and phase — not on
+    elapsed time — so this string stays byte-identical between reruns
+    except at the rare moment the phase or condition actually changes,
+    letting Streamlit leave the DOM alone the rest of the time instead of
+    re-mounting these elements every second.
+    """
+    category = condition_category(weather_code)
     sun = _sun(phase)
     clouds = _clouds(category) if phase != "night" else ""
     particles = _particles(category)
@@ -219,11 +238,6 @@ def background_css_and_html(weather_code: int, phase: str, from_phase: str, blen
 
     return f"""
     <style>
-    [data-testid="stAppViewContainer"] {{
-        background: {sky};
-        background-attachment: fixed;
-    }}
-    [data-testid="stHeader"] {{ background: transparent; }}
     .cc-scene {{ position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }}
 
     .cc-haze {{

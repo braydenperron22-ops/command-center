@@ -16,7 +16,7 @@ import pages_news
 import theme
 from config import PAGE_ROTATION_SECONDS, PAGES, TIMEZONE, UV_HIGH_THRESHOLD
 from icons import icon_for
-from scenery import FADE_SECONDS, background_css_and_html, condition_category, phase_for
+from scenery import FADE_SECONDS, condition_category, phase_for, scene_html, sky_style
 import ticker
 from weather_client import fetch_weather
 
@@ -58,7 +58,11 @@ bg_fade_from = st.session_state.get("bg_fade_from", phase)
 bg_blend = min((time.time() - st.session_state.get("bg_phase_changed_at", 0)) / FADE_SECONDS, 1.0)
 
 st.markdown(
-    background_css_and_html(weather["weather_code"] if weather else 0, phase, bg_fade_from, bg_blend),
+    sky_style(weather["weather_code"] if weather else 0, phase, bg_fade_from, bg_blend),
+    unsafe_allow_html=True,
+)
+st.markdown(
+    scene_html(weather["weather_code"] if weather else 0, phase),
     unsafe_allow_html=True,
 )
 
