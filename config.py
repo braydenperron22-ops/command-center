@@ -182,8 +182,10 @@ CONFLICT_TERMS = [
 
 MAX_CONFLICTS_SHOWN = 6
 
-# Headlines accumulate in session state over this many days so a quiet news
-# day doesn't make an ongoing conflict vanish from the page.
+# Passed straight through as Google News' own `when:Xd` search operator —
+# it returns this many days of real history directly, so a quiet news day
+# doesn't make an ongoing conflict vanish (no local day-by-day
+# accumulation needed; each fetch is already a complete rolling window).
 CONFLICT_WINDOW_DAYS = 7
 
 # Twelve Data's free tier doesn't include raw index symbols (SPX/DJI/IXIC),

@@ -33,7 +33,13 @@ def _coverage_level(count: int) -> tuple[str, str]:
     return "Highly Covered", "bad"
 
 
+@st.cache_data(ttl=60 * 60, show_spinner=False)
 def _detect_conflicts(headlines: list[dict]) -> list[dict]:
+    """Cached at the same TTL as conflict_news.fetch_conflict_headlines()
+    (its only real input) — without this, the whole headline pool got
+    rescanned against every conflict term and every tracked country name
+    (thousands of regex checks) every single second this page is showing,
+    even though the pool itself only changes once an hour."""
     groups = {}  # frozenset(codes) -> [headlines]
     for item in headlines:
         h = item["headline"].lower()

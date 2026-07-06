@@ -11,6 +11,7 @@ headlines their own tag; anything else market-relevant is tagged
 "Market News" instead of being dropped.
 """
 
+import functools
 import hashlib
 import re
 import time
@@ -24,7 +25,7 @@ from config import TOP_ALERT_HOLD_SECONDS
 FEEDS = [
     "https://www.federalreserve.gov/feeds/press_all.xml",
     "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114",
-    "http://feeds.marketwatch.com/marketwatch/topstories/",
+    "https://feeds.marketwatch.com/marketwatch/topstories/",
     "https://finance.yahoo.com/news/rssindex",
 ]
 
@@ -119,9 +120,18 @@ def _contains_any(text: str, terms: list[str]) -> bool:
     return any(re.search(r"\b" + re.escape(t) + r"\b", text) for t in terms)
 
 
+@functools.lru_cache(maxsize=2048)
 def is_market_relevant(headline: str) -> bool:
     """Looser filter for the News page: any real finance/market signal
-    qualifies, not just the narrow topic+surprise combos above."""
+    qualifies, not just the narrow topic+surprise combos above.
+
+    Cached: this app reruns its whole script every second for the clock
+    tick, and `fetch_headlines()` only changes every 3 minutes (its own
+    cache TTL) — without memoizing, the same ~100 headlines were getting
+    re-run through a few dozen regex checks each, every single second,
+    for no reason. The input is just a string, so a plain function cache
+    is safe (no session/request state involved).
+    """
     if TICKER_PATTERN.search(headline):
         return True
     h = headline.lower()
@@ -138,17 +148,21 @@ def is_market_relevant(headline: str) -> bool:
 IMPORTANT_OTHER_TERMS = DATA_PRINT_TERMS + SURPRISE_TERMS + EARNINGS_COMPANIES + MACRO_SHOCK_TERMS
 
 
+@functools.lru_cache(maxsize=2048)
 def is_important(headline: str) -> bool:
     """True if the headline references one of our important target
     words — decides red (breaking) vs black (market news) in the alert
-    bar, independent of the category label classify() picks."""
+    bar, independent of the category label classify() picks. Cached for
+    the same reason as is_market_relevant above."""
     h = headline.lower()
     if _contains_any(h, FED_BOC_INCLUDE) and not _contains_any(h, FED_BOC_EXCLUDE):
         return True
     return _contains_any(h, IMPORTANT_OTHER_TERMS)
 
 
+@functools.lru_cache(maxsize=2048)
 def classify(headline: str) -> str | None:
+    """Cached for the same reason as is_market_relevant above."""
     h = headline.lower()
     if _contains_any(h, FED_BOC_INCLUDE) and not _contains_any(h, FED_BOC_EXCLUDE):
         return "Fed/BoC"
