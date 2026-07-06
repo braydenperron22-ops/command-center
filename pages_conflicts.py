@@ -20,8 +20,13 @@ from flags import flag_for
 
 def _word_in(term: str, text: str) -> bool:
     """Whole-word match — plain substring matching let "war" match inside
-    "warm", "Ukraine" phrasing aside terms like these need real boundaries."""
-    return re.search(r"\b" + re.escape(term) + r"\b", text) is not None
+    "warm", "Ukraine" phrasing aside terms like these need real boundaries.
+
+    Tolerates an optional trailing "s": "militant" alone used to silently
+    miss the far more common "militants attack" plural phrasing (strict
+    word-boundary matching means \\bmilitant\\b does not match
+    "militants" — there's no boundary between "t" and "s")."""
+    return re.search(r"\b" + re.escape(term) + r"s?\b", text) is not None
 
 
 def _coverage_level(count: int) -> tuple[str, str]:

@@ -25,9 +25,14 @@ def render(weather: dict | None) -> None:
     if alerts:
         # Several alerts can technically be active at once (e.g. a
         # statement upgraded to a warning); showing just the first one
-        # keeps the bar readable rather than concatenating everything.
+        # keeps the bar readable rather than concatenating everything —
+        # but silently dropping the rest with no indication would hide a
+        # second, possibly more severe, active alert entirely. A "+N
+        # more" suffix at least surfaces that there's more to know.
         alert = alerts[0]
         text = f"{alert['title']}" + (f" — {alert['summary']}" if alert["summary"] else "")
+        if len(alerts) > 1:
+            text += f" (+{len(alerts) - 1} more alert{'s' if len(alerts) > 2 else ''})"
         label = "Environment Canada"
     else:
         text = _fallback_text(weather)

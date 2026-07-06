@@ -105,10 +105,17 @@ MACRO_SHOCK_TERMS = [
 # filter), and matching on those terms let dozens of procedural notices
 # crowd out more relevant content. Genuinely policy-relevant Fed news still
 # qualifies via FED_BOC_INCLUDE below.
+# Deliberately excludes a bare "rate" — it word-boundary-matches ANY rate
+# ("discount rate," "birth rate," "graduation rate"), not just financial
+# ones, and was letting routine Fed committee-minutes headlines through
+# just because they happened to mention a meeting about rates. The
+# specific rate-related phrasing that actually signals real news is
+# already covered by FED_BOC_INCLUDE ("rate hike," "rate decision," etc.)
+# and "bond"/"yield" below.
 GENERAL_MARKET_TERMS = [
     "stock", "shares", "earnings", "ipo", "buy rating", "sell rating",
     "price target", "outperform", "underperform", "upgrade", "downgrade",
-    "dividend", "etf", "market cap", "rate",
+    "dividend", "etf", "market cap", "bond", "yield", "mortgage rate", "interest rate",
     "inflation", "cpi", "gdp", "jobs report", "unemployment", "recession",
     "economy", "economic", "rally", "sell-off", "selloff", "surge", "plunge",
     "futures", "wall street", "dow jones", "s&p", "nasdaq", "oil", "opec",
@@ -142,8 +149,14 @@ CLICKBAIT_PATTERNS = [
 
 def _contains_any(text: str, terms: list[str]) -> bool:
     """Whole-word/phrase match — plain substring matching let terms like
-    "shares" match inside unrelated words ("Bankshares", "Bancshares")."""
-    return any(re.search(r"\b" + re.escape(t) + r"\b", text) for t in terms)
+    "shares" match inside unrelated words ("Bankshares", "Bancshares").
+
+    Tolerates an optional trailing "s" so a term also matches its plural
+    without needing a separate entry for both — "stock" alone used to
+    silently miss the far more common "stocks rally today" phrasing
+    (word-boundary matching is strict: \\bstock\\b does not match
+    "stocks", since there's no boundary between "k" and "s")."""
+    return any(re.search(r"\b" + re.escape(t) + r"s?\b", text) for t in terms)
 
 
 @functools.lru_cache(maxsize=2048)
@@ -174,10 +187,18 @@ def is_market_relevant(headline: str) -> bool:
     """
     if is_clickbait(headline):
         return False
+    h = headline.lower()
+    # Routine Fed supervisory paperwork (stress tests, enforcement
+    # actions, etc.) is excluded outright — this used to only guard the
+    # strict FED_BOC_INCLUDE path above, but a stress-test press release
+    # mentioning "recession" (as in "confirms banks can weather a severe
+    # recession") was slipping in through GENERAL_MARKET_TERMS instead,
+    # which this blanket check up front closes for good.
+    if _contains_any(h, FED_BOC_EXCLUDE):
+        return False
     if TICKER_PATTERN.search(headline):
         return True
-    h = headline.lower()
-    if _contains_any(h, FED_BOC_INCLUDE) and not _contains_any(h, FED_BOC_EXCLUDE):
+    if _contains_any(h, FED_BOC_INCLUDE):
         return True
     return _contains_any(h, GENERAL_MARKET_TERMS)
 
