@@ -1,5 +1,6 @@
 """Personal command-center dashboard: ambient rotation across Home (macro
-data), Conflicts, News, and Markets — clock/weather header stays constant."""
+data), Conflicts, News, Markets, and Watchlist — clock/weather header
+stays constant."""
 
 import time
 from datetime import datetime
@@ -13,6 +14,7 @@ import pages_conflicts
 import pages_home
 import pages_markets
 import pages_news
+import pages_watchlist
 import theme
 import weather_alerts_bar
 from config import MAX_BURST_ALERTS, PAGE_ROTATION_SECONDS, PAGES, TIMEZONE, UV_HIGH_THRESHOLD
@@ -201,6 +203,8 @@ with st.container(key="page_body"):
             st.error("TWELVEDATA_API_KEY is not set in Streamlit secrets.")
         else:
             _safe_render(pages_markets.render, TWELVEDATA_API_KEY)
+    elif page == "watchlist":
+        _safe_render(pages_watchlist.render)
 
 # News alerts: strictly-filtered items queue up and take over the bottom
 # bar (normally the release calendar) for TOAST_SECONDS each, breaking-news

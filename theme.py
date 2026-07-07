@@ -575,6 +575,10 @@ html, body, [class*="css"] {
     background: #32D74B;
     box-shadow: 0 0 8px 1px rgba(50,215,75,0.5);
 }
+.page-title-watchlist::before {
+    background: #5AC8FA;
+    box-shadow: 0 0 8px 1px rgba(90,200,250,0.5);
+}
 
 .conflict-headlines {
     margin-top: 0.7rem;

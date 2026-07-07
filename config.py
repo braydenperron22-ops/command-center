@@ -94,10 +94,16 @@ MARKET_INDEX = {
 YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 
 # --- Multi-page ambient rotation -------------------------------------------
-# Home / Conflicts / News / Markets cycle the same way US/CA already does:
-# a time.time()-based index, no Streamlit multipage chrome, no scrolling.
-PAGES = ["home", "conflicts", "news", "markets"]
+# Home / Conflicts / News / Markets / Watchlist cycle the same way US/CA
+# already does: a time.time()-based index, no Streamlit multipage chrome,
+# no scrolling.
+PAGES = ["home", "conflicts", "news", "markets", "watchlist"]
 PAGE_ROTATION_SECONDS = 90
+
+# Watchlist tiles are wider (more metric rows than Markets' tiles) — cap
+# and row-wrap at a narrower count than Markets' 7 so they stay readable.
+MAX_WATCHLIST_SHOWN = 12
+WATCHLIST_ROW_SIZE = 6
 
 # Twelve Data free tier caps at 8 credits/minute — a single batched request
 # every 20 minutes stays far under that regardless of per-call cost.
