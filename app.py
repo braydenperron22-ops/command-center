@@ -12,6 +12,7 @@ from streamlit_autorefresh import st_autorefresh
 import news
 import pages_conflicts
 import pages_home
+import pages_internals
 import pages_markets
 import pages_news
 import pages_watchlist
@@ -201,6 +202,8 @@ with st.container(key="page_body"):
         _safe_render(pages_markets.render)
     elif page == "watchlist":
         _safe_render(pages_watchlist.render)
+    elif page == "internals":
+        _safe_render(pages_internals.render)
 
 # News alerts: strictly-filtered items queue up and take over the bottom
 # bar (normally the release calendar) for TOAST_SECONDS each, breaking-news

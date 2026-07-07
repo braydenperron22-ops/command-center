@@ -94,10 +94,10 @@ MARKET_INDEX = {
 YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 
 # --- Multi-page ambient rotation -------------------------------------------
-# Home / Conflicts / News / Markets / Watchlist cycle the same way US/CA
-# already does: a time.time()-based index, no Streamlit multipage chrome,
-# no scrolling.
-PAGES = ["home", "conflicts", "news", "markets", "watchlist"]
+# Home / Conflicts / News / Markets / Watchlist / Internals cycle the
+# same way US/CA already does: a time.time()-based index, no Streamlit
+# multipage chrome, no scrolling.
+PAGES = ["home", "conflicts", "news", "markets", "watchlist", "internals"]
 PAGE_ROTATION_SECONDS = 90
 
 # Watchlist tiles are wider (more metric rows than Markets' tiles) — cap

@@ -287,6 +287,20 @@ html, body, [class*="css"] {
     margin-bottom: 0;
 }
 
+/* Same idea as .market-sparkline-wrap, but for the Market Internals
+   confidence hero specifically — that tile already carries a value,
+   badge, and three metric rows, so its trend chart doesn't need to be
+   as tall as a plainer ratio tile's. */
+.confidence-sparkline-wrap {
+    margin-top: 0.6rem;
+}
+.confidence-sparkline-wrap .sparkline {
+    width: 100%;
+    height: 2.6rem;
+    opacity: 0.85;
+    margin-bottom: 0;
+}
+
 .tile-extra {
     margin-top: 0.5rem;
     padding-top: 0.5rem;
@@ -618,6 +632,10 @@ html, body, [class*="css"] {
 .page-title-watchlist::before {
     background: #5AC8FA;
     box-shadow: 0 0 8px 1px rgba(90,200,250,0.5);
+}
+.page-title-internals::before {
+    background: #BF5AF2;
+    box-shadow: 0 0 8px 1px rgba(191,90,242,0.5);
 }
 
 .conflict-headlines {
