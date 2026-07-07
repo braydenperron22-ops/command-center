@@ -12,7 +12,7 @@ import json
 import os
 
 STORE_PATH = os.path.join(os.path.dirname(__file__), "watchlist.json")
-DEFAULT_WATCHLIST = ["AAPL", "MSFT", "NVDA"]
+DEFAULT_WATCHLIST = ["CCO.TO", "QTUM", "ATD.TO"]
 
 
 def load() -> list[str]:
