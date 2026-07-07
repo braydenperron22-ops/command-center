@@ -17,6 +17,11 @@ import watchlist_store
 from config import MAX_WATCHLIST_SHOWN, WATCHLIST_ROW_SIZE
 
 TONE_LABEL = {"good": "BULLISH", "bad": "BEARISH", "neutral": "NEUTRAL"}
+ZONE_LABEL = {"entry": "ACCUMULATION ZONE", "exit": "TRIM ZONE"}
+ZONE_CAPTION = {
+    "entry": "Near support, pulled back, RSI cooling — confluence favors adding",
+    "exit": "Near resistance, extended, RSI hot — confluence favors trimming",
+}
 
 
 def _metric_row(label: str, value: str) -> str:
@@ -39,6 +44,7 @@ def _render_tile(symbol: str) -> None:
         return
 
     tone = analysis["tone"]
+    zone = analysis["zone"]
     accent_class = f"tile-accent-{tone}"
     badge_class = f"badge-{tone}"
     sparkline = tiles.sparkline_svg(analysis["history"], tone)
@@ -47,6 +53,11 @@ def _render_tile(symbol: str) -> None:
         else "Resistance + Fibonacci extension + trend confluence"
     )
 
+    zone_html = ""
+    if zone:
+        zone_html = f"""<div class="zone-banner zone-{zone}">{ZONE_LABEL[zone]}</div>
+            <div class="severity-caption">{ZONE_CAPTION[zone]}</div>"""
+
     st.markdown(
         f"""<div class="tile {accent_class}">
             <div class="tile-label">{symbol}</div>
@@ -54,6 +65,7 @@ def _render_tile(symbol: str) -> None:
                 <div class="tile-value">${analysis['price']:.2f}</div>{sparkline}
             </div>
             <div class="badge {badge_class}">{TONE_LABEL[tone]}</div>
+            {zone_html}
             {_metric_row("RSI (14)", f"{analysis['rsi']:.0f}")}
             {_metric_row("Support", f"${analysis['support']:.2f}")}
             {_metric_row("Resistance", f"${analysis['resistance']:.2f}")}

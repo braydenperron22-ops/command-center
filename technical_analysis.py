@@ -16,6 +16,13 @@ these agree with the overall tone —
 A tight range means those methods agree; a wide one means they don't —
 that disagreement is itself useful information, so it's shown as a range
 rather than averaged away into one number.
+
+Separately from tone, each ticker also gets an entry/accumulation vs.
+exit/trim zone call — orthogonal to trend direction, since a stock can be
+in a bullish trend and still be freshly pulled back (entry) or extended
+(exit) right now. Same confluence-voting approach: RSI level, proximity
+to support/resistance, and position relative to the 20-day average, 2 of
+3 needed to call it either way.
 """
 
 import numpy as np
@@ -30,6 +37,13 @@ MACD_FAST, MACD_SLOW, MACD_SIGNAL = 12, 26, 9
 SWING_LOOKBACK = 60  # trading days used for the swing high/low and support/resistance pivots
 TREND_PROJECTION_DAYS = 20
 CACHE_TTL_SECONDS = 30 * 60
+
+# Entry/exit zone thresholds — "near" a support/resistance pivot means
+# within this fraction of the current price.
+ZONE_PROXIMITY_PCT = 0.05
+ZONE_RSI_ENTRY = 40  # oversold-leaning, not just the extreme <=30 used for the tone vote
+ZONE_RSI_EXIT = 65  # overbought-leaning, not just the extreme >=70 used for the tone vote
+ZONE_EXTENDED_PCT = 0.05  # price this far above its 20-day average counts as "stretched"
 
 # Never let one bad/rate-limited/delisted ticker crash the whole page —
 # same reasoning as every other data client in this app: fall back to the
@@ -109,10 +123,12 @@ def analyze(symbol: str) -> dict | None:
     closes = hist["Close"]
     current_price = float(closes.iloc[-1])
 
+    sma20 = closes.rolling(SMA_SHORT).mean()
     sma50 = closes.rolling(SMA_MEDIUM).mean()
     sma200 = closes.rolling(SMA_LONG).mean()
     rsi = _rsi(closes)
     macd_line, signal_line = _macd(closes)
+    current_sma20 = float(sma20.iloc[-1])
 
     current_rsi = float(rsi.iloc[-1])
     current_macd = float(macd_line.iloc[-1])
@@ -141,7 +157,7 @@ def analyze(symbol: str) -> dict | None:
     swing_low, swing_high = _swing_levels(hist)
     swing_range = swing_high - swing_low
 
-    sma20_valid = closes.rolling(SMA_SHORT).mean().dropna()
+    sma20_valid = sma20.dropna()
     if len(sma20_valid) > TREND_PROJECTION_DAYS:
         slope_per_day = (sma20_valid.iloc[-1] - sma20_valid.iloc[-TREND_PROJECTION_DAYS]) / TREND_PROJECTION_DAYS
     else:
@@ -161,10 +177,34 @@ def analyze(symbol: str) -> dict | None:
 
     target_low, target_high = min(candidates), max(candidates)
 
+    # Entry/exit zone: a separate, orthogonal read from tone — tone is
+    # "which way is this trending," zone is "is *now* a reasonable time
+    # to add or trim, regardless of the broader trend." A stock can be in
+    # a bullish trend and still be freshly pulled back into an entry
+    # zone, or extended into an exit zone. Same confluence-voting
+    # approach as tone: needs 2 of 3 independent signals to agree rather
+    # than any single one deciding alone. RSI can't be both <=40 and
+    # >=65 at once, so entry and exit are naturally mutually exclusive.
+    near_support = (current_price - support) <= support * ZONE_PROXIMITY_PCT
+    near_resistance = (resistance - current_price) <= current_price * ZONE_PROXIMITY_PCT
+    pulled_back = current_price < current_sma20
+    extended = current_price > current_sma20 * (1 + ZONE_EXTENDED_PCT)
+
+    entry_votes = sum([current_rsi <= ZONE_RSI_ENTRY, near_support, pulled_back])
+    exit_votes = sum([current_rsi >= ZONE_RSI_EXIT, near_resistance, extended])
+
+    if entry_votes >= 2:
+        zone = "entry"
+    elif exit_votes >= 2:
+        zone = "exit"
+    else:
+        zone = None
+
     return {
         "symbol": symbol,
         "price": current_price,
         "tone": tone,
+        "zone": zone,
         "rsi": current_rsi,
         "support": support,
         "resistance": resistance,

@@ -312,6 +312,31 @@ html, body, [class*="css"] {
 .badge-neutral { background: rgba(10,132,255,0.14); color: #5AC8FA; }
 .badge-inline { background: rgba(255,255,255,0.08); color: #D6D6DC; }
 
+/* Watchlist entry/exit zone banner — deliberately louder than the badge
+   above it (solid fill + border, not just a translucent pill) since the
+   whole point is that this reads as unmissable, not another quiet
+   metric to notice only if you're looking for it. */
+.zone-banner {
+    margin-top: 0.7rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-align: center;
+}
+.zone-entry {
+    background: rgba(50,215,75,0.25);
+    color: #32D74B;
+    border: 1px solid rgba(50,215,75,0.6);
+}
+.zone-exit {
+    background: rgba(255,159,10,0.25);
+    color: #FF9F0A;
+    border: 1px solid rgba(255,159,10,0.6);
+}
+
 .ticker-bar {
     position: fixed;
     left: 0;
