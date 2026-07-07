@@ -145,12 +145,16 @@ def _particles(category: str) -> str:
 
 def _stars(phase: str) -> str:
     """Stars at night regardless of weather category — a fully black sky
-    with little stars, as requested, not gated on "clear" conditions."""
+    with little stars, as requested, not gated on "clear" conditions.
+    Static (no twinkle animation): a subtle per-star opacity variation
+    instead gives natural-looking variety without anything pulsing —
+    every other looping animation in the top-of-screen region has been
+    removed for the same reason (reads as busy/cheap, not premium)."""
     if phase != "night":
         return ""
     return "".join(
         f'<div class="cc-star" style="left:{(i * 37) % 100}%;top:{(i * 53) % 65}%;'
-        f'animation-delay:{(i % 5) * 0.9}s;"></div>'
+        f'opacity:{0.35 + (i % 5) * 0.13:.2f};"></div>'
         for i in range(40)
     )
 
@@ -222,9 +226,8 @@ def scene_html(weather_code: int, phase: str) -> str:
 
     .cc-star {{
         position: absolute; width: 2px; height: 2px; border-radius: 50%;
-        background: white; animation: cc-twinkle 4s ease-in-out infinite;
+        background: white;
     }}
-    @keyframes cc-twinkle {{ 0%, 100% {{ opacity: 0.2; }} 50% {{ opacity: 1; }} }}
     .cc-drop {{
         position: absolute; top: -5%; width: 1.5px; height: 16px;
         background: rgba(180, 205, 230, 0.45);
