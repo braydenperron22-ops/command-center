@@ -27,7 +27,6 @@ st.set_page_config(page_title="Command Center", layout="wide")
 theme.inject()
 
 FRED_API_KEY = st.secrets.get("FRED_API_KEY")
-TWELVEDATA_API_KEY = st.secrets.get("TWELVEDATA_API_KEY")
 
 # Ticking clock every second; rotation derived from elapsed real time so it
 # survives Streamlit Cloud sleep/wake without drifting into a fast-forward.
@@ -199,10 +198,7 @@ with st.container(key="page_body"):
     elif page == "news":
         _safe_render(pages_news.render)
     elif page == "markets":
-        if not TWELVEDATA_API_KEY:
-            st.error("TWELVEDATA_API_KEY is not set in Streamlit secrets.")
-        else:
-            _safe_render(pages_markets.render, TWELVEDATA_API_KEY)
+        _safe_render(pages_markets.render)
     elif page == "watchlist":
         _safe_render(pages_watchlist.render)
 

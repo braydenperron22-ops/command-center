@@ -272,6 +272,21 @@ html, body, [class*="css"] {
     margin-bottom: 0.4rem;
 }
 
+/* Markets' 1-year sparkline gets its own full-width slot near the
+   bottom of the tile instead of squeezed in next to the hero value —
+   a year of daily closes needs real width to read as a shape rather
+   than a squished line, and it's a headline feature of that tile, not
+   a small decoration beside the price. */
+.market-sparkline-wrap {
+    margin-top: 0.8rem;
+}
+.market-sparkline-wrap .sparkline {
+    width: 100%;
+    height: 3.4rem;
+    opacity: 0.85;
+    margin-bottom: 0;
+}
+
 .tile-extra {
     margin-top: 0.5rem;
     padding-top: 0.5rem;

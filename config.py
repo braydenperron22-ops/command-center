@@ -105,9 +105,11 @@ PAGE_ROTATION_SECONDS = 90
 MAX_WATCHLIST_SHOWN = 12
 WATCHLIST_ROW_SIZE = 6
 
-# Twelve Data free tier caps at 8 credits/minute — a single batched request
-# every 20 minutes stays far under that regardless of per-call cost.
-TWELVEDATA_TTL_SECONDS = 20 * 60
+# Markets page refresh — yfinance has no key/rate-limit tier to work
+# around, so this can just be "how fresh do we want it," not "how rarely
+# can we afford to ask."
+MARKET_DATA_TTL_SECONDS = 5 * 60
+MARKET_SPARKLINE_PERIOD = "1y"
 
 # Conflicts page is fully dynamic — no fixed list. GDELT turned out
 # unreliable (persistent rate-limiting), so this scans the same free RSS
@@ -194,15 +196,38 @@ MAX_CONFLICTS_SHOWN = 6
 # accumulation needed; each fetch is already a complete rolling window).
 CONFLICT_WINDOW_DAYS = 7
 
-# Twelve Data's free tier doesn't include raw index symbols (SPX/DJI/IXIC),
-# so major ETFs stand in as proxies for the indices/oil — same spirit as the
-# FRED/StatCan proxies used elsewhere, just not called out in the label.
-MARKET_INSTRUMENTS = [
-    {"key": "sp500", "label": "S&P 500", "symbol": "SPY"},
-    {"key": "dow", "label": "Dow Jones", "symbol": "DIA"},
-    {"key": "nasdaq", "label": "Nasdaq", "symbol": "QQQ"},
-    {"key": "tsx", "label": "Canada", "symbol": "EWC"},
-    {"key": "usdcad", "label": "USD/CAD", "symbol": "USD/CAD"},
-    {"key": "gold", "label": "Gold", "symbol": "XAU/USD"},
-    {"key": "oil", "label": "Crude Oil", "symbol": "USO"},
+# Markets page: yfinance gives real index symbols directly, unlike Twelve
+# Data's free tier (which needed ETF proxies — SPY/DIA/QQQ/EWC — as a
+# workaround). Which 4 "index" slots show swaps by market status: the
+# real index during NYSE/TSX hours (live), futures outside those hours
+# (still live — futures trade nearly 24/5), crypto on weekends (the only
+# thing actually moving when nothing else is open). No TSX futures
+# symbol exists on yfinance, so Canada just stays on its index in every
+# non-open state — same as any other closed-market quote, it shows the
+# last close rather than nothing.
+MARKET_INSTRUMENTS_OPEN = [
+    {"key": "sp500", "label": "S&P 500", "symbol": "^GSPC"},
+    {"key": "dow", "label": "Dow Jones", "symbol": "^DJI"},
+    {"key": "nasdaq", "label": "Nasdaq", "symbol": "^IXIC"},
+    {"key": "tsx", "label": "Canada", "symbol": "^GSPTSE"},
+]
+MARKET_INSTRUMENTS_CLOSED = [
+    {"key": "sp500", "label": "S&P 500 Futures", "symbol": "ES=F"},
+    {"key": "dow", "label": "Dow Futures", "symbol": "YM=F"},
+    {"key": "nasdaq", "label": "Nasdaq Futures", "symbol": "NQ=F"},
+    {"key": "tsx", "label": "Canada", "symbol": "^GSPTSE"},
+]
+MARKET_INSTRUMENTS_WEEKEND = [
+    {"key": "btc", "label": "Bitcoin", "symbol": "BTC-USD"},
+    {"key": "eth", "label": "Ethereum", "symbol": "ETH-USD"},
+    {"key": "sol", "label": "Solana", "symbol": "SOL-USD"},
+    {"key": "doge", "label": "Dogecoin", "symbol": "DOGE-USD"},
+]
+# Commodities always quote via futures (how gold/oil actually trade
+# nearly around the clock anyway) and FX always via spot — neither needs
+# the open/closed/weekend swap the equity indices get.
+MARKET_INSTRUMENTS_ALWAYS = [
+    {"key": "usdcad", "label": "USD/CAD", "symbol": "USDCAD=X"},
+    {"key": "gold", "label": "Gold", "symbol": "GC=F"},
+    {"key": "oil", "label": "Crude Oil", "symbol": "CL=F"},
 ]
