@@ -81,20 +81,32 @@ SURPRISE_TERMS = [
     "jumps", "tumbles", "slows more than", "sharply higher", "sharply lower",
     "sinks", "soars", "spikes",
 ]
-EARNINGS_COMPANIES = [
-    "apple", "aapl", "microsoft", "msft", "nvidia", "nvda",
-    "amazon", "amzn", "alphabet", "google", "googl", "meta platforms",
-    "jpmorgan", "jp morgan", "bank of america", "bofa",
-    "tesla", "tsla", "netflix", "nflx", "broadcom", "avgo", "berkshire hathaway",
+# name/ticker variant -> canonical ticker symbol. A dict (not a flat
+# list) so a detected company can be resolved to an actual tradable
+# symbol — used both for the classify() Earnings pairing check (as
+# EARNINGS_COMPANIES.keys()) and to look up a company's 1-year return
+# for the News page's inline ticker badge (headline_tickers.py).
+EARNINGS_COMPANIES = {
+    "apple": "AAPL", "aapl": "AAPL", "microsoft": "MSFT", "msft": "MSFT",
+    "nvidia": "NVDA", "nvda": "NVDA", "amazon": "AMZN", "amzn": "AMZN",
+    "alphabet": "GOOGL", "google": "GOOGL", "googl": "GOOGL",
+    "meta platforms": "META", "jpmorgan": "JPM", "jp morgan": "JPM",
+    "bank of america": "BAC", "bofa": "BAC", "tesla": "TSLA", "tsla": "TSLA",
+    "netflix": "NFLX", "nflx": "NFLX", "broadcom": "AVGO", "avgo": "AVGO",
+    "berkshire hathaway": "BRK-B",
     # Expanded beyond the original "Magnificent 7"-ish set — plenty of
     # other mega-caps produce genuinely major earnings headlines that
     # were previously invisible to this category entirely.
-    "costco", "walmart", "exxon", "exxonmobil", "chevron", "visa", "mastercard",
-    "unitedhealth", "eli lilly", "home depot", "procter & gamble", "coca-cola",
-    "disney", "boeing", "intel", "amd", "qualcomm", "oracle", "salesforce",
-    "adobe", "paypal", "goldman sachs", "morgan stanley", "wells fargo",
-    "citigroup", "pfizer", "johnson & johnson", "verizon", "at&t", "comcast",
-]
+    "costco": "COST", "walmart": "WMT", "exxon": "XOM", "exxonmobil": "XOM",
+    "chevron": "CVX", "visa": "V", "mastercard": "MA", "unitedhealth": "UNH",
+    "eli lilly": "LLY", "home depot": "HD", "procter & gamble": "PG",
+    "coca-cola": "KO", "disney": "DIS", "boeing": "BA", "intel": "INTC",
+    "amd": "AMD", "qualcomm": "QCOM", "oracle": "ORCL", "salesforce": "CRM",
+    "adobe": "ADBE", "paypal": "PYPL", "goldman sachs": "GS",
+    "morgan stanley": "MS", "wells fargo": "WFC", "citigroup": "C",
+    "pfizer": "PFE", "johnson & johnson": "JNJ", "verizon": "VZ",
+    "at&t": "T", "comcast": "CMCSA",
+}
 EARNINGS_TERMS = [
     "earnings", "quarterly results", "beats estimates", "misses estimates",
     "guidance", "q1 results", "q2 results", "q3 results", "q4 results", "profit",

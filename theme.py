@@ -738,6 +738,19 @@ html, body, [class*="css"] {
     color: #F5F5F7;
 }
 
+.headline-ticker-badge {
+    display: inline-block;
+    margin-left: 0.6rem;
+    padding: 0.08rem 0.5rem;
+    border-radius: 8px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+.headline-ticker-badge.market-up { background: rgba(50,215,75,0.18); color: #32D74B; }
+.headline-ticker-badge.market-down { background: rgba(255,105,97,0.18); color: #FF6961; }
+
 .news-feed-meta {
     flex-shrink: 0;
     font-size: 0.85rem;

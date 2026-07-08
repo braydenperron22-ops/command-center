@@ -11,6 +11,7 @@ import time
 
 import streamlit as st
 
+import headline_tickers
 import news
 
 WINDOW_SECONDS = 24 * 60 * 60
@@ -85,7 +86,7 @@ def render():
 
     rows = "".join(
         f"""<div class="news-feed-row {_row_class(e)}">
-            <div class="news-feed-headline">{e['headline']}</div>
+            <div class="news-feed-headline">{e['headline']}{headline_tickers.ticker_badge_html(e['headline'])}</div>
             <div class="news-feed-meta">{_meta_text(e, now_ts)}</div>
         </div>"""
         for e in entries
