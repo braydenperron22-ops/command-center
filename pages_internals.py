@@ -3,12 +3,17 @@ confidence composite, equal-weight-vs-index volatility, and two classic
 credit/breadth ratios (HYG/LQD, RSP/SPY). See market_internals.py for
 the exact formulas and data sourcing, including why VIXEQ/VIX is the
 one metric here with a slowly-accumulating rather than immediate trend.
+
+The Confidence Index is the headline of this page — bigger type, its
+own row — with the three ratios as a compact supporting strip below,
+not equal-weight peers. No sparklines: they were the single biggest
+reason this page didn't fit its space, and weren't earning their room
+next to badges/captions that already state the direction in words.
 """
 
 import streamlit as st
 
 import market_internals as mi
-import tiles
 
 CONFIDENCE_EXPLANATION = (
     "Two VIX-based decay curves — one on today's VIX, one on its 30-day average, "
@@ -18,11 +23,11 @@ CONFIDENCE_EXPLANATION = (
 VIXEQ_EXPLANATION_EXPANDING = "Expanding — a differentiated, stock-specific market: individual names moving on their own news, not in lockstep."
 VIXEQ_EXPLANATION_COMPRESSING = "Compressing toward the index — rising correlation, stocks moving together. Often shows up during broad macro stress."
 VIXEQ_EXPLANATION_FLAT = "Stable relationship between constituent-level and index-level volatility."
-HYG_LQD_EXPLANATION_UP = "Risk-On — high-yield credit outperforming investment-grade. Credit markets aren't pricing in much stress."
+HYG_LQD_EXPLANATION_UP = "Risk-On — high-yield credit outperforming investment-grade."
 HYG_LQD_EXPLANATION_DOWN = "Risk-Off — flight to quality in credit markets. Often leads equity weakness."
 HYG_LQD_EXPLANATION_FLAT = "Credit risk appetite holding steady."
 RSP_SPY_EXPLANATION_UP = "Broadening — this rally has real participation beyond a handful of mega-caps."
-RSP_SPY_EXPLANATION_DOWN = "Narrowing — gains concentrated in a handful of mega-caps. A classic late-cycle fragility signal."
+RSP_SPY_EXPLANATION_DOWN = "Narrowing — gains concentrated in a handful of mega-caps."
 RSP_SPY_EXPLANATION_FLAT = "Market breadth holding steady."
 
 
@@ -57,20 +62,20 @@ def _render_confidence_hero() -> None:
 
     value = data["value"]
     band_label, tone = _confidence_band(value)
-    arrow, trend_tone = mi.trend(value, data["prior_value"], higher_is_good=True)
+    arrow, _ = mi.trend(value, data["prior_value"], higher_is_good=True)
     accent_class = f"tile-accent-{tone}"
     badge_class = f"badge-{tone}"
-    sparkline = tiles.sparkline_svg(data["history"], tone)
 
     st.markdown(
-        f"""<div class="tile {accent_class}">
+        f"""<div class="tile {accent_class} confidence-hero">
             <div class="tile-label">MARKET CONFIDENCE INDEX</div>
-            <div class="tile-value">{value:.0f}</div>
+            <div class="confidence-value">{value:.0f}</div>
             <div class="badge {badge_class}">{band_label}</div>
-            {_metric_row("VIX", f"{data['current_vix']:.2f}")}
-            {_metric_row("VIX 30-Day Average", f"{data['vix_30dma']:.2f}")}
-            {_metric_row("1-Month Trend", arrow)}
-            <div class="confidence-sparkline-wrap">{sparkline}</div>
+            <div class="confidence-metrics">
+                {_metric_row("VIX", f"{data['current_vix']:.2f}")}
+                {_metric_row("VIX 30-Day Average", f"{data['vix_30dma']:.2f}")}
+                {_metric_row("1-Month Trend", arrow)}
+            </div>
             <div class="severity-caption">{CONFIDENCE_EXPLANATION}</div>
         </div>""",
         unsafe_allow_html=True,
@@ -93,10 +98,8 @@ def _render_vixeq_tile() -> None:
                 <div class="tile-label">VIXEQ / VIX</div>
                 <div class="tile-value">{data['value']:.2f}</div>
                 <div class="tile-prev">Constituent vs. index volatility</div>
-                {_metric_row("VIXEQ", f"{data['vixeq']:.2f}")}
-                {_metric_row("VIX", f"{data['vix']:.2f}")}
-                <div class="severity-caption">Yahoo only exposes a live snapshot for VIXEQ, not history — trend
-                builds from one real data point recorded daily as this runs.
+                <div class="severity-caption">Yahoo only exposes a live snapshot for VIXEQ, not history —
+                trend builds from one real data point recorded daily as this runs.
                 {data['history_days']} day(s) collected so far.</div>
             </div>""",
             unsafe_allow_html=True,
@@ -109,17 +112,13 @@ def _render_vixeq_tile() -> None:
         "bad": VIXEQ_EXPLANATION_COMPRESSING,
         "neutral": VIXEQ_EXPLANATION_FLAT,
     }[tone]
-    sparkline = tiles.sparkline_svg(data["history"], tone)
 
     st.markdown(
         f"""<div class="tile tile-accent-{tone}">
             <div class="tile-label">VIXEQ / VIX</div>
             <div class="tile-value">{data['value']:.2f}</div>
             <div class="badge badge-{tone}">{arrow}</div>
-            {_metric_row("VIXEQ", f"{data['vixeq']:.2f}")}
-            {_metric_row("VIX", f"{data['vix']:.2f}")}
-            <div class="market-sparkline-wrap">{sparkline}</div>
-            <div class="severity-caption">{caption} ({data['history_days']} days of history)</div>
+            <div class="severity-caption">{caption}</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -137,15 +136,12 @@ def _render_ratio_tile(label: str, symbol_a: str, symbol_b: str, caption_up: str
 
     arrow, tone = mi.trend(data["value"], data["prior_value"], higher_is_good=True)
     caption = {"good": caption_up, "bad": caption_down, "neutral": caption_flat}[tone]
-    sparkline = tiles.sparkline_svg(data["history"], tone)
 
     st.markdown(
         f"""<div class="tile tile-accent-{tone}">
             <div class="tile-label">{label}</div>
             <div class="tile-value">{data['value']:.3f}</div>
             <div class="badge badge-{tone}">{arrow}</div>
-            {_metric_row("1-Month Change", f"{(data['value'] / data['prior_value'] - 1) * 100:+.2f}%")}
-            <div class="market-sparkline-wrap">{sparkline}</div>
             <div class="severity-caption">{caption}</div>
         </div>""",
         unsafe_allow_html=True,
@@ -156,7 +152,7 @@ def render() -> None:
     st.markdown('<div class="page-title page-title-internals">Market Internals</div>', unsafe_allow_html=True)
 
     _render_confidence_hero()
-    st.markdown('<div style="height: 0.3rem;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height: 0.8rem;"></div>', unsafe_allow_html=True)
 
     cols = st.columns(3)
     with cols[0]:

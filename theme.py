@@ -287,18 +287,28 @@ html, body, [class*="css"] {
     margin-bottom: 0;
 }
 
-/* Same idea as .market-sparkline-wrap, but for the Market Internals
-   confidence hero specifically — that tile already carries a value,
-   badge, and three metric rows, so its trend chart doesn't need to be
-   as tall as a plainer ratio tile's. */
-.confidence-sparkline-wrap {
-    margin-top: 0.6rem;
+/* Market Internals: the Confidence Index is the headline of that page,
+   not a peer to the three ratio tiles below it — a much larger value
+   (bigger than the clock, since this is the one thing that page exists
+   to show) and centered layout set it apart. */
+.confidence-hero {
+    align-items: center;
+    text-align: center;
+    padding-top: 2rem;
+    padding-bottom: 1.7rem;
 }
-.confidence-sparkline-wrap .sparkline {
+.confidence-value {
+    font-size: 5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #F5F5F7;
+    line-height: 1.1;
+    margin: 0.2rem 0 0.6rem;
+}
+.confidence-metrics {
     width: 100%;
-    height: 2.6rem;
-    opacity: 0.85;
-    margin-bottom: 0;
+    max-width: 26rem;
+    margin-top: 0.9rem;
 }
 
 .tile-extra {
