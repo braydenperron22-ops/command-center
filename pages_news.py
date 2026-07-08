@@ -44,11 +44,16 @@ def render():
             continue
         h = hashlib.sha1(item["headline"].encode()).hexdigest()
         if h not in seen_at:
-            category = news.classify(item["headline"]) or "Market News"
+            classification = news.classify(item["headline"])
             seen_at[h] = {
                 "headline": item["headline"],
                 "first_seen": now_ts,
-                "category": category,
+                "category": classification or "Market News",
+                # Captured once, at first sight — "are/were breaking,"
+                # not re-evaluated fresh on every render, so this stays
+                # true to what actually happened even if term lists
+                # change later.
+                "important": classification is not None,
                 "source": item.get("source", ""),
             }
 
@@ -73,8 +78,13 @@ def render():
         )
         return
 
+    def _row_class(e: dict) -> str:
+        if e.get("important"):
+            return "news-feed-row-breaking"
+        return news.category_class(e.get("category", "Market News"))
+
     rows = "".join(
-        f"""<div class="news-feed-row {news.category_class(e.get('category', 'Market News'))}">
+        f"""<div class="news-feed-row {_row_class(e)}">
             <div class="news-feed-headline">{e['headline']}</div>
             <div class="news-feed-meta">{_meta_text(e, now_ts)}</div>
         </div>"""

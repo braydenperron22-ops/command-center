@@ -6,9 +6,15 @@ the source) plus a few general finance RSS feeds. The breaking-news bar
 uses the exact same `is_market_relevant` filter as the News page — it's
 the same headline pool, just surfaced immediately as each one first
 appears rather than waiting to be read on the News page. `classify()`
-still runs to give Fed/BoC, Data Surprise, Earnings, and Macro Shock
-headlines their own tag; anything else market-relevant is tagged
-"Market News" instead of being dropped.
+gives Fed/BoC, Data Surprise, Earnings, Macro Shock, Mergers, and
+Milestone headlines their own tag; anything else market-relevant is
+tagged "Market News" instead of being dropped. `is_important()` — which
+decides red (breaking) vs black (market news) in the alert bar, and the
+News page's red-vs-category-colored row border — is exactly
+`classify(h) is not None`: every one of those six categories already
+requires a topic+qualifier pairing (or is inherently unambiguous enough
+not to need one, like Macro Shock), so there's no separate, looser path
+for something to sneak through as "breaking" without earning it.
 """
 
 import functools
@@ -50,6 +56,8 @@ FED_BOC_INCLUDE = [
     "takes oath of office", "sworn in as chair", "steps down as chair", "resigns as chair",
     "named fed chair", "confirmed as fed chair", "quantitative easing", "quantitative tightening",
     "dot plot", "emergency meeting", "emergency rate", "press conference",
+    "rate pause", "pauses rate", "hawkish pivot", "dovish pivot", "balance sheet runoff",
+    "tapering", "forward guidance", "rate path",
 ]
 # The Fed's own RSS feed is mostly routine bank-supervision paperwork —
 # these show up alongside genuine policy news and would otherwise slip
@@ -78,6 +86,14 @@ EARNINGS_COMPANIES = [
     "amazon", "amzn", "alphabet", "google", "googl", "meta platforms",
     "jpmorgan", "jp morgan", "bank of america", "bofa",
     "tesla", "tsla", "netflix", "nflx", "broadcom", "avgo", "berkshire hathaway",
+    # Expanded beyond the original "Magnificent 7"-ish set — plenty of
+    # other mega-caps produce genuinely major earnings headlines that
+    # were previously invisible to this category entirely.
+    "costco", "walmart", "exxon", "exxonmobil", "chevron", "visa", "mastercard",
+    "unitedhealth", "eli lilly", "home depot", "procter & gamble", "coca-cola",
+    "disney", "boeing", "intel", "amd", "qualcomm", "oracle", "salesforce",
+    "adobe", "paypal", "goldman sachs", "morgan stanley", "wells fargo",
+    "citigroup", "pfizer", "johnson & johnson", "verizon", "at&t", "comcast",
 ]
 EARNINGS_TERMS = [
     "earnings", "quarterly results", "beats estimates", "misses estimates",
@@ -89,6 +105,26 @@ MACRO_SHOCK_TERMS = [
     "stocks plunge", "stock market sell-off", "bear market", "debt default",
     "credit downgrade", "circuit breaker", "market meltdown", "stocks tumble",
     "flash crash", "contagion fears", "systemic risk",
+    # Filled real gaps — genuinely major, unambiguous single-word/phrase
+    # events that weren't covered by anything above.
+    "bankruptcy", "bailout", "bank run", "trading halted", "halts trading",
+    "market rout", "worst day since", "biggest drop since", "stocks crash",
+    "stocks collapse", "shares crash", "shares collapse", "wipes out",
+    "credit crunch", "liquidity crisis",
+]
+# Genuinely huge M&A ("$X billion deal") and market-milestone headlines
+# ("record high") had no coverage at all before — neither fit the
+# existing categories, so big deal/record-setting news was never
+# flagged as breaking no matter how significant.
+MA_TERMS = [
+    "to acquire", "acquires", "announces acquisition", "merger agreement",
+    "agrees to buy", "takeover bid", "hostile takeover", "buyout deal",
+    "to merge with", "acquisition of",
+]
+MA_SCALE_TERMS = ["billion", "trillion"]
+MILESTONE_TERMS = [
+    "record high", "record low", "all-time high", "all-time low",
+    "closes at a record", "biggest gain since", "best day since",
 ]
 
 # Deliberately looser than the breaking-news categories above — those
@@ -252,26 +288,6 @@ def is_market_relevant(headline: str) -> bool:
     return _contains_any(h, GENERAL_MARKET_TERMS)
 
 
-# "This headline matters enough to go red" words — every term across the
-# topic/qualifier categories above, checked as a simple membership test
-# rather than requiring the topic+qualifier pairing classify() needs.
-# Anything from the News feed that hits one of these is a breaking-red
-# item; everything else market-relevant is black.
-IMPORTANT_OTHER_TERMS = DATA_PRINT_TERMS + SURPRISE_TERMS + EARNINGS_COMPANIES + MACRO_SHOCK_TERMS
-
-
-@functools.lru_cache(maxsize=2048)
-def is_important(headline: str) -> bool:
-    """True if the headline references one of our important target
-    words — decides red (breaking) vs black (market news) in the alert
-    bar, independent of the category label classify() picks. Cached for
-    the same reason as is_market_relevant above."""
-    h = headline.lower()
-    if _contains_any(h, FED_BOC_INCLUDE) and not _contains_any(h, FED_BOC_EXCLUDE):
-        return True
-    return _contains_any(h, IMPORTANT_OTHER_TERMS)
-
-
 @functools.lru_cache(maxsize=2048)
 def classify(headline: str) -> str | None:
     """Cached for the same reason as is_market_relevant above."""
@@ -284,7 +300,28 @@ def classify(headline: str) -> str | None:
         return "Earnings"
     if _contains_any(h, MACRO_SHOCK_TERMS):
         return "Macro Shock"
+    if _contains_any(h, MA_TERMS) and _contains_any(h, MA_SCALE_TERMS):
+        return "Mergers"
+    if _contains_any(h, MILESTONE_TERMS):
+        return "Milestone"
     return None
+
+
+def is_important(headline: str) -> bool:
+    """True if this headline matches one of the strict breaking
+    categories above — decides red (breaking) vs black (market news) in
+    the alert bar.
+
+    This used to be its own separate, looser check: a flat OR across
+    every term in every category's list, with no requirement that a
+    topic term be paired with its qualifier the way classify() requires
+    (a data-print term needs a surprise word alongside it; a company
+    name needs an earnings word alongside it). That looseness meant a
+    headline just containing "Apple" or "CPI" — with zero surprising or
+    earnings-related content — still flagged as breaking. Now it's
+    exactly classify()'s pairing logic; nothing gets to skip it.
+    """
+    return classify(headline) is not None
 
 
 def category_class(category: str) -> str:

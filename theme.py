@@ -590,6 +590,8 @@ html, body, [class*="css"] {
 .news-alert-tag.news-cat-earnings { background: rgba(50,215,75,0.9); color: #0b2b12; }
 .news-alert-tag.news-cat-macro-shock { background: rgba(255,255,255,0.9); color: #7a0f10; }
 .news-alert-tag.news-cat-market-news { background: rgba(255,214,10,0.9); color: #4d3c00; }
+.news-alert-tag.news-cat-mergers { background: rgba(255,159,10,0.9); color: #4d2c00; }
+.news-alert-tag.news-cat-milestone { background: rgba(100,210,255,0.9); color: #0a2c3d; }
 
 .severity-track {
     position: relative;
@@ -706,12 +708,19 @@ html, body, [class*="css"] {
 /* Same category → color mapping as the breaking-news tag above, so a
    glance at the left edge of a row tells you what kind of story it is
    without reading the headline — consistent language across the whole
-   News feed and the alert bars instead of every row looking the same. */
+   News feed and the alert bars instead of every row looking the same.
+   Rows that actually triggered (or would trigger) the breaking-news bar
+   use this red instead of their category color — same red as
+   badge-bad/tile-accent-bad elsewhere, so "this was breaking" reads as
+   the same kind of signal everywhere in the app, not a one-off color. */
+.news-feed-row.news-feed-row-breaking { border-left-color: #FF6961; }
 .news-feed-row.news-cat-fed-boc { border-left-color: #BF5AF2; }
 .news-feed-row.news-cat-data-surprise { border-left-color: #5AC8FA; }
 .news-feed-row.news-cat-earnings { border-left-color: #32D74B; }
 .news-feed-row.news-cat-macro-shock { border-left-color: #FFFFFF; }
 .news-feed-row.news-cat-market-news { border-left-color: #FFD60A; }
+.news-feed-row.news-cat-mergers { border-left-color: #FF9F0A; }
+.news-feed-row.news-cat-milestone { border-left-color: #64D2FF; }
 
 .news-feed-row:last-child {
     border-bottom: none;
