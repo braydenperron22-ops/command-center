@@ -10,12 +10,16 @@ of what's heating up vs. going quiet, rather than a static watchlist.
 """
 
 import re
+from datetime import datetime, timezone
 
 import streamlit as st
 
 import conflict_news
 from config import CONFLICT_COUNTRIES, CONFLICT_TERMS, FLAG_CODE_NAME, MAX_CONFLICTS_SHOWN
 from flags import flag_for
+
+RECENT_WINDOW_SECONDS = 24 * 60 * 60
+_MIN_DATETIME = datetime.min.replace(tzinfo=timezone.utc)
 
 
 def _word_in(term: str, text: str) -> bool:
@@ -45,7 +49,7 @@ def _detect_conflicts(headlines: list[dict]) -> list[dict]:
     rescanned against every conflict term and every tracked country name
     (thousands of regex checks) every single second this page is showing,
     even though the pool itself only changes once an hour."""
-    groups = {}  # frozenset(codes) -> [headlines]
+    groups = {}  # frozenset(codes) -> [{"headline": ..., "published": ...}]
     for item in headlines:
         h = item["headline"].lower()
         if not any(_word_in(term, h) for term in CONFLICT_TERMS):
@@ -54,10 +58,19 @@ def _detect_conflicts(headlines: list[dict]) -> list[dict]:
         if not codes:
             continue
         key = frozenset(codes)
-        groups.setdefault(key, []).append(item["headline"])
+        groups.setdefault(key, []).append({
+            "headline": item["headline"],
+            "published": item.get("published"),
+        })
 
     entries = []
     for codes, matched_headlines in groups.items():
+        # Newest first — Google's own feed order isn't reliably
+        # chronological (confirmed by inspection: dates come back mixed
+        # within a single response), so this is a real sort, not a
+        # no-op. Anything with an unparseable date sorts to the very
+        # end rather than crashing the comparison.
+        matched_headlines.sort(key=lambda h: h["published"] or _MIN_DATETIME, reverse=True)
         names = [FLAG_CODE_NAME.get(c, c.upper()) for c in sorted(codes)]
         entries.append({
             "codes": sorted(codes),
@@ -82,6 +95,8 @@ def render():
         )
         return
 
+    now_utc = datetime.now(timezone.utc)
+
     cols = st.columns(len(entries))
     for i, entry in enumerate(entries):
         count = len(entry["headlines"])
@@ -91,7 +106,10 @@ def render():
         fill_pct = min(count / 5, 1.0) * 100
 
         flags_html = "".join(f'<span class="conflict-flag">{flag_for(code)}</span>' for code in entry["codes"])
-        headlines_html = "".join(f'<div class="conflict-headline">{h}</div>' for h in entry["headlines"][:3])
+        headlines_html = "".join(
+            f'<div class="conflict-headline{" conflict-headline-recent" if h["published"] and (now_utc - h["published"]).total_seconds() < RECENT_WINDOW_SECONDS else ""}">{h["headline"]}</div>'
+            for h in entry["headlines"][:3]
+        )
 
         with cols[i]:
             st.markdown(

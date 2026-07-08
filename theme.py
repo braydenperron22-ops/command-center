@@ -678,6 +678,12 @@ html, body, [class*="css"] {
     line-height: 1.4;
     margin-bottom: 0.4rem;
 }
+/* Same red as badge-bad/tile-accent-bad/the News page's breaking rows —
+   consistent "this is fresh/urgent" language app-wide, not a one-off. */
+.conflict-headline-recent {
+    color: #FF6961;
+    font-weight: 600;
+}
 
 .conflict-flags {
     margin-bottom: 0.6rem;
