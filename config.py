@@ -36,7 +36,7 @@ TOP_ALERT_HOLD_SECONDS = 2 * 60 * 60
 # skipped rather than queued.
 MAX_BURST_ALERTS = 6
 
-ROTATION_SECONDS = 120
+ROTATION_SECONDS = 5 * 60
 
 # Standard-deviation band used to classify a reading vs its trailing trend
 HOT_COOL_THRESHOLD = 0.75
