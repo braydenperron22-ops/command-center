@@ -172,6 +172,56 @@ EARNINGS_COMPANIES = {
     # Crypto-adjacent public companies.
     "microstrategy": "MSTR", "marathon digital": "MARA",
     "riot platforms": "RIOT",
+    # More US, across sectors not yet covered.
+    "on semiconductor": "ON", "analog devices": "ADI", "skyworks solutions": "SWKS",
+    "microchip technology": "MCHP", "palo alto networks": "PANW", "fortinet": "FTNT",
+    "autodesk": "ADSK", "intuit": "INTU", "best buy": "BBY", "dollar general": "DG",
+    "dollar tree": "DLTR", "ulta beauty": "ULTA", "etsy": "ETSY", "ebay": "EBAY",
+    "emerson electric": "EMR", "illinois tool works": "ITW", "parker hannifin": "PH",
+    "eaton corporation": "ETN", "american tower": "AMT", "prologis": "PLD",
+    "simon property group": "SPG", "public storage": "PSA",
+    "marriott international": "MAR", "hilton worldwide": "HLT",
+    "las vegas sands": "LVS", "mgm resorts": "MGM", "progressive corp": "PGR",
+    "travelers companies": "TRV", "chubb limited": "CB", "metlife": "MET",
+    "prudential financial": "PRU", "aig": "AIG", "american electric power": "AEP",
+    "exelon corporation": "EXC", "sempra energy": "SRE",
+    "live nation entertainment": "LYV", "electronic arts": "EA",
+    "take-two interactive": "TTWO", "alnylam pharmaceuticals": "ALNY",
+    "biontech": "BNTX", "kla corporation": "KLAC", "global payments": "GPN",
+    # Canada — the rest of the TSX heavyweights beyond what's already here.
+    "royal bank of canada": "RY", "rbc": "RY", "td bank": "TD",
+    "scotiabank": "BNS", "bank of nova scotia": "BNS",
+    "bank of montreal": "BMO", "bmo financial": "BMO", "enbridge": "ENB",
+    "canadian national railway": "CNI", "canadian pacific kansas city": "CP",
+    "canadian pacific": "CP", "bce inc": "BCE", "suncor energy": "SU",
+    "suncor": "SU", "barrick gold": "GOLD", "barrick": "GOLD",
+    "manulife financial": "MFC", "manulife": "MFC",
+    "alimentation couche-tard": "ATD.TO",
+    # UK. "bp" and "shell" alone are far too common as ordinary English
+    # words/abbreviations to bare-match safely — those two only match on
+    # the fuller phrasing, or fall back to an explicit "(BP)"/"(SHEL)"
+    # ticker parenthetical if the headline includes one.
+    "astrazeneca": "AZN", "glaxosmithkline": "GSK", "gsk": "GSK",
+    "bp plc": "BP", "shell plc": "SHEL", "hsbc holdings": "HSBC",
+    "hsbc": "HSBC", "rio tinto": "RIO", "bhp group": "BHP", "bhp": "BHP",
+    "diageo": "DEO", "british american tobacco": "BTI", "vodafone": "VOD",
+    # Continental Europe.
+    "sap se": "SAP", "sap": "SAP", "novo nordisk": "NVO",
+    "nestle": "NSRGY", "lvmh": "LVMUY", "totalenergies": "TTE",
+    "sanofi": "SNY", "roche holding": "RHHBY", "roche": "RHHBY",
+    "novartis": "NVS", "ubs group": "UBS", "ubs": "UBS",
+    "deutsche bank": "DB", "stellantis": "STLA", "ing group": "ING",
+    "philips nv": "PHG", "philips": "PHG", "adidas": "ADDYY",
+    # Asia.
+    "toyota motor": "TM", "toyota": "TM", "sony group": "SONY",
+    "sony": "SONY", "nintendo": "NTDOY", "softbank group": "SFTBY",
+    "softbank": "SFTBY", "taiwan semiconductor": "TSM", "tsmc": "TSM",
+    "alibaba": "BABA", "alibaba group": "BABA", "tencent holdings": "TCEHY",
+    "tencent": "TCEHY", "baidu": "BIDU", "jd.com": "JD",
+    "pdd holdings": "PDD", "netease": "NTES", "nio inc": "NIO",
+    "nio": "NIO", "byd company": "BYDDY", "xiaomi": "XIACY",
+    "honda motor": "HMC", "honda": "HMC", "infosys": "INFY",
+    "icici bank": "IBN", "hdfc bank": "HDB",
 }
 EARNINGS_TERMS = [
     "earnings", "quarterly results", "beats estimates", "misses estimates",
