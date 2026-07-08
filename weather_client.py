@@ -16,9 +16,13 @@ WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 _last_good_weather: dict | None = None
 
 
-def _next_rain_hours(now: datetime, hourly: dict) -> float | None:
-    """Hours from now until the next hour with a real chance of rain, within
-    the lookahead window. None if nothing's expected."""
+def _next_rain_at(now: datetime, hourly: dict) -> datetime | None:
+    """Absolute timestamp of the next hour with a real chance of rain,
+    within the lookahead window — an absolute target rather than "hours
+    from now", so the caller can tick a live countdown every second
+    between the 15-minute weather refreshes instead of a relative value
+    that would otherwise just sit frozen (or silently go stale) until
+    the next fetch. None if nothing's expected."""
     times = hourly.get("time", [])
     probs = hourly.get("precipitation_probability", [])
     for t_str, prob in zip(times, probs):
@@ -27,7 +31,7 @@ def _next_rain_hours(now: datetime, hourly: dict) -> float | None:
         if hours_away < 0 or hours_away > RAIN_LOOKAHEAD_HOURS:
             continue
         if prob is not None and prob >= RAIN_PROBABILITY_THRESHOLD:
-            return hours_away
+            return t
     return None
 
 
@@ -57,7 +61,7 @@ def _fetch_weather_raw() -> dict | None:
     # used elsewhere in the app.
     sunrise = datetime.fromisoformat(daily["sunrise"][0])
     sunset = datetime.fromisoformat(daily["sunset"][0])
-    rain_in_hours = _next_rain_hours(datetime.fromisoformat(current["time"]), hourly)
+    rain_at = _next_rain_at(datetime.fromisoformat(current["time"]), hourly)
 
     highs = daily.get("temperature_2m_max") or []
     lows = daily.get("temperature_2m_min") or []
@@ -68,7 +72,7 @@ def _fetch_weather_raw() -> dict | None:
         "uv_index": current.get("uv_index"),
         "sunrise": sunrise,
         "sunset": sunset,
-        "rain_in_hours": rain_in_hours,
+        "rain_at": rain_at,
         "forecast_high_c": highs[0] if highs else None,
         "forecast_low_c": lows[0] if lows else None,
     }

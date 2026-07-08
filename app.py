@@ -18,7 +18,14 @@ import pages_news
 import pages_watchlist
 import theme
 import weather_alerts_bar
-from config import MAX_BURST_ALERTS, PAGE_ROTATION_SECONDS, PAGES, TIMEZONE, UV_HIGH_THRESHOLD
+from config import (
+    MAX_BURST_ALERTS,
+    PAGE_ROTATION_SECONDS,
+    PAGES,
+    RAIN_LOOKAHEAD_HOURS,
+    TIMEZONE,
+    UV_HIGH_THRESHOLD,
+)
 from icons import icon_for, label_for
 from scenery import FADE_SECONDS, condition_category, phase_for, scene_html, sky_style
 import ticker
@@ -122,6 +129,38 @@ try:
 except Exception:
     pass
 
+def _hex_to_rgb(h: str) -> tuple[int, int, int]:
+    h = h.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def _lerp_hex(a: str, b: str, t: float) -> str:
+    t = max(0.0, min(1.0, t))
+    ar, ag, ab = _hex_to_rgb(a)
+    br, bg, bb = _hex_to_rgb(b)
+    r = round(ar + (br - ar) * t)
+    g = round(ag + (bg - ag) * t)
+    bl = round(ab + (bb - ab) * t)
+    return f"#{r:02x}{g:02x}{bl:02x}"
+
+
+def _format_countdown(remaining_seconds: float) -> str:
+    remaining_seconds = max(0, int(remaining_seconds))
+    hours, rem = divmod(remaining_seconds, 3600)
+    minutes, seconds = divmod(rem, 60)
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
+
+
+def _rgba(hex_color: str, alpha: float) -> str:
+    r, g, b = _hex_to_rgb(hex_color)
+    return f"rgba({r},{g},{b},{alpha:.2f})"
+
+
+UV_EXTREME = 11  # UV index at which the badge reaches full vibrant red
+RAIN_LOOKAHEAD_SECONDS = RAIN_LOOKAHEAD_HOURS * 3600
+
 weather_block = ""
 if weather:
     icon_svg = icon_for(category, phase)
@@ -133,12 +172,33 @@ if weather:
         hilo_html = f' · <span class="weather-hilo">H:{high:.0f}° L:{low:.0f}°</span>'
 
     extras = []
-    if weather["rain_in_hours"] is not None:
-        h = weather["rain_in_hours"]
-        label = f"{int(h * 60)}m" if h < 1 else f"{h:.0f}h"
-        extras.append(f'<span class="weather-extra weather-rain">Rain in {label}</span>')
+    rain_at = weather.get("rain_at")
+    if rain_at is not None:
+        remaining = (rain_at - now).total_seconds()
+        if remaining > 0:
+            # Ticks down every second between weather refreshes since
+            # rain_at is a fixed target timestamp, not a relative "hours
+            # from now" that would otherwise sit frozen (or go stale)
+            # for the full 15-minute cache window. Darkens toward a
+            # deep, saturated blue as it gets closer — pale and airy
+            # when it's hours off, heavy and imminent right before it hits.
+            closeness = 1 - min(remaining / RAIN_LOOKAHEAD_SECONDS, 1.0)
+            rain_color = _lerp_hex("#64D2FF", "#0A2472", closeness)
+            rain_bg = _rgba(rain_color, 0.22 + closeness * 0.3)
+            countdown = _format_countdown(remaining)
+            extras.append(
+                f'<span class="weather-extra" style="color:{rain_color}; '
+                f'background:{rain_bg}; border-color:{rain_color};">Rain in {countdown}</span>'
+            )
     if weather["uv_index"] is not None and weather["uv_index"] > UV_HIGH_THRESHOLD:
-        extras.append(f'<span class="weather-extra weather-uv">UV {weather["uv_index"]:.0f}</span>')
+        uv = weather["uv_index"]
+        intensity = min((uv - UV_HIGH_THRESHOLD) / (UV_EXTREME - UV_HIGH_THRESHOLD), 1.0)
+        uv_color = _lerp_hex("#FFB340", "#FF3B30", intensity)
+        uv_bg = _rgba(uv_color, 0.22 + intensity * 0.25)
+        extras.append(
+            f'<span class="weather-extra" style="color:{uv_color}; '
+            f'background:{uv_bg}; border-color:{uv_color};">UV {uv:.0f}</span>'
+        )
     extras_html = f'<div class="weather-extras">{"".join(extras)}</div>' if extras else ""
 
     weather_block = f"""<div class="hero-weather">

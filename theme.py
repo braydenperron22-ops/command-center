@@ -68,26 +68,22 @@ html, body, [class*="css"] {
 .weather-extras {
     display: flex;
     justify-content: flex-end;
-    gap: 0.6rem;
-    margin-top: 0.3rem;
+    gap: 0.8rem;
+    margin-top: 0.6rem;
 }
 
+/* Big enough to read from across the room, same as the rest of this
+   kiosk's hero text — these used to be smaller than the date line
+   beneath them, which was backwards given they're time-sensitive
+   conditions worth noticing. Color/background are set inline per
+   render now (UV scales orange->vibrant red with magnitude, rain
+   scales pale->deep blue with proximity), not fixed here. */
 .weather-extra {
-    font-size: 1.05rem;
+    font-size: 1.7rem;
     font-weight: 700;
-    padding: 0.3rem 0.75rem;
-    border-radius: 10px;
-    border: 1px solid currentColor;
-}
-
-.weather-rain {
-    color: #64D2FF;
-    background: rgba(100,210,255,0.22);
-}
-
-.weather-uv {
-    color: #FFB340;
-    background: rgba(255,179,64,0.22);
+    padding: 0.45rem 1rem;
+    border-radius: 14px;
+    border: 2px solid currentColor;
 }
 
 .weather-icon svg {
