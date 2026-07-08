@@ -294,21 +294,37 @@ html, body, [class*="css"] {
 .confidence-hero {
     align-items: center;
     text-align: center;
-    padding-top: 2rem;
-    padding-bottom: 1.7rem;
+    padding-top: 0.8rem;
+    padding-bottom: 0.7rem;
 }
 .confidence-value {
-    font-size: 5rem;
+    font-size: 4.2rem;
     font-weight: 700;
     letter-spacing: -0.02em;
     color: #F5F5F7;
     line-height: 1.1;
-    margin: 0.2rem 0 0.6rem;
+    margin: 0.1rem 0 0.35rem;
 }
 .confidence-metrics {
     width: 100%;
     max-width: 26rem;
-    margin-top: 0.9rem;
+    margin-top: 0.4rem;
+}
+/* Market Internals' 3 supporting ratio tiles — deliberately more
+   compact than the shared .tile padding, since they're secondary
+   content next to the confidence hero and this page needs real margin
+   to fit reliably across zoom levels, not just at exactly 100%. */
+.internals-ratio-tile {
+    padding-top: 1.1rem;
+    padding-bottom: 1rem;
+}
+/* Tighter than the default .market-metric row spacing — this page's
+   hero already has a lot competing for vertical room (value + badge +
+   3 rows + caption), and needs to fit comfortably even when a viewer
+   runs their browser above 100% zoom, not just exactly fill 1200px at
+   the nominal scale. */
+.confidence-metrics .market-metric {
+    padding: 0.35rem 0;
 }
 
 .tile-extra {

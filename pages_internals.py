@@ -70,11 +70,10 @@ def _render_confidence_hero() -> None:
         f"""<div class="tile {accent_class} confidence-hero">
             <div class="tile-label">MARKET CONFIDENCE INDEX</div>
             <div class="confidence-value">{value:.0f}</div>
-            <div class="badge {badge_class}">{band_label}</div>
+            <div class="badge {badge_class}">{band_label} · {arrow}</div>
             <div class="confidence-metrics">
                 {_metric_row("VIX", f"{data['current_vix']:.2f}")}
                 {_metric_row("VIX 30-Day Average", f"{data['vix_30dma']:.2f}")}
-                {_metric_row("1-Month Trend", arrow)}
             </div>
             <div class="severity-caption">{CONFIDENCE_EXPLANATION}</div>
         </div>""",
@@ -94,7 +93,7 @@ def _render_vixeq_tile() -> None:
 
     if data["history_days"] < 3:
         st.markdown(
-            f"""<div class="tile">
+            f"""<div class="tile internals-ratio-tile">
                 <div class="tile-label">VIXEQ / VIX</div>
                 <div class="tile-value">{data['value']:.2f}</div>
                 <div class="tile-prev">Constituent vs. index volatility</div>
@@ -114,7 +113,7 @@ def _render_vixeq_tile() -> None:
     }[tone]
 
     st.markdown(
-        f"""<div class="tile tile-accent-{tone}">
+        f"""<div class="tile tile-accent-{tone} internals-ratio-tile">
             <div class="tile-label">VIXEQ / VIX</div>
             <div class="tile-value">{data['value']:.2f}</div>
             <div class="badge badge-{tone}">{arrow}</div>
@@ -138,7 +137,7 @@ def _render_ratio_tile(label: str, symbol_a: str, symbol_b: str, caption_up: str
     caption = {"good": caption_up, "bad": caption_down, "neutral": caption_flat}[tone]
 
     st.markdown(
-        f"""<div class="tile tile-accent-{tone}">
+        f"""<div class="tile tile-accent-{tone} internals-ratio-tile">
             <div class="tile-label">{label}</div>
             <div class="tile-value">{data['value']:.3f}</div>
             <div class="badge badge-{tone}">{arrow}</div>
@@ -152,7 +151,7 @@ def render() -> None:
     st.markdown('<div class="page-title page-title-internals">Market Internals</div>', unsafe_allow_html=True)
 
     _render_confidence_hero()
-    st.markdown('<div style="height: 0.8rem;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height: 0.4rem;"></div>', unsafe_allow_html=True)
 
     cols = st.columns(3)
     with cols[0]:
