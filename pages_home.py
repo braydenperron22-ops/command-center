@@ -6,6 +6,7 @@ import streamlit as st
 
 import fred_client
 import market_client
+import regime_bar
 import statcan_client
 from config import COUNTRY_META, INDICATORS, MARKET_INDEX, ROTATION_SECONDS, YIELD_SPREAD_SERIES_ID
 from flags import flag_for
@@ -46,6 +47,15 @@ def fetch_readings(fred_api_key: str) -> tuple[dict, dict]:
 
 
 def render(fred_api_key: str, readings: dict, new_flags: dict):
+    # Own try/except rather than relying on _safe_render's page-wide
+    # catch in app.py — a regime bug should lose just the banner, not
+    # blank the whole page's indicator tiles behind the generic error
+    # message.
+    try:
+        regime_bar.render(readings)
+    except Exception:
+        pass
+
     country = current_country()
     meta = COUNTRY_META[country]
 

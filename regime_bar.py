@@ -1,8 +1,8 @@
-"""Renders the persistent macro-regime banner — see regime.py for the
-classification this displays. Sits with the app's other persistent
-elements (clock/weather, top news alert) rather than in the page
-rotation: the whole point is a glance-any-time read, not something
-worth waiting through a 90-second rotation to see.
+"""Renders the macro-regime banner — see regime.py for the
+classification this displays. Called from pages_home.py only: this is
+a US macro read, so it belongs with the page that's already showing
+US/Canada macro indicators, not persistent across every page the way
+the clock/weather is.
 """
 
 import streamlit as st

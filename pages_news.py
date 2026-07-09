@@ -47,6 +47,20 @@ def render():
         h = hashlib.sha1(item["headline"].encode()).hexdigest()
         if h not in seen_at:
             classification = news.classify(item["headline"])
+            # Captured once, at first sight, and locked in from then on:
+            # the instrument (index/futures) and its price at the moment
+            # this headline broke, so the reaction badge always measures
+            # "since this happened" against a single consistent price
+            # series — not a moving target, and not a comparison across
+            # two different instruments if market status changes while
+            # the headline is still showing. None for anything outside
+            # Fed/BoC or Macro Shock, where "the market's" reaction
+            # isn't a meaningful causal claim.
+            reaction_symbol = (
+                news_market_reaction.reaction_symbol()
+                if classification in news_market_reaction.REACTION_CATEGORIES
+                else None
+            )
             seen_at[h] = {
                 "headline": item["headline"],
                 "first_seen": now_ts,
@@ -57,17 +71,8 @@ def render():
                 # change later.
                 "important": classification is not None,
                 "source": item.get("source", ""),
-                # Also captured once, at first sight — the S&P level at
-                # the moment this headline broke, so the reaction badge
-                # always measures "since this happened," not a moving
-                # target. None for anything outside Fed/BoC or Macro
-                # Shock, where "the market's" reaction isn't a
-                # meaningful causal claim.
-                "baseline_spx": (
-                    news_market_reaction.current_spx_price()
-                    if classification in news_market_reaction.REACTION_CATEGORIES
-                    else None
-                ),
+                "reaction_symbol": reaction_symbol,
+                "baseline_spx": news_market_reaction.price_for(reaction_symbol) if reaction_symbol else None,
             }
 
     # Age out old entries, AND re-check every remaining one against
@@ -99,7 +104,7 @@ def render():
     rows = "".join(
         f"""<div class="news-feed-row {_row_class(e)}">
             <div class="news-feed-headline">{e['headline']}{headline_tickers.ticker_badge_html(e['headline'])}"""
-        f"""{news_market_reaction.reaction_badge_html(e.get('baseline_spx'))}</div>
+        f"""{news_market_reaction.reaction_badge_html(e.get('reaction_symbol'), e.get('baseline_spx'))}</div>
             <div class="news-feed-meta">{_meta_text(e, now_ts)}</div>
         </div>"""
         for e in entries
