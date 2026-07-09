@@ -41,20 +41,13 @@ FEEDS = [
 
 TOAST_SECONDS = 30
 
-# Intro sequencing: dot + label are visible immediately (there's no reason
-# to delay knowing whether this is breaking or routine), the category tag
-# follows about a second later, and the headline completes the line a
-# second after that — a terminal printing its line piece by piece rather
-# than one big banner sliding out of the way. Each element holds its own
-# fixed slot in the row from the start, so nothing ever overlaps or shows
-# through another element mid-transition the way the old full-width
-# sliding banner did. Thresholds are pure functions of elapsed time (not
-# replaying CSS keyframes/transitions) because the whole app reruns every
-# second for the clock tick — a keyframe would restart on every rerun
-# instead of playing through once, and thresholds a whole number of
-# seconds apart line up cleanly with that same 1-second cadence.
-TAG_REVEAL_SECONDS = 1.0
-HEADLINE_REVEAL_SECONDS = 2.0
+# Intro sequencing: "BREAKING NEWS" stretches into view, holds, then slides
+# aside to reveal the headline underneath. Positions are computed as a pure
+# function of elapsed time (not a replaying CSS keyframe) because the whole
+# app reruns every second for the clock tick — a keyframe animation would
+# restart on every one of those reruns instead of playing through once.
+STRETCH_END = 1.8
+SLIDE_END = 3.0
 
 FED_BOC_INCLUDE = [
     "fomc statement", "fomc meeting", "rate decision", "interest rate decision",
@@ -520,38 +513,35 @@ def get_new_alerts() -> list[dict]:
 
 
 def render_alert_bar(alert: dict, elapsed: float):
-    """Bottom-strip takeover bar (normally the release-calendar ticker):
-    a terminal-style readout — pulsing status dot + label are up
-    immediately, the category tag prints in about a second later, and the
-    headline completes the line a second after that. Each piece has its
-    own fixed slot in the row for its whole lifetime, so nothing overlaps
-    or crossfades through anything else — it just prints in, once, and
-    holds.
+    """Bottom-strip takeover bar (normally the release-calendar ticker): a
+    label stretches into view, holds, then slides aside to reveal the
+    category tag + headline underneath.
 
-    Red "BREAKING" when the headline references one of our important
-    target words (`is_important`), blue "MARKET" otherwise, so the bar's
-    own color signals how urgent a given item actually is before you even
-    read the headline.
+    Red "BREAKING NEWS" when the headline references one of our
+    important target words (`is_important`), black "MARKET NEWS"
+    otherwise, so the bar's own color signals how urgent a given item
+    actually is before you even read the headline.
     """
-    def _reveal(threshold: float) -> str:
-        shown = elapsed >= threshold
-        return f"opacity: {1 if shown else 0}; transform: translateX({0 if shown else 10}px);"
-
-    # A whole-second on/off cycle, not a faster one — the 1-second rerun
-    # cadence can only ever sample this once per second anyway, and a
-    # period shorter than that would just alias into an erratic flicker
-    # instead of a clean, deliberate pulse.
-    dot_style = "opacity: 1;" if int(elapsed) % 2 == 0 else "opacity: 0.3;"
+    if elapsed < STRETCH_END:
+        label_progress = elapsed / STRETCH_END
+        label_style = f"opacity: {label_progress:.2f}; transform: translateY(0); letter-spacing: {0.5 * label_progress:.2f}em;"
+        headline_style = "opacity: 0; transform: translateX(16px);"
+    elif elapsed < SLIDE_END:
+        slide_progress = (elapsed - STRETCH_END) / (SLIDE_END - STRETCH_END)
+        label_style = f"opacity: {max(1 - slide_progress * 1.3, 0):.2f}; transform: translateX({-140 * slide_progress:.0f}%); letter-spacing: 0.5em;"
+        headline_style = f"opacity: {min(slide_progress * 1.3, 1):.2f}; transform: translateX({16 * (1 - slide_progress):.0f}px);"
+    else:
+        label_style = "opacity: 0; transform: translateX(-140%);"
+        headline_style = "opacity: 1; transform: translateX(0);"
 
     is_breaking = alert.get("important", alert["category"] != "Market News")
     bar_class = "news-alert-bar" if is_breaking else "news-alert-bar-market"
-    label_text = "BREAKING" if is_breaking else "MARKET"
+    label_text = "BREAKING NEWS" if is_breaking else "MARKET NEWS"
     st.markdown(
         f"""<div class="{bar_class}">
-            <span class="news-alert-dot" style="{dot_style}"></span>
-            <span class="news-alert-label">{label_text}</span>
-            <span class="news-alert-tag {category_class(alert['category'])}" style="{_reveal(TAG_REVEAL_SECONDS)}">{alert['category']}</span>
-            <span class="news-alert-headline" style="{_reveal(HEADLINE_REVEAL_SECONDS)}">{alert['headline']}</span>
+            <span class="news-breaking-label" style="{label_style}">{label_text}</span>
+            <span class="news-alert-tag {category_class(alert['category'])}" style="{headline_style}">{alert['category']}</span>
+            <span class="news-alert-headline" style="{headline_style}">{alert['headline']}</span>
         </div>""",
         unsafe_allow_html=True,
     )
