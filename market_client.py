@@ -39,6 +39,8 @@ def _fetch_ytd_return_raw(series_id: str, api_key: str) -> dict | None:
 
     latest_value = float(latest["value"])
     baseline_value = float(baseline["value"])
+    if baseline_value == 0:
+        return None
     ytd_pct = (latest_value / baseline_value - 1) * 100
 
     return {

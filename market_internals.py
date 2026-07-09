@@ -121,8 +121,11 @@ def _load_vixeq_history() -> dict:
         return {}
 
 
-def _record_vixeq_ratio(today: str, ratio: float) -> None:
-    history = _load_vixeq_history()
+def _record_vixeq_ratio(history: dict, today: str, ratio: float) -> None:
+    """Mutates `history` in place and persists it — takes an
+    already-loaded history dict rather than reading the file itself, so
+    callers that also need the dict for other lookups don't pay for two
+    reads of the same file on every call."""
     if today in history:
         return
     history[today] = ratio
@@ -149,11 +152,11 @@ def vixeq_vix_ratio() -> dict | None:
 
     ratio = vixeq / vix
     today_str = date.today().isoformat()
-    _record_vixeq_ratio(today_str, ratio)
+    history = _load_vixeq_history()
+    _record_vixeq_ratio(history, today_str, ratio)
 
-    stored = _load_vixeq_history()
-    sorted_dates = sorted(stored.keys())
-    history_values = [stored[d] for d in sorted_dates]
+    sorted_dates = sorted(history.keys())
+    history_values = [history[d] for d in sorted_dates]
     if len(history_values) > TREND_LOOKBACK_DAYS:
         prior = history_values[-TREND_LOOKBACK_DAYS]
     elif history_values:

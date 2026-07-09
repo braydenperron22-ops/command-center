@@ -268,7 +268,13 @@ page = PAGES[page_index]
 with st.container(key="page_body"):
     if page == "home":
         if not FRED_API_KEY:
-            st.error("FRED_API_KEY is not set in Streamlit secrets.")
+            # Themed to match the rest of the app rather than Streamlit's
+            # default red alert box, which would otherwise be the one
+            # element on screen that doesn't look like it belongs here.
+            st.markdown(
+                '<div class="tile"><div class="tile-prev">FRED_API_KEY is not set in Streamlit secrets.</div></div>',
+                unsafe_allow_html=True,
+            )
         else:
             _safe_render(pages_home.render, FRED_API_KEY, readings, new_flags)
     elif page == "conflicts":
@@ -291,6 +297,12 @@ with st.container(key="page_body"):
 # batch (everything that was never marked "seen" while it was down) —
 # capped to the most recent MAX_BURST_ALERTS so that doesn't turn into
 # hours of backlog playing through this bar one at a time.
+#
+# Defined here (not just inside the try) so the Govee block below always
+# has a real value to check even if this try body fails before reaching
+# the assignment further down — it has its own try/except too, but there's
+# no reason to make it depend on this block's internals for a safe default.
+current_alert, elapsed = None, None
 try:
     news_queue = st.session_state.setdefault("news_queue", [])
     if len(new_alerts) > MAX_BURST_ALERTS:
@@ -298,7 +310,6 @@ try:
     news_queue.extend(new_alerts)
 
     now_ts = time.time()
-    current_alert, elapsed = None, None
     if news_queue:
         current_alert = news_queue[0]
         if "shown_at" not in current_alert:

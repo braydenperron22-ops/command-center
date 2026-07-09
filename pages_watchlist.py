@@ -64,8 +64,7 @@ def _render_tile(symbol: str) -> None:
             <div class="tile-value-row">
                 <div class="tile-value">${analysis['price']:.2f}</div>{sparkline}
             </div>
-            <div class="badge {badge_class}">{TONE_LABEL[tone]}</div>
-            {zone_html}
+            <div class="badge {badge_class}">{TONE_LABEL[tone]}</div>{zone_html}
             {_metric_row("RSI (14)", f"{analysis['rsi']:.0f}")}
             {_metric_row("Support", f"${analysis['support']:.2f}")}
             {_metric_row("Resistance", f"${analysis['resistance']:.2f}")}

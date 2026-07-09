@@ -20,7 +20,7 @@ def load() -> list[str]:
         with open(STORE_PATH) as f:
             data = json.load(f)
         tickers = data.get("tickers")
-        return tickers if tickers else list(DEFAULT_WATCHLIST)
+        return tickers if tickers is not None else list(DEFAULT_WATCHLIST)
     except (FileNotFoundError, json.JSONDecodeError, OSError, KeyError):
         return list(DEFAULT_WATCHLIST)
 

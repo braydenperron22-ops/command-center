@@ -370,7 +370,7 @@ html, body, [class*="css"] {
 .zone-banner {
     margin-top: 0.7rem;
     padding: 0.5rem 0.6rem;
-    border-radius: 8px;
+    border-radius: 10px;
     font-size: 0.9rem;
     font-weight: 800;
     letter-spacing: 0.04em;
@@ -594,7 +594,7 @@ html, body, [class*="css"] {
     margin-top: 0.55rem;
     height: 6px;
     width: 100%;
-    background: rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.14);
     border-radius: 3px;
     overflow: hidden;
 }
@@ -738,7 +738,7 @@ html, body, [class*="css"] {
     display: inline-block;
     margin-left: 0.6rem;
     padding: 0.08rem 0.5rem;
-    border-radius: 8px;
+    border-radius: 10px;
     font-size: 0.78rem;
     font-weight: 700;
     white-space: nowrap;

@@ -314,4 +314,8 @@ FLAGS = {
 
 
 def flag_for(country: str) -> str:
-    return FLAGS[country]
+    # .get() rather than direct indexing — CONFLICT_COUNTRIES in config.py
+    # grows over time as new conflicts get added, and a country code added
+    # there without a matching entry here shouldn't crash the Conflicts
+    # page, just render without a flag for that one card.
+    return FLAGS.get(country, "")
