@@ -1,8 +1,8 @@
 """Static configuration: FRED series, weather location, thresholds."""
 
-# North Bay, Ontario
-WEATHER_LAT = 46.31
-WEATHER_LON = -79.46
+# Corbeil, Ontario
+WEATHER_LAT = 46.2616
+WEATHER_LON = -79.2920
 TIMEZONE = "America/Toronto"
 
 UV_HIGH_THRESHOLD = 5
@@ -231,3 +231,11 @@ MARKET_INSTRUMENTS_ALWAYS = [
     {"key": "gold", "label": "Gold", "symbol": "GC=F"},
     {"key": "oil", "label": "Crude Oil", "symbol": "CL=F"},
 ]
+
+# Govee smart-home devices (bedroom light + plug). Identifiers only — not
+# secret on their own, control still requires GOVEE_API_KEY in
+# .streamlit/secrets.toml. Pulled from the account's own device list via
+# the Govee API, which uses a different (longer) device-id format than
+# the MAC address printed on the device itself.
+GOVEE_LIGHT = {"sku": "H6167", "device": "0C:1A:D4:39:C1:86:02:47"}
+GOVEE_PLUG = {"sku": "H5080", "device": "1A:82:5C:E7:53:93:A5:56"}

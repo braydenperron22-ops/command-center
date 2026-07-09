@@ -9,6 +9,8 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
+import govee_lighting
+import market_yf_client
 import news
 import pages_conflicts
 import pages_home
@@ -204,7 +206,7 @@ if weather:
     weather_block = f"""<div class="hero-weather">
         <div class="clock weather-condition"><span class="weather-icon">{icon_svg}</span>{weather['temp_c']:.0f}°C</div>
         <div class="weather-condition-label">{condition_label}</div>
-        <div class="date-sub">North Bay{hilo_html}</div>{extras_html}
+        <div class="date-sub">Corbeil{hilo_html}</div>{extras_html}
     </div>"""
 
 st.markdown(
@@ -244,6 +246,16 @@ if FRED_API_KEY:
         readings, new_flags = pages_home.fetch_readings(FRED_API_KEY)
     except Exception:
         pass
+
+# S&P 500 intraday change drives the Govee light's base color below —
+# fetched unconditionally like the FRED readings above, but this reuses
+# market_yf_client's own 5-minute cache (the same cache the Markets page
+# itself hits), so it's free network-wise once anything has warmed it.
+try:
+    _spx_quote = market_yf_client.quote_for("^GSPC")
+    market_intraday_pct = _spx_quote["intraday"] if _spx_quote else None
+except Exception:
+    market_intraday_pct = None
 
 page_index = int(time.time() // PAGE_ROTATION_SECONDS) % len(PAGES)
 page = PAGES[page_index]
@@ -296,5 +308,18 @@ try:
     elif FRED_API_KEY and readings:
         schedule = ticker.build_schedule(readings, FRED_API_KEY)
         st.markdown(ticker.render_html(schedule, now), unsafe_allow_html=True)
+except Exception:
+    pass
+
+# Bedroom Govee light/plug: reactive to the same phase/market/news signals
+# already driving the dashboard's own visuals above. Wrapped like every
+# other side-effect block here — a Govee outage or API hiccup should never
+# affect the dashboard itself.
+try:
+    breaking_elapsed = None
+    if current_alert and current_alert.get("important") and elapsed is not None and elapsed < govee_lighting.FLASH_SECONDS:
+        breaking_elapsed = elapsed
+    govee_lighting.sync_lights(phase, market_intraday_pct, breaking_elapsed)
+    govee_lighting.sync_plug(phase)
 except Exception:
     pass
