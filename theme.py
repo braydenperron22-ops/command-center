@@ -444,12 +444,14 @@ html, body, [class*="css"] {
 }
 
 /* Breaking-news bar: takes over the same bottom strip as the release
-   ticker whenever a strictly-filtered alert is active. Solid red, with
-   "BREAKING NEWS" stretching into view then sliding aside to reveal the
-   category tag + headline underneath. Positions are set inline per-render
-   as a function of elapsed time (see news.render_alert_bar) rather than
-   via CSS keyframes, since the whole app reruns every second for the
-   clock tick and a keyframe would restart on every one of those reruns. */
+   ticker whenever a strictly-filtered alert is active. Terminal-style
+   readout — flat dark panel, monospace, a pulsing status dot, and each
+   piece (dot+label, category tag, headline) printing into its own fixed
+   slot in sequence rather than one big banner sliding out of the way.
+   Opacity/position are set inline per-render as a function of elapsed
+   time (see news.render_alert_bar) rather than via CSS keyframes, since
+   the whole app reruns every second for the clock tick and a keyframe
+   would restart on every one of those reruns. */
 .news-alert-bar, .news-alert-bar-market {
     position: fixed;
     left: 0;
@@ -458,22 +460,44 @@ html, body, [class*="css"] {
     z-index: 15;
     display: flex;
     align-items: center;
-    gap: 1.1rem;
-    padding: 0.9rem 1.5rem;
-    border-top: 2px solid rgba(255,255,255,0.25);
+    gap: 0.85rem;
+    padding: 0.85rem 1.5rem;
+    border-top: 1px solid rgba(255,255,255,0.14);
     overflow: hidden;
+    font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 .news-alert-bar {
-    background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
-    box-shadow: 0 -4px 24px rgba(179,20,20,0.35);
+    background: #170709;
+    box-shadow: 0 -4px 24px rgba(179,20,20,0.25), inset 0 1px 0 rgba(255,255,255,0.04);
 }
 /* Generic market-news items aren't a surprise worth a red alert, but
    should still visibly take over the strip like breaking news does —
-   solid black instead signals "new headline" without false urgency. */
+   a cooler flat panel instead signals "new headline" without false
+   urgency. */
 .news-alert-bar-market {
-    background: linear-gradient(90deg, #0a0a0c 0%, #1c1c20 50%, #0a0a0c 100%);
-    box-shadow: 0 -4px 24px rgba(0,0,0,0.45);
+    background: #08080a;
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04);
 }
+
+.news-alert-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    transition: opacity 0.9s ease-in-out;
+}
+.news-alert-bar .news-alert-dot { color: #FF453A; box-shadow: 0 0 8px 1px rgba(255,69,58,0.7); }
+.news-alert-bar-market .news-alert-dot { color: #64D2FF; box-shadow: 0 0 8px 1px rgba(100,210,255,0.55); }
+
+.news-alert-label {
+    flex-shrink: 0;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+}
+.news-alert-bar .news-alert-label { color: #FF6961; }
+.news-alert-bar-market .news-alert-label { color: #64D2FF; }
 
 /* Persistent top banner: holds the latest red (important) headline for
    up to TOP_ALERT_HOLD_SECONDS, or until the next one replaces it. Sits
@@ -546,36 +570,29 @@ html, body, [class*="css"] {
     color: #F5D6A8;
 }
 
-.news-breaking-label {
-    position: absolute;
-    left: 0;
-    right: 0;
-    text-align: center;
-    font-size: 1.6rem;
-    font-weight: 800;
-    color: #FFFFFF;
-    text-transform: uppercase;
-    transition: opacity 1s linear, transform 1s linear, letter-spacing 1s linear;
-    pointer-events: none;
-}
-
 .news-alert-tag {
     flex-shrink: 0;
-    font-size: 0.95rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    background: rgba(0,0,0,0.35);
-    border-radius: 10px;
-    padding: 0.3rem 0.75rem;
-    transition: opacity 1s linear, transform 1s linear;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 4px;
+    padding: 0.2rem 0.6rem;
+    color: #C7C7CC;
+    transition: opacity 0.4s cubic-bezier(0.16,1,0.3,1), transform 0.4s cubic-bezier(0.16,1,0.3,1);
 }
 
 .news-alert-headline {
-    font-size: 1.3rem;
-    font-weight: 600;
-    color: #FFFFFF;
-    transition: opacity 1s linear, transform 1s linear;
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: #F5F5F7;
+    transition: opacity 0.4s cubic-bezier(0.16,1,0.3,1), transform 0.4s cubic-bezier(0.16,1,0.3,1);
+}
+.news-alert-headline::before {
+    content: "> ";
+    color: rgba(255,255,255,0.32);
 }
 
 /* Scoped to .news-alert-tag specifically — these category classes are
