@@ -12,9 +12,33 @@ import pandas as pd
 import streamlit as st
 import yfinance as yf
 
-from config import MARKET_DATA_TTL_SECONDS, MARKET_SPARKLINE_PERIOD
+from config import (
+    MARKET_DATA_TTL_SECONDS,
+    MARKET_INSTRUMENTS_CLOSED,
+    MARKET_INSTRUMENTS_OPEN,
+    MARKET_INSTRUMENTS_WEEKEND,
+    MARKET_SPARKLINE_PERIOD,
+)
 
 ONE_MONTH_TRADING_DAYS = 21
+
+# Same open/closed/weekend swap the Markets page itself uses (real index /
+# futures / crypto) — "sp500" is the headline instrument in the first two,
+# "btc" in the weekend set, since no equity index is trading then.
+_PRIMARY_KEY_BY_STATUS = {"open": "sp500", "closed": "sp500", "weekend": "btc"}
+_INSTRUMENTS_BY_STATUS = {
+    "open": MARKET_INSTRUMENTS_OPEN,
+    "closed": MARKET_INSTRUMENTS_CLOSED,
+    "weekend": MARKET_INSTRUMENTS_WEEKEND,
+}
+
+
+def primary_symbol(status: str) -> str:
+    """The one instrument that best represents 'the market' right now,
+    for callers (like the Govee light) that just want a single headline
+    direction rather than the Markets page's full grid."""
+    key = _PRIMARY_KEY_BY_STATUS[status]
+    return next(i["symbol"] for i in _INSTRUMENTS_BY_STATUS[status] if i["key"] == key)
 
 # Never let one bad/rate-limited ticker crash the page — same reasoning
 # as every other data client in this app: fall back to the last

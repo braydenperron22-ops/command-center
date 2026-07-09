@@ -247,13 +247,17 @@ if FRED_API_KEY:
     except Exception:
         pass
 
-# S&P 500 intraday change drives the Govee light's base color below —
-# fetched unconditionally like the FRED readings above, but this reuses
-# market_yf_client's own 5-minute cache (the same cache the Markets page
-# itself hits), so it's free network-wise once anything has warmed it.
+# Intraday change of whatever instrument best represents "the market"
+# right now drives the Govee light's base color below — same open/
+# closed/weekend swap (index / futures / crypto) as the Markets page
+# itself, via market_yf_client.primary_symbol(). Fetched unconditionally
+# like the FRED readings above, but this reuses quote_for's own 5-minute
+# cache (the same cache the Markets page itself hits), so it's free
+# network-wise once anything has warmed it.
 try:
-    _spx_quote = market_yf_client.quote_for("^GSPC")
-    market_intraday_pct = _spx_quote["intraday"] if _spx_quote else None
+    _primary_symbol = market_yf_client.primary_symbol(market_yf_client.market_status())
+    _primary_quote = market_yf_client.quote_for(_primary_symbol)
+    market_intraday_pct = _primary_quote["intraday"] if _primary_quote else None
 except Exception:
     market_intraday_pct = None
 
