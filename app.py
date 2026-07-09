@@ -255,10 +255,11 @@ if FRED_API_KEY:
 # cache (the same cache the Markets page itself hits), so it's free
 # network-wise once anything has warmed it.
 try:
-    _primary_symbol = market_yf_client.primary_symbol(market_yf_client.market_status())
-    _primary_quote = market_yf_client.quote_for(_primary_symbol)
+    market_status = market_yf_client.market_status()
+    _primary_quote = market_yf_client.quote_for(market_yf_client.primary_symbol(market_status))
     market_intraday_pct = _primary_quote["intraday"] if _primary_quote else None
 except Exception:
+    market_status = None
     market_intraday_pct = None
 
 page_index = int(time.time() // PAGE_ROTATION_SECONDS) % len(PAGES)
@@ -323,7 +324,7 @@ try:
     breaking_elapsed = None
     if current_alert and current_alert.get("important") and elapsed is not None and elapsed < govee_lighting.FLASH_SECONDS:
         breaking_elapsed = elapsed
-    govee_lighting.sync_lights(phase, market_intraday_pct, breaking_elapsed)
+    govee_lighting.sync_lights(phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None)
     govee_lighting.sync_plug(phase)
 except Exception:
     pass
