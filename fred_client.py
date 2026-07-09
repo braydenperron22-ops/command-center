@@ -29,7 +29,17 @@ def _fetch_series_raw(series_id: str, api_key: str) -> list[dict]:
         "api_key": api_key,
         "file_type": "json",
         "sort_order": "desc",
-        "limit": 36,
+        # Deliberately generous rather than just enough for the trend
+        # window/sparkline — indicators.py's percentile_rank wants as
+        # much real history as it can get, and these series aren't all
+        # the same frequency: 2600 covers ~10 years even for a DAILY
+        # series like the 10-year yield, while monthly/quarterly series
+        # (CPI, unemployment, GDP) just get their entire available
+        # history back, since none of them have that many observations
+        # to begin with. Still a tiny request either way — FRED doesn't
+        # charge or meaningfully slow down for the extra rows, and it's
+        # cached for an hour regardless.
+        "limit": 2600,
     }
     resp = requests.get(FRED_BASE_URL, params=params, timeout=10)
     resp.raise_for_status()

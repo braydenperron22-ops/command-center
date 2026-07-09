@@ -546,6 +546,44 @@ html, body, [class*="css"] {
     color: #F5D6A8;
 }
 
+/* Persistent macro-regime banner — see regime.py/regime_bar.py. Same
+   dot+label+text shape as the weather-statement bar above, tone-colored
+   like everything else in the app (good/bad/neutral) rather than a
+   fixed color, since what this says can genuinely be favorable,
+   unfavorable, or a growth/inflation-vs-risk-appetite mismatch. */
+.regime-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.7rem 1.5rem;
+    margin-bottom: 0.9rem;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.12);
+}
+.regime-dot {
+    flex-shrink: 0;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+}
+.regime-bar-good .regime-dot { background: #32D74B; box-shadow: 0 0 10px 2px rgba(50,215,75,0.55); }
+.regime-bar-bad .regime-dot { background: #FF6961; box-shadow: 0 0 10px 2px rgba(255,105,97,0.55); }
+.regime-bar-neutral .regime-dot { background: #5AC8FA; box-shadow: 0 0 10px 2px rgba(90,200,250,0.55); }
+.regime-label {
+    flex-shrink: 0;
+    font-size: 0.85rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #ABB2C4;
+}
+.regime-text {
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: #F5F5F7;
+}
+
 .news-breaking-label {
     position: absolute;
     left: 0;

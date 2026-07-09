@@ -10,6 +10,11 @@ SEVERITY_CAP = 3.0
 SPARKLINE_COLOR = {"good": "#32D74B", "bad": "#FF6961", "neutral": "#5AC8FA", "inline": "#9BA0AC"}
 
 
+def _ordinal(n: int) -> str:
+    suffix = "th" if 11 <= n % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
 def _tone(classification: str, good_direction: str | None) -> tuple[str, str]:
     """Map a direction-neutral (above/below/in-line) classification to a
     display label + tone, using this indicator's good_direction so the
@@ -82,6 +87,18 @@ def render_tile(
         badge_class = "badge-inline" if tone == "inline" else f"badge-{tone}"
         fill_class = "severity-fill-inline" if tone == "inline" else f"severity-fill-{tone}"
         sparkline = sparkline_svg(reading.get("history", []), tone)
+        # Separate from the z-score above — that's "hot or cold vs the
+        # last 6 readings," this is "high or low vs as much real history
+        # as we actually fetched." Skipped under 1 year of span (thin
+        # data, e.g. a series that just started) rather than showing a
+        # percentile against a handful of points.
+        percentile = reading.get("percentile")
+        history_years = reading.get("history_years", 0)
+        percentile_text = (
+            f" · {_ordinal(percentile)} percentile ({history_years:.0f}y)"
+            if percentile is not None and history_years >= 1
+            else ""
+        )
         # Always reserve this slot's height, populated or not — relying on
         # cross-tile flex stretch to equalize a genuinely-taller tile against
         # its siblings proved unreliable through Streamlit's internal DOM.
@@ -98,7 +115,7 @@ def render_tile(
                 <div class="severity-track">
                     <div class="severity-fill {fill_class}" style="{fill_style}"></div>
                 </div>
-                <div class="severity-caption">{z:+.1f}σ vs trailing trend{' · significant move' if significant else ''}</div>{extra_line_html}
+                <div class="severity-caption">{z:+.1f}σ vs trailing trend{' · significant move' if significant else ''}{percentile_text}</div>{extra_line_html}
             </div>""",
             unsafe_allow_html=True,
         )

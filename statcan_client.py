@@ -13,7 +13,7 @@ _last_good_vector: dict[int, list[dict]] = {}
 
 
 @st.cache_data(ttl=60 * 60, show_spinner=False)
-def _fetch_vector_raw(vector_id: int, latest_n: int = 30) -> list[dict]:
+def _fetch_vector_raw(vector_id: int, latest_n: int = 200) -> list[dict]:
     body = [{"vectorId": vector_id, "latestN": latest_n}]
     resp = requests.post(STATCAN_URL, json=body, timeout=10)
     resp.raise_for_status()
@@ -21,7 +21,7 @@ def _fetch_vector_raw(vector_id: int, latest_n: int = 30) -> list[dict]:
     return [{"date": p["refPer"], "value": p["value"]} for p in payload]
 
 
-def fetch_vector(vector_id: int, latest_n: int = 30) -> list[dict]:
+def fetch_vector(vector_id: int, latest_n: int = 200) -> list[dict]:
     """Return recent observations for a StatCan vector, oldest first."""
     try:
         observations = _fetch_vector_raw(vector_id, latest_n)

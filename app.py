@@ -18,6 +18,7 @@ import pages_internals
 import pages_markets
 import pages_news
 import pages_watchlist
+import regime_bar
 import theme
 import weather_alerts_bar
 from config import (
@@ -246,6 +247,13 @@ if FRED_API_KEY:
         readings, new_flags = pages_home.fetch_readings(FRED_API_KEY)
     except Exception:
         pass
+
+# Persistent regime read — glance-any-time like the clock/weather above,
+# not tied to whichever page happens to be showing.
+try:
+    regime_bar.render(readings)
+except Exception:
+    pass
 
 # Intraday change of whatever instrument best represents "the market"
 # right now drives the Govee light's base color below — same open/

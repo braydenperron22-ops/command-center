@@ -1,11 +1,31 @@
 """Shared trend/classification logic used by every data source."""
 
 import statistics
+from datetime import date
 
 from config import HOT_COOL_THRESHOLD
 
 TREND_WINDOW = 6  # months of history used to build the trailing trend band
 SPARKLINE_POINTS = 12  # readings shown in each tile's trend sparkline
+
+
+def _percentile_rank(current: float, history: list[float]) -> int:
+    """Where `current` sits among `history` (0-100) — e.g. 73 means
+    today's reading is higher than 73% of everything in that window.
+    Deliberately a separate, much longer lookback than TREND_WINDOW
+    above: that one asks "hot or cold vs the last 6 readings," this asks
+    "high or low vs as much real history as we actually have.\""""
+    if not history:
+        return 50
+    below = sum(1 for v in history if v < current)
+    return round(100 * below / len(history))
+
+
+def _years_span(dates: list[str]) -> float:
+    if len(dates) < 2:
+        return 0.0
+    first, last = date.fromisoformat(dates[0]), date.fromisoformat(dates[-1])
+    return (last - first).days / 365.25
 
 
 def _yoy_series(values: list[float], periods_per_year: int) -> list[float]:
@@ -65,4 +85,6 @@ def build_reading(dates: list[str], values: list[float], transform: str) -> dict
         "as_of": series_dates[-1],
         "z_score": z,
         "history": series[-SPARKLINE_POINTS:],
+        "percentile": _percentile_rank(current, series[:-1]),
+        "history_years": _years_span(series_dates),
     }
