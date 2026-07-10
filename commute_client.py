@@ -16,7 +16,10 @@ import commute_history
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
 ROUTE_URL = "https://api.tomtom.com/routing/1/calculateRoute/{lat1},{lon1}:{lat2},{lon2}/json"
-CACHE_TTL_SECONDS = 15 * 60
+# 5 min still only burns ~288 calls/day (11.5% of the free-tier quota)
+# even running unattended 24/7 — 15 min was needlessly conservative and
+# let the shown time lag real conditions by up to a quarter hour.
+CACHE_TTL_SECONDS = 5 * 60
 
 _last_good_route: dict | None = None
 
