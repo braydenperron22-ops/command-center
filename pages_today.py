@@ -46,8 +46,8 @@ def _row_class(event: dict, now: datetime) -> str:
 
 
 def _render_agenda(now: datetime) -> None:
-    ics_url = st.secrets.get("CALENDAR_ICS_URL")
-    if not ics_url:
+    ics_urls = st.secrets.get("CALENDAR_ICS_URLS")
+    if not ics_urls:
         return
 
     showing_tomorrow = now.hour >= AGENDA_SWITCH_HOUR
@@ -60,7 +60,7 @@ def _render_agenda(now: datetime) -> None:
     # progress) relative to `now` here on — no special-casing needed for
     # the tomorrow view: _row_class's date comparisons already can't mark
     # a tomorrow event "now" or "past" while `now` is still today.
-    events = calendar_client.todays_events(ics_url, agenda_date)
+    events = calendar_client.todays_events(ics_urls, agenda_date)
     if not events:
         st.markdown(
             f'<div class="tile"><div class="tile-prev">Nothing on the calendar {day_word}.</div></div>',
