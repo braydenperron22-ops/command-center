@@ -46,13 +46,15 @@ FRED_API_KEY = st.secrets.get("FRED_API_KEY")
 # the page actually needs second-level precision anymore: the clock
 # only displays minutes, and both the leave and rain countdowns were
 # switched to minute granularity for readability reasons (see recent
-# history), not just refresh cost. That made the 1s interval pure
-# unnecessary load — plausibly what was pushing this free-tier
-# container into the memory pressure behind a segfault crash. The only
-# thing that benefits from a fast interval is the ~3s toast-alert
+# history), not just refresh cost. Bumped further to 5000ms (was briefly
+# 3000ms) after the app kept crash-looping (segfault) on this free-tier
+# container's memory cap even at 3s — erring conservative here rather
+# than tuning down in small steps while it's actively unstable. The
+# only thing that benefits from a fast interval is the ~3s toast-alert
 # intro animation, which is brief and rare; a bit less smooth there is
-# a clearly better trade than the whole app dying.
-st_autorefresh(interval=3000, key="clock_tick")
+# a clearly better trade than the app crash-looping and burning through
+# every external API's rate limit on each cold restart.
+st_autorefresh(interval=5000, key="clock_tick")
 
 # Hosted deployments (Streamlit Cloud) run on the server's own timezone
 # (typically UTC), not North Bay's — pin explicitly rather than trusting
