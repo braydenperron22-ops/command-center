@@ -20,8 +20,9 @@ import commute_client
 
 EARLY_BUFFER_MINUTES = 10
 # Widest to narrowest — fired in this order as the leave-by time
-# approaches, each exactly once per day.
-MILESTONES_MINUTES = [60, 45, 30, 20, 15, 10, 5, 3, 0]
+# approaches, each exactly once per day. Starts two hours out so there's
+# real advance notice in the morning, not just a last-hour scramble.
+MILESTONES_MINUTES = [120, 90, 60, 45, 30, 20, 15, 10, 5, 3, 0]
 # Floor for how late a stale reminder is still worth firing at all —
 # past this, the dashboard was probably asleep through the whole
 # window, and "Leave now" 40 minutes after the fact isn't useful.
@@ -34,8 +35,9 @@ SLIDE_END = 3.0
 def _leave_text(minutes: int) -> str:
     if minutes == 0:
         return "Leave now"
-    if minutes == 60:
-        return "Leave in an hour"
+    if minutes % 60 == 0:
+        hours = minutes // 60
+        return "Leave in an hour" if hours == 1 else f"Leave in {hours} hours"
     return f"Leave in {minutes} min"
 
 
