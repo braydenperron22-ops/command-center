@@ -775,34 +775,35 @@ html, body, [class*="css"] {
 
 /* Persistent "Time to leave" readout, distinct from the transient
    bottom-bar toast (commute_reminder.render_bar) — ticks down live via
-   the same 1s autorefresh as the hero row's rain countdown. A solid
-   red fill with white text rather than red-on-red-tinted (same hue for
-   both the wash and the text read as low-contrast/muddy on an actual
-   display) — white-on-red is the one combination that's unambiguous
-   from across the room and still unmistakably "alert." Sized to be
-   readable from across the room, same as the commute tile's tile-value. */
+   the same 1s autorefresh as the hero row's rain countdown. Dark card
+   with a glowing red edge, like the rest of the app's tiles carrying an
+   urgent accent, rather than a solid block that reads as an error
+   banner — stacked/centered so the number is the first thing you see. */
 .leave-countdown {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
+    text-align: center;
     margin: 0.5rem 1.5rem 0.2rem;
-    padding: 0.85rem 1.2rem;
+    padding: 0.9rem 1.2rem;
     border-radius: 12px;
-    background: rgba(255,69,58,0.88);
-    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.04);
+    border-left: 5px solid #FF453A;
+    box-shadow: 0 0 18px 1px rgba(255,69,58,0.35);
 }
 .leave-countdown-label {
-    font-size: 1.1rem;
+    display: block;
+    font-size: 1rem;
     font-weight: 700;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: #FFFFFF;
+    color: #FF6961;
+    margin-bottom: 0.15rem;
 }
 .leave-countdown-value {
-    font-size: 2.6rem;
-    font-weight: 700;
-    color: #FFFFFF;
+    display: block;
+    font-size: 3.2rem;
+    font-weight: 800;
+    color: #FF453A;
     font-variant-numeric: tabular-nums;
+    line-height: 1;
 }
 
 /* Today page's agenda only — same news-feed-row shape the News page
