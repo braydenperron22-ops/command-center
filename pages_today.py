@@ -89,10 +89,14 @@ def _format_countdown(remaining_seconds: float) -> str:
     # reruns produce byte-identical HTML here, so there's nothing for
     # the browser to visibly redraw. Nobody needs second-level precision
     # for "when do I need to leave" anyway.
+    # Worded units ("1h 26m"), not a colon-separated clock face ("1:26")
+    # — a colon format reads as a live stopwatch, so a value that only
+    # ticks once a minute (see above) looked stuck/broken rather than
+    # calm. Words don't carry that same "should be moving" expectation.
     total_minutes = max(0, int(remaining_seconds) // 60)
     hours, minutes = divmod(total_minutes, 60)
     if hours > 0:
-        return f"{hours}:{minutes:02d}"
+        return f"{hours}h {minutes}m"
     return f"{minutes} min"
 
 
