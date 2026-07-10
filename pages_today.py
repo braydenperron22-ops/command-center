@@ -13,7 +13,6 @@ import streamlit as st
 import calendar_client
 import commute_client
 import commute_history
-import commute_reminder
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
 # From this hour onward, the agenda switches from today's remaining
@@ -78,46 +77,6 @@ def _next_event_id(events: list[dict], now: datetime) -> int | None:
         if e["start"] > now_aware:
             return id(e)
     return None
-
-
-def _format_countdown(remaining_seconds: float) -> str:
-    # Minute granularity, not seconds. This string is rebuilt on every
-    # 1s autorefresh rerun — at second precision it changed on literally
-    # every rerun, the only thing on this page that did, which is what
-    # made the page look like it was constantly refreshing/flickering.
-    # A value that only changes once a minute means 59 out of every 60
-    # reruns produce byte-identical HTML here, so there's nothing for
-    # the browser to visibly redraw. Nobody needs second-level precision
-    # for "when do I need to leave" anyway.
-    # Worded units ("1h 26m"), not a colon-separated clock face ("1:26")
-    # — a colon format reads as a live stopwatch, so a value that only
-    # ticks once a minute (see above) looked stuck/broken rather than
-    # calm. Words don't carry that same "should be moving" expectation.
-    total_minutes = max(0, int(remaining_seconds) // 60)
-    hours, minutes = divmod(total_minutes, 60)
-    if hours > 0:
-        return f"{hours}h {minutes}m"
-    return f"{minutes} min"
-
-
-def _render_leave_headline(now: datetime) -> None:
-    """A standalone red headline at the very top of the page — promoted
-    out of the agenda tile so it's the first thing on screen, not
-    something nested inside another card. "" once the moment's passed
-    rather than counting into negative numbers or lingering on a stale
-    "Leave now"; the bottom-bar toast (commute_reminder.check) already
-    owns that moment. Independent of which day the agenda below is
-    showing — leave_by_time is always about *today's* actual shift, so
-    it naturally stops rendering once that moment passes rather than
-    showing stale alongside an evening switch to tomorrow's agenda."""
-    leave_by = commute_reminder.leave_by_time(now)
-    if leave_by is None:
-        return
-    now_aware = now.replace(tzinfo=leave_by.tzinfo)
-    remaining = (leave_by - now_aware).total_seconds()
-    if remaining <= 0:
-        return
-    st.markdown(f'<div class="leave-headline">Leave in {_format_countdown(remaining)}</div>', unsafe_allow_html=True)
 
 
 def _render_agenda(now: datetime) -> None:
@@ -209,7 +168,6 @@ def _render_commute() -> None:
 
 def render(now: datetime) -> None:
     st.markdown('<div class="page-title page-title-today">Today</div>', unsafe_allow_html=True)
-    _render_leave_headline(now)
     _render_agenda(now)
     st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
     _render_commute()

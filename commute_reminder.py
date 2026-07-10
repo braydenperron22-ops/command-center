@@ -28,6 +28,14 @@ MILESTONES_MINUTES = [120, 90, 60, 45, 30, 20, 15, 10, 5, 3, 0]
 # window, and "Leave now" 40 minutes after the fact isn't useful.
 LATEST_FIRE_MINUTES = -30
 
+# The persistent headline (render_leave_headline, below) is deliberately
+# narrower than the toast milestones above — hours-out visibility is
+# what those toasts are for. The headline is for the one window where
+# you actually want it parked on screen: the final hour, plus a short
+# grace period after so it doesn't vanish the instant you're running late.
+HEADLINE_WINDOW_MINUTES = 60
+HEADLINE_GRACE_MINUTES = 10
+
 STRETCH_END = 1.8
 SLIDE_END = 3.0
 
@@ -114,6 +122,39 @@ def check(now: datetime) -> dict | None:
     state["shown"].add(milestone)
 
     return {"headline": _leave_text(milestone), "category": "Commute", "important": False, "kind": "commute"}
+
+
+def _format_minutes(remaining_seconds: float) -> str:
+    # Worded units ("1h 26m"/"45 min"), not a colon-separated clock face
+    # ("1:26") — a colon format reads as a live stopwatch, and this only
+    # updates once a minute (see render_leave_headline), so it'd look
+    # stuck rather than calm. Words don't carry that "should be actively
+    # ticking" expectation.
+    total_minutes = max(0, int(remaining_seconds) // 60)
+    hours, minutes = divmod(total_minutes, 60)
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    return f"{minutes} min"
+
+
+def render_leave_headline(now: datetime) -> None:
+    """A standalone red headline above the hero clock/weather row —
+    page-independent (renders regardless of which of the 6 rotating
+    pages is currently up, unlike anything living inside a page's own
+    render()), so it's actually visible during the one window that
+    matters: the final hour before you need to leave, through a
+    HEADLINE_GRACE_MINUTES grace period after. Silent outside that
+    window — hours-out awareness is what the milestone toasts above are
+    for; this is specifically for keeping tabs once it's close."""
+    leave_by = leave_by_time(now)
+    if leave_by is None:
+        return
+    now_aware = now.replace(tzinfo=leave_by.tzinfo)
+    remaining = (leave_by - now_aware).total_seconds()
+    if not (-HEADLINE_GRACE_MINUTES * 60 <= remaining <= HEADLINE_WINDOW_MINUTES * 60):
+        return
+    text = "Leave now" if remaining <= 0 else f"Leave in {_format_minutes(remaining)}"
+    st.markdown(f'<div class="leave-headline">{text}</div>', unsafe_allow_html=True)
 
 
 def render_bar(alert: dict, elapsed: float) -> None:

@@ -220,6 +220,14 @@ if weather:
         <div class="date-sub">Corbeil{hilo_html}</div>{extras_html}
     </div>"""
 
+# Directly above the clock, page-independent — see
+# commute_reminder.render_leave_headline for why (visible regardless of
+# which of the 6 rotating pages is up, unlike Today's own content).
+try:
+    commute_reminder.render_leave_headline(now)
+except Exception:
+    pass
+
 st.markdown(
     f"""<div class="hero-row">
         <div class="hero-time">
