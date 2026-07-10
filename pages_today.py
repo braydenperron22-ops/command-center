@@ -6,7 +6,7 @@ separate browser session entirely.
 """
 
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import streamlit as st
 
@@ -14,6 +14,12 @@ import calendar_client
 import commute_client
 import todo_store
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN, MAX_TODO_ITEMS
+
+# From this hour onward, the agenda switches from today's remaining
+# events to tomorrow's full day — checking the dashboard in the evening
+# is more useful as "what does tomorrow look like" than "what's left
+# today" (usually nothing, by 7pm).
+AGENDA_SWITCH_HOUR = 19
 
 
 def _time_range(event: dict) -> str:
@@ -44,10 +50,20 @@ def _render_agenda(now: datetime) -> None:
     if not ics_url:
         return
 
-    events = calendar_client.todays_events(ics_url, now.date())
+    showing_tomorrow = now.hour >= AGENDA_SWITCH_HOUR
+    agenda_date = now.date() + timedelta(days=1) if showing_tomorrow else now.date()
+    day_word = "tomorrow" if showing_tomorrow else "today"
+
+    st.markdown(f'<div class="tile-label">{day_word.upper()}</div>', unsafe_allow_html=True)
+
+    # Events are always in the future (or, before the switch, still in
+    # progress) relative to `now` here on — no special-casing needed for
+    # the tomorrow view: _row_class's date comparisons already can't mark
+    # a tomorrow event "now" or "past" while `now` is still today.
+    events = calendar_client.todays_events(ics_url, agenda_date)
     if not events:
         st.markdown(
-            '<div class="tile"><div class="tile-prev">Nothing on the calendar today.</div></div>',
+            f'<div class="tile"><div class="tile-prev">Nothing on the calendar {day_word}.</div></div>',
             unsafe_allow_html=True,
         )
         return
