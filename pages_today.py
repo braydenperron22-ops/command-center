@@ -81,23 +81,26 @@ def _next_event_id(events: list[dict], now: datetime) -> int | None:
 
 
 def _format_countdown(remaining_seconds: float) -> str:
-    # Small deliberate duplicate of app.py's _format_countdown — app.py
-    # imports pages_today, so importing back would cycle, and it's a
-    # handful of lines.
-    remaining_seconds = max(0, int(remaining_seconds))
-    hours, rem = divmod(remaining_seconds, 3600)
-    minutes, seconds = divmod(rem, 60)
+    # Minute granularity, not seconds. This string is rebuilt on every
+    # 1s autorefresh rerun — at second precision it changed on literally
+    # every rerun, the only thing on this page that did, which is what
+    # made the page look like it was constantly refreshing/flickering.
+    # A value that only changes once a minute means 59 out of every 60
+    # reruns produce byte-identical HTML here, so there's nothing for
+    # the browser to visibly redraw. Nobody needs second-level precision
+    # for "when do I need to leave" anyway.
+    total_minutes = max(0, int(remaining_seconds) // 60)
+    hours, minutes = divmod(total_minutes, 60)
     if hours > 0:
-        return f"{hours}:{minutes:02d}:{seconds:02d}"
-    return f"{minutes}:{seconds:02d}"
+        return f"{hours}:{minutes:02d}"
+    return f"{minutes} min"
 
 
 def _leave_countdown_html(now: datetime) -> str:
-    """A persistent (not toast) "Time to leave" readout, live-ticking
-    once per second via the same 1s autorefresh that drives the rain
-    countdown — "" once the moment's passed rather than counting into
-    negative numbers or lingering on a stale "Leave now"; the bottom-bar
-    toast (commute_reminder.check) already owns that moment."""
+    """A persistent (not toast) "Time to leave" readout — "" once the
+    moment's passed rather than counting into negative numbers or
+    lingering on a stale "Leave now"; the bottom-bar toast
+    (commute_reminder.check) already owns that moment."""
     leave_by = commute_reminder.leave_by_time(now)
     if leave_by is None:
         return ""
