@@ -100,8 +100,6 @@ YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 PAGES = ["home", "conflicts", "news", "markets", "internals", "today"]
 PAGE_ROTATION_SECONDS = 90
 
-MAX_TODO_ITEMS = 20
-
 # Commute origin coordinate is the exact one embedded in the calendar
 # feed's own Apple-geocoded location for 281 Ouellette Rd (Nominatim's
 # free geocoder has no house-number-level data for this rural road —

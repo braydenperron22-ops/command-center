@@ -777,29 +777,49 @@ html, body, [class*="css"] {
    bottom-bar toast (commute_reminder.render_bar) — ticks down live via
    the same 1s autorefresh as the hero row's rain countdown. Soft
    translucent fill rather than a solid block so it reads as urgent
-   without shouting over the agenda list right below it. */
+   without shouting over the agenda list right below it. Sized to be
+   readable from across the room, same as the commute tile's tile-value. */
 .leave-countdown {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     margin: 0.5rem 1.5rem 0.2rem;
-    padding: 0.55rem 0.9rem;
-    border-radius: 10px;
+    padding: 0.85rem 1.2rem;
+    border-radius: 12px;
     background: rgba(255,105,97,0.12);
     border: 1px solid rgba(255,105,97,0.35);
 }
 .leave-countdown-label {
-    font-size: 0.82rem;
+    font-size: 1.1rem;
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: #FF6961;
 }
 .leave-countdown-value {
-    font-size: 1.35rem;
+    font-size: 2.6rem;
     font-weight: 700;
     color: #FF6961;
     font-variant-numeric: tabular-nums;
+}
+
+/* Today page's agenda only — same news-feed-row shape the News page
+   uses for its own (much longer, faster-scanned) list, but scaled up
+   here since this list is short and meant to be read at a glance, not
+   skimmed. */
+.agenda-feed-list.news-feed-list {
+    padding: 0.5rem 1.5rem;
+}
+.agenda-feed-list .news-feed-row {
+    padding: 1.2rem 0 1.2rem 1.1rem;
+    border-left-width: 5px;
+}
+.agenda-feed-list .news-feed-headline {
+    font-size: 1.55rem;
+    font-weight: 700;
+}
+.agenda-feed-list .news-feed-meta {
+    font-size: 1.15rem;
 }
 
 .news-feed-headline {

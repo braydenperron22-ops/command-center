@@ -1,12 +1,10 @@
 """Today page: a personal day-to-day panel — today's calendar agenda
 (merged from one or more published/private ICS feeds, see
-calendar_client.py), a commute-time estimate, and a to-do list
-persisted to a shared JSON file rather than session state, so an edit
-from your laptop shows up on the always-on kiosk — a separate browser
-session entirely.
+calendar_client.py) and a commute-time estimate. Everything here is
+pulled from live sources rather than hand-maintained, on purpose —
+nothing on this page needs manual upkeep to stay useful.
 """
 
-import hashlib
 import time
 from datetime import datetime, timedelta
 
@@ -16,8 +14,7 @@ import calendar_client
 import commute_client
 import commute_history
 import commute_reminder
-import todo_store
-from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN, MAX_TODO_ITEMS
+from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
 # From this hour onward, the agenda switches from today's remaining
 # events to tomorrow's full day — checking the dashboard in the evening
@@ -157,7 +154,10 @@ def _render_agenda(now: datetime) -> None:
         </div>"""
         for e in events
     )
-    st.markdown(f'<div class="news-feed-list">{rows}</div>', unsafe_allow_html=True)
+    # agenda-feed-list scopes the bigger type up ahead in theme.py to
+    # just this page — the News page reuses these same news-feed-*
+    # classes at their normal size for its much longer list.
+    st.markdown(f'<div class="news-feed-list agenda-feed-list">{rows}</div>', unsafe_allow_html=True)
 
 
 def _commute_trend_html(current_duration_seconds: float) -> str:
@@ -208,50 +208,8 @@ def _render_commute() -> None:
     )
 
 
-def _render_todo() -> None:
-    items = todo_store.load()
-
-    with st.form("todo_add_form", clear_on_submit=True):
-        new_text = st.text_input(
-            "Add a to-do", key="todo_input", label_visibility="collapsed", placeholder="Add a to-do…"
-        )
-        submitted = st.form_submit_button("Add")
-    if submitted and new_text.strip():
-        items.append({"text": new_text.strip(), "done": False})
-        todo_store.save(items)
-
-    if not items:
-        st.markdown(
-            '<div class="tile"><div class="tile-prev">Nothing on your list — add something above.</div></div>',
-            unsafe_allow_html=True,
-        )
-        return
-
-    items = items[:MAX_TODO_ITEMS]
-    changed = False
-    for item in items:
-        # Keyed by content hash, not list position — a position-based key
-        # would let stale checkbox state from a since-removed item bleed
-        # onto whatever item now occupies that slot after the list shifts
-        # (e.g. right after "Clear completed").
-        key = f"todo_{hashlib.sha1(item['text'].encode()).hexdigest()}"
-        checked = st.checkbox(item["text"], value=item["done"], key=key)
-        if checked != item["done"]:
-            item["done"] = checked
-            changed = True
-    if changed:
-        todo_store.save(items)
-
-    if any(item["done"] for item in items):
-        if st.button("Clear completed"):
-            todo_store.save([item for item in items if not item["done"]])
-            st.rerun()
-
-
 def render(now: datetime) -> None:
     st.markdown('<div class="page-title page-title-today">Today</div>', unsafe_allow_html=True)
     _render_agenda(now)
     st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
     _render_commute()
-    st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
-    _render_todo()
