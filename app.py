@@ -1,6 +1,6 @@
 """Personal command-center dashboard: ambient rotation across Home (macro
-data), Conflicts, News, Markets, and Watchlist — clock/weather header
-stays constant."""
+data), Conflicts, News, Markets, Internals, and Today — clock/weather
+header stays constant."""
 
 import time
 from datetime import datetime
@@ -17,7 +17,7 @@ import pages_home
 import pages_internals
 import pages_markets
 import pages_news
-import pages_watchlist
+import pages_today
 import theme
 import weather_alerts_bar
 from config import (
@@ -283,10 +283,10 @@ with st.container(key="page_body"):
         _safe_render(pages_news.render)
     elif page == "markets":
         _safe_render(pages_markets.render)
-    elif page == "watchlist":
-        _safe_render(pages_watchlist.render)
     elif page == "internals":
         _safe_render(pages_internals.render)
+    elif page == "today":
+        _safe_render(pages_today.render)
 
 # News alerts: strictly-filtered items queue up and take over the bottom
 # bar (normally the release calendar) for TOAST_SECONDS each, breaking-news

@@ -37,7 +37,11 @@ def _control(device: dict, cap_type: str, instance: str, value) -> bool:
         )
         resp.raise_for_status()
         return resp.json().get("code") == 200
-    except requests.RequestException:
+    except (requests.RequestException, ValueError):
+        # ValueError covers resp.json() failing to parse — Govee returning
+        # a non-JSON body (an HTML error page under rate-limiting, a proxy
+        # timeout page, etc.) shouldn't be treated any differently than a
+        # normal request failure.
         return False
 
 

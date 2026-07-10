@@ -94,16 +94,13 @@ MARKET_INDEX = {
 YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 
 # --- Multi-page ambient rotation -------------------------------------------
-# Home / Conflicts / News / Markets / Watchlist / Internals cycle the
-# same way US/CA already does: a time.time()-based index, no Streamlit
+# Home / Conflicts / News / Markets / Internals / Today cycle the same
+# way US/CA already does: a time.time()-based index, no Streamlit
 # multipage chrome, no scrolling.
-PAGES = ["home", "conflicts", "news", "markets", "watchlist", "internals"]
+PAGES = ["home", "conflicts", "news", "markets", "internals", "today"]
 PAGE_ROTATION_SECONDS = 90
 
-# Watchlist tiles are wider (more metric rows than Markets' tiles) — cap
-# and row-wrap at a narrower count than Markets' 7 so they stay readable.
-MAX_WATCHLIST_SHOWN = 12
-WATCHLIST_ROW_SIZE = 6
+MAX_TODO_ITEMS = 20
 
 # Markets page refresh — yfinance has no key/rate-limit tier to work
 # around, so this can just be "how fresh do we want it," not "how rarely
