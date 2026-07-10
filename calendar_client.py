@@ -33,10 +33,18 @@ def _fetch_calendar_raw(ics_url: str) -> bytes:
     return resp.content
 
 
-def _events_from_one(ics_url: str, today: date) -> list[dict]:
-    raw = _fetch_calendar_raw(ics_url)
+def _events_from_one(calendar: dict, today: date) -> list[dict]:
+    raw = _fetch_calendar_raw(calendar["url"])
     cal = icalendar.Calendar.from_ical(raw)
     occurrences = recurring_ical_events.of(cal).between(today, today + timedelta(days=1))
+    # Trusted per source, not guessed per-event from the title — the
+    # shifts on Brayden's Google calendar were bulk-imported by Gemini
+    # with a placeholder 1-hour end time on every entry, not the real
+    # shift length, so that source is configured show_end_time=false.
+    # Keying off which calendar an event came from is more robust than
+    # matching on titles like "Sales", which has no reliable "this is a
+    # shift" marker in the text itself.
+    show_end_time = calendar.get("show_end_time", True)
     events = []
     for e in occurrences:
         start = e.get("DTSTART").dt
@@ -49,11 +57,12 @@ def _events_from_one(ics_url: str, today: date) -> list[dict]:
             "end": end,
             "location": str(e.get("LOCATION")) if e.get("LOCATION") else None,
             "all_day": all_day,
+            "show_end_time": show_end_time,
         })
     return events
 
 
-def todays_events(ics_urls: list[str], today: date) -> list[dict]:
+def todays_events(calendars: list[dict], today: date) -> list[dict]:
     """Events overlapping `today` across every configured calendar,
     merged and sorted all-day-first then by start time. Each source is
     fetched independently — one calendar being down or slow doesn't
@@ -62,9 +71,9 @@ def todays_events(ics_urls: list[str], today: date) -> list[dict]:
     global _last_good_events
     all_events = []
     any_success = False
-    for url in ics_urls:
+    for calendar in calendars:
         try:
-            all_events.extend(_events_from_one(url, today))
+            all_events.extend(_events_from_one(calendar, today))
         except Exception:
             continue
         any_success = True

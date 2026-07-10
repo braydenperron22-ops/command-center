@@ -1,8 +1,9 @@
 """Today page: a personal day-to-day panel — today's calendar agenda
-(from a published, read-only iCloud ICS feed), a commute-time estimate,
-and a to-do list persisted to a shared JSON file rather than session
-state, so an edit from your laptop shows up on the always-on kiosk — a
-separate browser session entirely.
+(merged from one or more published/private ICS feeds, see
+calendar_client.py), a commute-time estimate, and a to-do list
+persisted to a shared JSON file rather than session state, so an edit
+from your laptop shows up on the always-on kiosk — a separate browser
+session entirely.
 """
 
 import hashlib
@@ -25,7 +26,10 @@ AGENDA_SWITCH_HOUR = 19
 def _time_range(event: dict) -> str:
     if event["all_day"]:
         return "All day"
-    return f"{event['start'].strftime('%I:%M %p').lstrip('0')} – {event['end'].strftime('%I:%M %p').lstrip('0')}"
+    start_text = event["start"].strftime("%I:%M %p").lstrip("0")
+    if not event["show_end_time"]:
+        return start_text
+    return f"{start_text} – {event['end'].strftime('%I:%M %p').lstrip('0')}"
 
 
 def _row_class(event: dict, now: datetime) -> str:
@@ -38,6 +42,13 @@ def _row_class(event: dict, now: datetime) -> str:
     # Cloud runs in UTC, so that would silently compare against the
     # wrong wall-clock time.
     now_aware = now.replace(tzinfo=event["start"].tzinfo)
+    if not event["show_end_time"]:
+        # The end time isn't trustworthy for these (see calendar_client's
+        # show_end_time), so it can't be used to decide "past" either —
+        # a shift still actually in progress would otherwise fade out
+        # the moment its bogus 1-hour placeholder end passes. Just
+        # reflect whether it's started.
+        return "agenda-row-now" if event["start"] <= now_aware else ""
     if event["start"] <= now_aware < event["end"]:
         return "agenda-row-now"
     if event["end"] <= now_aware:
@@ -46,8 +57,8 @@ def _row_class(event: dict, now: datetime) -> str:
 
 
 def _render_agenda(now: datetime) -> None:
-    ics_urls = st.secrets.get("CALENDAR_ICS_URLS")
-    if not ics_urls:
+    calendars = st.secrets.get("CALENDARS")
+    if not calendars:
         return
 
     showing_tomorrow = now.hour >= AGENDA_SWITCH_HOUR
@@ -60,7 +71,7 @@ def _render_agenda(now: datetime) -> None:
     # progress) relative to `now` here on — no special-casing needed for
     # the tomorrow view: _row_class's date comparisons already can't mark
     # a tomorrow event "now" or "past" while `now` is still today.
-    events = calendar_client.todays_events(ics_urls, agenda_date)
+    events = calendar_client.todays_events(calendars, agenda_date)
     if not events:
         st.markdown(
             f'<div class="tile"><div class="tile-prev">Nothing on the calendar {day_word}.</div></div>',
