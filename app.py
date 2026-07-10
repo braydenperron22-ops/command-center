@@ -39,9 +39,20 @@ theme.inject()
 
 FRED_API_KEY = st.secrets.get("FRED_API_KEY")
 
-# Ticking clock every second; rotation derived from elapsed real time so it
-# survives Streamlit Cloud sleep/wake without drifting into a fast-forward.
-st_autorefresh(interval=1000, key="clock_tick")
+# Rotation is derived from elapsed real time (not a counter), so it
+# survives Streamlit Cloud sleep/wake without drifting into a
+# fast-forward regardless of this interval. Was 1000ms — a full script
+# rerun every second, 86,400 times a day, unattended — but nothing on
+# the page actually needs second-level precision anymore: the clock
+# only displays minutes, and both the leave and rain countdowns were
+# switched to minute granularity for readability reasons (see recent
+# history), not just refresh cost. That made the 1s interval pure
+# unnecessary load — plausibly what was pushing this free-tier
+# container into the memory pressure behind a segfault crash. The only
+# thing that benefits from a fast interval is the ~3s toast-alert
+# intro animation, which is brief and rare; a bit less smooth there is
+# a clearly better trade than the whole app dying.
+st_autorefresh(interval=3000, key="clock_tick")
 
 # Hosted deployments (Streamlit Cloud) run on the server's own timezone
 # (typically UTC), not North Bay's — pin explicitly rather than trusting
