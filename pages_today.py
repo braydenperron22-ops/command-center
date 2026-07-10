@@ -15,6 +15,7 @@ import streamlit as st
 import calendar_client
 import commute_client
 import commute_history
+import commute_reminder
 import todo_store
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN, MAX_TODO_ITEMS
 
@@ -41,7 +42,7 @@ def _time_range(event: dict) -> str:
     return f"{start_text} – {event['end'].strftime('%I:%M %p').lstrip('0')}"
 
 
-def _row_class(event: dict, now: datetime) -> str:
+def _row_class(event: dict, now: datetime, is_next: bool) -> str:
     if event["all_day"]:
         return ""
     # `now` arrives naive but already IN the local zone (app.py pins it
@@ -57,12 +58,62 @@ def _row_class(event: dict, now: datetime) -> str:
         # a shift still actually in progress would otherwise fade out
         # the moment its bogus 1-hour placeholder end passes. Just
         # reflect whether it's started.
-        return "agenda-row-now" if event["start"] <= now_aware else ""
+        if event["start"] <= now_aware:
+            return "agenda-row-now"
+        return "agenda-row-next" if is_next else ""
     if event["start"] <= now_aware < event["end"]:
         return "agenda-row-now"
     if event["end"] <= now_aware:
         return "agenda-row-past"
-    return ""
+    return "agenda-row-next" if is_next else ""
+
+
+def _next_event_id(events: list[dict], now: datetime) -> int | None:
+    """id() of the earliest not-yet-started, non-all-day event — the one
+    _render_agenda highlights as "up next", distinct from one already
+    underway ("now") or further out in the list. Safe to compare by
+    id() here since `events` is freshly built this render — nothing
+    persists across reruns."""
+    for e in events:
+        if e["all_day"]:
+            continue
+        now_aware = now.replace(tzinfo=e["start"].tzinfo)
+        if e["start"] > now_aware:
+            return id(e)
+    return None
+
+
+def _format_countdown(remaining_seconds: float) -> str:
+    # Small deliberate duplicate of app.py's _format_countdown — app.py
+    # imports pages_today, so importing back would cycle, and it's a
+    # handful of lines.
+    remaining_seconds = max(0, int(remaining_seconds))
+    hours, rem = divmod(remaining_seconds, 3600)
+    minutes, seconds = divmod(rem, 60)
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
+
+
+def _leave_countdown_html(now: datetime) -> str:
+    """A persistent (not toast) "Time to leave" readout, live-ticking
+    once per second via the same 1s autorefresh that drives the rain
+    countdown — "" once the moment's passed rather than counting into
+    negative numbers or lingering on a stale "Leave now"; the bottom-bar
+    toast (commute_reminder.check) already owns that moment."""
+    leave_by = commute_reminder.leave_by_time(now)
+    if leave_by is None:
+        return ""
+    now_aware = now.replace(tzinfo=leave_by.tzinfo)
+    remaining = (leave_by - now_aware).total_seconds()
+    if remaining <= 0:
+        return ""
+    return (
+        '<div class="leave-countdown">'
+        '<span class="leave-countdown-label">Time to leave</span>'
+        f'<span class="leave-countdown-value">{_format_countdown(remaining)}</span>'
+        "</div>"
+    )
 
 
 def _render_agenda(now: datetime) -> None:
@@ -76,6 +127,14 @@ def _render_agenda(now: datetime) -> None:
 
     st.markdown(f'<div class="tile-label">{day_word.upper()}</div>', unsafe_allow_html=True)
 
+    # leave_by_time is always about *today's* actual shift regardless of
+    # which day the agenda below is showing — it naturally stops
+    # rendering once that moment passes, so it never shows stale
+    # alongside an evening switch to tomorrow's agenda.
+    leave_html = _leave_countdown_html(now)
+    if leave_html:
+        st.markdown(leave_html, unsafe_allow_html=True)
+
     # Events are always in the future (or, before the switch, still in
     # progress) relative to `now` here on — no special-casing needed for
     # the tomorrow view: _row_class's date comparisons already can't mark
@@ -88,8 +147,9 @@ def _render_agenda(now: datetime) -> None:
         )
         return
 
+    next_id = _next_event_id(events, now)
     rows = "".join(
-        f"""<div class="news-feed-row {_row_class(e, now)}">
+        f"""<div class="news-feed-row {_row_class(e, now, id(e) == next_id)}">
             <div class="news-feed-headline">{e['summary']}{
                 f'<div class="news-feed-meta">{e["location"].splitlines()[0]}</div>' if e['location'] else ''
             }</div>
@@ -132,13 +192,18 @@ def _render_commute() -> None:
     else:
         delay_text, delay_class = "no delays", "market-up"
 
+    # trend_html folded onto the closing tag's line rather than given its
+    # own — when it's "" (no comparison data yet), a lone whitespace line
+    # ahead of an indented "</div>" reads to the markdown parser as a
+    # blank line followed by an indented code block, and it renders that
+    # closing tag as literal text instead of parsing it as HTML.
+    trend_html = _commute_trend_html(data["duration_seconds"])
     st.markdown(
         f"""<div class="tile">
             <div class="tile-label">{COMMUTE_ORIGIN['label'].upper()} → {COMMUTE_DESTINATION['label'].upper()}</div>
             <div class="tile-value">{minutes} min</div>
             <div class="tile-prev">{data['distance_km']:.1f} km · <span class="{delay_class}">{delay_text}</span></div>
-            {_commute_trend_html(data['duration_seconds'])}
-        </div>""",
+            {trend_html}</div>""",
         unsafe_allow_html=True,
     )
 

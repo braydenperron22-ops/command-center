@@ -68,9 +68,12 @@ def _due_milestone(minutes_until_leave: float, shown_today: set[int]) -> int | N
     return due
 
 
-def check(now: datetime) -> dict | None:
-    """Call once per rerun. Returns a news_queue-shaped alert dict the
-    moment a new milestone is due, else None."""
+def leave_by_time(now: datetime) -> datetime | None:
+    """When you need to leave today to arrive EARLY_BUFFER_MINUTES early
+    for your first shift, given the live commute estimate — None if
+    there's no shift today or the commute time isn't available. Shared
+    by check(), below, and the persistent countdown on the Today page,
+    so both agree on the exact same target."""
     shift_start = _todays_shift_start(now)
     if shift_start is None:
         return None
@@ -79,11 +82,20 @@ def check(now: datetime) -> dict | None:
     if not route:
         return None
 
+    return shift_start - timedelta(seconds=route["duration_seconds"]) - timedelta(minutes=EARLY_BUFFER_MINUTES)
+
+
+def check(now: datetime) -> dict | None:
+    """Call once per rerun. Returns a news_queue-shaped alert dict the
+    moment a new milestone is due, else None."""
+    leave_by = leave_by_time(now)
+    if leave_by is None:
+        return None
+
     # `now` arrives naive but already IN the local zone — reinterpret,
     # don't convert (see pages_today.py's _row_class for why .replace()
     # and not .astimezone()).
-    now_aware = now.replace(tzinfo=shift_start.tzinfo)
-    leave_by = shift_start - timedelta(seconds=route["duration_seconds"]) - timedelta(minutes=EARLY_BUFFER_MINUTES)
+    now_aware = now.replace(tzinfo=leave_by.tzinfo)
     minutes_until_leave = (leave_by - now_aware).total_seconds() / 60
 
     if not (LATEST_FIRE_MINUTES <= minutes_until_leave <= max(MILESTONES_MINUTES)):

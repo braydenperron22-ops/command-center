@@ -763,9 +763,44 @@ html, body, [class*="css"] {
 
 /* Today page's agenda reuses this same row/list shape — same green as
    the rest of the app's "good/active" language for what's happening
-   right now, faded out once an event's already ended today. */
+   right now, faded out once an event's already ended today. The next
+   not-yet-started event gets a quieter blue wash rather than green —
+   green already means "happening now" everywhere else in the app, and
+   reusing it here would blur that distinction — just enough of a tint
+   to catch your eye scanning down the list without competing with the
+   red leave-countdown chip above it for attention. */
 .news-feed-row.agenda-row-now { border-left-color: #32D74B; }
 .news-feed-row.agenda-row-past { opacity: 0.5; }
+.news-feed-row.agenda-row-next { border-left-color: #5AC8FA; background: rgba(90,200,250,0.08); }
+
+/* Persistent "Time to leave" readout, distinct from the transient
+   bottom-bar toast (commute_reminder.render_bar) — ticks down live via
+   the same 1s autorefresh as the hero row's rain countdown. Soft
+   translucent fill rather than a solid block so it reads as urgent
+   without shouting over the agenda list right below it. */
+.leave-countdown {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin: 0.5rem 1.5rem 0.2rem;
+    padding: 0.55rem 0.9rem;
+    border-radius: 10px;
+    background: rgba(255,105,97,0.12);
+    border: 1px solid rgba(255,105,97,0.35);
+}
+.leave-countdown-label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #FF6961;
+}
+.leave-countdown-value {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #FF6961;
+    font-variant-numeric: tabular-nums;
+}
 
 .news-feed-headline {
     font-size: 1.05rem;
