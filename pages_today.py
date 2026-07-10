@@ -7,12 +7,14 @@ session entirely.
 """
 
 import hashlib
+import time
 from datetime import datetime, timedelta
 
 import streamlit as st
 
 import calendar_client
 import commute_client
+import commute_history
 import todo_store
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN, MAX_TODO_ITEMS
 
@@ -21,6 +23,13 @@ from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN, MAX_TODO_ITEMS
 # is more useful as "what does tomorrow look like" than "what's left
 # today" (usually nothing, by 7pm).
 AGENDA_SWITCH_HOUR = 19
+
+# How far back the commute trend looks, and how big a change has to be
+# before it's worth surfacing rather than just noise — TomTom's own
+# estimate jitters by a minute or two between calls even with nothing
+# really changing.
+COMMUTE_TREND_LOOKBACK_SECONDS = 30 * 60
+COMMUTE_TREND_MIN_DELTA_MINUTES = 3
 
 
 def _time_range(event: dict) -> str:
@@ -91,6 +100,26 @@ def _render_agenda(now: datetime) -> None:
     st.markdown(f'<div class="news-feed-list">{rows}</div>', unsafe_allow_html=True)
 
 
+def _commute_trend_html(current_duration_seconds: float) -> str:
+    """A line like "↑ 4 min in the last 32 min" — "" if there's no
+    comparison data yet (e.g. right after a fresh deploy) or the change
+    is too small to be worth showing."""
+    comparison = commute_history.reading_from_before(COMMUTE_TREND_LOOKBACK_SECONDS)
+    if not comparison:
+        return ""
+
+    delta_minutes = round((current_duration_seconds - comparison["duration_seconds"]) / 60)
+    if abs(delta_minutes) < COMMUTE_TREND_MIN_DELTA_MINUTES:
+        return ""
+
+    elapsed_minutes = round((time.time() - comparison["timestamp"]) / 60)
+    arrow, css_class = ("↑", "market-down") if delta_minutes > 0 else ("↓", "market-up")
+    return (
+        f'<div class="severity-caption"><span class="{css_class}">'
+        f"{arrow} {abs(delta_minutes)} min in the last {elapsed_minutes} min</span></div>"
+    )
+
+
 def _render_commute() -> None:
     data = commute_client.route()
     if not data:
@@ -108,6 +137,7 @@ def _render_commute() -> None:
             <div class="tile-label">{COMMUTE_ORIGIN['label'].upper()} → {COMMUTE_DESTINATION['label'].upper()}</div>
             <div class="tile-value">{minutes} min</div>
             <div class="tile-prev">{data['distance_km']:.1f} km · <span class="{delay_class}">{delay_text}</span></div>
+            {_commute_trend_html(data['duration_seconds'])}
         </div>""",
         unsafe_allow_html=True,
     )

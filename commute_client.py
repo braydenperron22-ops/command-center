@@ -12,6 +12,7 @@ right now" — the entire point of this tile.
 import requests
 import streamlit as st
 
+import commute_history
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
 ROUTE_URL = "https://api.tomtom.com/routing/1/calculateRoute/{lat1},{lon1}:{lat2},{lon2}/json"
@@ -29,6 +30,11 @@ def _fetch_route_raw(api_key: str) -> dict:
     resp = requests.get(url, params={"key": api_key, "traffic": "true"}, timeout=10)
     resp.raise_for_status()
     summary = resp.json()["routes"][0]["summary"]
+    # Inside the cached function, not in route() below — st.cache_data
+    # only re-executes this body on an actual cache miss, so this
+    # naturally records one point per real TomTom call (~every 15 min),
+    # not once per rerun.
+    commute_history.record(summary["travelTimeInSeconds"])
     return {
         "duration_seconds": summary["travelTimeInSeconds"],
         "delay_seconds": summary["trafficDelayInSeconds"],
