@@ -775,9 +775,11 @@ html, body, [class*="css"] {
 
 /* Persistent "Time to leave" readout, distinct from the transient
    bottom-bar toast (commute_reminder.render_bar) — ticks down live via
-   the same 1s autorefresh as the hero row's rain countdown. Soft
-   translucent fill rather than a solid block so it reads as urgent
-   without shouting over the agenda list right below it. Sized to be
+   the same 1s autorefresh as the hero row's rain countdown. A solid
+   red fill with white text rather than red-on-red-tinted (same hue for
+   both the wash and the text read as low-contrast/muddy on an actual
+   display) — white-on-red is the one combination that's unambiguous
+   from across the room and still unmistakably "alert." Sized to be
    readable from across the room, same as the commute tile's tile-value. */
 .leave-countdown {
     display: flex;
@@ -786,20 +788,20 @@ html, body, [class*="css"] {
     margin: 0.5rem 1.5rem 0.2rem;
     padding: 0.85rem 1.2rem;
     border-radius: 12px;
-    background: rgba(255,105,97,0.12);
-    border: 1px solid rgba(255,105,97,0.35);
+    background: rgba(255,69,58,0.88);
+    border: 1px solid rgba(255,255,255,0.2);
 }
 .leave-countdown-label {
     font-size: 1.1rem;
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: #FF6961;
+    color: #FFFFFF;
 }
 .leave-countdown-value {
     font-size: 2.6rem;
     font-weight: 700;
-    color: #FF6961;
+    color: #FFFFFF;
     font-variant-numeric: tabular-nums;
 }
 
