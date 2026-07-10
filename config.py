@@ -6,7 +6,7 @@ WEATHER_LON = -79.2920
 TIMEZONE = "America/Toronto"
 
 UV_HIGH_THRESHOLD = 5
-RAIN_PROBABILITY_THRESHOLD = 50  # percent, for the "Rain in Xh" nowcast label
+RAIN_PROBABILITY_THRESHOLD = 30  # percent, for the "Rain in Xh" nowcast label — was 50, rarely crossed
 RAIN_LOOKAHEAD_HOURS = 12
 
 # Environment Canada's public alert regions are free, no-key ATOM feeds at

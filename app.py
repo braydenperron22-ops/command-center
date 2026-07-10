@@ -182,16 +182,19 @@ if weather:
             # Ticks down every second between weather refreshes since
             # rain_at is a fixed target timestamp, not a relative "hours
             # from now" that would otherwise sit frozen (or go stale)
-            # for the full 15-minute cache window. Darkens toward a
-            # deep, saturated blue as it gets closer — pale and airy
-            # when it's hours off, heavy and imminent right before it hits.
+            # for the full 15-minute cache window. Background darkens
+            # toward a deep, saturated navy as it gets closer — pale and
+            # airy when it's hours off, heavy and imminent right before
+            # it hits — but the text stays a fixed bright cyan rather
+            # than darkening along with it: that used to mean the badge
+            # nearly vanished (dark-on-dark) right when it mattered most.
             closeness = 1 - min(remaining / RAIN_LOOKAHEAD_SECONDS, 1.0)
-            rain_color = _lerp_hex("#64D2FF", "#0A2472", closeness)
-            rain_bg = _rgba(rain_color, 0.22 + closeness * 0.3)
+            rain_fill = _lerp_hex("#64D2FF", "#0A2472", closeness)
+            rain_bg = _rgba(rain_fill, 0.22 + closeness * 0.5)
             countdown = _format_countdown(remaining)
             extras.append(
-                f'<span class="weather-extra" style="color:{rain_color}; '
-                f'background:{rain_bg}; border-color:{rain_color};">Rain in {countdown}</span>'
+                f'<span class="weather-extra" style="color:#64D2FF; '
+                f'background:{rain_bg}; border-color:{rain_fill};">Rain in {countdown}</span>'
             )
     if weather["uv_index"] is not None and weather["uv_index"] > UV_HIGH_THRESHOLD:
         uv = weather["uv_index"]
