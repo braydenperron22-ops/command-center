@@ -450,6 +450,26 @@ html, body, [class*="css"] {
     box-shadow: 0 -4px 24px rgba(0,0,0,0.45);
 }
 
+/* Commute reminder — same bottom-strip takeover and stretch/slide intro
+   as the breaking-news bar (see commute_reminder.render_bar), but amber
+   rather than red: a reminder to leave for work isn't the same kind of
+   urgent as a market-moving headline, and shouldn't read as one. */
+.commute-alert-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+    padding: 0.9rem 1.5rem;
+    border-top: 2px solid rgba(255,255,255,0.25);
+    overflow: hidden;
+    background: linear-gradient(90deg, #7a4a0f 0%, #b3811a 50%, #7a4a0f 100%);
+    box-shadow: 0 -4px 24px rgba(179,142,20,0.35);
+}
+
 /* Persistent top banner: holds the latest red (important) headline for
    up to TOP_ALERT_HOLD_SECONDS, or until the next one replaces it. Sits
    in normal document flow above the hero row (not fixed/overlaid) — it's

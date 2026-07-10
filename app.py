@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
+import commute_reminder
 import govee_lighting
 import market_yf_client
 import news
@@ -288,6 +289,19 @@ with st.container(key="page_body"):
     elif page == "today":
         _safe_render(pages_today.render, now)
 
+# Leave-for-work reminder: drops into the same bottom-bar queue as
+# breaking news (below), rather than a separate UI element — see
+# commute_reminder.py. Wrapped separately from that queue's own
+# try/except so a bug here can't also take down real breaking-news
+# alerts, and appended to new_alerts before that block runs so a
+# freshly-due milestone gets picked up in this same rerun.
+try:
+    commute_alert = commute_reminder.check(now)
+    if commute_alert:
+        new_alerts.append(commute_alert)
+except Exception:
+    pass
+
 # News alerts: strictly-filtered items queue up and take over the bottom
 # bar (normally the release calendar) for TOAST_SECONDS each, breaking-news
 # style, before control returns to the calendar ticker. This happens
@@ -296,7 +310,10 @@ with st.container(key="page_body"):
 # A feed outage that recovers can surface dozens of headlines in one
 # batch (everything that was never marked "seen" while it was down) —
 # capped to the most recent MAX_BURST_ALERTS so that doesn't turn into
-# hours of backlog playing through this bar one at a time.
+# hours of backlog playing through this bar one at a time. The commute
+# reminder appended above is always the last element of new_alerts at
+# that point, so this trim (which keeps the most recent items) can
+# never drop it even during a real burst.
 #
 # Defined here (not just inside the try) so the Govee block below always
 # has a real value to check even if this try body fails before reaching
@@ -320,7 +337,10 @@ try:
             current_alert, elapsed = None, None
 
     if current_alert:
-        news.render_alert_bar(current_alert, elapsed)
+        if current_alert.get("kind") == "commute":
+            commute_reminder.render_bar(current_alert, elapsed)
+        else:
+            news.render_alert_bar(current_alert, elapsed)
     elif FRED_API_KEY and readings:
         schedule = ticker.build_schedule(readings, FRED_API_KEY)
         st.markdown(ticker.render_html(schedule, now), unsafe_allow_html=True)
