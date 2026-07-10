@@ -741,6 +741,12 @@ html, body, [class*="css"] {
     border-bottom: none;
 }
 
+/* Today page's agenda reuses this same row/list shape — same green as
+   the rest of the app's "good/active" language for what's happening
+   right now, faded out once an event's already ended today. */
+.news-feed-row.agenda-row-now { border-left-color: #32D74B; }
+.news-feed-row.agenda-row-past { opacity: 0.5; }
+
 .news-feed-headline {
     font-size: 1.05rem;
     font-weight: 600;

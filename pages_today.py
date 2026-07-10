@@ -1,24 +1,73 @@
-"""Today page: a personal day-to-day panel, starting with a to-do list
+"""Today page: a personal day-to-day panel — today's calendar agenda
+(from a published, read-only iCloud ICS feed) plus a to-do list
 persisted to a shared JSON file rather than session state, so an edit
 from your laptop shows up on the always-on kiosk — a separate browser
 session entirely.
 
-Room to grow into calendar/commute once those have real data sources
-wired in — deliberately not stubbed out here with placeholder tiles
-that don't do anything yet.
+Room to grow into commute/traffic once that has a real data source
+wired in — deliberately not stubbed out here with a placeholder tile
+that doesn't do anything yet.
 """
 
 import hashlib
+from datetime import datetime
 
 import streamlit as st
 
+import calendar_client
 import todo_store
 from config import MAX_TODO_ITEMS
 
 
-def render() -> None:
-    st.markdown('<div class="page-title page-title-today">Today</div>', unsafe_allow_html=True)
+def _time_range(event: dict) -> str:
+    if event["all_day"]:
+        return "All day"
+    return f"{event['start'].strftime('%I:%M %p').lstrip('0')} – {event['end'].strftime('%I:%M %p').lstrip('0')}"
 
+
+def _row_class(event: dict, now: datetime) -> str:
+    if event["all_day"]:
+        return ""
+    # `now` arrives naive but already IN the local zone (app.py pins it
+    # to TIMEZONE and strips tzinfo) — .replace() to reinterpret it as
+    # that same zone, not .astimezone(), which would instead assume
+    # `now` is in the *system's* zone and convert from there. Streamlit
+    # Cloud runs in UTC, so that would silently compare against the
+    # wrong wall-clock time.
+    now_aware = now.replace(tzinfo=event["start"].tzinfo)
+    if event["start"] <= now_aware < event["end"]:
+        return "agenda-row-now"
+    if event["end"] <= now_aware:
+        return "agenda-row-past"
+    return ""
+
+
+def _render_agenda(now: datetime) -> None:
+    ics_url = st.secrets.get("CALENDAR_ICS_URL")
+    if not ics_url:
+        return
+
+    events = calendar_client.todays_events(ics_url, now.date())
+    if not events:
+        st.markdown(
+            '<div class="tile"><div class="tile-prev">Nothing on the calendar today.</div></div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    rows = "".join(
+        f"""<div class="news-feed-row {_row_class(e, now)}">
+            <div class="news-feed-headline">{e['summary']}{
+                f'<div class="news-feed-meta">{e["location"].splitlines()[0]}</div>' if e['location'] else ''
+            }</div>
+            <div class="news-feed-meta">{_time_range(e)}</div>
+        </div>"""
+        for e in events
+    )
+    st.markdown(f'<div class="news-feed-list">{rows}</div>', unsafe_allow_html=True)
+
+
+def _render_todo() -> None:
     items = todo_store.load()
 
     with st.form("todo_add_form", clear_on_submit=True):
@@ -56,3 +105,10 @@ def render() -> None:
         if st.button("Clear completed"):
             todo_store.save([item for item in items if not item["done"]])
             st.rerun()
+
+
+def render(now: datetime) -> None:
+    st.markdown('<div class="page-title page-title-today">Today</div>', unsafe_allow_html=True)
+    _render_agenda(now)
+    st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
+    _render_todo()

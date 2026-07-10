@@ -286,7 +286,7 @@ with st.container(key="page_body"):
     elif page == "internals":
         _safe_render(pages_internals.render)
     elif page == "today":
-        _safe_render(pages_today.render)
+        _safe_render(pages_today.render, now)
 
 # News alerts: strictly-filtered items queue up and take over the bottom
 # bar (normally the release calendar) for TOAST_SECONDS each, breaking-news
