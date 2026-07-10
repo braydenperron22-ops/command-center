@@ -768,42 +768,27 @@ html, body, [class*="css"] {
    green already means "happening now" everywhere else in the app, and
    reusing it here would blur that distinction — just enough of a tint
    to catch your eye scanning down the list without competing with the
-   red leave-countdown chip above it for attention. */
+   red leave-headline above it for attention. */
 .news-feed-row.agenda-row-now { border-left-color: #32D74B; }
 .news-feed-row.agenda-row-past { opacity: 0.5; }
 .news-feed-row.agenda-row-next { border-left-color: #5AC8FA; background: rgba(90,200,250,0.08); }
 
-/* Persistent "Time to leave" readout, distinct from the transient
-   bottom-bar toast (commute_reminder.render_bar) — ticks down live via
-   the same 1s autorefresh as the hero row's rain countdown. Dark card
-   with a glowing red edge, like the rest of the app's tiles carrying an
-   urgent accent, rather than a solid block that reads as an error
-   banner — stacked/centered so the number is the first thing you see. */
-.leave-countdown {
+/* Standalone headline at the top of the Today page — promoted out of
+   the agenda card entirely (see pages_today._render_leave_headline) so
+   it's the first thing on screen, not nested inside another tile.
+   Plain bold text with a soft glow rather than a boxed card — reads as
+   a headline/statement, not another chip competing with the agenda
+   for attention right below it. Distinct from the transient bottom-bar
+   toast (commute_reminder.render_bar), which still owns the "Leave
+   now" moment once this stops rendering. */
+.leave-headline {
     text-align: center;
-    margin: 0.5rem 1.5rem 0.2rem;
-    padding: 0.9rem 1.2rem;
-    border-radius: 12px;
-    background: rgba(255,255,255,0.04);
-    border-left: 5px solid #FF453A;
-    box-shadow: 0 0 18px 1px rgba(255,69,58,0.35);
-}
-.leave-countdown-label {
-    display: block;
-    font-size: 1rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #FF6961;
-    margin-bottom: 0.15rem;
-}
-.leave-countdown-value {
-    display: block;
-    font-size: 3.2rem;
+    font-size: 2.6rem;
     font-weight: 800;
     color: #FF453A;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
+    letter-spacing: -0.01em;
+    margin: 0 0 1.1rem;
+    text-shadow: 0 0 22px rgba(255,69,58,0.45);
 }
 
 /* Today page's agenda only — same news-feed-row shape the News page

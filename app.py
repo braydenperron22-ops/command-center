@@ -148,12 +148,19 @@ def _lerp_hex(a: str, b: str, t: float) -> str:
 
 
 def _format_countdown(remaining_seconds: float) -> str:
-    remaining_seconds = max(0, int(remaining_seconds))
-    hours, rem = divmod(remaining_seconds, 3600)
-    minutes, seconds = divmod(rem, 60)
+    # Minute granularity with worded units ("1h 26m"/"45 min"), not a
+    # colon-separated clock face ticking every second — that read as a
+    # live stopwatch, so at 1s autorefresh it either looked like it was
+    # constantly refreshing (seconds precision) or stuck/broken (a colon
+    # format that only moves once a minute). Words don't carry that
+    # "should be actively ticking" expectation, and this also means most
+    # reruns produce byte-identical HTML here instead of changing every
+    # single tick (same fix as pages_today's leave countdown).
+    total_minutes = max(0, int(remaining_seconds) // 60)
+    hours, minutes = divmod(total_minutes, 60)
     if hours > 0:
-        return f"{hours}:{minutes:02d}:{seconds:02d}"
-    return f"{minutes}:{seconds:02d}"
+        return f"{hours}h {minutes}m"
+    return f"{minutes} min"
 
 
 def _rgba(hex_color: str, alpha: float) -> str:

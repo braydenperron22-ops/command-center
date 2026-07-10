@@ -100,24 +100,24 @@ def _format_countdown(remaining_seconds: float) -> str:
     return f"{minutes} min"
 
 
-def _leave_countdown_html(now: datetime) -> str:
-    """A persistent (not toast) "Time to leave" readout — "" once the
-    moment's passed rather than counting into negative numbers or
-    lingering on a stale "Leave now"; the bottom-bar toast
-    (commute_reminder.check) already owns that moment."""
+def _render_leave_headline(now: datetime) -> None:
+    """A standalone red headline at the very top of the page — promoted
+    out of the agenda tile so it's the first thing on screen, not
+    something nested inside another card. "" once the moment's passed
+    rather than counting into negative numbers or lingering on a stale
+    "Leave now"; the bottom-bar toast (commute_reminder.check) already
+    owns that moment. Independent of which day the agenda below is
+    showing — leave_by_time is always about *today's* actual shift, so
+    it naturally stops rendering once that moment passes rather than
+    showing stale alongside an evening switch to tomorrow's agenda."""
     leave_by = commute_reminder.leave_by_time(now)
     if leave_by is None:
-        return ""
+        return
     now_aware = now.replace(tzinfo=leave_by.tzinfo)
     remaining = (leave_by - now_aware).total_seconds()
     if remaining <= 0:
-        return ""
-    return (
-        '<div class="leave-countdown">'
-        '<span class="leave-countdown-label">Time to leave</span>'
-        f'<span class="leave-countdown-value">{_format_countdown(remaining)}</span>'
-        "</div>"
-    )
+        return
+    st.markdown(f'<div class="leave-headline">Leave in {_format_countdown(remaining)}</div>', unsafe_allow_html=True)
 
 
 def _render_agenda(now: datetime) -> None:
@@ -130,14 +130,6 @@ def _render_agenda(now: datetime) -> None:
     day_word = "tomorrow" if showing_tomorrow else "today"
 
     st.markdown(f'<div class="tile-label">{day_word.upper()}</div>', unsafe_allow_html=True)
-
-    # leave_by_time is always about *today's* actual shift regardless of
-    # which day the agenda below is showing — it naturally stops
-    # rendering once that moment passes, so it never shows stale
-    # alongside an evening switch to tomorrow's agenda.
-    leave_html = _leave_countdown_html(now)
-    if leave_html:
-        st.markdown(leave_html, unsafe_allow_html=True)
 
     # Events are always in the future (or, before the switch, still in
     # progress) relative to `now` here on — no special-casing needed for
@@ -217,6 +209,7 @@ def _render_commute() -> None:
 
 def render(now: datetime) -> None:
     st.markdown('<div class="page-title page-title-today">Today</div>', unsafe_allow_html=True)
+    _render_leave_headline(now)
     _render_agenda(now)
     st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
     _render_commute()
