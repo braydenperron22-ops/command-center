@@ -70,11 +70,17 @@ def _render_commute() -> None:
         return
 
     minutes = round(data["duration_seconds"] / 60)
+    delay_minutes = round(data["delay_seconds"] / 60)
+    if delay_minutes >= 1:
+        delay_text, delay_class = f"+{delay_minutes} min from traffic", "market-down"
+    else:
+        delay_text, delay_class = "no delays", "market-up"
+
     st.markdown(
         f"""<div class="tile">
             <div class="tile-label">{COMMUTE_ORIGIN['label'].upper()} → {COMMUTE_DESTINATION['label'].upper()}</div>
             <div class="tile-value">{minutes} min</div>
-            <div class="tile-prev">{data['distance_km']:.1f} km · typical drive time, not live traffic</div>
+            <div class="tile-prev">{data['distance_km']:.1f} km · <span class="{delay_class}">{delay_text}</span></div>
         </div>""",
         unsafe_allow_html=True,
     )

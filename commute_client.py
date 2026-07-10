@@ -1,12 +1,12 @@
-"""Drive time/distance between COMMUTE_ORIGIN and COMMUTE_DESTINATION,
-via OSRM's free public routing server — no key, same reasoning as every
-other data source in this app.
+"""Drive time between COMMUTE_ORIGIN and COMMUTE_DESTINATION, traffic-
+aware via TomTom's Routing API (free tier: 2,500 requests/day, no
+credit card) — this app checks at most once per CACHE_TTL_SECONDS, so
+even the kiosk running unattended 24/7 stays a tiny fraction of that.
 
-Not traffic-aware: OSRM's public instance routes against the static
-road network (speed limits/road class), not live conditions, so this is
-a "how long does this drive normally take" baseline rather than a
-real-time ETA. Cached for a long time (6h) since re-fetching more often
-buys nothing — the underlying route doesn't change.
+Replaces an earlier OSRM-based version: OSRM's public server routes
+the static road network only (speed limits/road class), no live
+conditions, so it could never actually answer "how bad is traffic
+right now" — the entire point of this tile.
 """
 
 import requests
@@ -14,31 +14,35 @@ import streamlit as st
 
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
-OSRM_URL = "https://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}"
-CACHE_TTL_SECONDS = 6 * 60 * 60
+ROUTE_URL = "https://api.tomtom.com/routing/1/calculateRoute/{lat1},{lon1}:{lat2},{lon2}/json"
+CACHE_TTL_SECONDS = 15 * 60
 
 _last_good_route: dict | None = None
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_route_raw() -> dict:
-    url = OSRM_URL.format(
-        lon1=COMMUTE_ORIGIN["lon"], lat1=COMMUTE_ORIGIN["lat"],
-        lon2=COMMUTE_DESTINATION["lon"], lat2=COMMUTE_DESTINATION["lat"],
+def _fetch_route_raw(api_key: str) -> dict:
+    url = ROUTE_URL.format(
+        lat1=COMMUTE_ORIGIN["lat"], lon1=COMMUTE_ORIGIN["lon"],
+        lat2=COMMUTE_DESTINATION["lat"], lon2=COMMUTE_DESTINATION["lon"],
     )
-    resp = requests.get(url, params={"overview": "false"}, timeout=10)
+    resp = requests.get(url, params={"key": api_key, "traffic": "true"}, timeout=10)
     resp.raise_for_status()
-    body = resp.json()
-    if body.get("code") != "Ok" or not body.get("routes"):
-        raise ValueError(f"OSRM returned no route: {body.get('code')}")
-    route = body["routes"][0]
-    return {"duration_seconds": route["duration"], "distance_km": route["distance"] / 1000}
+    summary = resp.json()["routes"][0]["summary"]
+    return {
+        "duration_seconds": summary["travelTimeInSeconds"],
+        "delay_seconds": summary["trafficDelayInSeconds"],
+        "distance_km": summary["lengthInMeters"] / 1000,
+    }
 
 
 def route() -> dict | None:
     global _last_good_route
+    api_key = st.secrets.get("TOMTOM_API_KEY")
+    if not api_key:
+        return None
     try:
-        result = _fetch_route_raw()
+        result = _fetch_route_raw(api_key)
     except Exception:
         return _last_good_route
     _last_good_route = result
