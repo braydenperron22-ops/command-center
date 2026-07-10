@@ -102,6 +102,14 @@ PAGE_ROTATION_SECONDS = 90
 
 MAX_TODO_ITEMS = 20
 
+# Commute origin coordinate is the exact one embedded in the calendar
+# feed's own Apple-geocoded location for 281 Ouellette Rd (Nominatim's
+# free geocoder has no house-number-level data for this rural road —
+# only resolves to the street's rough centroid, off by ~2km). The
+# destination came from Nominatim directly since that one resolved fine.
+COMMUTE_ORIGIN = {"label": "Home", "lat": 46.228058, "lon": -79.245407}
+COMMUTE_DESTINATION = {"label": "Work", "lat": 46.3185464, "lon": -79.4386137}
+
 # Markets page refresh — yfinance has no key/rate-limit tier to work
 # around, so this can just be "how fresh do we want it," not "how rarely
 # can we afford to ask."

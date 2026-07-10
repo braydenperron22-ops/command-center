@@ -1,12 +1,8 @@
 """Today page: a personal day-to-day panel — today's calendar agenda
-(from a published, read-only iCloud ICS feed) plus a to-do list
-persisted to a shared JSON file rather than session state, so an edit
-from your laptop shows up on the always-on kiosk — a separate browser
-session entirely.
-
-Room to grow into commute/traffic once that has a real data source
-wired in — deliberately not stubbed out here with a placeholder tile
-that doesn't do anything yet.
+(from a published, read-only iCloud ICS feed), a commute-time estimate,
+and a to-do list persisted to a shared JSON file rather than session
+state, so an edit from your laptop shows up on the always-on kiosk — a
+separate browser session entirely.
 """
 
 import hashlib
@@ -15,8 +11,9 @@ from datetime import datetime
 import streamlit as st
 
 import calendar_client
+import commute_client
 import todo_store
-from config import MAX_TODO_ITEMS
+from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN, MAX_TODO_ITEMS
 
 
 def _time_range(event: dict) -> str:
@@ -67,6 +64,22 @@ def _render_agenda(now: datetime) -> None:
     st.markdown(f'<div class="news-feed-list">{rows}</div>', unsafe_allow_html=True)
 
 
+def _render_commute() -> None:
+    data = commute_client.route()
+    if not data:
+        return
+
+    minutes = round(data["duration_seconds"] / 60)
+    st.markdown(
+        f"""<div class="tile">
+            <div class="tile-label">{COMMUTE_ORIGIN['label'].upper()} → {COMMUTE_DESTINATION['label'].upper()}</div>
+            <div class="tile-value">{minutes} min</div>
+            <div class="tile-prev">{data['distance_km']:.1f} km · typical drive time, not live traffic</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+
 def _render_todo() -> None:
     items = todo_store.load()
 
@@ -110,5 +123,7 @@ def _render_todo() -> None:
 def render(now: datetime) -> None:
     st.markdown('<div class="page-title page-title-today">Today</div>', unsafe_allow_html=True)
     _render_agenda(now)
+    st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
+    _render_commute()
     st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
     _render_todo()
