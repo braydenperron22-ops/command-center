@@ -294,8 +294,18 @@ except Exception:
     market_status = None
     market_intraday_pct = None
 
-page_index = int(time.time() // PAGE_ROTATION_SECONDS) % len(PAGES)
-page = PAGES[page_index]
+# The one gap between the hero row above and the page content below
+# that wasn't wrapped in a try/except — everything else on either side
+# of it already is, so a bug here was the one way the whole page body
+# (and everything after it: ticker, Govee sync) could go missing while
+# the hero row/leave headline (rendered earlier) stayed up. Extremely
+# unlikely to actually throw (PAGES/PAGE_ROTATION_SECONDS are static
+# config), but there's no reason to leave it as the one unguarded seam.
+try:
+    page_index = int(time.time() // PAGE_ROTATION_SECONDS) % len(PAGES)
+    page = PAGES[page_index]
+except Exception:
+    page = "today"
 
 with st.container(key="page_body"):
     if page == "home":
