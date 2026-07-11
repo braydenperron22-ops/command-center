@@ -210,13 +210,16 @@ def sync_lights(
     _creep_brightness(brightness)
 
 
-def sync_plug(phase: str) -> None:
-    """Off at sunset, on at sunrise — `phase` is the same day/night value
-    already derived from real sunrise/sunset for the dashboard's own
-    night-dim, so the plug follows the exact same transition."""
-    if not st.secrets.get("GOVEE_API_KEY"):
+def sync_plug(now: datetime, sunrise: datetime | None, sunset: datetime | None) -> None:
+    """Off at sunset, on at actual sunrise — deliberately real solar
+    times, not the same `phase` the dashboard's own visuals use.
+    scenery.phase_for clamps "day" to never start before ~7:40am so the
+    room doesn't visually brighten too early in midsummer, but that's a
+    room-comfort choice specific to the sky/dimming — the monitor itself
+    should just follow the sun as it actually rises and sets, no floor."""
+    if not st.secrets.get("GOVEE_API_KEY") or sunrise is None or sunset is None:
         return
-    want_on = phase != "night"
+    want_on = sunrise <= now < sunset
     if st.session_state.get("govee_plug_applied") == want_on:
         return
     if time.time() - st.session_state.get("govee_plug_last_call_ts", 0) < MIN_CALL_GAP_SECONDS:
