@@ -329,6 +329,19 @@ with st.container(key="page_body"):
         _safe_render(pages_internals.render)
     elif page == "today":
         _safe_render(pages_today.render, now)
+    else:
+        # Every other branch above has a fallback (a real page render,
+        # or _safe_render's own error tile) — this is the one path with
+        # none: if `page` somehow doesn't match any of PAGES, the
+        # container would otherwise render completely empty with zero
+        # indication why, for as long as that state persists. Silent
+        # blank content with no error and no crash is exactly what was
+        # reported after a morning of rapid redeploys, so this is here
+        # to turn that into something visible/diagnosable if it recurs.
+        st.markdown(
+            f'<div class="tile"><div class="tile-prev">Unexpected page state ({page!r}) — will retry automatically.</div></div>',
+            unsafe_allow_html=True,
+        )
 
 # Leave-for-work reminder: drops into the same bottom-bar queue as
 # breaking news (below), rather than a separate UI element — see
