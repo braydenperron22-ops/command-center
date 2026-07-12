@@ -8,6 +8,12 @@ TIMEZONE = "America/Toronto"
 UV_HIGH_THRESHOLD = 5
 RAIN_PROBABILITY_THRESHOLD = 30  # percent, for the "Rain in Xh" nowcast label — was 50, rarely crossed
 RAIN_LOOKAHEAD_HOURS = 12
+# US AQI scale: 0-50 Good, 51-100 Moderate, 101-150 Unhealthy for
+# Sensitive Groups, 151+ Unhealthy. Show the badge from Moderate
+# onward — the whole point is a glance-only "is this worth thinking
+# about" signal, not silence right up until it's bad.
+AQI_SHOW_THRESHOLD = 50
+AQI_EXTREME = 200  # AQI at which the badge reaches full saturated color
 
 # Environment Canada's public alert regions are free, no-key ATOM feeds at
 # weather.gc.ca/rss/battleboard/{code}_e.xml — "onrm119" is the North Bay -

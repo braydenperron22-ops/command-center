@@ -14,6 +14,7 @@ import calendar_client
 import commute_client
 import commute_history
 import commute_reminder
+import local_news_client
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
 # From this hour onward, the agenda switches from today's remaining
@@ -181,8 +182,57 @@ def _render_commute(now: datetime) -> None:
     )
 
 
+def _relative_time(seconds_ago: float) -> str:
+    minutes = int(seconds_ago / 60)
+    if minutes < 1:
+        return "just now"
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    return f"{hours // 24}d ago"
+
+
+NEARBY_ROTATION_SECONDS = 10
+
+
+def _render_local_news() -> None:
+    """Real, nearby stuff only — police/OPP incident beats and
+    road-closure/construction items (see local_news_client), not
+    general local news. One headline at a time, rotating — same
+    time-based pattern pages_home.py uses for its country rotation
+    (int(time.time() // interval) % n, so it's driven by wall-clock
+    time and needs nothing stored in session state). 10s rather than
+    something longer: Today only gets a ~90s slot in the page rotation
+    every 9 minutes, and a slow interval would mean rarely seeing more
+    than one of these per visit. Silent if nothing currently qualifies
+    rather than an empty-state tile — a quiet day locally isn't worth
+    taking up space to announce."""
+    items = local_news_client.fetch_items()
+    if not items:
+        return
+    now_ts = time.time()
+    index = int(now_ts // NEARBY_ROTATION_SECONDS) % len(items)
+    item = items[index]
+    st.markdown(f'<div class="tile-label">NEARBY · {index + 1}/{len(items)}</div>', unsafe_allow_html=True)
+    meta = item["source"]
+    if item["published"]:
+        meta += f' · {_relative_time(now_ts - item["published"].timestamp())}'
+    row = f"""<div class="news-feed-row news-cat-local">
+        <div class="news-feed-headline">{item['headline']}</div>
+        <div class="news-feed-meta">{meta}</div>
+    </div>"""
+    # Normal news-feed-list sizing, not agenda-feed-list — that scoping
+    # is tuned for the agenda's 1-3 short calendar-event titles, and
+    # blows real headline-length text up to one word per line.
+    st.markdown(f'<div class="news-feed-list">{row}</div>', unsafe_allow_html=True)
+
+
 def render(now: datetime) -> None:
     st.markdown('<div class="page-title page-title-today">Today</div>', unsafe_allow_html=True)
     _render_agenda(now)
     st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
     _render_commute(now)
+    st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
+    _render_local_news()

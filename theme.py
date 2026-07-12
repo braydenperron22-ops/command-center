@@ -783,6 +783,10 @@ html, body, [class*="css"] {
 .news-feed-row.news-cat-market-news { border-left-color: #FFD60A; }
 .news-feed-row.news-cat-mergers { border-left-color: #FF9F0A; }
 .news-feed-row.news-cat-milestone { border-left-color: #64D2FF; }
+/* Today page's local-incidents section (local_news_client) — amber,
+   distinct from every news.py category above since it's a completely
+   separate, non-financial feed. */
+.news-feed-row.news-cat-local { border-left-color: #FFB340; }
 
 .news-feed-row:last-child {
     border-bottom: none;

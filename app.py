@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
+import air_quality_client
 import commute_reminder
 import govee_lighting
 import market_yf_client
@@ -22,6 +23,8 @@ import pages_today
 import theme
 import weather_alerts_bar
 from config import (
+    AQI_EXTREME,
+    AQI_SHOW_THRESHOLD,
     MAX_BURST_ALERTS,
     PAGE_ROTATION_SECONDS,
     PAGES,
@@ -66,6 +69,11 @@ try:
     weather = fetch_weather()
 except Exception:
     weather = None
+
+try:
+    air_quality = air_quality_client.fetch_air_quality()
+except Exception:
+    air_quality = None
 
 if weather:
     phase = phase_for(now, weather["sunrise"], weather["sunset"])
@@ -195,26 +203,35 @@ if weather:
         hilo_html = f' · <span class="weather-hilo">H:{high:.0f}° L:{low:.0f}°</span>'
 
     extras = []
-    rain_at = weather.get("rain_at")
-    if rain_at is not None:
-        remaining = (rain_at - now).total_seconds()
+    precip_at = weather.get("rain_at")
+    if precip_at is not None:
+        remaining = (precip_at - now).total_seconds()
         if remaining > 0:
             # Ticks down every second between weather refreshes since
-            # rain_at is a fixed target timestamp, not a relative "hours
-            # from now" that would otherwise sit frozen (or go stale)
-            # for the full 15-minute cache window. Background darkens
-            # toward a deep, saturated navy as it gets closer — pale and
-            # airy when it's hours off, heavy and imminent right before
-            # it hits — but the text stays a fixed bright cyan rather
-            # than darkening along with it: that used to mean the badge
-            # nearly vanished (dark-on-dark) right when it mattered most.
+            # precip_at is a fixed target timestamp, not a relative
+            # "hours from now" that would otherwise sit frozen (or go
+            # stale) for the full 15-minute cache window. Background
+            # darkens as it gets closer — pale and airy when it's hours
+            # off, heavy and imminent right before it hits — but the
+            # text stays a fixed bright color rather than darkening
+            # along with it: that used to mean the badge nearly
+            # vanished (dark-on-dark) right when it mattered most.
+            # Snow gets its own icier palette rather than reusing rain's
+            # blue for everything — this location gets real winter
+            # weather (see weather_client._next_precip_at), and the
+            # color is a second, glance-only signal alongside the word
+            # itself for which one it actually is.
+            is_snow = weather.get("precip_kind") == "snow"
+            label = "Snow" if is_snow else "Rain"
+            fill_start = "#EAF6FF" if is_snow else "#64D2FF"
+            fill_end = "#243449" if is_snow else "#0A2472"
             closeness = 1 - min(remaining / RAIN_LOOKAHEAD_SECONDS, 1.0)
-            rain_fill = _lerp_hex("#64D2FF", "#0A2472", closeness)
-            rain_bg = _rgba(rain_fill, 0.22 + closeness * 0.5)
+            precip_fill = _lerp_hex(fill_start, fill_end, closeness)
+            precip_bg = _rgba(precip_fill, 0.22 + closeness * 0.5)
             countdown = _format_countdown(remaining)
             extras.append(
-                f'<span class="weather-extra" style="color:#64D2FF; '
-                f'background:{rain_bg}; border-color:{rain_fill};">Rain in {countdown}</span>'
+                f'<span class="weather-extra" style="color:{fill_start}; '
+                f'background:{precip_bg}; border-color:{precip_fill};">{label} in {countdown}</span>'
             )
     if weather["uv_index"] is not None and weather["uv_index"] > UV_HIGH_THRESHOLD:
         uv = weather["uv_index"]
@@ -224,6 +241,20 @@ if weather:
         extras.append(
             f'<span class="weather-extra" style="color:{uv_color}; '
             f'background:{uv_bg}; border-color:{uv_color};">UV {uv:.0f}</span>'
+        )
+    # Wildfire smoke is a real recurring issue for this region — same
+    # provider as the weather call above (Open-Meteo's Air Quality
+    # API), no new vendor/key. Yellow->purple rather than UV's
+    # orange->red so the two badges read as distinct signals even at a
+    # glance, not "two UV badges."
+    aqi = air_quality.get("us_aqi") if air_quality else None
+    if aqi is not None and aqi > AQI_SHOW_THRESHOLD:
+        intensity = min((aqi - AQI_SHOW_THRESHOLD) / (AQI_EXTREME - AQI_SHOW_THRESHOLD), 1.0)
+        aqi_color = _lerp_hex("#FFD60A", "#8B008B", intensity)
+        aqi_bg = _rgba(aqi_color, 0.22 + intensity * 0.25)
+        extras.append(
+            f'<span class="weather-extra" style="color:{aqi_color}; '
+            f'background:{aqi_bg}; border-color:{aqi_color};">AQI {aqi:.0f}</span>'
         )
     extras_html = f'<div class="weather-extras">{"".join(extras)}</div>' if extras else ""
 
