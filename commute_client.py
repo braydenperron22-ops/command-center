@@ -20,6 +20,22 @@ from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
 ROUTE_URL = "https://api.tomtom.com/routing/1/calculateRoute/{lat1},{lon1}:{lat2},{lon2}/json"
 GEOCODE_URL = "https://api.tomtom.com/search/2/geocode/{query}.json"
+# TomTom's documented category taxonomy for traffic sections — mapped
+# to something readable in place of the bare code. Unverified against
+# a real incident (nothing on the usual commute at the time this was
+# written to test against — 0 delay, so TomTom had nothing to report),
+# so treat this as best-effort: worth checking the real category names
+# next time an actual incident shows up, in case they don't match.
+INCIDENT_CATEGORY_LABELS = {
+    "JAM": "heavy traffic",
+    "ROAD_WORKS": "road work",
+    "ROAD_CLOSURE": "road closed",
+    "ACCIDENT": "accident",
+    "DANGEROUS_CONDITIONS": "dangerous conditions",
+    "LANE_RESTRICTION": "lane restriction",
+    "NARROW_LANES": "narrow lanes",
+    "OTHER": None,  # too vague on its own to bother showing
+}
 # 5 min still only burns ~288 calls/day (11.5% of the free-tier quota)
 # even running unattended 24/7 — 15 min was needlessly conservative and
 # let the shown time lag real conditions by up to a quarter hour.
@@ -34,15 +50,33 @@ GEOCODE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 _last_good_route: dict | None = None
 
 
+def _incident_label(route_data: dict) -> str | None:
+    """A short "why" for the delay (e.g. "accident") from the route's
+    traffic sections, or None if there's nothing notable — TomTom only
+    seems to include `sections` at all when there's something to
+    report, so an empty/missing list here just means a clean route,
+    not a parsing failure."""
+    categories = {
+        s.get("simpleCategory")
+        for s in route_data.get("sections", [])
+        if s.get("sectionType") == "TRAFFIC" and s.get("simpleCategory")
+    }
+    labels = {INCIDENT_CATEGORY_LABELS.get(c) for c in categories} - {None}
+    if not labels:
+        return None
+    return ", ".join(sorted(labels))
+
+
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_route_raw(api_key: str, dest_lat: float, dest_lon: float, record_history: bool) -> dict:
     url = ROUTE_URL.format(
         lat1=COMMUTE_ORIGIN["lat"], lon1=COMMUTE_ORIGIN["lon"],
         lat2=dest_lat, lon2=dest_lon,
     )
-    resp = requests.get(url, params={"key": api_key, "traffic": "true"}, timeout=10)
+    resp = requests.get(url, params={"key": api_key, "traffic": "true", "sectionType": "traffic"}, timeout=10)
     resp.raise_for_status()
-    summary = resp.json()["routes"][0]["summary"]
+    route_data = resp.json()["routes"][0]
+    summary = route_data["summary"]
     # Inside the cached function, not in route() below — st.cache_data
     # only re-executes this body on an actual cache miss, so this
     # naturally records one point per real TomTom call (~every 15 min),
@@ -56,6 +90,7 @@ def _fetch_route_raw(api_key: str, dest_lat: float, dest_lon: float, record_hist
         "duration_seconds": summary["travelTimeInSeconds"],
         "delay_seconds": summary["trafficDelayInSeconds"],
         "distance_km": summary["lengthInMeters"] / 1000,
+        "incident": _incident_label(route_data),
     }
 
 

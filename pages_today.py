@@ -154,7 +154,11 @@ def _render_commute(now: datetime) -> None:
     minutes = round(data["duration_seconds"] / 60)
     delay_minutes = round(data["delay_seconds"] / 60)
     if delay_minutes >= 1:
-        delay_text, delay_class = f"+{delay_minutes} min from traffic", "market-down"
+        # "why", not just "how much" — TomTom's traffic sections say
+        # what's actually causing the delay (accident, road work, ...)
+        # when it has that detail, not just the aggregate minutes.
+        reason = f" ({data['incident']})" if data.get("incident") else ""
+        delay_text, delay_class = f"+{delay_minutes} min from traffic{reason}", "market-down"
     else:
         delay_text, delay_class = "no delays", "market-up"
 

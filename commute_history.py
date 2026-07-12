@@ -51,3 +51,12 @@ def reading_from_before(seconds_ago: float) -> dict | None:
     if not candidates:
         return None
     return max(candidates, key=lambda h: h["timestamp"])
+
+
+def readings_within(seconds_ago: float) -> list[dict]:
+    """Every recorded reading from within the last `seconds_ago` —
+    for judging how volatile the commute's been recently (see
+    commute_reminder's adaptive buffer), not just a single before/after
+    comparison point."""
+    threshold = time.time() - seconds_ago
+    return [h for h in _load() if h["timestamp"] >= threshold]
