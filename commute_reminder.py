@@ -17,6 +17,7 @@ import streamlit as st
 
 import calendar_client
 import commute_client
+from config import COMMUTE_DESTINATION
 
 EARLY_BUFFER_MINUTES = 10
 # Widest to narrowest — fired in this order as the leave-by time
@@ -49,7 +50,7 @@ def _leave_text(minutes: int) -> str:
     return f"Leave in {minutes} min"
 
 
-def _todays_shift_start(now: datetime) -> datetime | None:
+def _todays_shift_event(now: datetime) -> dict | None:
     calendars = st.secrets.get("CALENDARS")
     if not calendars:
         return None
@@ -58,7 +59,39 @@ def _todays_shift_start(now: datetime) -> datetime | None:
         (e for e in events if not e["all_day"] and not e["show_end_time"]),
         key=lambda e: e["start"],
     )
-    return shifts[0]["start"] if shifts else None
+    return shifts[0] if shifts else None
+
+
+def _destination_for_shift(shift: dict) -> dict | None:
+    """{"lat", "lon", "label"} from the shift's own calendar location,
+    or None if it doesn't have one or geocoding fails — None means
+    "use the default COMMUTE_DESTINATION" to every caller here, so a
+    shift with no location (or a bad one) behaves exactly as before."""
+    if not shift.get("location"):
+        return None
+    # Geocoding gets the full address (better match quality), but the
+    # label is just the venue/first segment ("Highview Golf Course",
+    # not the whole street address) — this ends up in a tile-label
+    # ("HOME → ...") alongside the short "Work" it usually reads, and a
+    # full address there would wrap across several lines instead.
+    geocoded = commute_client.geocode(" ".join(shift["location"].splitlines()))
+    if not geocoded:
+        return None
+    label = shift["location"].splitlines()[0].split(",")[0].strip()
+    return {**geocoded, "label": label}
+
+
+def todays_destination(now: datetime) -> dict:
+    """Where today's commute actually goes, resolved to a real
+    {"lat", "lon", "label"} — shared by leave_by_time and the Today
+    page's commute tile so they always agree on the destination rather
+    than the tile silently still assuming Work while the countdown
+    routes somewhere else. Falls back to COMMUTE_DESTINATION when
+    there's no shift today, no location on it, or geocoding fails."""
+    shift = _todays_shift_event(now)
+    if shift is None:
+        return COMMUTE_DESTINATION
+    return _destination_for_shift(shift) or COMMUTE_DESTINATION
 
 
 def _due_milestone(minutes_until_leave: float, shown_today: set[int]) -> int | None:
@@ -80,19 +113,20 @@ def _due_milestone(minutes_until_leave: float, shown_today: set[int]) -> int | N
 
 def leave_by_time(now: datetime) -> datetime | None:
     """When you need to leave today to arrive EARLY_BUFFER_MINUTES early
-    for your first shift, given the live commute estimate — None if
-    there's no shift today or the commute time isn't available. Shared
-    by check(), below, and the persistent countdown on the Today page,
-    so both agree on the exact same target."""
-    shift_start = _todays_shift_start(now)
-    if shift_start is None:
+    for your first shift, given the live commute estimate to wherever
+    that shift's own calendar location says — not always Work — None
+    if there's no shift today or the commute time isn't available.
+    Shared by check(), below, and the persistent headline, so both
+    agree on the exact same target."""
+    shift = _todays_shift_event(now)
+    if shift is None:
         return None
 
-    route = commute_client.route()
+    route = commute_client.route(_destination_for_shift(shift))
     if not route:
         return None
 
-    return shift_start - timedelta(seconds=route["duration_seconds"]) - timedelta(minutes=EARLY_BUFFER_MINUTES)
+    return shift["start"] - timedelta(seconds=route["duration_seconds"]) - timedelta(minutes=EARLY_BUFFER_MINUTES)
 
 
 def check(now: datetime) -> dict | None:

@@ -13,6 +13,7 @@ import streamlit as st
 import calendar_client
 import commute_client
 import commute_history
+import commute_reminder
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
 # From this hour onward, the agenda switches from today's remaining
@@ -138,8 +139,15 @@ def _commute_trend_html(current_duration_seconds: float) -> str:
     )
 
 
-def _render_commute() -> None:
-    data = commute_client.route()
+def _render_commute(now: datetime) -> None:
+    # Same destination resolution the leave headline uses (see
+    # commute_reminder.todays_destination) — today's shift's own
+    # calendar location if it has one, else the default commute. Keeps
+    # this tile and the headline always pointed at the same place
+    # rather than the tile silently still assuming Work.
+    destination = commute_reminder.todays_destination(now)
+    using_default = destination is COMMUTE_DESTINATION
+    data = commute_client.route(None if using_default else destination)
     if not data:
         return
 
@@ -150,15 +158,18 @@ def _render_commute() -> None:
     else:
         delay_text, delay_class = "no delays", "market-up"
 
+    # Trend is only meaningful against the default route's own history
+    # — comparing today's drive to a one-off shift location against the
+    # usual commute's history would be comparing two different routes.
+    trend_html = _commute_trend_html(data["duration_seconds"]) if using_default else ""
     # trend_html folded onto the closing tag's line rather than given its
     # own — when it's "" (no comparison data yet), a lone whitespace line
     # ahead of an indented "</div>" reads to the markdown parser as a
     # blank line followed by an indented code block, and it renders that
     # closing tag as literal text instead of parsing it as HTML.
-    trend_html = _commute_trend_html(data["duration_seconds"])
     st.markdown(
         f"""<div class="tile">
-            <div class="tile-label">{COMMUTE_ORIGIN['label'].upper()} → {COMMUTE_DESTINATION['label'].upper()}</div>
+            <div class="tile-label">{COMMUTE_ORIGIN['label'].upper()} → {destination['label'].upper()}</div>
             <div class="tile-value">{minutes} min</div>
             <div class="tile-prev">{data['distance_km']:.1f} km · <span class="{delay_class}">{delay_text}</span></div>
             {trend_html}</div>""",
@@ -170,4 +181,4 @@ def render(now: datetime) -> None:
     st.markdown('<div class="page-title page-title-today">Today</div>', unsafe_allow_html=True)
     _render_agenda(now)
     st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
-    _render_commute()
+    _render_commute(now)
