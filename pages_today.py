@@ -91,7 +91,7 @@ def _render_agenda(now: datetime) -> None:
     agenda_date = now.date() + timedelta(days=1) if showing_tomorrow else now.date()
     day_word = "tomorrow" if showing_tomorrow else "today"
 
-    st.markdown(f'<div class="tile-label">{day_word.upper()}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="tile-label compact">{day_word.upper()}</div>', unsafe_allow_html=True)
 
     # Events are always in the future (or, before the switch, still in
     # progress) relative to `now` here on — no special-casing needed for
@@ -100,7 +100,7 @@ def _render_agenda(now: datetime) -> None:
     events = calendar_client.todays_events(calendars, agenda_date)
     if not events:
         st.markdown(
-            f'<div class="tile"><div class="tile-prev">Nothing on the calendar {day_word}.</div></div>',
+            f'<div class="tile compact"><div class="tile-prev">Nothing on the calendar {day_word}.</div></div>',
             unsafe_allow_html=True,
         )
         return
@@ -136,7 +136,7 @@ def _commute_trend_html(current_duration_seconds: float) -> str:
     elapsed_minutes = round((time.time() - comparison["timestamp"]) / 60)
     arrow, css_class = ("↑", "market-down") if delta_minutes > 0 else ("↓", "market-up")
     return (
-        f'<div class="severity-caption"><span class="{css_class}">'
+        f'<div class="severity-caption compact"><span class="{css_class}">'
         f"{arrow} {abs(delta_minutes)} min in the last {elapsed_minutes} min</span></div>"
     )
 
@@ -174,8 +174,8 @@ def _render_commute(now: datetime) -> None:
     # blank line followed by an indented code block, and it renders that
     # closing tag as literal text instead of parsing it as HTML.
     st.markdown(
-        f"""<div class="tile">
-            <div class="tile-label">{COMMUTE_ORIGIN['label'].upper()} → {destination['label'].upper()}</div>
+        f"""<div class="tile compact">
+            <div class="tile-label compact">{COMMUTE_ORIGIN['label'].upper()} → {destination['label'].upper()}</div>
             <div class="tile-value">{minutes} min</div>
             <div class="tile-prev">{data['distance_km']:.1f} km · <span class="{delay_class}">{delay_text}</span></div>
             {trend_html}</div>""",
@@ -201,14 +201,13 @@ def _render_fuel_price(now: datetime) -> None:
     # "before end of business" on its update day, not at a fixed hour,
     # so anything more precise than "today" would be a made-up promise.
     days_until_update = (status["next_update"] - now.date()).days
-    update_text = "Updates today" if days_until_update <= 0 else f"Next update in {days_until_update}d"
+    update_text = "updates today" if days_until_update <= 0 else f"next update in {days_until_update}d"
     st.markdown(
-        f"""<div class="tile">
-            <div class="tile-label">NORTH BAY GAS</div>
+        f"""<div class="tile compact">
+            <div class="tile-label compact">NORTH BAY GAS</div>
             <div class="tile-value">{status['price']:.1f}¢/L</div>
-            <div class="tile-prev">vs {status['baseline']:.1f}¢ 12wk avg · as of {as_of}</div>
+            <div class="tile-prev">vs {status['baseline']:.1f}¢ 12wk avg · as of {as_of} · {update_text}</div>
             <div class="badge {badge_class}">{badge_text}</div>
-            <div class="severity-caption">{update_text}</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -247,7 +246,7 @@ def _render_local_news() -> None:
     now_ts = time.time()
     index = int(now_ts // NEARBY_ROTATION_SECONDS) % len(items)
     item = items[index]
-    st.markdown(f'<div class="tile-label">NEARBY · {index + 1}/{len(items)}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="tile-label compact">NEARBY · {index + 1}/{len(items)}</div>', unsafe_allow_html=True)
     meta = item["source"]
     if item["published"]:
         meta += f' · {_relative_time(now_ts - item["published"].timestamp())}'
@@ -264,9 +263,9 @@ def _render_local_news() -> None:
 def render(now: datetime) -> None:
     st.markdown('<div class="page-title page-title-today">Today</div>', unsafe_allow_html=True)
     _render_agenda(now)
-    st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height: 0.5rem;"></div>', unsafe_allow_html=True)
     _render_commute(now)
-    st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height: 0.5rem;"></div>', unsafe_allow_html=True)
     _render_fuel_price(now)
-    st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height: 0.5rem;"></div>', unsafe_allow_html=True)
     _render_local_news()

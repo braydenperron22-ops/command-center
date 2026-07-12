@@ -217,6 +217,20 @@ html, body, [class*="css"] {
     overflow: hidden;
 }
 
+/* Today page only: tiles are stacked in a single column there, not
+   laid out in a grid row like Home's macro tiles — so there's no
+   cross-tile alignment reason to reserve 3.1em for a label that's
+   always one short line ("NORTH BAY GAS", "NEARBY · 3/5"). That fixed
+   reservation, repeated across every section on an already-tall page,
+   was the single biggest reason NEARBY was getting pushed off screen. */
+.tile-label.compact, .severity-caption.compact {
+    height: auto;
+    margin-bottom: 0.3rem;
+}
+.tile.compact {
+    padding: 1.1rem 1.3rem 1rem;
+}
+
 .new-badge {
     position: absolute;
     top: 0.8rem;
