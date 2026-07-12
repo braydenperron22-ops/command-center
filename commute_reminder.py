@@ -37,6 +37,11 @@ LATEST_FIRE_MINUTES = -30
 HEADLINE_WINDOW_MINUTES = 60
 HEADLINE_GRACE_MINUTES = 10
 
+# Intro sequencing via the toast-label-intro/toast-headline-intro CSS
+# animations in theme.py — see news.py's STRETCH_END for why this is a
+# CSS animation with a negative animation-delay rather than plain
+# per-rerun inline styles (same mechanism, kept in sync with news.py's
+# copy of these two constants).
 STRETCH_END = 1.8
 SLIDE_END = 3.0
 
@@ -196,22 +201,11 @@ def render_bar(alert: dict, elapsed: float) -> None:
     a separate, smaller implementation rather than teaching that
     function a third "kind" — commute reminders aren't news, and
     shouldn't grow that module's scope to accommodate them)."""
-    if elapsed < STRETCH_END:
-        label_progress = elapsed / STRETCH_END
-        label_style = f"opacity: {label_progress:.2f}; transform: translateY(0); letter-spacing: {0.5 * label_progress:.2f}em;"
-        headline_style = "opacity: 0; transform: translateX(16px);"
-    elif elapsed < SLIDE_END:
-        slide_progress = (elapsed - STRETCH_END) / (SLIDE_END - STRETCH_END)
-        label_style = f"opacity: {max(1 - slide_progress * 1.3, 0):.2f}; transform: translateX({-140 * slide_progress:.0f}%); letter-spacing: 0.5em;"
-        headline_style = f"opacity: {min(slide_progress * 1.3, 1):.2f}; transform: translateX({16 * (1 - slide_progress):.0f}px);"
-    else:
-        label_style = "opacity: 0; transform: translateX(-140%);"
-        headline_style = "opacity: 1; transform: translateX(0);"
-
+    delay = f"animation-delay: -{elapsed:.2f}s;"
     st.markdown(
         f"""<div class="commute-alert-bar">
-            <span class="news-breaking-label" style="{label_style}">LEAVE SOON</span>
-            <span class="news-alert-headline" style="{headline_style}">{alert['headline']}</span>
+            <span class="news-breaking-label toast-label-anim" style="{delay}">LEAVE SOON</span>
+            <span class="news-alert-headline toast-headline-anim" style="{delay}">{alert['headline']}</span>
         </div>""",
         unsafe_allow_html=True,
     )

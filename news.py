@@ -42,10 +42,12 @@ FEEDS = [
 TOAST_SECONDS = 30
 
 # Intro sequencing: "BREAKING NEWS" stretches into view, holds, then slides
-# aside to reveal the headline underneath. Positions are computed as a pure
-# function of elapsed time (not a replaying CSS keyframe) because the whole
-# app reruns every second for the clock tick — a keyframe animation would
-# restart on every one of those reruns instead of playing through once.
+# aside to reveal the headline underneath, via the toast-label-intro/
+# toast-headline-intro CSS animations in theme.py — elapsed feeds a
+# negative animation-delay (see render_alert_bar) so the clip resumes at
+# the right point every rerun and then plays smoothly on its own via the
+# browser's render loop until the next one, rather than a plain keyframe
+# animation restarting from 0% on every rerun's fresh DOM node.
 STRETCH_END = 1.8
 SLIDE_END = 3.0
 
@@ -522,26 +524,15 @@ def render_alert_bar(alert: dict, elapsed: float):
     otherwise, so the bar's own color signals how urgent a given item
     actually is before you even read the headline.
     """
-    if elapsed < STRETCH_END:
-        label_progress = elapsed / STRETCH_END
-        label_style = f"opacity: {label_progress:.2f}; transform: translateY(0); letter-spacing: {0.5 * label_progress:.2f}em;"
-        headline_style = "opacity: 0; transform: translateX(16px);"
-    elif elapsed < SLIDE_END:
-        slide_progress = (elapsed - STRETCH_END) / (SLIDE_END - STRETCH_END)
-        label_style = f"opacity: {max(1 - slide_progress * 1.3, 0):.2f}; transform: translateX({-140 * slide_progress:.0f}%); letter-spacing: 0.5em;"
-        headline_style = f"opacity: {min(slide_progress * 1.3, 1):.2f}; transform: translateX({16 * (1 - slide_progress):.0f}px);"
-    else:
-        label_style = "opacity: 0; transform: translateX(-140%);"
-        headline_style = "opacity: 1; transform: translateX(0);"
-
     is_breaking = alert.get("important", alert["category"] != "Market News")
     bar_class = "news-alert-bar" if is_breaking else "news-alert-bar-market"
     label_text = "BREAKING NEWS" if is_breaking else "MARKET NEWS"
+    delay = f"animation-delay: -{elapsed:.2f}s;"
     st.markdown(
         f"""<div class="{bar_class}">
-            <span class="news-breaking-label" style="{label_style}">{label_text}</span>
-            <span class="news-alert-tag {category_class(alert['category'])}" style="{headline_style}">{alert['category']}</span>
-            <span class="news-alert-headline" style="{headline_style}">{alert['headline']}</span>
+            <span class="news-breaking-label toast-label-anim" style="{delay}">{label_text}</span>
+            <span class="news-alert-tag {category_class(alert['category'])} toast-headline-anim" style="{delay}">{alert['category']}</span>
+            <span class="news-alert-headline toast-headline-anim" style="{delay}">{alert['headline']}</span>
         </div>""",
         unsafe_allow_html=True,
     )

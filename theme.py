@@ -588,7 +588,6 @@ html, body, [class*="css"] {
     font-weight: 800;
     color: #FFFFFF;
     text-transform: uppercase;
-    transition: opacity 1s linear, transform 1s linear, letter-spacing 1s linear;
     pointer-events: none;
 }
 
@@ -601,15 +600,43 @@ html, body, [class*="css"] {
     background: rgba(0,0,0,0.35);
     border-radius: 10px;
     padding: 0.3rem 0.75rem;
-    transition: opacity 1s linear, transform 1s linear;
 }
 
 .news-alert-headline {
     font-size: 1.3rem;
     font-weight: 600;
     color: #FFFFFF;
-    transition: opacity 1s linear, transform 1s linear;
 }
+
+/* Stretch-then-slide toast intro (news.render_alert_bar,
+   commute_reminder.render_bar) — a real CSS animation rather than
+   per-rerun inline styles interpolated via `transition`. A transition
+   only has something to interpolate FROM if the browser already holds
+   the previous value, which breaks the moment reruns get infrequent
+   enough that Streamlit re-emits the whole element fresh (5s
+   autorefresh, was 1s) — it snapped straight to wherever the most
+   recent rerun's inline style landed instead of animating through the
+   gap. A CSS `animation` doesn't have that problem: the caller sets
+   `animation-delay: -{elapsed}s` (a negative delay resumes a clip
+   partway through, a standard CSS mechanism) once per rerun, and the
+   browser's own render loop plays it smoothly from there regardless of
+   how long until the next rerun. Percentages below encode
+   STRETCH_END=1.8s/SLIDE_END=3.0s from news.py/commute_reminder.py —
+   keep in sync if either changes. */
+@keyframes toast-label-intro {
+    0%    { opacity: 0; letter-spacing: 0em; transform: translateX(0%); }
+    60%   { opacity: 1; letter-spacing: 0.5em; transform: translateX(0%); }
+    90.8% { opacity: 0; letter-spacing: 0.5em; transform: translateX(-107.7%); }
+    100%  { opacity: 0; letter-spacing: 0.5em; transform: translateX(-140%); }
+}
+@keyframes toast-headline-intro {
+    0%    { opacity: 0; transform: translateX(16px); }
+    60%   { opacity: 0; transform: translateX(16px); }
+    90.8% { opacity: 1; transform: translateX(3.7px); }
+    100%  { opacity: 1; transform: translateX(0px); }
+}
+.toast-label-anim { animation: toast-label-intro 3s linear forwards; }
+.toast-headline-anim { animation: toast-headline-intro 3s linear forwards; }
 
 /* Scoped to .news-alert-tag specifically — these category classes are
    reused on .news-feed-row (below) for just a left-border accent color,
