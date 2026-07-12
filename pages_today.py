@@ -14,6 +14,7 @@ import calendar_client
 import commute_client
 import commute_history
 import commute_reminder
+import fuel_price_client
 import local_news_client
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
@@ -182,6 +183,37 @@ def _render_commute(now: datetime) -> None:
     )
 
 
+def _render_fuel_price(now: datetime) -> None:
+    """North Bay gas price vs. its own recent trend (see
+    fuel_price_client.eco_mode_status) — built specifically to answer
+    "should I bother driving in eco mode today," not just to display a
+    number. Silent if the feed hasn't returned anything yet rather than
+    an empty tile."""
+    status = fuel_price_client.eco_mode_status()
+    if not status:
+        return
+    if status["eco_recommended"]:
+        badge_class, badge_text = "badge-bad", "Eco mode recommended"
+    else:
+        badge_class, badge_text = "badge-good", "Eco mode not needed"
+    as_of = f"{status['as_of'].strftime('%b')} {status['as_of'].day}"
+    # Day-granularity only, not a specific time — the survey publishes
+    # "before end of business" on its update day, not at a fixed hour,
+    # so anything more precise than "today" would be a made-up promise.
+    days_until_update = (status["next_update"] - now.date()).days
+    update_text = "Updates today" if days_until_update <= 0 else f"Next update in {days_until_update}d"
+    st.markdown(
+        f"""<div class="tile">
+            <div class="tile-label">NORTH BAY GAS</div>
+            <div class="tile-value">{status['price']:.1f}¢/L</div>
+            <div class="tile-prev">vs {status['baseline']:.1f}¢ 12wk avg · as of {as_of}</div>
+            <div class="badge {badge_class}">{badge_text}</div>
+            <div class="severity-caption">{update_text}</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+
 def _relative_time(seconds_ago: float) -> str:
     minutes = int(seconds_ago / 60)
     if minutes < 1:
@@ -234,5 +266,7 @@ def render(now: datetime) -> None:
     _render_agenda(now)
     st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
     _render_commute(now)
+    st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
+    _render_fuel_price(now)
     st.markdown('<div style="height: 0.9rem;"></div>', unsafe_allow_html=True)
     _render_local_news()

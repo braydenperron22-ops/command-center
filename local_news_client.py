@@ -1,19 +1,23 @@
-"""Local North Bay news, real stuff only — police/OPP incident beats
-plus road-closure/construction items, not general local-news (which
-mixes in lifestyle pieces and cross-posted "Good morning, North Bay!"
-weather fluff from other sections). Deliberately separate from news.py:
-that module's entire filtering apparatus (is_market_relevant, classify,
-FED_BOC_INCLUDE, ...) is tuned for financial news specifically — a
-police-beat headline would just get discarded by it, not surfaced.
+"""Local North Bay news, real stuff only — police/OPP incident beats,
+official 511 Ontario road events, and keyword-matched construction
+items, not general local-news (which mixes in lifestyle pieces and
+cross-posted "Good morning, North Bay!" weather fluff from other
+sections). Deliberately separate from news.py: that module's entire
+filtering apparatus (is_market_relevant, classify, FED_BOC_INCLUDE,
+...) is tuned for financial news specifically — a police-beat headline
+would just get discarded by it, not surfaced.
 """
 
 import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from math import asin, cos, radians, sin, sqrt
 from xml.etree import ElementTree
 
 import requests
 import streamlit as st
+
+from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -34,10 +38,53 @@ CONSTRUCTION_TERMS = [
     "traffic advisory", "water main",
 ]
 
+# Official Ministry of Transportation feed — 400+ events province-wide
+# at any given time, almost all irrelevant here, so filtered to
+# whichever are actually near the commute (either end of it, not just
+# home) rather than the whole province. Real government data, not a
+# news article's paraphrase of it — complements (doesn't duplicate)
+# TomTom's live delay number by saying what's actually causing it.
+ROAD_EVENTS_URL = "https://511on.ca/api/v2/get/event"
+ROAD_EVENTS_SOURCE = "511 Ontario"
+ROAD_EVENT_TYPES = {"roadwork", "accidentsAndIncidents"}
+NEARBY_RADIUS_KM = 25
+
 CACHE_TTL_SECONDS = 15 * 60
 MAX_ITEMS = 5
 
 _CONSTRUCTION_PATTERN = re.compile("|".join(re.escape(t) for t in CONSTRUCTION_TERMS))
+
+
+def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    earth_radius_km = 6371
+    p1, p2 = radians(lat1), radians(lat2)
+    dp = radians(lat2 - lat1)
+    dl = radians(lon2 - lon1)
+    a = sin(dp / 2) ** 2 + cos(p1) * cos(p2) * sin(dl / 2) ** 2
+    return 2 * earth_radius_km * asin(sqrt(a))
+
+
+def _fetch_road_events() -> list[dict]:
+    resp = requests.get(ROAD_EVENTS_URL, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+    resp.raise_for_status()
+    items = []
+    for event in resp.json():
+        if event.get("EventType") not in ROAD_EVENT_TYPES:
+            continue
+        lat, lon = event.get("Latitude"), event.get("Longitude")
+        description = (event.get("Description") or "").strip()
+        if lat is None or lon is None or not description:
+            continue
+        near = (
+            _distance_km(lat, lon, COMMUTE_ORIGIN["lat"], COMMUTE_ORIGIN["lon"]) <= NEARBY_RADIUS_KM
+            or _distance_km(lat, lon, COMMUTE_DESTINATION["lat"], COMMUTE_DESTINATION["lon"]) <= NEARBY_RADIUS_KM
+        )
+        if not near:
+            continue
+        last_updated = event.get("LastUpdated")
+        published = datetime.fromtimestamp(last_updated, tz=timezone.utc) if last_updated else None
+        items.append({"headline": description, "link": "", "source": ROAD_EVENTS_SOURCE, "published": published})
+    return items
 
 
 def _fetch_feed(url: str, source: str) -> list[dict]:
@@ -79,6 +126,11 @@ def fetch_items() -> list[dict]:
         for item in _fetch_feed(*CONSTRUCTION_FEED):
             if _CONSTRUCTION_PATTERN.search(item["headline"].lower()):
                 items.append(item)
+    except Exception:
+        pass
+
+    try:
+        items.extend(_fetch_road_events())
     except Exception:
         pass
 
