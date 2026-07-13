@@ -109,7 +109,14 @@ def _render_agenda(now: datetime) -> None:
     rows = "".join(
         f"""<div class="news-feed-row {_row_class(e, now, id(e) == next_id)}">
             <div class="news-feed-headline">{e['summary']}{
-                f'<div class="news-feed-meta">{e["location"].splitlines()[0]}</div>' if e['location'] else ''
+                # Venue name only, not the full street address — the
+                # commute tile below already shows the same place this
+                # way, and the full address wrapping to 2-3 lines here
+                # (see commute_reminder._destination_for_shift for the
+                # matching truncation) was a big chunk of why this page
+                # was overrunning when the global banners stack up top.
+                f'<div class="news-feed-meta">{e["location"].splitlines()[0].split(",")[0].strip()}</div>'
+                if e['location'] else ''
             }</div>
             <div class="news-feed-meta">{_time_range(e)}</div>
         </div>"""
@@ -250,7 +257,7 @@ def _render_local_news() -> None:
     meta = item["source"]
     if item["published"]:
         meta += f' · {_relative_time(now_ts - item["published"].timestamp())}'
-    row = f"""<div class="news-feed-row news-cat-local">
+    row = f"""<div class="news-feed-row news-cat-local compact">
         <div class="news-feed-headline">{item['headline']}</div>
         <div class="news-feed-meta">{meta}</div>
     </div>"""
@@ -263,9 +270,9 @@ def _render_local_news() -> None:
 def render(now: datetime) -> None:
     st.markdown('<div class="page-title page-title-today">Today</div>', unsafe_allow_html=True)
     _render_agenda(now)
-    st.markdown('<div style="height: 0.5rem;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height: 0.25rem;"></div>', unsafe_allow_html=True)
     _render_commute(now)
-    st.markdown('<div style="height: 0.5rem;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height: 0.25rem;"></div>', unsafe_allow_html=True)
     _render_fuel_price(now)
-    st.markdown('<div style="height: 0.5rem;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height: 0.25rem;"></div>', unsafe_allow_html=True)
     _render_local_news()

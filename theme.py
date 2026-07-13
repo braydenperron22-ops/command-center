@@ -25,7 +25,7 @@ html, body, [class*="css"] {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 1rem;
+    margin-bottom: 0.4rem;
 }
 
 .hero-weather {
@@ -228,7 +228,7 @@ html, body, [class*="css"] {
     margin-bottom: 0.3rem;
 }
 .tile.compact {
-    padding: 1.1rem 1.3rem 1rem;
+    padding: 0.75rem 1.1rem 0.65rem;
 }
 
 .new-badge {
@@ -531,8 +531,8 @@ html, body, [class*="css"] {
     display: flex;
     align-items: center;
     gap: 0.9rem;
-    padding: 0.7rem 1.5rem;
-    margin-bottom: 0.9rem;
+    padding: 0.5rem 1.3rem;
+    margin-bottom: 0.5rem;
     border-radius: 12px;
     background: rgba(255,159,10,0.16);
     border: 1px solid rgba(255,159,10,0.4);
@@ -697,7 +697,7 @@ html, body, [class*="css"] {
     font-weight: 600;
     color: #F5F5F7;
     letter-spacing: -0.01em;
-    margin: 0.4rem 0 1.3rem;
+    margin: 0.2rem 0 0.5rem;
 }
 
 /* A small colored beacon per page — same "quiet color cue" language as
@@ -781,6 +781,15 @@ html, body, [class*="css"] {
     border-left: 3px solid rgba(255,255,255,0.18);
 }
 
+/* Today's NEARBY section only ever shows one row at a time (see
+   pages_today._render_local_news), unlike the agenda or News page's
+   real lists — no scannability reason to keep the full row padding
+   there, so it gets the same tightening treatment as the .tile.compact
+   cards around it. */
+.news-feed-row.compact {
+    padding: 0.55rem 0 0.55rem 0.9rem;
+}
+
 /* Same category → color mapping as the breaking-news tag above, so a
    glance at the left edge of a row tells you what kind of story it is
    without reading the headline — consistent language across the whole
@@ -832,7 +841,7 @@ html, body, [class*="css"] {
     font-weight: 800;
     color: #FF453A;
     letter-spacing: -0.01em;
-    margin: 0 0 1.1rem;
+    margin: 0 0 0.6rem;
     text-shadow: 0 0 22px rgba(255,69,58,0.45);
 }
 
