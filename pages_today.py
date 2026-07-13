@@ -242,8 +242,8 @@ def _render_local_news() -> None:
     time-based pattern pages_home.py uses for its country rotation
     (int(time.time() // interval) % n, so it's driven by wall-clock
     time and needs nothing stored in session state). 10s rather than
-    something longer: Today only gets a ~90s slot in the page rotation
-    every 9 minutes, and a slow interval would mean rarely seeing more
+    something longer: Today only gets one slot in the page rotation every
+    PAGE_ROTATION_SECONDS * len(PAGES), and a slow interval would mean rarely seeing more
     than one of these per visit. Silent if nothing currently qualifies
     rather than an empty-state tile — a quiet day locally isn't worth
     taking up space to announce."""

@@ -104,7 +104,7 @@ YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 # way US/CA already does: a time.time()-based index, no Streamlit
 # multipage chrome, no scrolling.
 PAGES = ["home", "conflicts", "news", "markets", "internals", "today"]
-PAGE_ROTATION_SECONDS = 90
+PAGE_ROTATION_SECONDS = 5 * 60
 
 # Commute origin coordinate is the exact one embedded in the calendar
 # feed's own Apple-geocoded location for 281 Ouellette Rd (Nominatim's
