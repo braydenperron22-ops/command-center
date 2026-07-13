@@ -14,6 +14,8 @@ from datetime import date, timedelta
 import requests
 import streamlit as st
 
+import fetch_throttle
+
 FUEL_PRICES_URL = "https://ontario.ca/v1/files/fuel-prices/fueltypesall.csv"
 CITY_COLUMN = "North Bay"
 FUEL_TYPE = "Regular Unleaded Gasoline"
@@ -25,6 +27,7 @@ _last_good_readings: list[dict] | None = None
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_readings_raw() -> list[dict]:
+    fetch_throttle.wait_turn()
     resp = requests.get(FUEL_PRICES_URL, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
     resp.raise_for_status()
     reader = csv.DictReader(io.StringIO(resp.content.decode("utf-8-sig")))

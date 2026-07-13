@@ -16,6 +16,7 @@ import requests
 import streamlit as st
 
 import commute_history
+import fetch_throttle
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
 ROUTE_URL = "https://api.tomtom.com/routing/1/calculateRoute/{lat1},{lon1}:{lat2},{lon2}/json"
@@ -73,6 +74,7 @@ def _fetch_route_raw(api_key: str, dest_lat: float, dest_lon: float, record_hist
         lat1=COMMUTE_ORIGIN["lat"], lon1=COMMUTE_ORIGIN["lon"],
         lat2=dest_lat, lon2=dest_lon,
     )
+    fetch_throttle.wait_turn()
     resp = requests.get(url, params={"key": api_key, "traffic": "true", "sectionType": "traffic"}, timeout=10)
     resp.raise_for_status()
     route_data = resp.json()["routes"][0]
@@ -118,6 +120,7 @@ def route(destination: dict | None = None) -> dict | None:
 @st.cache_data(ttl=GEOCODE_CACHE_TTL_SECONDS, show_spinner=False)
 def _geocode_raw(address: str, api_key: str) -> dict | None:
     url = GEOCODE_URL.format(query=requests.utils.quote(address))
+    fetch_throttle.wait_turn()
     resp = requests.get(url, params={"key": api_key, "limit": 1}, timeout=10)
     resp.raise_for_status()
     results = resp.json().get("results", [])

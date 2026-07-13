@@ -5,6 +5,7 @@ from datetime import date
 import requests
 import streamlit as st
 
+import fetch_throttle
 from indicators import build_reading
 
 FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
@@ -41,6 +42,7 @@ def _fetch_series_raw(series_id: str, api_key: str) -> list[dict]:
         # cached for an hour regardless.
         "limit": 2600,
     }
+    fetch_throttle.wait_turn()
     resp = requests.get(FRED_BASE_URL, params=params, timeout=10)
     resp.raise_for_status()
     observations = resp.json().get("observations", [])
@@ -84,6 +86,7 @@ def _fetch_next_release_date_raw(release_id: int, api_key: str) -> str | None:
         "sort_order": "asc",
         "limit": 1,
     }
+    fetch_throttle.wait_turn()
     resp = requests.get(FRED_RELEASE_DATES_URL, params=params, timeout=10)
     resp.raise_for_status()
     dates = resp.json().get("release_dates", [])

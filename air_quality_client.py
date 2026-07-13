@@ -7,6 +7,7 @@ badge; air quality had nothing)."""
 import requests
 import streamlit as st
 
+import fetch_throttle
 from config import WEATHER_LAT, WEATHER_LON
 
 AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
@@ -21,6 +22,7 @@ def _fetch_aqi_raw() -> dict | None:
         "longitude": WEATHER_LON,
         "current": "us_aqi",
     }
+    fetch_throttle.wait_turn()
     resp = requests.get(AIR_QUALITY_URL, params=params, timeout=10)
     resp.raise_for_status()
     aqi = resp.json().get("current", {}).get("us_aqi")

@@ -28,6 +28,7 @@ import pandas as pd
 import streamlit as st
 import yfinance as yf
 
+import fetch_throttle
 from config import MARKET_DATA_TTL_SECONDS
 
 VIXEQ_HISTORY_PATH = os.path.join(os.path.dirname(__file__), "vixeq_history.json")
@@ -39,6 +40,7 @@ _last_good_snapshot: dict[str, float] = {}
 
 @st.cache_data(ttl=MARKET_DATA_TTL_SECONDS, show_spinner=False)
 def _fetch_history_raw(symbol: str, period: str) -> pd.DataFrame:
+    fetch_throttle.wait_turn()
     hist = yf.Ticker(symbol).history(period=period, interval="1d")
     if hist.empty:
         raise ValueError(f"no price history returned for {symbol}")
@@ -57,6 +59,7 @@ def _fetch_history(symbol: str, period: str = "1y") -> pd.DataFrame | None:
 
 @st.cache_data(ttl=MARKET_DATA_TTL_SECONDS, show_spinner=False)
 def _fetch_snapshot_raw(symbol: str) -> float:
+    fetch_throttle.wait_turn()
     hist = yf.Ticker(symbol).history(period="5d")
     if hist.empty:
         raise ValueError(f"no snapshot data for {symbol}")

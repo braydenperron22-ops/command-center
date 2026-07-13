@@ -12,6 +12,7 @@ import re
 import streamlit as st
 import yfinance as yf
 
+import fetch_throttle
 from news import EARNINGS_COMPANIES
 
 TICKER_PATTERN = re.compile(r"\(([A-Z]{2,5})\)")
@@ -38,6 +39,7 @@ def detect_ticker(headline: str) -> str | None:
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_one_year_return_raw(ticker: str) -> float:
+    fetch_throttle.wait_turn()
     hist = yf.Ticker(ticker).history(period="1y", interval="1d")
     if hist.empty or len(hist) < 2:
         raise ValueError(f"no history for {ticker}")

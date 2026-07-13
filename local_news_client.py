@@ -17,6 +17,7 @@ from xml.etree import ElementTree
 import requests
 import streamlit as st
 
+import fetch_throttle
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -65,6 +66,7 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def _fetch_road_events() -> list[dict]:
+    fetch_throttle.wait_turn()
     resp = requests.get(ROAD_EVENTS_URL, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
     resp.raise_for_status()
     items = []
@@ -88,6 +90,7 @@ def _fetch_road_events() -> list[dict]:
 
 
 def _fetch_feed(url: str, source: str) -> list[dict]:
+    fetch_throttle.wait_turn()
     resp = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
     resp.raise_for_status()
     root = ElementTree.fromstring(resp.content)

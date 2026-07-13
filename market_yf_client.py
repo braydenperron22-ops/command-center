@@ -12,6 +12,7 @@ import pandas as pd
 import streamlit as st
 import yfinance as yf
 
+import fetch_throttle
 from config import (
     MARKET_DATA_TTL_SECONDS,
     MARKET_INSTRUMENTS_CLOSED,
@@ -72,6 +73,7 @@ def market_status(now: datetime | None = None) -> str:
 
 @st.cache_data(ttl=MARKET_DATA_TTL_SECONDS, show_spinner=False)
 def _fetch_history_raw(symbol: str) -> pd.DataFrame:
+    fetch_throttle.wait_turn()
     hist = yf.Ticker(symbol).history(period=MARKET_SPARKLINE_PERIOD, interval="1d")
     if hist.empty:
         raise ValueError(f"no price history returned for {symbol}")

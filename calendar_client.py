@@ -18,6 +18,8 @@ import recurring_ical_events
 import requests
 import streamlit as st
 
+import fetch_throttle
+
 CACHE_TTL_SECONDS = 15 * 60
 
 # Same reasoning as every other data client in this app: never let a
@@ -28,6 +30,7 @@ _last_good_events: list[dict] | None = None
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_calendar_raw(ics_url: str) -> bytes:
+    fetch_throttle.wait_turn()
     resp = requests.get(ics_url, timeout=10)
     resp.raise_for_status()
     return resp.content

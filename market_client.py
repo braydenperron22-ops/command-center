@@ -5,6 +5,8 @@ from datetime import date
 import requests
 import streamlit as st
 
+import fetch_throttle
+
 FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
 
 # Same reasoning as fred_client: never let a transient hiccup crash the
@@ -22,6 +24,7 @@ def _fetch_ytd_return_raw(series_id: str, api_key: str) -> dict | None:
         "sort_order": "desc",
         "limit": 400,
     }
+    fetch_throttle.wait_turn()
     resp = requests.get(FRED_BASE_URL, params=params, timeout=10)
     resp.raise_for_status()
     observations = [o for o in resp.json().get("observations", []) if o.get("value") not in (None, ".")]

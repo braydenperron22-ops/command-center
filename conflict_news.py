@@ -15,6 +15,7 @@ from xml.etree import ElementTree
 import requests
 import streamlit as st
 
+import fetch_throttle
 import news
 from config import CONFLICT_WINDOW_DAYS
 
@@ -39,6 +40,7 @@ def fetch_conflict_headlines() -> list[dict]:
         "hl": "en-US", "gl": "US", "ceid": "US:en",
     }
     try:
+        fetch_throttle.wait_turn()
         resp = requests.get(GOOGLE_NEWS_RSS, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         resp.raise_for_status()
         root = ElementTree.fromstring(resp.content)

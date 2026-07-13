@@ -26,6 +26,7 @@ from xml.etree import ElementTree
 import requests
 import streamlit as st
 
+import fetch_throttle
 from config import TOP_ALERT_HOLD_SECONDS
 
 # (feed URL, display name) — unlike the Conflicts page's Google News
@@ -466,6 +467,7 @@ def fetch_headlines() -> list[dict]:
     items = []
     for url, source in FEEDS:
         try:
+            fetch_throttle.wait_turn()
             resp = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
             resp.raise_for_status()
             root = ElementTree.fromstring(resp.content)

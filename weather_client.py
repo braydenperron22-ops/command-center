@@ -8,6 +8,7 @@ import streamlit as st
 from astral import LocationInfo
 from astral.sun import sun
 
+import fetch_throttle
 from config import RAIN_LOOKAHEAD_HOURS, RAIN_PROBABILITY_THRESHOLD, TIMEZONE, WEATHER_LAT, WEATHER_LON
 from scenery import condition_category
 
@@ -73,6 +74,7 @@ def _fetch_weather_raw() -> dict | None:
         "timezone": TIMEZONE,
         "forecast_days": 2,
     }
+    fetch_throttle.wait_turn()
     resp = requests.get(WEATHER_URL, params=params, timeout=10)
     resp.raise_for_status()
     body = resp.json()

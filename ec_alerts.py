@@ -14,6 +14,7 @@ from xml.etree import ElementTree
 import requests
 import streamlit as st
 
+import fetch_throttle
 from config import EC_ALERT_REGION_CODE
 
 ALERT_URL = f"https://weather.gc.ca/rss/battleboard/{EC_ALERT_REGION_CODE}_e.xml"
@@ -27,6 +28,7 @@ def fetch_alerts() -> list[dict]:
     dead feed shouldn't ever crash the dashboard, just means no alert
     banner is shown)."""
     try:
+        fetch_throttle.wait_turn()
         resp = requests.get(ALERT_URL, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
         resp.raise_for_status()
         root = ElementTree.fromstring(resp.content)

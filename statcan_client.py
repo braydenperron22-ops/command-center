@@ -3,6 +3,7 @@
 import requests
 import streamlit as st
 
+import fetch_throttle
 from indicators import build_reading
 
 STATCAN_URL = "https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorsAndLatestNPeriods"
@@ -15,6 +16,7 @@ _last_good_vector: dict[int, list[dict]] = {}
 @st.cache_data(ttl=60 * 60, show_spinner=False)
 def _fetch_vector_raw(vector_id: int, latest_n: int = 200) -> list[dict]:
     body = [{"vectorId": vector_id, "latestN": latest_n}]
+    fetch_throttle.wait_turn()
     resp = requests.post(STATCAN_URL, json=body, timeout=10)
     resp.raise_for_status()
     payload = resp.json()[0]["object"]["vectorDataPoint"]
