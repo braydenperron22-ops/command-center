@@ -79,11 +79,17 @@ html, body, [class*="css"] {
    render now (UV scales orange->vibrant red with magnitude, rain
    scales pale->deep blue with proximity), not fixed here. */
 .weather-extra {
-    font-size: 1.7rem;
-    font-weight: 700;
-    padding: 0.45rem 1rem;
+    font-size: 1.8rem;
+    font-weight: 800;
+    padding: 0.45rem 1.1rem;
     border-radius: 14px;
     border: 2px solid currentColor;
+    /* currentColor picks up whatever color each badge already sets
+       inline (app.py's per-badge _lerp_hex result) — one rule gets a
+       glow that automatically matches rain/UV/AQI's own hue, rather
+       than needing a separate shadow color computed and passed in
+       alongside each badge's border/background. */
+    box-shadow: 0 0 16px -2px currentColor;
 }
 
 .weather-icon svg {
@@ -555,6 +561,46 @@ html, body, [class*="css"] {
     color: #F5D6A8;
 }
 
+/* A real EC alert (warning/watch/statement, see
+   weather_alerts_bar._severity) overrides the muted default above with
+   graduated urgency — a warning needs to actually command attention
+   from across the room, not blend in at the same weight as a routine
+   statement. The manual heat/cold fallback bar never gets one of these
+   classes, so it's untouched by this. */
+.weather-statement-warning {
+    padding: 0.7rem 1.5rem;
+    background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
+    border: 1px solid rgba(255,105,97,0.6);
+    box-shadow: 0 2px 16px rgba(179,20,20,0.35);
+    animation: weather-warning-pulse 2.4s ease-in-out infinite;
+}
+.weather-statement-warning .weather-statement-dot {
+    background: #FFFFFF;
+    box-shadow: 0 0 10px 2px rgba(255,255,255,0.75);
+}
+.weather-statement-warning .weather-statement-label,
+.weather-statement-warning .weather-statement-text {
+    color: #FFFFFF;
+}
+.weather-statement-warning .weather-statement-text {
+    font-weight: 600;
+}
+@keyframes weather-warning-pulse {
+    0%, 100% { box-shadow: 0 2px 16px rgba(179,20,20,0.35); }
+    50% { box-shadow: 0 2px 26px rgba(255,69,58,0.65); }
+}
+
+.weather-statement-watch {
+    background: rgba(255,159,10,0.3);
+    border: 1px solid rgba(255,159,10,0.75);
+    box-shadow: 0 0 16px rgba(255,159,10,0.3);
+}
+.weather-statement-watch .weather-statement-label { color: #FFB340; }
+.weather-statement-watch .weather-statement-text {
+    color: #FFFFFF;
+    font-weight: 600;
+}
+
 /* Persistent macro-regime banner — see regime.py/regime_bar.py. Same
    dot+label+text shape as the weather-statement bar above, tone-colored
    like everything else in the app (good/bad/neutral) rather than a
@@ -735,6 +781,118 @@ html, body, [class*="css"] {
     background: #FF9F0A;
     box-shadow: 0 0 8px 1px rgba(255,159,10,0.5);
 }
+.page-title-weather::before {
+    background: #64D2FF;
+    box-shadow: 0 0 8px 1px rgba(100,210,255,0.5);
+}
+
+/* Weather page's 7 day columns — icon + high/low is the headline (same
+   glance-from-across-the-room priority as everything else here), the
+   short condition text a secondary caption underneath. */
+.weather-day-tile {
+    align-items: center;
+    text-align: center;
+}
+.weather-day-icon svg {
+    width: 3rem;
+    height: 3rem;
+    display: block;
+    margin: 0.3rem 0;
+    color: #ABB2C4;
+}
+.weather-day-temps {
+    display: flex;
+    gap: 0.6rem;
+    align-items: baseline;
+    margin: 0.2rem 0 0.5rem;
+}
+.weather-day-high {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #F5F5F7;
+}
+.weather-day-low {
+    font-size: 1.3rem;
+    font-weight: 500;
+    color: #8E8E93;
+}
+.weather-day-summary {
+    text-align: center;
+    font-size: 0.85rem;
+}
+
+/* Day/Night sub-rows within each day column — precip chance and UV
+   only render at all when EC's forecast actually has one (see
+   ec_forecast._period_html), so a quiet dry day doesn't carry empty
+   badges just to keep row heights matching. */
+.weather-day-period {
+    width: 100%;
+    margin-top: 0.6rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+.weather-day-period-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #8E8E93;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+}
+.weather-day-chance {
+    color: #64D2FF;
+    font-weight: 700;
+}
+.weather-day-uv {
+    color: #FFB340;
+    font-weight: 700;
+}
+.weather-day-wind {
+    font-size: 0.78rem;
+    color: #ABB2C4;
+    margin-top: 0.25rem;
+}
+
+/* EC's own live station reading, distinct from the hero row's
+   Open-Meteo one — a wide single-row strip rather than another
+   grid tile, since it's one reading, not a set of comparable columns. */
+.weather-current-tile {
+    padding: 1rem 1.5rem;
+}
+.weather-current-row {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    flex-wrap: wrap;
+}
+.weather-current-icon svg {
+    width: 2.6rem;
+    height: 2.6rem;
+    color: #ABB2C4;
+    flex-shrink: 0;
+}
+.weather-current-temp {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: #F5F5F7;
+    flex-shrink: 0;
+}
+.weather-current-condition {
+    font-size: 1.1rem;
+    color: #D6D6DC;
+    flex-shrink: 0;
+}
+.weather-current-metrics {
+    display: flex;
+    gap: 1.4rem;
+    flex-wrap: wrap;
+    margin-left: auto;
+    font-size: 0.9rem;
+    color: #ABB2C4;
+}
 
 .conflict-headlines {
     margin-top: 0.7rem;
@@ -843,6 +1001,16 @@ html, body, [class*="css"] {
     letter-spacing: -0.01em;
     margin: 0 0 0.6rem;
     text-shadow: 0 0 22px rgba(255,69,58,0.45);
+    /* Slow breathing glow, not a strobe — this only shows up in a
+       genuinely time-critical window (see commute_reminder.
+       render_leave_headline), so it earns pulling more attention than
+       the market tiles' static accent strip does, without reading as
+       cheap/busy the way a fast blink would. */
+    animation: leave-headline-pulse 2s ease-in-out infinite;
+}
+@keyframes leave-headline-pulse {
+    0%, 100% { text-shadow: 0 0 22px rgba(255,69,58,0.45); }
+    50% { text-shadow: 0 0 36px rgba(255,69,58,0.85), 0 0 60px rgba(255,69,58,0.35); }
 }
 
 /* Today page's agenda only — same news-feed-row shape the News page

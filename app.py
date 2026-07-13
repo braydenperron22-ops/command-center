@@ -20,6 +20,7 @@ import pages_internals
 import pages_markets
 import pages_news
 import pages_today
+import pages_weather
 import theme
 import weather_alerts_bar
 from config import (
@@ -360,6 +361,8 @@ with st.container(key="page_body"):
         _safe_render(pages_internals.render)
     elif page == "today":
         _safe_render(pages_today.render, now)
+    elif page == "weather":
+        _safe_render(pages_weather.render)
     else:
         # Every other branch above has a fallback (a real page render,
         # or _safe_render's own error tile) — this is the one path with
