@@ -48,14 +48,22 @@ _last_good_history: dict[str, pd.DataFrame] = {}
 
 def market_status(now: datetime | None = None) -> str:
     """'open' (real indices), 'closed' (futures), or 'weekend' (crypto)
-    — based on NYSE/TSX hours (9:30am-4:00pm ET, Mon-Fri). No holiday
-    calendar: a market holiday just falls under "closed" and shows
-    futures, a reasonable stand-in rather than a stale index quote —
-    not worth the complexity of a full holiday calendar for that edge
-    case alone.
+    — 'open' is NYSE/TSX cash-market hours (9:30am-4:00pm ET, Mon-Fri).
+    'weekend' is meant to mean "nothing but crypto is actually trading",
+    which isn't the same as "it's Saturday or Sunday": CME Globex
+    reopens equity index futures Sunday at 6:00pm ET for the new
+    week (through Friday 5:00pm ET) — Saturday and Sunday-before-6pm
+    are the only genuinely all-crypto window, not the whole weekend as
+    a block. No holiday calendar: a market holiday just falls under
+    "closed" and shows futures, a reasonable stand-in rather than a
+    stale index quote — not worth the complexity of a full holiday
+    calendar for that edge case alone.
     """
     eastern = (now or datetime.now(ZoneInfo("UTC"))).astimezone(ZoneInfo("America/New_York"))
-    if eastern.weekday() >= 5:  # Saturday=5, Sunday=6
+    weekday = eastern.weekday()  # Monday=0 ... Saturday=5, Sunday=6
+    if weekday == 6 and eastern.hour >= 18:  # Sunday, futures already reopened for the week
+        return "closed"
+    if weekday >= 5:  # all of Saturday, and Sunday before 6pm
         return "weekend"
     open_time = eastern.replace(hour=9, minute=30, second=0, microsecond=0)
     close_time = eastern.replace(hour=16, minute=0, second=0, microsecond=0)

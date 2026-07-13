@@ -210,16 +210,19 @@ def sync_lights(
     _creep_brightness(brightness)
 
 
-def sync_plug(now: datetime, sunrise: datetime | None, sunset: datetime | None) -> None:
-    """Off at sunset, on at actual sunrise — deliberately real solar
-    times, not the same `phase` the dashboard's own visuals use.
-    scenery.phase_for clamps "day" to never start before ~7:40am so the
+def sync_plug(now: datetime, first_light: datetime | None, last_light: datetime | None) -> None:
+    """Off at last light, on at first light — deliberately real civil-
+    twilight bounds (dawn/dusk, sun 6° below the horizon), not the same
+    `phase` the dashboard's own visuals use, and not the sunrise/sunset
+    disk-crossing times either: those still leave real usable light in
+    the sky for a while after "sunset" and before "sunrise". scenery.
+    phase_for also clamps "day" to never start before ~7:40am so the
     room doesn't visually brighten too early in midsummer, but that's a
     room-comfort choice specific to the sky/dimming — the monitor itself
-    should just follow the sun as it actually rises and sets, no floor."""
-    if not st.secrets.get("GOVEE_API_KEY") or sunrise is None or sunset is None:
+    should just follow the actual daylight window, no floor."""
+    if not st.secrets.get("GOVEE_API_KEY") or first_light is None or last_light is None:
         return
-    want_on = sunrise <= now < sunset
+    want_on = first_light <= now < last_light
     if st.session_state.get("govee_plug_applied") == want_on:
         return
     if time.time() - st.session_state.get("govee_plug_last_call_ts", 0) < MIN_CALL_GAP_SECONDS:

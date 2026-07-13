@@ -441,6 +441,6 @@ try:
     if current_alert and current_alert.get("important") and elapsed is not None and elapsed < govee_lighting.FLASH_SECONDS:
         breaking_elapsed = elapsed
     govee_lighting.sync_lights(phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None)
-    govee_lighting.sync_plug(now, weather["sunrise"] if weather else None, weather["sunset"] if weather else None)
+    govee_lighting.sync_plug(now, weather["first_light"] if weather else None, weather["last_light"] if weather else None)
 except Exception:
     pass

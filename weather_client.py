@@ -1,14 +1,30 @@
 """Open-Meteo access for the North Bay, ON current conditions + solar times."""
 
-from datetime import datetime
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 import requests
 import streamlit as st
+from astral import LocationInfo
+from astral.sun import sun
 
 from config import RAIN_LOOKAHEAD_HOURS, RAIN_PROBABILITY_THRESHOLD, TIMEZONE, WEATHER_LAT, WEATHER_LON
 from scenery import condition_category
 
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
+
+# Open-Meteo has no civil-twilight variable (only the sunrise/sunset disk
+# crossing), so first/last light are computed locally instead — astral's
+# `sun()` gives dawn/dusk at the standard 6° civil-twilight depression by
+# default, no API call needed. Cross-checked against a real forecast (July
+# 2026, North Bay): computed dawn/dusk landed within a minute of the
+# figures actually observed for that day.
+_LOCATION = LocationInfo(latitude=WEATHER_LAT, longitude=WEATHER_LON, timezone=TIMEZONE)
+
+
+def _first_last_light(day: date) -> tuple[datetime, datetime]:
+    s = sun(_LOCATION.observer, date=day, tzinfo=ZoneInfo(TIMEZONE))
+    return s["dawn"].replace(tzinfo=None), s["dusk"].replace(tzinfo=None)
 
 # This is called unconditionally at the very top of app.py, before any
 # page renders — an uncaught exception here used to take down the entire
@@ -71,6 +87,7 @@ def _fetch_weather_raw() -> dict | None:
     # used elsewhere in the app.
     sunrise = datetime.fromisoformat(daily["sunrise"][0])
     sunset = datetime.fromisoformat(daily["sunset"][0])
+    first_light, last_light = _first_last_light(sunrise.date())
     precip = _next_precip_at(datetime.fromisoformat(current["time"]), hourly)
 
     highs = daily.get("temperature_2m_max") or []
@@ -82,6 +99,8 @@ def _fetch_weather_raw() -> dict | None:
         "uv_index": current.get("uv_index"),
         "sunrise": sunrise,
         "sunset": sunset,
+        "first_light": first_light,
+        "last_light": last_light,
         "rain_at": precip[0] if precip else None,
         "precip_kind": precip[1] if precip else None,
         "forecast_high_c": highs[0] if highs else None,
