@@ -16,6 +16,7 @@ import commute_history
 import commute_reminder
 import fuel_price_client
 import local_news_client
+import waste_schedule
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
 # From this hour onward, the agenda switches from today's remaining
@@ -220,6 +221,30 @@ def _render_fuel_price(now: datetime) -> None:
     )
 
 
+def _render_garbage(now: datetime) -> None:
+    """Next bin day — garbage every Monday, recycling the 2nd/4th
+    Wednesday of the month (see waste_schedule.py). No API here: this
+    is a fixed schedule, and the person who gave it to me said
+    "typically", so a stat holiday shifting a real pickup by a day
+    isn't accounted for."""
+    pickup = waste_schedule.next_pickup(now.date())
+    if pickup["days_until"] == 0:
+        when = "Today"
+    elif pickup["days_until"] == 1:
+        when = "Tomorrow"
+    else:
+        when = f"{pickup['date'].strftime('%a %b')} {pickup['date'].day}"
+    badge_class = "badge-bad" if pickup["days_until"] == 0 else "badge-good"
+    st.markdown(
+        f"""<div class="tile compact">
+            <div class="tile-label compact">{pickup['kind'].upper()} DAY</div>
+            <div class="tile-value">{when}</div>
+            <div class="badge {badge_class}">{pickup['kind']}</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+
 def _relative_time(seconds_ago: float) -> str:
     minutes = int(seconds_ago / 60)
     if minutes < 1:
@@ -274,5 +299,7 @@ def render(now: datetime) -> None:
     _render_commute(now)
     st.markdown('<div style="height: 0.25rem;"></div>', unsafe_allow_html=True)
     _render_fuel_price(now)
+    st.markdown('<div style="height: 0.25rem;"></div>', unsafe_allow_html=True)
+    _render_garbage(now)
     st.markdown('<div style="height: 0.25rem;"></div>', unsafe_allow_html=True)
     _render_local_news()

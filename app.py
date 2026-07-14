@@ -19,6 +19,7 @@ import pages_home
 import pages_internals
 import pages_markets
 import pages_news
+import pages_sports
 import pages_today
 import pages_weather
 import theme
@@ -370,6 +371,8 @@ with st.container(key="page_body"):
         _safe_render(pages_today.render, now)
     elif page == "weather":
         _safe_render(pages_weather.render)
+    elif page == "sports":
+        _safe_render(pages_sports.render)
     else:
         # Every other branch above has a fallback (a real page render,
         # or _safe_render's own error tile) — this is the one path with

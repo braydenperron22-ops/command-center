@@ -832,6 +832,48 @@ html, body, [class*="css"] {
     background: #64D2FF;
     box-shadow: 0 0 8px 1px rgba(100,210,255,0.5);
 }
+.page-title-sports::before {
+    background: #32D74B;
+    box-shadow: 0 0 8px 1px rgba(50,215,75,0.5);
+}
+
+/* Sports page's per-team division standings — a plain aligned table,
+   own team's row picked out rather than colored (rank order already
+   says everything a color would), matching the "quiet color cue,
+   readable text does the rest" language the rest of this app uses. */
+.sports-standings {
+    margin-top: 0.9rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+.sports-standings-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    padding: 0.3rem 0;
+    font-size: 0.95rem;
+    color: #ABB2C4;
+}
+.sports-standings-row-team {
+    color: #F5F5F7;
+    font-weight: 700;
+}
+.sports-standings-rank {
+    width: 1.6rem;
+    flex-shrink: 0;
+}
+.sports-standings-team {
+    flex: 1;
+}
+.sports-standings-record {
+    flex-shrink: 0;
+}
+.sports-standings-extra {
+    flex-shrink: 0;
+    width: 3rem;
+    text-align: right;
+    color: #8E8E93;
+}
 
 /* Weather page's 7 day columns — icon + high/low is the headline (same
    glance-from-across-the-room priority as everything else here), the

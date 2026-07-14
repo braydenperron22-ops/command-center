@@ -100,10 +100,10 @@ MARKET_INDEX = {
 YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 
 # --- Multi-page ambient rotation -------------------------------------------
-# Home / Conflicts / News / Markets / Internals / Today / Weather cycle
-# the same way US/CA already does: a time.time()-based index, no
+# Home / Conflicts / News / Markets / Internals / Today / Weather / Sports
+# cycle the same way US/CA already does: a time.time()-based index, no
 # Streamlit multipage chrome, no scrolling.
-PAGES = ["home", "conflicts", "news", "markets", "internals", "today", "weather"]
+PAGES = ["home", "conflicts", "news", "markets", "internals", "today", "weather", "sports"]
 PAGE_ROTATION_SECONDS = 5 * 60
 
 # Commute origin coordinate is the exact one embedded in the calendar
