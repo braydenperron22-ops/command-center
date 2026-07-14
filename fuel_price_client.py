@@ -19,7 +19,16 @@ import fetch_throttle
 FUEL_PRICES_URL = "https://ontario.ca/v1/files/fuel-prices/fueltypesall.csv"
 CITY_COLUMN = "North Bay"
 FUEL_TYPE = "Regular Unleaded Gasoline"
-CACHE_TTL_SECONDS = 12 * 60 * 60  # the survey itself only updates weekly (Mondays); twice a day is plenty
+# The survey itself only updates weekly, but not at a fixed time —
+# it's published "before end of business" on the update day, not
+# necessarily first thing. 12h meant a process whose first fetch of the
+# day landed before that publish (very plausible, e.g. an early-morning
+# fetch) wouldn't see the new price until 12h later, making a genuine
+# same-day update look like it "never happened" for most of the day.
+# 2h catches the actual publish within a couple hours either way, and
+# costs nothing extra — this is a static government CSV, not a
+# rate-limited API.
+CACHE_TTL_SECONDS = 2 * 60 * 60
 BASELINE_WEEKS = 12  # trailing window "normal" is judged against, so eco mode reacts to prices actually drifting rather than a fixed cents-per-litre number going stale over time
 
 _last_good_readings: list[dict] | None = None
