@@ -11,6 +11,7 @@ from streamlit_autorefresh import st_autorefresh
 
 import air_quality_client
 import commute_reminder
+import ec_radar
 import govee_lighting
 import market_yf_client
 import news
@@ -242,6 +243,23 @@ if weather:
                 f'<span class="weather-extra" style="color:{fill_start}; '
                 f'background:{precip_bg}; border-color:{precip_fill};">{label} in {countdown}{chance_html}</span>'
             )
+    # A second, independent signal alongside the forecast-percentage
+    # badge above: real precipitation actually detected on EC's own
+    # live radar right now, sampled directly from the same image the
+    # Weather page's radar tile shows (see ec_radar.nearby_precip_km).
+    # This can catch a real nearby cell EC's area-wide forecast
+    # percentage doesn't — the exact gap that had this dashboard
+    # showing nothing while a phone's radar-based nowcast (Apple/Dark
+    # Sky) already knew better. Independent of the badge above: can
+    # show even when that one doesn't, or alongside it.
+    nearby_km = ec_radar.nearby_precip_km("snow" if category == "snow" else "rain")
+    if nearby_km is not None:
+        nearby_label = "Snow" if category == "snow" else "Rain"
+        nearby_text = "on you now" if nearby_km < 1 else f"{nearby_km:.0f} km away"
+        extras.append(
+            f'<span class="weather-extra" style="color:#64D2FF; '
+            f'background:rgba(100,210,255,0.22); border-color:#64D2FF;">{nearby_label} nearby · {nearby_text}</span>'
+        )
     if weather["uv_index"] is not None and weather["uv_index"] > UV_HIGH_THRESHOLD:
         uv = weather["uv_index"]
         intensity = min((uv - UV_HIGH_THRESHOLD) / (UV_EXTREME - UV_HIGH_THRESHOLD), 1.0)

@@ -7,3 +7,4 @@ numpy==2.4.4
 icalendar==7.2.0
 recurring-ical-events==3.8.2
 astral==3.2
+Pillow==12.3.0
