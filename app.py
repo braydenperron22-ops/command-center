@@ -230,9 +230,16 @@ if weather:
             precip_fill = _lerp_hex(fill_start, fill_end, closeness)
             precip_bg = _rgba(precip_fill, 0.22 + closeness * 0.5)
             countdown = _format_countdown(remaining)
+            # The chance rides along rather than a bare "Rain in Xh" —
+            # this is EC's own forecast probability, not a promise, and
+            # EC's own number can (and does) get revised before the
+            # hour it named actually arrives. Showing it honestly beats
+            # a flat statement that reads as certain when it isn't.
+            chance = weather.get("precip_chance")
+            chance_html = f' · {chance}%' if chance is not None else ""
             extras.append(
                 f'<span class="weather-extra" style="color:{fill_start}; '
-                f'background:{precip_bg}; border-color:{precip_fill};">{label} in {countdown}</span>'
+                f'background:{precip_bg}; border-color:{precip_fill};">{label} in {countdown}{chance_html}</span>'
             )
     if weather["uv_index"] is not None and weather["uv_index"] > UV_HIGH_THRESHOLD:
         uv = weather["uv_index"]

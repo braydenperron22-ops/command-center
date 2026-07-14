@@ -120,18 +120,20 @@ def _fetch_hourly() -> list[dict]:
     return hourly
 
 
-def next_precip_at(now: datetime) -> tuple[datetime, str] | None:
-    """(timestamp, "rain" or "snow") for the next hour EC's own forecast
-    gives a real chance of precipitation within the lookahead window —
-    same shape/contract as weather_client's old Open-Meteo-based
-    version, so app.py's badge logic didn't need to change, just its
-    data source."""
+def next_precip_at(now: datetime) -> tuple[datetime, str, int] | None:
+    """(timestamp, "rain" or "snow", probability%) for the next hour
+    EC's own forecast gives a real chance of precipitation within the
+    lookahead window — an absolute target rather than "hours from now"
+    so the caller can tick a live countdown between refreshes. The
+    probability rides along so the badge can show it honestly (a
+    forecast is never a promise, and EC's own number can — and does —
+    get revised before the hour it named actually arrives)."""
     for reading in _fetch_hourly():
         hours_away = (reading["at"] - now).total_seconds() / 3600
         if hours_away < 0 or hours_away > RAIN_LOOKAHEAD_HOURS:
             continue
         if reading["probability"] >= RAIN_PROBABILITY_THRESHOLD:
-            return reading["at"], reading["kind"]
+            return reading["at"], reading["kind"], reading["probability"]
     return None
 
 

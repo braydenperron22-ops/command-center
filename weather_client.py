@@ -78,6 +78,7 @@ def _fetch_weather_raw() -> dict | None:
         "last_light": last_light,
         "rain_at": precip[0] if precip else None,
         "precip_kind": precip[1] if precip else None,
+        "precip_chance": precip[2] if precip else None,
         "forecast_high_c": highs[0] if highs else None,
         "forecast_low_c": lows[0] if lows else None,
     }
