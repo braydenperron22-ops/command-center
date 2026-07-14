@@ -19,7 +19,47 @@ from config import EXTREME_COLD_THRESHOLD_C, EXTREME_HEAT_THRESHOLD_C
 # as requested).
 _EXTREME_HAZARD_TERMS = ("tornado", "hurricane", "tsunami")
 _MODERATE_HAZARD_TERMS = ("heat", "cold", "frost", "fog", "rainfall", "snowfall", "air quality")
-_SEVERITY_RANK = {"extreme": 4, "warning": 3, "warning-moderate": 2, "watch": 1, "statement": 0}
+
+# Which hazard actually wins when several alerts are active at once —
+# deliberately separate from _severity()'s tier-first coloring below.
+# Tier (warning/watch/statement) reflects confidence/imminence, not
+# danger, so a low-confidence Thunderstorm Watch still has to outrank a
+# certain Heat Warning here: Tornado > Thunderstorm > Heat holds
+# regardless of which one currently has the more definite tier wording.
+_HAZARD_RANK = {
+    "tornado": 100, "hurricane": 95, "tsunami": 95,
+    "thunderstorm": 80, "tropical storm": 75, "flood": 70,
+    "blizzard": 65, "winter storm": 65, "ice storm": 63, "freezing rain": 60,
+    "wind": 55, "rainfall": 50, "snowfall": 45,
+    "heat": 30, "cold": 30, "frost": 20, "fog": 15, "air quality": 15,
+}
+_DEFAULT_HAZARD_RANK = 40  # an unrecognized hazard — assume moderate rather than trivial or extreme
+_TIER_TIEBREAK = {"warning": 2, "watch": 1, "statement": 0}
+
+
+def _tier(title: str) -> str:
+    t = title.lower()
+    if "warning" in t:
+        return "warning"
+    if "watch" in t:
+        return "watch"
+    return "statement"
+
+
+def _hazard_rank(title: str) -> int:
+    t = title.lower()
+    matches = [rank for hazard, rank in _HAZARD_RANK.items() if hazard in t]
+    return max(matches) if matches else _DEFAULT_HAZARD_RANK
+
+
+def _selection_score(alert: dict) -> tuple[int, int]:
+    """Which single alert wins when several are active — hazard type
+    first (Tornado > Thunderstorm > Heat, full stop, regardless of
+    tier), EC's warning/watch/statement wording only as a tiebreak
+    between two alerts for the *same* hazard (a Thunderstorm Warning
+    still outranks a Thunderstorm Watch)."""
+    title = alert["title"]
+    return (_hazard_rank(title), _TIER_TIEBREAK[_tier(title)])
 
 
 def _severity(title: str) -> str:
@@ -28,17 +68,18 @@ def _severity(title: str) -> str:
     hazard) > "watch" > "statement". EC's own title text always
     contains a tier word (e.g. "YELLOW WARNING - HEAT...", "Severe
     Thunderstorm Warning", "Special Weather Statement") and the hazard
-    name itself, so this needs no separate fields from the feed.
-    Drives both which single alert gets shown when several are active
-    (see render()) and how hard the bar visually pulls attention."""
+    name itself, so this needs no separate fields from the feed. Drives
+    how hard the bar visually pulls attention for whichever alert
+    _selection_score picked — tier still decides the color/intensity
+    honestly (a Watch shouldn't look as certain as a Warning) even
+    though it's hazard type that decided which alert got shown."""
     t = title.lower()
     if any(term in t for term in _EXTREME_HAZARD_TERMS):
         return "extreme"
-    if "warning" in t:
+    tier = _tier(title)
+    if tier == "warning":
         return "warning-moderate" if any(term in t for term in _MODERATE_HAZARD_TERMS) else "warning"
-    if "watch" in t:
-        return "watch"
-    return "statement"
+    return tier
 
 
 def _fallback_text(weather: dict | None) -> str | None:
@@ -63,7 +104,7 @@ def render(weather: dict | None) -> None:
         # alert is never buried under whatever the feed happened to list
         # first. A "+N more" suffix at least surfaces that there's more
         # to know.
-        alert = max(alerts, key=lambda a: _SEVERITY_RANK[_severity(a["title"])])
+        alert = max(alerts, key=_selection_score)
         text = f"{alert['title']}" + (f" — {alert['summary']}" if alert["summary"] else "")
         if len(alerts) > 1:
             text += f" (+{len(alerts) - 1} more alert{'s' if len(alerts) > 2 else ''})"
