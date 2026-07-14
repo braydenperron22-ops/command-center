@@ -983,6 +983,38 @@ html, body, [class*="css"] {
     color: #ABB2C4;
 }
 
+/* Live radar tile — a real map image (Environment Canada's own WMS
+   composite, see ec_radar.py), not a themed chart, so it gets a plain
+   dark frame rather than the sky-gradient treatment the rest of the
+   app uses, and the location marker is just CSS-positioned dead center
+   since the image's bbox is always centered on the user's own point. */
+.weather-radar-frame {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    max-width: 22rem;
+    margin: 0 auto;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #0a1420;
+}
+.weather-radar-image {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+.weather-radar-marker {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    margin: -5px 0 0 -5px;
+    border-radius: 50%;
+    background: #FF453A;
+    box-shadow: 0 0 8px 2px rgba(255,69,58,0.7);
+}
+
 .conflict-headlines {
     margin-top: 0.7rem;
     padding-top: 0.6rem;
