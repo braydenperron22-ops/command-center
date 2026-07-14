@@ -561,12 +561,36 @@ html, body, [class*="css"] {
     color: #F5D6A8;
 }
 
-/* A real EC alert (warning/watch/statement, see
-   weather_alerts_bar._severity) overrides the muted default above with
-   graduated urgency — a warning needs to actually command attention
-   from across the room, not blend in at the same weight as a routine
-   statement. The manual heat/cold fallback bar never gets one of these
-   classes, so it's untouched by this. */
+/* A real EC alert (extreme/warning/warning-moderate/watch/statement,
+   see weather_alerts_bar._severity) overrides the muted default above
+   with graduated urgency — a warning needs to actually command
+   attention from across the room, not blend in at the same weight as a
+   routine statement, and hazard type (not just tier) shapes how
+   intense that gets: Tornado > Thunderstorm > Heat, even when two
+   alerts are nominally the same tier. The manual heat/cold fallback
+   bar never gets one of these classes, so it's untouched by this. */
+
+/* Tornado/hurricane/tsunami — the single most dangerous hazard class
+   EC issues, so it gets the most intense treatment on this dashboard,
+   standing out even above a routine Warning for a less extreme
+   hazard. Fastest pulse of the three warning-family tiers. */
+.weather-statement-extreme {
+    padding: 0.7rem 1.5rem;
+    background: linear-gradient(90deg, #5c0a0b 0%, #d4181a 50%, #5c0a0b 100%);
+    border: 1px solid rgba(255,59,48,0.9);
+    box-shadow: 0 2px 20px rgba(212,24,26,0.55);
+    animation: weather-warning-pulse 1.3s ease-in-out infinite;
+}
+.weather-statement-extreme .weather-statement-dot {
+    background: #FFFFFF;
+    box-shadow: 0 0 12px 3px rgba(255,255,255,0.9);
+}
+.weather-statement-extreme .weather-statement-label,
+.weather-statement-extreme .weather-statement-text {
+    color: #FFFFFF;
+    font-weight: 700;
+}
+
 .weather-statement-warning {
     padding: 0.7rem 1.5rem;
     background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
@@ -588,6 +612,29 @@ html, body, [class*="css"] {
 @keyframes weather-warning-pulse {
     0%, 100% { box-shadow: 0 2px 16px rgba(179,20,20,0.35); }
     50% { box-shadow: 0 2px 26px rgba(255,69,58,0.65); }
+}
+
+/* A Warning-tier heat/cold/fog-family hazard — still a real warning,
+   just visually subordinate to a storm/wind/flood-type Warning at the
+   same tier (see weather_alerts_bar._severity). Slowest pulse of the
+   three warning-family tiers. */
+.weather-statement-warning-moderate {
+    padding: 0.7rem 1.5rem;
+    background: linear-gradient(90deg, #7a3d10 0%, #b3641a 50%, #7a3d10 100%);
+    border: 1px solid rgba(255,159,10,0.6);
+    box-shadow: 0 2px 14px rgba(179,100,20,0.3);
+    animation: weather-warning-pulse 3.2s ease-in-out infinite;
+}
+.weather-statement-warning-moderate .weather-statement-dot {
+    background: #FFFFFF;
+    box-shadow: 0 0 10px 2px rgba(255,255,255,0.6);
+}
+.weather-statement-warning-moderate .weather-statement-label,
+.weather-statement-warning-moderate .weather-statement-text {
+    color: #FFFFFF;
+}
+.weather-statement-warning-moderate .weather-statement-text {
+    font-weight: 600;
 }
 
 .weather-statement-watch {
