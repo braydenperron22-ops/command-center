@@ -12,6 +12,18 @@ from config import COUNTRY_META, INDICATORS, MARKET_INDEX, ROTATION_SECONDS, YIE
 from flags import flag_for
 from tiles import render_tile
 
+NEW_BADGE_SECONDS = 24 * 60 * 60  # how long a freshly detected release stays flagged "NEW"
+
+# Module-level (not st.session_state) so a freshly detected release
+# stays flagged across every session/reconnect for the full window
+# below, not just within one browser session — a kiosk reconnecting
+# (network hiccup, tab reload, autorefresh's own websocket churn, ...)
+# used to silently reset the old session-scoped tracking and lose the
+# badge entirely, which is almost certainly why a real release never
+# visibly triggered it.
+_last_as_of: dict[tuple, str] = {}
+_detected_at: dict[tuple, float] = {}
+
 
 def current_country() -> str:
     rotation_index = int(time.time() // ROTATION_SECONDS) % 2
@@ -21,9 +33,9 @@ def current_country() -> str:
 def fetch_readings(fred_api_key: str) -> tuple[dict, dict]:
     """Every country's every indicator — needed regardless of which page is
     active, since the release-calendar ticker at the bottom is global."""
-    seen_as_of = st.session_state.setdefault("seen_as_of", {})
     readings = {}
     new_flags = {}
+    now = time.time()
     for c, indicators in INDICATORS.items():
         for ind in indicators:
             if ind.get("source") == "statcan":
@@ -33,15 +45,27 @@ def fetch_readings(fred_api_key: str) -> tuple[dict, dict]:
             key = (c, ind["key"])
             readings[key] = reading
 
-            # Flag as "new" only if this session already had a prior value for
-            # this indicator and it just changed — first-ever load establishes
-            # the baseline instead of flashing everything as new.
+            # "New" for a full NEW_BADGE_SECONDS from the moment WE
+            # first notice the latest observation change, not from the
+            # observation's own as_of date — for a monthly series like
+            # CPI, as_of is dated the 1st of the month it *covers*, not
+            # when it was actually published (BLS/StatCan typically
+            # report ~2 weeks after month-end), so comparing that date
+            # against wall-clock time would almost never land within 24h
+            # even right after a real release. The first time this
+            # process ever sees a given indicator, its value just
+            # establishes the baseline (no detection timestamp set) so
+            # a fresh redeploy doesn't flash every tile "NEW" at once.
             is_new = False
             if reading:
-                prior = seen_as_of.get(key)
-                if prior is not None and prior != reading["as_of"]:
-                    is_new = True
-                seen_as_of[key] = reading["as_of"]
+                as_of = reading["as_of"]
+                if key not in _last_as_of:
+                    _last_as_of[key] = as_of
+                elif _last_as_of[key] != as_of:
+                    _last_as_of[key] = as_of
+                    _detected_at[key] = now
+                detected_at = _detected_at.get(key)
+                is_new = detected_at is not None and (now - detected_at) <= NEW_BADGE_SECONDS
             new_flags[key] = is_new
     return readings, new_flags
 
