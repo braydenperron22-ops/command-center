@@ -1,28 +1,26 @@
-"""Live weather radar imagery — the same raw signal (real-time
-precipitation reflectivity, not a forecast model) that minute-by-minute
-nowcasting apps like Apple Weather/Dark Sky are actually built on top
-of. Their edge is a proprietary storm-tracking algorithm layered over
-that signal, which isn't something to reasonably reimplement here — but
-seeing the live radar directly is most of the real value on its own,
-and it's public data.
+"""Live weather radar imagery and a simple approach/recede tracker built
+on top of it — the same raw signal (real-time precipitation
+reflectivity, not a forecast model) that minute-by-minute nowcasting
+apps like Apple Weather/Dark Sky are actually built on top of. Their
+edge is a proprietary storm-tracking algorithm layered over that
+signal; this isn't that, but it's a reasonable approximation of the
+same idea: sample the nearest detected echo's distance every time the
+radar refreshes (~6 min), and if that distance has been shrinking, it's
+approaching — extrapolate the closing speed into an ETA, and probe
+further out along the same bearing for where the echo ends to estimate
+when it'll clear, too.
 
-Environment Canada's own 1km North American radar composite (rain and
-snow separately, updated every 6 minutes) is served as a standard OGC
-WMS map layer via MSC GeoMet. `radar_image_url` just builds the image
-URL for the Weather page's <img> tag — the browser fetches that one
-directly, not our own backend, so it needs no throttle/cache of its
-own. `nearby_precip_km` is different: it fetches the same image
-server-side and samples its pixels directly, giving a second,
-independent "is there real precipitation nearby right now" signal for
-the hero row's rain badge — one that can catch a real nearby cell
-EC's own area-wide forecast percentage doesn't (the exact gap that
-made Apple's notification right when this dashboard's EC-forecast-only
-badge stayed quiet).
+`radar_image_url` builds the image URL for the Radar page's <img> tag —
+the browser fetches that one directly, not our own backend, so it
+needs no throttle/cache of its own. Everything else here does fetch
+server-side (to read pixels), so it goes through fetch_throttle and is
+cached to the radar's own real update cadence.
 """
 
 import io
 import time
-from math import asin, cos, radians, sin, sqrt
+from datetime import datetime
+from math import asin, atan2, cos, degrees, radians, sin, sqrt
 
 import requests
 import streamlit as st
@@ -34,11 +32,11 @@ from config import WEATHER_LAT, WEATHER_LON
 WMS_URL = "https://geo.weather.gc.ca/geomet"
 RAIN_LAYER = "RADAR_1KM_RRAI"
 SNOW_LAYER = "RADAR_1KM_RSNO"
-# Centered on the user's own location (not EC's station point, which
-# is only where their point-forecast numbers come from) with a fixed
-# margin either side — a symmetric bbox means that point always lands
-# exactly at the image's center (50%/50%), so the location marker
-# overlay never needs per-request pixel math.
+# Centered on the user's own location in Corbeil (not EC's North Bay
+# Airport station, which is only where their point-forecast numbers
+# come from) with a fixed margin either side — a symmetric bbox means
+# that point always lands exactly at the image's center (50%/50%), so
+# the location marker overlay never needs per-request pixel math.
 BBOX_MARGIN_DEGREES = 1.5
 IMAGE_SIZE = 640
 REFRESH_SECONDS = 6 * 60  # matches the radar composite's own update cadence
@@ -48,6 +46,12 @@ REFRESH_SECONDS = 6 * 60  # matches the radar composite's own update cadence
 # for today) could cover within the hour, not the full ~85km the image
 # itself spans.
 NEARBY_RADIUS_KM = 25
+# How far past the near edge to probe for where the echo ends, to
+# estimate a clearing time — well within the image's own ~110km
+# longitudinal half-span at this latitude, so a real far edge is
+# almost always still inside the frame if one exists.
+FAR_EDGE_MAX_KM = 100
+FAR_EDGE_STEP_KM = 2
 # WMS renders true-transparent background as alpha 0; real echo pixels
 # (even the faintest trace-precipitation color) render meaningfully
 # above that. A small margin above 0 filters out compression artifacts
@@ -56,7 +60,20 @@ ALPHA_THRESHOLD = 20
 _SEARCH_PX = 90  # comfortably covers NEARBY_RADIUS_KM in both axes at this latitude; real distance is what actually filters below
 _SAMPLE_STRIDE = 3
 
+# How much history to keep for the approach/recede trend, and how far
+# apart two samples need to be before trusting a speed estimate from
+# them — the radar itself only refreshes every REFRESH_SECONDS, so two
+# samples closer together than that are the same frame twice, not a
+# real trend point.
+HISTORY_WINDOW_MINUTES = 30
+MIN_TREND_GAP_MINUTES = 5
+# A distance change smaller than this over the tracked window is
+# treated as noise (radar echo edges flicker slightly frame to frame
+# even for a genuinely stationary cell), not real approach/recede.
+STATIONARY_THRESHOLD_KM = 1.5
+
 _last_good_bytes: dict[str, bytes] = {}
+_history: dict[str, list[tuple[datetime, float]]] = {"rain": [], "snow": []}
 
 
 def _bbox() -> str:
@@ -89,6 +106,30 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * earth_radius_km * asin(sqrt(a))
 
 
+def _bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    p1, p2, dl = radians(lat1), radians(lat2), radians(lon2 - lon1)
+    x = sin(dl) * cos(p2)
+    y = cos(p1) * sin(p2) - sin(p1) * cos(p2) * cos(dl)
+    return (degrees(atan2(x, y)) + 360) % 360
+
+
+def _destination(lat: float, lon: float, bearing_deg_: float, distance_km: float) -> tuple[float, float]:
+    earth_radius_km = 6371
+    delta = distance_km / earth_radius_km
+    theta = radians(bearing_deg_)
+    p1, l1 = radians(lat), radians(lon)
+    p2 = asin(sin(p1) * cos(delta) + cos(p1) * sin(delta) * cos(theta))
+    l2 = l1 + atan2(sin(theta) * sin(delta) * cos(p1), cos(delta) - sin(p1) * sin(p2))
+    return degrees(p2), degrees(l2)
+
+
+def _latlon_to_pixel(lat: float, lon: float) -> tuple[int, int]:
+    deg_per_px = (2 * BBOX_MARGIN_DEGREES) / IMAGE_SIZE
+    dx = round((lon - WEATHER_LON) / deg_per_px)
+    dy = round((WEATHER_LAT - lat) / deg_per_px)  # image y increases downward, latitude increases upward
+    return IMAGE_SIZE // 2 + dx, IMAGE_SIZE // 2 + dy
+
+
 @st.cache_data(ttl=REFRESH_SECONDS, show_spinner=False)
 def _fetch_radar_bytes_raw(layer: str, cache_bust: int) -> bytes:
     fetch_throttle.wait_turn()
@@ -115,16 +156,100 @@ def _fetch_radar_bytes(layer: str) -> bytes | None:
     return result
 
 
-def nearby_precip_km(kind: str = "rain") -> float | None:
-    """Distance in km to the nearest real radar-detected precipitation
-    echo, sampled directly from the same live image the Weather page's
-    radar tile shows — independent of EC's forecast percentage, this is
-    what's actually on the radar right now. None if nothing's detected
-    within NEARBY_RADIUS_KM (or the radar fetch/parse fails; this is a
-    bonus signal layered on top of the forecast-based badge, not a
-    replacement, so it fails quiet rather than breaking the hero row)."""
+def _pixel_has_echo(img: Image.Image, px: int, py: int) -> bool | None:
+    """True/False, or None if (px, py) falls outside the image entirely
+    — distinct from False (checked and empty), since "we can't see that
+    far" and "we looked and there's nothing there" need different
+    handling by the far-edge search below."""
+    if px < 0 or px >= IMAGE_SIZE or py < 0 or py >= IMAGE_SIZE:
+        return None
+    return img.getpixel((px, py))[3] > ALPHA_THRESHOLD
+
+
+def _nearest_echo(img: Image.Image) -> tuple[float, float, float] | None:
+    """(lat, lon, distance_km) of the closest detected echo pixel to
+    WEATHER_LAT/WEATHER_LON, within NEARBY_RADIUS_KM — or None."""
+    cx, cy = IMAGE_SIZE // 2, IMAGE_SIZE // 2
+    deg_per_px = (2 * BBOX_MARGIN_DEGREES) / IMAGE_SIZE
+    best = None
+    for dy in range(-_SEARCH_PX, _SEARCH_PX + 1, _SAMPLE_STRIDE):
+        py = cy + dy
+        if py < 0 or py >= IMAGE_SIZE:
+            continue
+        for dx in range(-_SEARCH_PX, _SEARCH_PX + 1, _SAMPLE_STRIDE):
+            px = cx + dx
+            if px < 0 or px >= IMAGE_SIZE or img.getpixel((px, py))[3] <= ALPHA_THRESHOLD:
+                continue
+            lat = WEATHER_LAT - dy * deg_per_px
+            lon = WEATHER_LON + dx * deg_per_px
+            dist = _distance_km(WEATHER_LAT, WEATHER_LON, lat, lon)
+            if dist <= NEARBY_RADIUS_KM and (best is None or dist < best[2]):
+                best = (lat, lon, dist)
+    return best
+
+
+def _far_edge_km(img: Image.Image, bearing_deg_: float, start_km: float) -> float | None:
+    """Walking outward from WEATHER_LAT/WEATHER_LON along bearing_deg_,
+    starting just past the near edge (start_km), the distance at which
+    the echo stops — an approximation of the storm's depth along its
+    line of approach, used to estimate when it'll clear rather than
+    just when it'll arrive. None if the echo still hasn't ended by
+    FAR_EDGE_MAX_KM, or by the time the search runs off the edge of the
+    image — either way, "we don't actually know" is more honest than
+    guessing a number."""
+    d = start_km + FAR_EDGE_STEP_KM
+    while d <= FAR_EDGE_MAX_KM:
+        lat, lon = _destination(WEATHER_LAT, WEATHER_LON, bearing_deg_, d)
+        px, py = _latlon_to_pixel(lat, lon)
+        has_echo = _pixel_has_echo(img, px, py)
+        if has_echo is None:  # ran off the edge of the image before finding the end
+            return None
+        if not has_echo:
+            return d
+        d += FAR_EDGE_STEP_KM
+    return None
+
+
+def _record_and_trend(kind: str, now: datetime, nearest_km: float | None) -> dict:
+    """Appends the latest reading to this kind's history (only while
+    something's actually detected — a gap just ages out naturally
+    rather than needing an explicit reset) and returns the trend
+    computed from the oldest and newest samples still in the window."""
+    history = _history[kind]
+    if nearest_km is not None:
+        history.append((now, nearest_km))
+    cutoff = now.timestamp() - HISTORY_WINDOW_MINUTES * 60
+    history[:] = [(t, km) for t, km in history if t.timestamp() >= cutoff]
+
+    if len(history) < 2:
+        return {"speed_kmh": None, "trend": "detecting"}
+
+    old_t, old_km = history[0]
+    new_t, new_km = history[-1]
+    gap_minutes = (new_t - old_t).total_seconds() / 60
+    if gap_minutes < MIN_TREND_GAP_MINUTES:
+        return {"speed_kmh": None, "trend": "detecting"}
+
+    change_km = old_km - new_km  # positive = got closer
+    if abs(change_km) < STATIONARY_THRESHOLD_KM:
+        return {"speed_kmh": None, "trend": "stationary"}
+    speed_kmh = abs(change_km) / (gap_minutes / 60)
+    return {"speed_kmh": speed_kmh, "trend": "approaching" if change_km > 0 else "receding"}
+
+
+def precip_forecast(kind: str = "rain") -> dict | None:
+    """None if nothing's detected within NEARBY_RADIUS_KM right now, or
+    if it's detected but not (yet, confidently) approaching — "only show
+    when it's coming in" is the whole point of this over the simpler
+    nearby-or-not signal. Otherwise: {"distance_km", "eta_minutes",
+    "end_minutes" (None if the far edge couldn't be determined),
+    "speed_kmh"}. Speed/direction come from comparing the nearest
+    detected echo's distance across HISTORY_WINDOW_MINUTES of real
+    radar refreshes — a genuinely new, real trend, not a guess from a
+    single frame."""
     layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
     raw = _fetch_radar_bytes(layer)
+    now = datetime.now()
     if not raw:
         return None
     try:
@@ -132,25 +257,20 @@ def nearby_precip_km(kind: str = "rain") -> float | None:
     except Exception:
         return None
 
-    cx, cy = IMAGE_SIZE // 2, IMAGE_SIZE // 2
-    deg_per_px = (2 * BBOX_MARGIN_DEGREES) / IMAGE_SIZE
-    closest_km = None
-    for dy in range(-_SEARCH_PX, _SEARCH_PX + 1, _SAMPLE_STRIDE):
-        py = cy + dy
-        if py < 0 or py >= IMAGE_SIZE:
-            continue
-        for dx in range(-_SEARCH_PX, _SEARCH_PX + 1, _SAMPLE_STRIDE):
-            px = cx + dx
-            if px < 0 or px >= IMAGE_SIZE:
-                continue
-            if img.getpixel((px, py))[3] <= ALPHA_THRESHOLD:
-                continue
-            # Image y increases downward while latitude increases
-            # upward — dy has to flip sign, dx doesn't (both x and
-            # longitude increase rightward/eastward).
-            lat = WEATHER_LAT - dy * deg_per_px
-            lon = WEATHER_LON + dx * deg_per_px
-            dist = _distance_km(WEATHER_LAT, WEATHER_LON, lat, lon)
-            if dist <= NEARBY_RADIUS_KM and (closest_km is None or dist < closest_km):
-                closest_km = dist
-    return closest_km
+    nearest = _nearest_echo(img)
+    trend = _record_and_trend(kind, now, nearest[2] if nearest else None)
+    if nearest is None or trend["trend"] != "approaching":
+        return None
+
+    lat, lon, distance_km = nearest
+    speed_kmh = trend["speed_kmh"]
+    eta_minutes = (distance_km / speed_kmh) * 60
+    bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)
+    far_km = _far_edge_km(img, bearing_deg_, distance_km)
+    end_minutes = (far_km / speed_kmh) * 60 if far_km is not None else None
+    return {
+        "distance_km": distance_km,
+        "eta_minutes": eta_minutes,
+        "end_minutes": end_minutes,
+        "speed_kmh": speed_kmh,
+    }

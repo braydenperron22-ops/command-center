@@ -836,6 +836,10 @@ html, body, [class*="css"] {
     background: #32D74B;
     box-shadow: 0 0 8px 1px rgba(50,215,75,0.5);
 }
+.page-title-radar::before {
+    background: #FF375F;
+    box-shadow: 0 0 8px 1px rgba(255,55,95,0.5);
+}
 
 /* Sports page's per-team division standings — a plain aligned table,
    own team's row picked out rather than colored (rank order already
@@ -1013,6 +1017,20 @@ html, body, [class*="css"] {
     border-radius: 50%;
     background: #FF453A;
     box-shadow: 0 0 8px 2px rgba(255,69,58,0.7);
+}
+
+/* Radar page's own version — a live map is the entire point of that
+   page, so it gets real screen space instead of sharing a column with
+   the 7-day forecast the way it briefly did on the Weather page. */
+.weather-radar-frame-large {
+    max-width: 34rem;
+}
+.weather-radar-tile-large {
+    align-items: center;
+    text-align: center;
+}
+.weather-radar-tile-large .badge {
+    margin-top: 1rem;
 }
 
 .conflict-headlines {

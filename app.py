@@ -20,6 +20,7 @@ import pages_home
 import pages_internals
 import pages_markets
 import pages_news
+import pages_radar
 import pages_sports
 import pages_today
 import pages_weather
@@ -245,20 +246,26 @@ if weather:
             )
     # A second, independent signal alongside the forecast-percentage
     # badge above: real precipitation actually detected on EC's own
-    # live radar right now, sampled directly from the same image the
-    # Weather page's radar tile shows (see ec_radar.nearby_precip_km).
-    # This can catch a real nearby cell EC's area-wide forecast
-    # percentage doesn't — the exact gap that had this dashboard
-    # showing nothing while a phone's radar-based nowcast (Apple/Dark
-    # Sky) already knew better. Independent of the badge above: can
-    # show even when that one doesn't, or alongside it.
-    nearby_km = ec_radar.nearby_precip_km("snow" if category == "snow" else "rain")
-    if nearby_km is not None:
-        nearby_label = "Snow" if category == "snow" else "Rain"
-        nearby_text = "on you now" if nearby_km < 1 else f"{nearby_km:.0f} km away"
+    # live radar, tracked frame to frame (see ec_radar.precip_forecast)
+    # to tell whether it's actually moving toward Corbeil rather than
+    # just sitting nearby or drifting off — only shows while it's
+    # genuinely approaching, with an ETA and, when the far edge of the
+    # echo is visible, a rough clear-by time too. This can catch a real
+    # incoming cell EC's area-wide forecast percentage doesn't — the
+    # exact gap that had this dashboard showing nothing while a phone's
+    # radar-based nowcast (Apple/Dark Sky) already knew better.
+    approaching = ec_radar.precip_forecast("snow" if category == "snow" else "rain")
+    if approaching is not None:
+        approach_label = "Snow" if category == "snow" else "Rain"
+        eta_text = _format_countdown(approaching["eta_minutes"] * 60)
+        end_text = (
+            f" · clears in {_format_countdown(approaching['end_minutes'] * 60)}"
+            if approaching["end_minutes"] is not None else ""
+        )
         extras.append(
             f'<span class="weather-extra" style="color:#64D2FF; '
-            f'background:rgba(100,210,255,0.22); border-color:#64D2FF;">{nearby_label} nearby · {nearby_text}</span>'
+            f'background:rgba(100,210,255,0.22); border-color:#64D2FF;">'
+            f'{approach_label} approaching · {eta_text}{end_text}</span>'
         )
     if weather["uv_index"] is not None and weather["uv_index"] > UV_HIGH_THRESHOLD:
         uv = weather["uv_index"]
@@ -389,6 +396,8 @@ with st.container(key="page_body"):
         _safe_render(pages_today.render, now)
     elif page == "weather":
         _safe_render(pages_weather.render)
+    elif page == "radar":
+        _safe_render(pages_radar.render)
     elif page == "sports":
         _safe_render(pages_sports.render)
     else:

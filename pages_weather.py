@@ -9,29 +9,7 @@ get more of it.
 import streamlit as st
 
 import ec_forecast
-import ec_radar
 from icons import icon_for
-
-
-def _render_radar(current: dict | None) -> None:
-    """Live radar reflectivity, not a forecast — see ec_radar.py for
-    why this is the closest thing to Apple/Dark-Sky-style nowcasting
-    this dashboard can reasonably offer: the actual raw signal that
-    class of app is built on, without their proprietary storm-tracking
-    layered on top. Rain layer by default; switches to the snow
-    composite when current conditions say snow, since the rain layer
-    reads empty during a snow event."""
-    kind = "snow" if current and current.get("category") == "snow" else "rain"
-    st.markdown(
-        f"""<div class="tile weather-radar-tile">
-            <div class="tile-label compact">LIVE RADAR · {kind.upper()} · ENVIRONMENT CANADA</div>
-            <div class="weather-radar-frame">
-                <img class="weather-radar-image" src="{ec_radar.radar_image_url(kind)}" />
-                <div class="weather-radar-marker"></div>
-            </div>
-        </div>""",
-        unsafe_allow_html=True,
-    )
 
 
 def _render_current(current: dict | None) -> None:
@@ -87,12 +65,7 @@ def _period_html(detail: dict | None, label: str) -> str:
 def render() -> None:
     st.markdown('<div class="page-title page-title-weather">7-Day Forecast — Environment Canada</div>', unsafe_allow_html=True)
 
-    current = ec_forecast.current_conditions()
-    left, right = st.columns([3, 2])
-    with left:
-        _render_current(current)
-    with right:
-        _render_radar(current)
+    _render_current(ec_forecast.current_conditions())
     st.markdown('<div style="height: 0.6rem;"></div>', unsafe_allow_html=True)
 
     days = ec_forecast.daily_forecast()
