@@ -1279,6 +1279,156 @@ html, body, [class*="css"] {
     font-size: 0.85rem;
     color: #ABB2C4;
 }
+
+/* Phone nav pills (app.py) — jump straight to any page instead of
+   waiting out the kiosk's 5-minute rotation. Hidden by default: the
+   kiosk monitor is always well above the mobile breakpoint below, so
+   this never actually shows there, it's just present in the DOM. */
+.mobile-nav {
+    display: none;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.9rem;
+}
+/* !important on color/text-decoration: Streamlit's own markdown-link
+   CSS (blue + underline, on a more specific [data-testid] selector)
+   otherwise wins here — same reason .block-container above needs
+   !important to hold its layout against Streamlit's base styles. Each
+   nav item's real color comes from an inline style (also !important,
+   since inline beats a class rule of the same importance) set in
+   app.py — this is just the fallback if that's ever missing. */
+.mobile-nav-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.32rem 0.65rem;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    text-decoration: none !important;
+    color: #ABB2C4 !important;
+}
+.mobile-nav-item::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 5px 1px currentColor;
+}
+.mobile-nav-item-active {
+    background: rgba(255,255,255,0.18);
+    border-color: rgba(255,255,255,0.4);
+}
+/* Streamlit strips inline style="" attributes from <a> tags even with
+   unsafe_allow_html=True (confirmed live — it also silently injects its
+   own target/rel attributes, so it's clearly running anchors through
+   its own post-processing) — unlike the <span> badges elsewhere in this
+   app, which do take inline color fine. Per-page classes instead, same
+   beacon colors as each page's own .page-title-*::before dot. */
+.mobile-nav-item-auto { color: #8E8E93 !important; }
+.mobile-nav-item-home { color: #F5F5F7 !important; }
+.mobile-nav-item-conflicts { color: #FF6961 !important; }
+.mobile-nav-item-news { color: #FFD60A !important; }
+.mobile-nav-item-markets { color: #32D74B !important; }
+.mobile-nav-item-internals { color: #BF5AF2 !important; }
+.mobile-nav-item-today { color: #FF9F0A !important; }
+.mobile-nav-item-household { color: #A2845E !important; }
+.mobile-nav-item-weather { color: #64D2FF !important; }
+.mobile-nav-item-radar { color: #FF375F !important; }
+.mobile-nav-item-sports { color: #32D74B !important; }
+
+/* Phone breakpoint. Everything above this point is untouched at any
+   width above it (including the kiosk monitor, always far wider) —
+   nothing in this block redefines a rule, it only adds overrides that
+   apply exclusively below 640px. Built and checked against an actual
+   375px viewport (see session history), not guessed from the desktop
+   CSS alone: the block-container's forced vertical centering in
+   particular looked fine at kiosk width but left real content stranded
+   off-screen on a phone, which is why it's turned off here rather than
+   just resized. */
+@media (max-width: 640px) {
+    .mobile-nav { display: flex; }
+
+    .block-container {
+        padding-top: 1rem;
+        padding-bottom: 5rem;
+        padding-left: 1rem;
+        padding-right: 1rem;
+        justify-content: flex-start !important;
+    }
+
+    /* Hero row: side-by-side (clock left, weather right) only works
+       with real horizontal room. Stacked and left-aligned reads far
+       better one-handed than two cramped, wrapping halves. */
+    .hero-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.7rem;
+    }
+    .hero-weather { text-align: left; }
+    .weather-condition { justify-content: flex-start; }
+    .weather-extras { justify-content: flex-start; flex-wrap: wrap; }
+
+    /* The kiosk's giant "readable from across the room" type is the
+       opposite of what a phone held at arm's length needs — scaled
+       down across every oversized hero/headline element. */
+    .clock { font-size: 2.5rem; }
+    .date-sub { font-size: 1.05rem; }
+    .weather-condition-label { font-size: 1.1rem; }
+    .weather-extra { font-size: 1.05rem; padding: 0.35rem 0.8rem; }
+    .weather-icon svg { width: 2.3rem; height: 2.3rem; }
+    .confidence-value { font-size: 2.8rem; }
+    .leave-headline { font-size: 1.9rem; }
+    .news-breaking-label { font-size: 1.15rem; }
+    .tile-value { font-size: 2rem; }
+    .market-hero-value { font-size: 1.5rem; }
+    .morning-briefing { font-size: 1.05rem; padding: 0.8rem 1.1rem; }
+    .page-title { font-size: 1.2rem; }
+
+    /* Streamlit stacks st.columns() grids into single-column full-width
+       blocks below its own ~640px internal breakpoint already — every
+       tile grid (Home, Markets, Internals, Weather's day columns,
+       Sports, Conflicts) rides on that for free, nothing to add here. */
+
+    /* Static top banners: fine to wrap onto a second line at this
+       width. The bottom toast bars (breaking-news/commute) are left
+       alone — their intro animation's translateX math assumes a single
+       unwrapped line (see the toast-*-intro keyframes above), so they
+       just get smaller text instead of wrapping. */
+    .top-alert-bar, .weather-statement-bar, .regime-bar {
+        flex-wrap: wrap;
+        padding: 0.6rem 1rem;
+    }
+    .news-alert-bar, .news-alert-bar-market, .commute-alert-bar {
+        padding: 0.7rem 1rem;
+    }
+    .news-alert-headline, .top-alert-headline { font-size: 0.95rem; }
+
+    /* News/agenda rows: headline + meta side by side needs width
+       neither has at this size — meta drops to its own line instead of
+       squeezing the headline. */
+    .news-feed-row {
+        flex-wrap: wrap;
+    }
+    .news-feed-meta {
+        flex-basis: 100%;
+    }
+    .agenda-feed-list .news-feed-headline { font-size: 1.25rem; }
+    .agenda-feed-list .news-feed-meta { font-size: 1rem; }
+
+    /* The kiosk never scrolls (the whole page is sized to fit one
+       screen, see .block-container above), so this fixed bottom
+       ticker's 92%-opaque background never had anything to actually
+       hide behind it. Mobile pages are much taller and now genuinely
+       scroll — confirmed live that page content ghosts through right
+       at that 8% gap wherever it lands under the ticker. Bumped to
+       near-fully-opaque here rather than globally, since it's only
+       ever been a problem once scrolling entered the picture. */
+    .ticker-bar { background: rgba(8,8,11,0.98); }
+}
 </style>
 """
 

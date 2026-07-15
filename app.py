@@ -49,6 +49,49 @@ theme.inject()
 
 FRED_API_KEY = st.secrets.get("FRED_API_KEY")
 
+# Resolved early (not down by the page-routing block that used to live
+# near the bottom of this file) so the mobile nav bar below can render
+# immediately, before any hero content — a phone picking up this page
+# shouldn't have to wait through the hero row just to see a nav. A
+# ?page= query param always wins over the rotation timer: that's what
+# lets a phone hitting the same public URL jump straight to a page
+# instead of sitting through the kiosk's 5-minute rotation the way the
+# actual monitor does. The kiosk's own browser tab never sets this
+# param, so its rotation is completely untouched by any of this.
+_requested_page = None
+try:
+    _requested_page = st.query_params.get("page")
+    if _requested_page in PAGES:
+        page = _requested_page
+    else:
+        page = PAGES[int(time.time() // PAGE_ROTATION_SECONDS) % len(PAGES)]
+except Exception:
+    page = "today"
+
+_PAGE_LABELS = {
+    "home": "Home", "conflicts": "Conflicts", "news": "News", "markets": "Markets",
+    "internals": "Internals", "today": "Today", "household": "Household",
+    "weather": "Weather", "radar": "Radar", "sports": "Sports",
+}
+
+# Invisible on the kiosk monitor — theme.py hides .mobile-nav entirely
+# above its phone-width breakpoint, so this only ever actually shows up
+# on a phone-sized browser. "Auto" clears the override and resumes the
+# timer-based rotation on that same phone tab. Per-page color comes from
+# a mobile-nav-item-{key} class (theme.py) rather than an inline style —
+# confirmed live that Streamlit strips style="" from <a> tags even with
+# unsafe_allow_html=True.
+_nav_items = "".join(
+    f'<a class="mobile-nav-item mobile-nav-item-{key}{" mobile-nav-item-active" if key == page else ""}" '
+    f'href="?page={key}">{_PAGE_LABELS[key]}</a>'
+    for key in PAGES
+)
+_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES else ""
+st.markdown(
+    f'<div class="mobile-nav"><a class="mobile-nav-item mobile-nav-item-auto{_auto_active}" href="?">Auto</a>{_nav_items}</div>',
+    unsafe_allow_html=True,
+)
+
 # Rotation is derived from elapsed real time (not a counter), so it
 # survives Streamlit Cloud sleep/wake without drifting into a
 # fast-forward regardless of this interval. Was 1000ms — a full script
@@ -405,19 +448,6 @@ try:
 except Exception:
     market_status = None
     market_intraday_pct = None
-
-# The one gap between the hero row above and the page content below
-# that wasn't wrapped in a try/except — everything else on either side
-# of it already is, so a bug here was the one way the whole page body
-# (and everything after it: ticker, Govee sync) could go missing while
-# the hero row/leave headline (rendered earlier) stayed up. Extremely
-# unlikely to actually throw (PAGES/PAGE_ROTATION_SECONDS are static
-# config), but there's no reason to leave it as the one unguarded seam.
-try:
-    page_index = int(time.time() // PAGE_ROTATION_SECONDS) % len(PAGES)
-    page = PAGES[page_index]
-except Exception:
-    page = "today"
 
 with st.container(key="page_body"):
     if page == "home":
