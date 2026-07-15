@@ -28,6 +28,22 @@ html, body, [class*="css"] {
     margin-bottom: 0.4rem;
 }
 
+/* Morning briefing — see morning_briefing.py. A calm, readable card
+   rather than an alert-style banner: this is routine information, not
+   something urgent, so it deliberately doesn't borrow the red/orange
+   "pay attention now" language the weather-statement/leave-headline
+   banners use above it. */
+.morning-briefing {
+    font-size: 1.3rem;
+    line-height: 1.5;
+    color: #E5E5EA;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 0.9rem 1.4rem;
+    margin-bottom: 0.8rem;
+}
+
 .hero-weather {
     text-align: right;
 }

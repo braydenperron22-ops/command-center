@@ -14,6 +14,7 @@ import commute_reminder
 import ec_radar
 import govee_lighting
 import market_yf_client
+import morning_briefing
 import news
 import pages_conflicts
 import pages_home
@@ -297,8 +298,12 @@ if weather:
     # "where's the smoke coming from," not just "how bad is it right
     # now" (see wildfire_client.py). Hard-gated to real wildfire season,
     # so it's simply absent the rest of the year rather than checking
-    # and finding nothing.
-    wildfire = wildfire_client.nearest_wildfire()
+    # and finding nothing. Also gated on the AQI badge itself already
+    # showing — a detected hotspot 300km away with air quality still
+    # fine here isn't actually affecting anything yet, so it stays
+    # paired with the symptom it's explaining rather than showing up on
+    # its own as an unexplained, possibly alarming, standalone signal.
+    wildfire = wildfire_client.nearest_wildfire() if aqi is not None and aqi > AQI_SHOW_THRESHOLD else None
     if wildfire is not None:
         intensity = 1 - min(wildfire["distance_km"] / wildfire_client.SHOW_RADIUS_KM, 1.0)
         wildfire_color = _lerp_hex("#FFB340", "#FF3B30", intensity)
@@ -333,6 +338,15 @@ st.markdown(
     </div>""",
     unsafe_allow_html=True,
 )
+
+# Page-independent, same reasoning as the leave headline above — the
+# morning routine doesn't wait for whichever of the 10 rotating pages
+# happens to be up. Below the hero row rather than competing with the
+# leave headline for the same prime spot above the clock.
+try:
+    morning_briefing.render(now, weather, air_quality)
+except Exception:
+    pass
 
 def _safe_render(render_fn, *args) -> None:
     """Runs a page's render function, catching anything unexpected rather
