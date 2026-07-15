@@ -22,6 +22,22 @@ import fetch_throttle
 
 CACHE_TTL_SECONDS = 15 * 60
 
+# The shift calendar's titles are the raw bulk-imported job title
+# ("Customer Experience Associate - Central, Sales"), not something
+# worth reading verbatim on a dashboard every morning — normalized to
+# "Work" for display, matched case-insensitively so a stray punctuation
+# difference between imported instances doesn't slip through. Nothing
+# else about the event (start/end/location) is touched.
+_SUMMARY_ALIASES = {
+    "customer experience associate - central, sales": "Work",
+    "cea central - sales": "Work",
+    "cea - central, sales": "Work",
+}
+
+
+def _normalize_summary(raw: str) -> str:
+    return _SUMMARY_ALIASES.get(raw.strip().lower(), raw)
+
 # Same reasoning as every other data client in this app: never let a
 # transient fetch/parse failure blank the page, fall back to the last
 # successfully parsed agenda instead.
@@ -55,7 +71,7 @@ def _events_from_one(calendar: dict, today: date) -> list[dict]:
         end = end_field.dt if end_field else start
         all_day = not isinstance(start, datetime)
         events.append({
-            "summary": str(e.get("SUMMARY", "Untitled")),
+            "summary": _normalize_summary(str(e.get("SUMMARY", "Untitled"))),
             "start": start,
             "end": end,
             "location": str(e.get("LOCATION")) if e.get("LOCATION") else None,

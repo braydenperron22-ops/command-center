@@ -17,24 +17,39 @@ regardless of which of the 10 rotating pages happens to be up.
 """
 
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import streamlit as st
+from astral import LocationInfo
+from astral.sun import sun
 
 import calendar_client
 import commute_client
 import commute_reminder
+import ec_alerts
 import ec_radar
 import fuel_price_client
+import market_yf_client
 import waste_schedule
 import wildfire_client
-from config import AQI_SHOW_THRESHOLD, COMMUTE_DESTINATION
+from config import AQI_SHOW_THRESHOLD, COMMUTE_DESTINATION, TIMEZONE, WEATHER_LAT, WEATHER_LON
 from scenery import condition_category
 
 MORNING_WINDOW_START_HOUR = 5
 MORNING_WINDOW_END_HOUR = 10
 
-MAX_CLAUSES = 3
+# Was 3 — widened so a morning that's genuinely eventful (an active
+# alert AND rain closing in AND a packed calendar) can actually say all
+# of it, instead of silently dropping whichever lost the priority sort.
+MAX_CLAUSES = 5
+
+# Duplicated from weather_client rather than imported — same convention
+# as this app's other small per-module geo/time math (see ec_radar.py's
+# own haversine/bearing helpers): this only needs day length, not a full
+# weather fetch, so it's cheaper and more self-contained to compute it
+# locally than to widen weather_client's return contract for one caller.
+_LOCATION = LocationInfo(latitude=WEATHER_LAT, longitude=WEATHER_LON, timezone=TIMEZONE)
 
 GREETINGS = ["", "", "", "Morning — ", "Good morning. ", "Rise and shine — ", "Here's the rundown: "]
 
@@ -143,6 +158,43 @@ GAS_ECO_LINES = [
     "prices are up ({price:.1f}¢/L), eco mode's worth it today",
 ]
 
+ALERT_LINES = [
+    "heads up: {title}",
+    "worth knowing this morning — {title}",
+    "one to watch: {title}",
+]
+
+MARKET_UP_LINES = [
+    "markets are green so far, S&P +{pct}%",
+    "S&P's up {pct}% this morning",
+    "green start for the market, up {pct}%",
+]
+MARKET_DOWN_LINES = [
+    "markets are red this morning, S&P -{pct}%",
+    "S&P's down {pct}% so far",
+    "a rough start for the market, off {pct}%",
+]
+MARKET_FLAT_LINES = [
+    "markets are flat this morning",
+    "S&P's roughly unchanged so far",
+]
+
+# Deliberately the lowest-priority clause of all of them (see its
+# priority=1 below) — it's always available (every day has a sunrise and
+# sunset), so without a low priority it would crowd out genuinely
+# time-sensitive info on a busy morning. It's here for the quieter days,
+# to tie the daily routine to the bigger, slower cycle behind it.
+DAYLIGHT_GAINING_LINES = [
+    "days are stretching out — {delta} more minutes of daylight than yesterday, sunset at {sunset}",
+    "gaining daylight now, {delta} minutes more than yesterday",
+    "the days keep growing, {delta} extra minutes of light today",
+]
+DAYLIGHT_LOSING_LINES = [
+    "days are shrinking — {delta} fewer minutes of daylight than yesterday, sunset at {sunset}",
+    "losing daylight now, {delta} minutes less than yesterday",
+    "the days are contracting, {delta} fewer minutes of light today",
+]
+
 
 def _pick(options: list[str], now: datetime, salt: str) -> str:
     rng = random.Random(f"{now.date().isoformat()}-{salt}")
@@ -248,6 +300,55 @@ def _household_clause(now: datetime) -> tuple[int, str] | None:
     return None
 
 
+def _alert_clause(now: datetime) -> tuple[int, str] | None:
+    alerts = ec_alerts.fetch_alerts()
+    if not alerts:
+        return None
+    text = _pick(ALERT_LINES, now, "alert").format(title=alerts[0]["title"])
+    return 10, text
+
+
+def _markets_clause(now: datetime) -> tuple[int, str] | None:
+    status = market_yf_client.market_status(now)
+    if status == "weekend":
+        return None
+    symbol = market_yf_client.primary_symbol(status)
+    quote = market_yf_client.quote_for(symbol)
+    if not quote or quote["intraday"] is None:
+        return None
+    pct = quote["intraday"]
+    fmt = {"pct": f"{abs(pct):.1f}"}
+    if pct >= 0.15:
+        lines = MARKET_UP_LINES
+    elif pct <= -0.15:
+        lines = MARKET_DOWN_LINES
+    else:
+        lines = MARKET_FLAT_LINES
+    return 3, _pick(lines, now, "markets").format(**fmt)
+
+
+def _day_length_minutes(day) -> float:
+    s = sun(_LOCATION.observer, date=day, tzinfo=ZoneInfo(TIMEZONE))
+    return (s["sunset"] - s["sunrise"]).total_seconds() / 60
+
+
+def _daylight_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
+    sunset = weather.get("sunset")
+    if sunset is None:
+        return None
+    try:
+        today_len = _day_length_minutes(now.date())
+        yesterday_len = _day_length_minutes(now.date() - timedelta(days=1))
+    except Exception:
+        return None
+    delta = round(today_len - yesterday_len)
+    if delta == 0:
+        return None
+    fmt = {"delta": abs(delta), "sunset": sunset.strftime("%I:%M %p").lstrip("0")}
+    lines = DAYLIGHT_GAINING_LINES if delta > 0 else DAYLIGHT_LOSING_LINES
+    return 1, _pick(lines, now, "daylight").format(**fmt)
+
+
 def render(now: datetime, weather: dict | None, air_quality: dict | None) -> None:
     if not (MORNING_WINDOW_START_HOUR <= now.hour < MORNING_WINDOW_END_HOUR):
         return
@@ -257,12 +358,15 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     category = condition_category(weather["weather_code"])
     clauses = []
     for fn, args in (
+        (_alert_clause, (now,)),
         (_weather_clause, (now, weather)),
         (_precip_clause, (now, weather, category)),
         (_air_clause, (now, air_quality)),
         (_commute_clause, (now,)),
         (_agenda_clause, (now,)),
         (_household_clause, (now,)),
+        (_markets_clause, (now,)),
+        (_daylight_clause, (now, weather)),
     ):
         try:
             result = fn(*args)
