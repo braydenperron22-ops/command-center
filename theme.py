@@ -828,6 +828,10 @@ html, body, [class*="css"] {
     background: #FF9F0A;
     box-shadow: 0 0 8px 1px rgba(255,159,10,0.5);
 }
+.page-title-household::before {
+    background: #A2845E;
+    box-shadow: 0 0 8px 1px rgba(162,132,94,0.5);
+}
 .page-title-weather::before {
     background: #64D2FF;
     box-shadow: 0 0 8px 1px rgba(100,210,255,0.5);
@@ -1023,14 +1027,16 @@ html, body, [class*="css"] {
    page, so it gets real screen space instead of sharing a column with
    the 7-day forecast the way it briefly did on the Weather page. */
 .weather-radar-frame-large {
-    max-width: 34rem;
+    max-width: 28rem;
 }
 .weather-radar-tile-large {
     align-items: center;
     text-align: center;
+    padding-top: 1rem;
+    padding-bottom: 0.9rem;
 }
 .weather-radar-tile-large .badge {
-    margin-top: 1rem;
+    margin-top: 0.7rem;
 }
 
 .conflict-headlines {

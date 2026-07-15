@@ -17,6 +17,7 @@ import market_yf_client
 import news
 import pages_conflicts
 import pages_home
+import pages_household
 import pages_internals
 import pages_markets
 import pages_news
@@ -394,6 +395,8 @@ with st.container(key="page_body"):
         _safe_render(pages_internals.render)
     elif page == "today":
         _safe_render(pages_today.render, now)
+    elif page == "household":
+        _safe_render(pages_household.render, now)
     elif page == "weather":
         _safe_render(pages_weather.render)
     elif page == "radar":
