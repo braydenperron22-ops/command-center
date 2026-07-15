@@ -3,6 +3,21 @@
 CSS = """
 <style>
 #MainMenu, header, footer { visibility: hidden; }
+
+/* Kills Streamlit's own "stale element" dimming — every element
+   container gets data-stale="true" and fades toward partial opacity for
+   the ~1s a rerun is in flight, then fades back. Confirmed live
+   (data-stale flips true on 8-10 of 14 containers every ~5s, exactly
+   matching st_autorefresh's interval, with a real `transition: opacity
+   1s ease-in 0.5s` driving it down). Harmless on a normal Streamlit app
+   where reruns are rare and user-triggered, but this dashboard reruns
+   on a hard 5s timer forever — that's a visible flicker every single
+   cycle, all day, for a page nobody's even interacting with. Update the
+   data in place instead. */
+[data-stale="true"] {
+    opacity: 1 !important;
+    transition: none !important;
+}
 .block-container {
     padding-top: 1.8rem;
     padding-bottom: 4.6rem;
