@@ -19,6 +19,29 @@ def _format_minutes(total_minutes: float) -> str:
     return f"{minutes} min"
 
 
+def _tracking_overlay_html(overlay: dict | None) -> str:
+    """A line drawn straight from the tracked echo to the user's own
+    marker, plus a label at the echo's position — turns the map from
+    "here's a picture, and separately here's a text badge" into an
+    actual visual tracker. Percentage-based (0-100), same coordinate
+    space the fixed location marker already uses, so it scales
+    correctly with the frame regardless of its rendered size. Dashed
+    and animated only while genuinely approaching (see ec_radar.
+    tracking_overlay) — a cell that's merely nearby but not closing in
+    gets a plain static line, not the same urgency treatment."""
+    if overlay is None:
+        return ""
+    x, y = overlay["x_pct"], overlay["y_pct"]
+    modifier = "approaching" if overlay["approaching"] else "idle"
+    eta_text = f" · {_format_minutes(overlay['eta_minutes'])}" if overlay["eta_minutes"] is not None else ""
+    label_text = f"{overlay['distance_km']:.0f} km{eta_text}"
+    return f"""<svg class="weather-radar-track" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <line x1="{x:.1f}" y1="{y:.1f}" x2="50" y2="50" class="weather-radar-track-line weather-radar-track-line-{modifier}" />
+        </svg>
+        <div class="weather-radar-storm-marker weather-radar-storm-marker-{modifier}" style="left:{x:.1f}%; top:{y:.1f}%;"></div>
+        <div class="weather-radar-storm-label" style="left:{x:.1f}%; top:{y:.1f}%;">{label_text}</div>"""
+
+
 def render() -> None:
     st.markdown('<div class="page-title page-title-radar">Live Radar — Corbeil</div>', unsafe_allow_html=True)
 
@@ -36,13 +59,15 @@ def render() -> None:
         summary = "Nothing approaching right now"
         badge_class = "badge-good"
 
+    overlay_html = _tracking_overlay_html(ec_radar.tracking_overlay(kind))
+
     st.markdown(
         f"""<div class="tile weather-radar-tile weather-radar-tile-large">
             <div class="tile-label compact">LIVE RADAR · {kind.upper()} · CORBEIL</div>
             <div class="weather-radar-frame weather-radar-frame-large">
                 <img class="weather-radar-image" src="{ec_radar.radar_image_url(kind)}" />
                 <div class="weather-radar-marker"></div>
-            </div>
+                {overlay_html}</div>
             <div class="badge {badge_class}">{summary}</div>
         </div>""",
         unsafe_allow_html=True,

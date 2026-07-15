@@ -89,6 +89,17 @@ else:
     phase = "day" if 6 <= now.hour < 20 else "night"
     category = "cloudy"
 
+# Genuinely extreme AQI (real wildfire smoke, not routine haze) takes
+# over the sky's own color instead of whatever the weather condition
+# would normally show — the same on-screen counterpart to the Govee
+# light's SMOKE_COLOR override, but actually visible on the dashboard
+# itself. Only matters while phase isn't "night" (scenery.py's night
+# stops are pure black regardless of category, same as every other
+# weather condition already), which is fine — the screen dims heavily
+# overnight anyway.
+if air_quality and (air_quality.get("us_aqi") or 0) >= AQI_EXTREME:
+    category = "smoke"
+
 # Background/scenery rendering never touches the network (weather is
 # already fetched above), but this whole block still runs before any page
 # content — wrapped so a bug here can't blank the entire dashboard, only
@@ -108,11 +119,11 @@ try:
     bg_blend = min((time.time() - st.session_state.get("bg_phase_changed_at", 0)) / FADE_SECONDS, 1.0)
 
     st.markdown(
-        sky_style(weather["weather_code"] if weather else 0, phase, bg_fade_from, bg_blend),
+        sky_style(category, phase, bg_fade_from, bg_blend),
         unsafe_allow_html=True,
     )
     st.markdown(
-        scene_html(weather["weather_code"] if weather else 0, phase),
+        scene_html(category, phase),
         unsafe_allow_html=True,
     )
 
@@ -283,15 +294,19 @@ if weather:
     # provider as the weather call above (Open-Meteo's Air Quality
     # API), no new vendor/key. Yellow->purple rather than UV's
     # orange->red so the two badges read as distinct signals even at a
-    # glance, not "two UV badges."
+    # glance, not "two UV badges." Trend arrow (see
+    # air_quality_client._record_and_trend) answers the more useful
+    # half of the question most days — not just "how bad," but "is a
+    # plume rolling in or already clearing out."
     aqi = air_quality.get("us_aqi") if air_quality else None
     if aqi is not None and aqi > AQI_SHOW_THRESHOLD:
         intensity = min((aqi - AQI_SHOW_THRESHOLD) / (AQI_EXTREME - AQI_SHOW_THRESHOLD), 1.0)
         aqi_color = _lerp_hex("#FFD60A", "#8B008B", intensity)
         aqi_bg = _rgba(aqi_color, 0.22 + intensity * 0.25)
+        trend_arrow = {"rising": " ↑", "falling": " ↓", "steady": " →"}.get(air_quality.get("trend"), "")
         extras.append(
             f'<span class="weather-extra" style="color:{aqi_color}; '
-            f'background:{aqi_bg}; border-color:{aqi_color};">AQI {aqi:.0f}</span>'
+            f'background:{aqi_bg}; border-color:{aqi_color};">AQI {aqi:.0f}{trend_arrow}</span>'
         )
     # The actual cause behind a bad-AQI day is often a wildfire hundreds
     # of km away, not anything local — this is the one badge answering
@@ -514,7 +529,10 @@ try:
     breaking_elapsed = None
     if current_alert and current_alert.get("important") and elapsed is not None and elapsed < govee_lighting.FLASH_SECONDS:
         breaking_elapsed = elapsed
-    govee_lighting.sync_lights(phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None)
+    aqi_for_lights = air_quality.get("us_aqi") if air_quality else None
+    govee_lighting.sync_lights(
+        phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None, aqi_for_lights
+    )
     govee_lighting.sync_plug(now, weather["first_light"] if weather else None, weather["last_light"] if weather else None)
 except Exception:
     pass

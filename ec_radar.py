@@ -274,3 +274,33 @@ def precip_forecast(kind: str = "rain") -> dict | None:
         "end_minutes": end_minutes,
         "speed_kmh": speed_kmh,
     }
+
+
+def tracking_overlay(kind: str = "rain") -> dict | None:
+    """Where the nearest detected echo actually sits on the frame — as a
+    0-100 position (matching how the fixed location marker is already
+    positioned with top/left percentages), so the Radar page can draw a
+    real line from the threat to the user's own marker instead of
+    leaving the tracking data as a separate text-only badge underneath
+    the map. None if nothing's within NEARBY_RADIUS_KM right now."""
+    layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
+    raw = _fetch_radar_bytes(layer)
+    if not raw:
+        return None
+    try:
+        img = Image.open(io.BytesIO(raw)).convert("RGBA")
+    except Exception:
+        return None
+    nearest = _nearest_echo(img)
+    if nearest is None:
+        return None
+    lat, lon, distance_km = nearest
+    px, py = _latlon_to_pixel(lat, lon)
+    forecast = precip_forecast(kind)
+    return {
+        "x_pct": max(0.0, min(100.0, px / IMAGE_SIZE * 100)),
+        "y_pct": max(0.0, min(100.0, py / IMAGE_SIZE * 100)),
+        "distance_km": distance_km,
+        "approaching": forecast is not None,
+        "eta_minutes": forecast["eta_minutes"] if forecast else None,
+    }

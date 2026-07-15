@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 import streamlit as st
 
 import govee_client
-from config import GOVEE_LIGHT, GOVEE_PLUG
+from config import AQI_EXTREME, GOVEE_LIGHT, GOVEE_PLUG
 
 MIN_CALL_GAP_SECONDS = 10
 # The breaking-news pulse alternates color roughly once per second (capped
@@ -36,6 +36,14 @@ MARKET_FLAT_BAND = 0.1  # +/- percent treated as flat, avoids flicker right at 0
 FLASH_RED = (255, 0, 0)
 FLASH_WHITE = (255, 255, 255)
 FLASH_BRIGHTNESS = 100
+# A physical, ambient signal for real wildfire smoke — the room itself
+# tells you the air's bad without needing to look at the screen.
+# Deliberately not pulsing like the breaking-news flash: this is an
+# ongoing condition, not a sudden event, so it shouldn't compete for
+# attention the same way. Same AQI_EXTREME cutoff the hero-row badge
+# already uses for its own most-intense color, so the light only
+# overrides market color for genuinely bad air, not routine haze.
+SMOKE_COLOR = (255, 140, 20)
 
 # Gentle wake-up/wind-down curve, layered under the sunset/sunrise on/off
 # gate below — the light already powers on as early as real sunrise, well
@@ -176,6 +184,7 @@ def sync_lights(
     breaking_alert_elapsed: float | None,
     now: datetime,
     sunset: datetime | None,
+    aqi: float | None = None,
 ) -> None:
     """Call once per rerun. Light follows the exact same sunset/sunrise
     pattern as the plug — off at night, no exceptions (including no
@@ -189,10 +198,13 @@ def sync_lights(
     (the seconds elapsed since a fresh breaking alert started showing — the
     caller already tracks each alert's shown_at for the toast bar, so this
     reuses that instead of tracking its own copy; None means no active
-    breaking alert). Color always applies instantly; brightness creeps
-    toward its target instead (see _creep_brightness) except during a
-    flash, which needs to be immediately attention-grabbing rather than
-    easing into view."""
+    breaking alert). A genuinely extreme AQI (real wildfire smoke, not
+    routine haze) overrides the market color with SMOKE_COLOR instead —
+    checked after the breaking-news flash (which still wins, being the
+    more urgent/immediate of the two) but before market color. Color
+    always applies instantly; brightness creeps toward its target
+    instead (see _creep_brightness) except during a flash, which needs
+    to be immediately attention-grabbing rather than easing into view."""
     if not st.secrets.get("GOVEE_API_KEY"):
         return
     if phase == "night":
@@ -204,6 +216,10 @@ def sync_lights(
         color = FLASH_RED if int(breaking_alert_elapsed) % 2 == 0 else FLASH_WHITE
         _apply_color(color, min_gap=FLASH_CALL_GAP_SECONDS)
         _apply_brightness_immediate(FLASH_BRIGHTNESS, min_gap=FLASH_CALL_GAP_SECONDS)
+        return
+    if aqi is not None and aqi >= AQI_EXTREME:
+        _apply_color(SMOKE_COLOR)
+        _creep_brightness(_brightness_envelope(now, DAY_BRIGHTNESS, sunset))
         return
     color, brightness = _desired_base_state(market_intraday_pct, now, sunset)
     _apply_color(color)

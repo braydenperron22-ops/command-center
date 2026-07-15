@@ -84,6 +84,13 @@ _SKY_STOPS = {
     ("rain", "day"): ("#1c2734", "#24313e", "#5a7182", "#71889a"),
     ("snow", "day"): ("#2a3c4d", "#33465a", "#82a3b8", "#aecbdb"),
     ("storm", "day"): ("#1f222e", "#262a38", "#565f74", "#6b7690"),
+    # A real wildfire-smoke sky, not a weather condition — muted,
+    # hazy brown-amber rather than any clean blue or orange, on purpose:
+    # actual smoke-choked skies look dirty, not vivid, which is exactly
+    # what distinguishes this from a warm sunset at a glance. Only
+    # engaged when air_quality_client's reading is genuinely extreme
+    # (see app.py), not for routine haze.
+    ("smoke", "day"): ("#3a2a1f", "#5c4029", "#a3652f", "#d99248"),
     # Sunrise: cooler, crisper morning light — dusty pink/lavender rather
     # than sunset's deeper, richer orange/red dusk tones.
     "sunrise": ("#221f3c", "#2a2648", "#f4b876", "#fdd9a0"),
@@ -159,7 +166,7 @@ def _stars(phase: str) -> str:
     )
 
 
-def sky_style(weather_code: int, phase: str, from_phase: str, blend: float) -> str:
+def sky_style(category: str, phase: str, from_phase: str, blend: float) -> str:
     """The sky background — a plain color gradient plus a vignette, both
     as layers on the same persistent background property. No sun/cloud
     shapes: those were tried as separate DOM elements (flashed on every
@@ -176,8 +183,12 @@ def sky_style(weather_code: int, phase: str, from_phase: str, blend: float) -> s
     layer for the same reason the sky gradient itself has always been
     stable: updating a background *property* on an element that already
     exists is just a style change, not a mount/unmount.
+
+    Takes an already-resolved category rather than a raw weather code —
+    the caller may override it (e.g. app.py forcing "smoke" during a
+    genuinely extreme AQI reading), and recomputing from weather_code
+    here would silently discard that.
     """
-    category = condition_category(weather_code)
     stops = _blended_stops(category, from_phase, phase, blend)
     sky = (
         f"linear-gradient(160deg, {stops[0]} 0%, {stops[1]} 45%, "
@@ -198,14 +209,15 @@ def sky_style(weather_code: int, phase: str, from_phase: str, blend: float) -> s
     </style>"""
 
 
-def scene_html(weather_code: int, phase: str) -> str:
+def scene_html(category: str, phase: str) -> str:
     """Static CSS rules + decorative scene HTML: stars and rain/snow
     particles (sun/cloud shapes and the vignette live in `sky_style`
     instead). Depends only on weather category and phase, not elapsed
     time, so it stays byte-identical between reruns except when
-    phase/condition changes.
+    phase/condition changes. Takes an already-resolved category, same
+    reasoning as sky_style — a caller's override (e.g. "smoke") has to
+    actually reach the render, not get silently recomputed away.
     """
-    category = condition_category(weather_code)
     particles = _particles(category)
     stars = _stars(phase)
 

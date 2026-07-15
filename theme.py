@@ -1027,6 +1027,10 @@ html, body, [class*="css"] {
     height: 100%;
     display: block;
 }
+/* Blue for "this is you" — deliberately not red, which is reserved for
+   the tracked-storm marker below (tracking_overlay_html). Two red dots
+   on the same map would make it ambiguous which one is your location
+   and which one is the thing approaching it. */
 .weather-radar-marker {
     position: absolute;
     top: 50%;
@@ -1035,8 +1039,66 @@ html, body, [class*="css"] {
     height: 10px;
     margin: -5px 0 0 -5px;
     border-radius: 50%;
+    background: #64D2FF;
+    box-shadow: 0 0 8px 2px rgba(100,210,255,0.7);
+}
+
+/* Live tracking line + marker for the nearest detected echo (see
+   pages_radar._tracking_overlay_html / ec_radar.tracking_overlay) —
+   drawn straight from the threat to the fixed location marker above,
+   turning the map into an actual visual tracker instead of a picture
+   with a separate text badge underneath it. */
+.weather-radar-track {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+.weather-radar-track-line {
+    stroke-width: 0.6;
+    fill: none;
+}
+.weather-radar-track-line-idle {
+    stroke: rgba(255,255,255,0.45);
+    stroke-dasharray: 2,1.5;
+}
+.weather-radar-track-line-approaching {
+    stroke: #FF453A;
+    stroke-dasharray: 2,1.5;
+    animation: weather-radar-track-flow 1s linear infinite;
+}
+/* Dashes visibly crawl along the line toward the location marker —
+   a static dashed line reads as "connected," a flowing one reads as
+   "moving toward you," which is the actual point being shown. */
+@keyframes weather-radar-track-flow {
+    to { stroke-dashoffset: -3.5; }
+}
+.weather-radar-storm-marker {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    margin: -4px 0 0 -4px;
+    border-radius: 50%;
+}
+.weather-radar-storm-marker-idle {
+    background: rgba(255,255,255,0.7);
+    box-shadow: 0 0 6px 1px rgba(255,255,255,0.4);
+}
+.weather-radar-storm-marker-approaching {
     background: #FF453A;
-    box-shadow: 0 0 8px 2px rgba(255,69,58,0.7);
+    box-shadow: 0 0 8px 2px rgba(255,69,58,0.75);
+}
+.weather-radar-storm-label {
+    position: absolute;
+    transform: translate(10px, -50%);
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #FFFFFF;
+    background: rgba(0,0,0,0.65);
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    white-space: nowrap;
 }
 
 /* Radar page's own version — a live map is the entire point of that
