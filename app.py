@@ -27,6 +27,7 @@ import pages_today
 import pages_weather
 import theme
 import weather_alerts_bar
+import wildfire_client
 from config import (
     AQI_EXTREME,
     AQI_SHOW_THRESHOLD,
@@ -290,6 +291,22 @@ if weather:
         extras.append(
             f'<span class="weather-extra" style="color:{aqi_color}; '
             f'background:{aqi_bg}; border-color:{aqi_color};">AQI {aqi:.0f}</span>'
+        )
+    # The actual cause behind a bad-AQI day is often a wildfire hundreds
+    # of km away, not anything local — this is the one badge answering
+    # "where's the smoke coming from," not just "how bad is it right
+    # now" (see wildfire_client.py). Hard-gated to real wildfire season,
+    # so it's simply absent the rest of the year rather than checking
+    # and finding nothing.
+    wildfire = wildfire_client.nearest_wildfire()
+    if wildfire is not None:
+        intensity = 1 - min(wildfire["distance_km"] / wildfire_client.SHOW_RADIUS_KM, 1.0)
+        wildfire_color = _lerp_hex("#FFB340", "#FF3B30", intensity)
+        wildfire_bg = _rgba(wildfire_color, 0.22 + intensity * 0.25)
+        extras.append(
+            f'<span class="weather-extra" style="color:{wildfire_color}; '
+            f'background:{wildfire_bg}; border-color:{wildfire_color};">'
+            f'Wildfire · {wildfire["distance_km"]:.0f} km</span>'
         )
     extras_html = f'<div class="weather-extras">{"".join(extras)}</div>' if extras else ""
 
