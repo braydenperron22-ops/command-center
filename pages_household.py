@@ -1,8 +1,9 @@
-"""Household page: gas price, garbage/recycling day, and nearby
-incident news — split out from the Today page, which was overrunning
-the screen once garbage day joined agenda + commute + gas price there.
-This page groups the "stuff around home/the commute worth knowing"
-cluster instead.
+"""Household page: gas price and nearby incident news — split out from
+the Today page, which was overrunning the screen once this joined
+agenda + commute there. Garbage/recycling day used to live here too;
+moved to a hero-row badge (see app.py) so it reads as a same-day alert
+alongside rain/AQI/UV instead of a page you'd only see on its own
+5-minute rotation slot.
 """
 
 import time
@@ -12,7 +13,6 @@ import streamlit as st
 
 import fuel_price_client
 import local_news_client
-import waste_schedule
 
 
 def _render_fuel_price(now: datetime) -> None:
@@ -40,30 +40,6 @@ def _render_fuel_price(now: datetime) -> None:
             <div class="tile-value">{status['price']:.1f}¢/L</div>
             <div class="tile-prev">vs {status['baseline']:.1f}¢ 12wk avg · as of {as_of} · {update_text}</div>
             <div class="badge {badge_class}">{badge_text}</div>
-        </div>""",
-        unsafe_allow_html=True,
-    )
-
-
-def _render_garbage(now: datetime) -> None:
-    """Next bin day — garbage every Monday, recycling the 2nd/4th
-    Wednesday of the month (see waste_schedule.py). No API here: this
-    is a fixed schedule, and the person who gave it to me said
-    "typically", so a stat holiday shifting a real pickup by a day
-    isn't accounted for."""
-    pickup = waste_schedule.next_pickup(now.date())
-    if pickup["days_until"] == 0:
-        when = "Today"
-    elif pickup["days_until"] == 1:
-        when = "Tomorrow"
-    else:
-        when = f"{pickup['date'].strftime('%a %b')} {pickup['date'].day}"
-    badge_class = "badge-bad" if pickup["days_until"] == 0 else "badge-good"
-    st.markdown(
-        f"""<div class="tile compact">
-            <div class="tile-label compact">{pickup['kind'].upper()} DAY</div>
-            <div class="tile-value">{when}</div>
-            <div class="badge {badge_class}">{pickup['kind']}</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -116,7 +92,5 @@ def _render_local_news() -> None:
 def render(now: datetime) -> None:
     st.markdown('<div class="page-title page-title-household">Household</div>', unsafe_allow_html=True)
     _render_fuel_price(now)
-    st.markdown('<div style="height: 0.5rem;"></div>', unsafe_allow_html=True)
-    _render_garbage(now)
     st.markdown('<div style="height: 0.5rem;"></div>', unsafe_allow_html=True)
     _render_local_news()

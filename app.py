@@ -27,6 +27,7 @@ import pages_sports
 import pages_today
 import pages_weather
 import theme
+import waste_schedule
 import weather_alerts_bar
 import wildfire_client
 from config import (
@@ -366,6 +367,21 @@ if weather:
             f'<span class="weather-extra" style="color:{wildfire_color}; '
             f'background:{wildfire_bg}; border-color:{wildfire_color};">'
             f'Wildfire · {wildfire["distance_km"]:.0f} km</span>'
+        )
+    # Garbage/recycling day — used to be its own always-visible tile on
+    # the Household page; moved here and gated to "today or tomorrow"
+    # (see waste_schedule.next_pickup) so it reads like every other hero
+    # badge, something worth a glance right now, not a permanent daily
+    # fixture. Tomorrow is included, not just today, since bins actually
+    # go out the night before pickup — a same-day-only badge would miss
+    # the one moment this is most actionable.
+    pickup = waste_schedule.next_pickup(now.date())
+    if pickup["days_until"] <= 1:
+        when = "today" if pickup["days_until"] == 0 else "tomorrow"
+        extras.append(
+            f'<span class="weather-extra" style="color:#A2845E; '
+            f'background:rgba(162,132,94,0.22); border-color:#A2845E;">'
+            f'{pickup["kind"]} {when}</span>'
         )
     extras_html = f'<div class="weather-extras">{"".join(extras)}</div>' if extras else ""
 
