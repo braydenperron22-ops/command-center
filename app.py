@@ -264,66 +264,62 @@ if weather:
         hilo_html = f' · <span class="weather-hilo">H:{high:.0f}° L:{low:.0f}°</span>'
 
     extras = []
-    precip_at = weather.get("rain_at")
-    if precip_at is not None:
-        remaining = (precip_at - now).total_seconds()
-        if remaining > 0:
-            # Ticks down every second between weather refreshes since
-            # precip_at is a fixed target timestamp, not a relative
-            # "hours from now" that would otherwise sit frozen (or go
-            # stale) for the full 15-minute cache window. Background
-            # darkens as it gets closer — pale and airy when it's hours
-            # off, heavy and imminent right before it hits — but the
-            # text stays a fixed bright color rather than darkening
-            # along with it: that used to mean the badge nearly
-            # vanished (dark-on-dark) right when it mattered most.
-            # Snow gets its own icier palette rather than reusing rain's
-            # blue for everything — this location gets real winter
-            # weather (see weather_client._next_precip_at), and the
-            # color is a second, glance-only signal alongside the word
-            # itself for which one it actually is.
-            is_snow = weather.get("precip_kind") == "snow"
-            label = "Snow" if is_snow else "Rain"
-            fill_start = "#EAF6FF" if is_snow else "#64D2FF"
-            fill_end = "#243449" if is_snow else "#0A2472"
-            closeness = 1 - min(remaining / RAIN_LOOKAHEAD_SECONDS, 1.0)
-            precip_fill = _lerp_hex(fill_start, fill_end, closeness)
-            precip_bg = _rgba(precip_fill, 0.22 + closeness * 0.5)
-            countdown = _format_countdown(remaining)
-            # The chance rides along rather than a bare "Rain in Xh" —
-            # this is EC's own forecast probability, not a promise, and
-            # EC's own number can (and does) get revised before the
-            # hour it named actually arrives. Showing it honestly beats
-            # a flat statement that reads as certain when it isn't.
-            chance = weather.get("precip_chance")
-            chance_html = f' · {chance}%' if chance is not None else ""
-            extras.append(
-                f'<span class="weather-extra" style="color:{fill_start}; '
-                f'background:{precip_bg}; border-color:{precip_fill};">{label} in {countdown}{chance_html}</span>'
+    # One badge, two states — "Rain in ___" while it's inbound, "Clears
+    # in ___" once it's here — instead of the two separate, overlapping
+    # badges this used to be (an EC forecast-percentage one and a
+    # radar-tracking one, which could both be on screen at once). The
+    # live radar signal (ec_radar.precip_status) wins whenever it has
+    # one — it's real detected precipitation, tracked frame to frame,
+    # not a probability — with EC's forecast-percentage countdown as
+    # the fallback for when radar hasn't caught anything yet (still
+    # further out than radar's own 25km "nearby" cutoff, or further out
+    # in time than its 6-min cadence has caught up to).
+    is_snow = category == "snow"
+    precip_label = "Snow" if is_snow else "Rain"
+    status = ec_radar.precip_status("snow" if is_snow else "rain")
+    if status is not None:
+        if status["state"] == "arrived":
+            text = (
+                f"Clears in {_format_countdown(status['minutes'] * 60)}"
+                if status["minutes"] is not None else f"{precip_label} now"
             )
-    # A second, independent signal alongside the forecast-percentage
-    # badge above: real precipitation actually detected on EC's own
-    # live radar, tracked frame to frame (see ec_radar.precip_forecast)
-    # to tell whether it's actually moving toward Corbeil rather than
-    # just sitting nearby or drifting off — only shows while it's
-    # genuinely approaching, with an ETA and, when the far edge of the
-    # echo is visible, a rough clear-by time too. This can catch a real
-    # incoming cell EC's area-wide forecast percentage doesn't — the
-    # exact gap that had this dashboard showing nothing while a phone's
-    # radar-based nowcast (Apple/Dark Sky) already knew better.
-    approaching = ec_radar.precip_forecast("snow" if category == "snow" else "rain")
-    if approaching is not None:
-        approach_label = "Snow" if category == "snow" else "Rain"
-        eta_text = _format_countdown(approaching["eta_minutes"] * 60)
-        end_text = (
-            f" · clears in {_format_countdown(approaching['end_minutes'] * 60)}"
-            if approaching["end_minutes"] is not None else ""
-        )
+        else:
+            text = f"{precip_label} in {_format_countdown(status['minutes'] * 60)}"
         extras.append(
             f'<span class="weather-extra" style="color:#64D2FF; '
-            f'background:rgba(100,210,255,0.22); border-color:#64D2FF;">'
-            f'{approach_label} approaching · {eta_text}{end_text}</span>'
+            f'background:rgba(100,210,255,0.22); border-color:#64D2FF;">{text}</span>'
         )
+    else:
+        precip_at = weather.get("rain_at")
+        if precip_at is not None:
+            remaining = (precip_at - now).total_seconds()
+            if remaining > 0:
+                # Ticks down every second between weather refreshes since
+                # precip_at is a fixed target timestamp, not a relative
+                # "hours from now" that would otherwise sit frozen (or go
+                # stale) for the full 15-minute cache window. Background
+                # darkens as it gets closer — pale and airy when it's hours
+                # off, heavy and imminent right before it hits — but the
+                # text stays a fixed bright color rather than darkening
+                # along with it: that used to mean the badge nearly
+                # vanished (dark-on-dark) right when it mattered most.
+                # Snow gets its own icier palette rather than reusing rain's
+                # blue for everything — this location gets real winter
+                # weather (see weather_client._next_precip_at), and the
+                # color is a second, glance-only signal alongside the word
+                # itself for which one it actually is.
+                fc_is_snow = weather.get("precip_kind") == "snow"
+                fc_label = "Snow" if fc_is_snow else "Rain"
+                fill_start = "#EAF6FF" if fc_is_snow else "#64D2FF"
+                fill_end = "#243449" if fc_is_snow else "#0A2472"
+                closeness = 1 - min(remaining / RAIN_LOOKAHEAD_SECONDS, 1.0)
+                precip_fill = _lerp_hex(fill_start, fill_end, closeness)
+                precip_bg = _rgba(precip_fill, 0.22 + closeness * 0.5)
+                countdown = _format_countdown(remaining)
+                extras.append(
+                    f'<span class="weather-extra" style="color:{fill_start}; '
+                    f'background:{precip_bg}; border-color:{precip_fill};">{fc_label} in {countdown}</span>'
+                )
     if weather["uv_index"] is not None and weather["uv_index"] > UV_HIGH_THRESHOLD:
         uv = weather["uv_index"]
         intensity = min((uv - UV_HIGH_THRESHOLD) / (UV_EXTREME - UV_HIGH_THRESHOLD), 1.0)

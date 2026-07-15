@@ -26,15 +26,15 @@ def _tracking_overlay_html(overlay: dict | None) -> str:
     actual visual tracker. Percentage-based (0-100), same coordinate
     space the fixed location marker already uses, so it scales
     correctly with the frame regardless of its rendered size. Dashed
-    and animated only while genuinely approaching (see ec_radar.
-    tracking_overlay) — a cell that's merely nearby but not closing in
-    gets a plain static line, not the same urgency treatment."""
+    and animated while there's an active approaching/arrived event (see
+    ec_radar.tracking_overlay) — a cell that's merely nearby but not
+    closing in gets a plain static line, not the same urgency treatment."""
     if overlay is None:
         return ""
     x, y = overlay["x_pct"], overlay["y_pct"]
-    modifier = "approaching" if overlay["approaching"] else "idle"
-    eta_text = f" · {_format_minutes(overlay['eta_minutes'])}" if overlay["eta_minutes"] is not None else ""
-    label_text = f"{overlay['distance_km']:.0f} km{eta_text}"
+    modifier = "approaching" if overlay["active"] else "idle"
+    minutes_text = f" · {_format_minutes(overlay['minutes'])}" if overlay["minutes"] is not None else ""
+    label_text = f"{overlay['distance_km']:.0f} km{minutes_text}"
     return f"""<svg class="weather-radar-track" viewBox="0 0 100 100" preserveAspectRatio="none">
             <line x1="{x:.1f}" y1="{y:.1f}" x2="50" y2="50" class="weather-radar-track-line weather-radar-track-line-{modifier}" />
         </svg>
@@ -49,11 +49,12 @@ def render() -> None:
     kind = "snow" if current and current.get("category") == "snow" else "rain"
     label = "Snow" if kind == "snow" else "Rain"
 
-    forecast = ec_radar.precip_forecast(kind)
-    if forecast is not None:
-        summary = f"{label} approaching · arriving in {_format_minutes(forecast['eta_minutes'])}"
-        if forecast["end_minutes"] is not None:
-            summary += f" · clearing in {_format_minutes(forecast['end_minutes'])}"
+    status = ec_radar.precip_status(kind)
+    if status is not None and status["state"] == "arrived":
+        summary = f"Clears in {_format_minutes(status['minutes'])}" if status["minutes"] is not None else f"{label} now"
+        badge_class = "badge-bad"
+    elif status is not None:
+        summary = f"{label} in {_format_minutes(status['minutes'])}"
         badge_class = "badge-bad"
     else:
         summary = "Nothing approaching right now"

@@ -105,7 +105,13 @@ def render(weather: dict | None) -> None:
         # first. A "+N more" suffix at least surfaces that there's more
         # to know.
         alert = max(alerts, key=_selection_score)
-        text = f"{alert['title']}" + (f" — {alert['summary']}" if alert["summary"] else "")
+        # Used to append " — {summary}" too, but EC's summary field is
+        # just "Issued: <timestamp>" (confirmed live) — roughly doubled
+        # the banner's height for a kiosk that already refreshes
+        # automatically and has no use for a manual staleness check.
+        # Title alone (hazard + region) is the part actually worth
+        # reading from across the room.
+        text = alert["title"]
         if len(alerts) > 1:
             text += f" (+{len(alerts) - 1} more alert{'s' if len(alerts) > 2 else ''})"
         label = "Environment Canada"

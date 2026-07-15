@@ -237,16 +237,34 @@ def _record_and_trend(kind: str, now: datetime, nearest_km: float | None) -> dic
     return {"speed_kmh": speed_kmh, "trend": "approaching" if change_km > 0 else "receding"}
 
 
-def precip_forecast(kind: str = "rain") -> dict | None:
-    """None if nothing's detected within NEARBY_RADIUS_KM right now, or
-    if it's detected but not (yet, confidently) approaching — "only show
-    when it's coming in" is the whole point of this over the simpler
-    nearby-or-not signal. Otherwise: {"distance_km", "eta_minutes",
-    "end_minutes" (None if the far edge couldn't be determined),
-    "speed_kmh"}. Speed/direction come from comparing the nearest
-    detected echo's distance across HISTORY_WINDOW_MINUTES of real
-    radar refreshes — a genuinely new, real trend, not a guess from a
-    single frame."""
+# Within this distance, the nearest echo counts as "here" rather than
+# "approaching" — the badge switches from a countdown-to-arrival to a
+# countdown-to-clearing at this point (see precip_status below).
+ARRIVED_RADIUS_KM = 5
+
+
+def precip_status(kind: str = "rain") -> dict | None:
+    """The one signal behind the hero badge and the Radar page's own
+    badge — collapsed to two states on purpose (see session request:
+    "rain in ___" while it's inbound, "clears in ___" once it's here),
+    rather than the previous separate distance/eta/end-time fields a
+    caller had to assemble into text itself.
+
+    {"state": "approaching", "minutes": int} — nearest echo is outside
+    ARRIVED_RADIUS_KM and genuinely closing in; minutes is the ETA.
+
+    {"state": "arrived", "minutes": int|None} — nearest echo is within
+    ARRIVED_RADIUS_KM (it's here); minutes is when it's expected to
+    clear, from the same tracked speed used for the ETA above, probing
+    outward for the echo's far edge — None if that can't be pinned down
+    yet (echo runs off the image edge, or a speed estimate isn't
+    available yet).
+
+    None — nothing detected within NEARBY_RADIUS_KM, or something's
+    nearby but not moving in (sitting still, or drifting away): "only
+    say something when it's happening or about to" is the point of this
+    over a flat nearby-or-not signal.
+    """
     layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
     raw = _fetch_radar_bytes(layer)
     now = datetime.now()
@@ -259,21 +277,23 @@ def precip_forecast(kind: str = "rain") -> dict | None:
 
     nearest = _nearest_echo(img)
     trend = _record_and_trend(kind, now, nearest[2] if nearest else None)
-    if nearest is None or trend["trend"] != "approaching":
+    if nearest is None:
         return None
-
     lat, lon, distance_km = nearest
-    speed_kmh = trend["speed_kmh"]
-    eta_minutes = (distance_km / speed_kmh) * 60
-    bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)
-    far_km = _far_edge_km(img, bearing_deg_, distance_km)
-    end_minutes = (far_km / speed_kmh) * 60 if far_km is not None else None
-    return {
-        "distance_km": distance_km,
-        "eta_minutes": eta_minutes,
-        "end_minutes": end_minutes,
-        "speed_kmh": speed_kmh,
-    }
+
+    if distance_km <= ARRIVED_RADIUS_KM:
+        minutes = None
+        if trend["speed_kmh"]:
+            bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)
+            far_km = _far_edge_km(img, bearing_deg_, distance_km)
+            if far_km is not None:
+                minutes = round((far_km / trend["speed_kmh"]) * 60)
+        return {"state": "arrived", "minutes": minutes}
+
+    if trend["trend"] != "approaching":
+        return None
+    eta_minutes = (distance_km / trend["speed_kmh"]) * 60
+    return {"state": "approaching", "minutes": round(eta_minutes)}
 
 
 def tracking_overlay(kind: str = "rain") -> dict | None:
@@ -296,11 +316,11 @@ def tracking_overlay(kind: str = "rain") -> dict | None:
         return None
     lat, lon, distance_km = nearest
     px, py = _latlon_to_pixel(lat, lon)
-    forecast = precip_forecast(kind)
+    status = precip_status(kind)
     return {
         "x_pct": max(0.0, min(100.0, px / IMAGE_SIZE * 100)),
         "y_pct": max(0.0, min(100.0, py / IMAGE_SIZE * 100)),
         "distance_km": distance_km,
-        "approaching": forecast is not None,
-        "eta_minutes": forecast["eta_minutes"] if forecast else None,
+        "active": status is not None,
+        "minutes": status["minutes"] if status else None,
     }

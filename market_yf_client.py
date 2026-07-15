@@ -5,6 +5,7 @@ indices directly during market hours, live futures outside those hours,
 and crypto on weekends — no key, no rate-limit tier to design around.
 """
 
+import math
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -90,7 +91,13 @@ def _fetch_history(symbol: str) -> pd.DataFrame | None:
 
 
 def _pct_change(latest: float, base: float | None) -> float | None:
-    if not base:
+    # `if not base` alone doesn't catch NaN (bool(nan) is True in Python,
+    # since nan != 0) — confirmed live pre-market: yfinance's
+    # still-forming "today" daily bar often has a NaN Open until the
+    # session actually gets going, which silently produced "nan%" on
+    # the Canada tile and most of the new sector-rotation list (see
+    # pages_internals.py) before this fix.
+    if not base or math.isnan(base) or math.isnan(latest):
         return None
     return (latest - base) / base * 100
 

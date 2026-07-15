@@ -94,6 +94,14 @@ RADAR_SNOW_LINES = [
     "snow's closing in on the radar, roughly {eta} minutes out",
     "heads up, snow looks to be moving in, ETA around {eta} minutes",
 ]
+ARRIVED_RAIN_LINES = [
+    "rain's here now, radar's got it clearing in about {eta} min",
+    "it's raining now, should clear up in roughly {eta} minutes",
+]
+ARRIVED_SNOW_LINES = [
+    "snow's here now, radar's got it clearing in about {eta} min",
+    "it's snowing now, should clear up in roughly {eta} minutes",
+]
 FORECAST_RAIN_LINES = [
     "rain's in the forecast today, {chance}% chance around {time} — grab an umbrella on your way out",
     "looks like rain later, {chance}% chance near {time}",
@@ -222,10 +230,14 @@ def _weather_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
 
 
 def _precip_clause(now: datetime, weather: dict, category: str) -> tuple[int, str] | None:
-    approach = ec_radar.precip_forecast("snow" if category == "snow" else "rain")
-    if approach is not None:
-        lines = RADAR_SNOW_LINES if category == "snow" else RADAR_RAIN_LINES
-        return 8, _pick(lines, now, "precip").format(eta=round(approach["eta_minutes"]))
+    status = ec_radar.precip_status("snow" if category == "snow" else "rain")
+    if status is not None and status["minutes"] is not None:
+        is_snow = category == "snow"
+        if status["state"] == "arrived":
+            lines = ARRIVED_SNOW_LINES if is_snow else ARRIVED_RAIN_LINES
+        else:
+            lines = RADAR_SNOW_LINES if is_snow else RADAR_RAIN_LINES
+        return 8, _pick(lines, now, "precip").format(eta=status["minutes"])
 
     rain_at = weather.get("rain_at")
     chance = weather.get("precip_chance")
