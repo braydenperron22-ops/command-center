@@ -1204,13 +1204,37 @@ html, body, [class*="css"] {
    headline + an active EC alert + every hero badge + a long
    morning-briefing sentence, all at once, is the genuine worst case)
    without JS-measuring the actual remaining space, which isn't
-   practical for a static injected stylesheet. Settled on 28vh as a
-   deliberately conservative value with real margin built in, rather
-   than one tuned to exactly clear whatever happened to be on screen
-   during one test run. */
+   practical for a static injected stylesheet. 28vh (as a square) was
+   confirmed live to leave under 10px of margin above the bottom ticker
+   on a 768px-tall screen (a real kiosk resolution, not a hypothetical)
+   even in the calm case — no headroom at all to size up further there
+   without risking real overlap. A taller screen (1024px+, the other
+   real resolution in play here) has a lot more slack, so this stays
+   height-tiered: unchanged height budget on short screens, meaningfully
+   bigger once there's actually room for it.
+
+   No longer square, though — was a 1:1 inset sitting in the middle of
+   this tile with empty black space on either side, since the tile
+   itself is much wider than the old height-bounded square ever was.
+   ec_radar.py now fetches a genuinely wider image (2.5:1, more real
+   horizontal coverage, not a stretched/cropped version of the old
+   square one) to match, so this aspect-ratio has to track that same
+   2.5 exactly or the image and the box would disagree. The vh
+   multiplier below is the same height budget as before, just expressed
+   as a width via the new ratio (e.g. 28vh height * 2.5 = 70vh width) —
+   same technique as the square version: constrain width directly via
+   min(), let aspect-ratio derive a matching height from that, rather
+   than fighting a competing max-height (confirmed earlier that combo
+   stretches instead of shrinking proportionally). */
 .weather-radar-frame-large {
-    width: min(100%, 28vh);
+    aspect-ratio: 2.5 / 1;
+    width: min(100%, 70vh);
     max-width: 100%;
+}
+@media (min-height: 850px) {
+    .weather-radar-frame-large {
+        width: min(100%, 105vh);
+    }
 }
 .weather-radar-tile-large {
     align-items: center;

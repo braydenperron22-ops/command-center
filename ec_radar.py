@@ -37,19 +37,35 @@ SNOW_LAYER = "RADAR_1KM_RSNO"
 # come from) with a fixed margin either side — a symmetric bbox means
 # that point always lands exactly at the image's center (50%/50%), so
 # the location marker overlay never needs per-request pixel math.
-BBOX_MARGIN_DEGREES = 1.5
-IMAGE_SIZE = 640
+#
+# Wide rather than square — matches the Radar page's own wide tile
+# instead of a square inset sitting in the middle of it with empty
+# space on either side. Vertical extent (BBOX_MARGIN_DEGREES_LAT,
+# IMAGE_HEIGHT) is exactly what it always was, so north/south detection
+# range and resolution are unchanged; only the horizontal extent grew.
+# BBOX_MARGIN_DEGREES_LON is scaled by the same IMAGE_ASPECT_RATIO as
+# IMAGE_WIDTH, which keeps degrees-per-pixel identical along both axes
+# (confirmed: (2*LON_MARGIN)/WIDTH reduces to the same ratio as
+# (2*LAT_MARGIN)/HEIGHT) — a circular echo still reads as circular on
+# screen, not stretched, and every distance/bearing calculation below
+# can keep using one shared _DEG_PER_PX for both axes.
+IMAGE_ASPECT_RATIO = 2.5  # width : height
+IMAGE_HEIGHT = 640
+IMAGE_WIDTH = round(IMAGE_HEIGHT * IMAGE_ASPECT_RATIO)
+BBOX_MARGIN_DEGREES_LAT = 1.5
+BBOX_MARGIN_DEGREES_LON = BBOX_MARGIN_DEGREES_LAT * IMAGE_ASPECT_RATIO
+_DEG_PER_PX = (2 * BBOX_MARGIN_DEGREES_LAT) / IMAGE_HEIGHT
 REFRESH_SECONDS = 6 * 60  # matches the radar composite's own update cadence
 
 # How far out counts as "nearby" for the hero-row badge — roughly what
 # a cell moving at typical storm speeds (20-30 km/h, EC's own forecasts
-# for today) could cover within the hour, not the full ~85km the image
-# itself spans.
+# for today) could cover within the hour, not the ~166km (vertical) by
+# ~288km (horizontal) the wide image itself now spans.
 NEARBY_RADIUS_KM = 25
 # How far past the near edge to probe for where the echo ends, to
-# estimate a clearing time — well within the image's own ~110km
-# longitudinal half-span at this latitude, so a real far edge is
-# almost always still inside the frame if one exists.
+# estimate a clearing time — well within the image's own ~166km
+# half-span in every direction (the tighter of the two axes), so a real
+# far edge is almost always still inside the frame if one exists.
 FAR_EDGE_MAX_KM = 100
 FAR_EDGE_STEP_KM = 2
 # WMS renders true-transparent background as alpha 0; real echo pixels
@@ -78,8 +94,8 @@ _history: dict[str, list[tuple[datetime, float]]] = {"rain": [], "snow": []}
 
 def _bbox() -> str:
     return (
-        f"{WEATHER_LAT - BBOX_MARGIN_DEGREES},{WEATHER_LON - BBOX_MARGIN_DEGREES},"
-        f"{WEATHER_LAT + BBOX_MARGIN_DEGREES},{WEATHER_LON + BBOX_MARGIN_DEGREES}"
+        f"{WEATHER_LAT - BBOX_MARGIN_DEGREES_LAT},{WEATHER_LON - BBOX_MARGIN_DEGREES_LON},"
+        f"{WEATHER_LAT + BBOX_MARGIN_DEGREES_LAT},{WEATHER_LON + BBOX_MARGIN_DEGREES_LON}"
     )
 
 
@@ -92,7 +108,7 @@ def radar_image_url(kind: str = "rain") -> str:
     cache_bust = int(time.time() // REFRESH_SECONDS)
     return (
         f"{WMS_URL}?service=WMS&version=1.3.0&request=GetMap&layers={layer}"
-        f"&format=image/png&transparent=true&width={IMAGE_SIZE}&height={IMAGE_SIZE}"
+        f"&format=image/png&transparent=true&width={IMAGE_WIDTH}&height={IMAGE_HEIGHT}"
         f"&crs=EPSG:4326&bbox={_bbox()}&_t={cache_bust}"
     )
 
@@ -140,10 +156,9 @@ def _destination(lat: float, lon: float, bearing_deg_: float, distance_km: float
 
 
 def _latlon_to_pixel(lat: float, lon: float) -> tuple[int, int]:
-    deg_per_px = (2 * BBOX_MARGIN_DEGREES) / IMAGE_SIZE
-    dx = round((lon - WEATHER_LON) / deg_per_px)
-    dy = round((WEATHER_LAT - lat) / deg_per_px)  # image y increases downward, latitude increases upward
-    return IMAGE_SIZE // 2 + dx, IMAGE_SIZE // 2 + dy
+    dx = round((lon - WEATHER_LON) / _DEG_PER_PX)
+    dy = round((WEATHER_LAT - lat) / _DEG_PER_PX)  # image y increases downward, latitude increases upward
+    return IMAGE_WIDTH // 2 + dx, IMAGE_HEIGHT // 2 + dy
 
 
 @st.cache_data(ttl=REFRESH_SECONDS, show_spinner=False)
@@ -154,7 +169,7 @@ def _fetch_radar_bytes_raw(layer: str, cache_bust: int) -> bytes:
         params={
             "service": "WMS", "version": "1.3.0", "request": "GetMap", "layers": layer,
             "format": "image/png", "transparent": "true",
-            "width": IMAGE_SIZE, "height": IMAGE_SIZE, "crs": "EPSG:4326", "bbox": _bbox(),
+            "width": IMAGE_WIDTH, "height": IMAGE_HEIGHT, "crs": "EPSG:4326", "bbox": _bbox(),
         },
         timeout=10,
     )
@@ -177,7 +192,7 @@ def _pixel_has_echo(img: Image.Image, px: int, py: int) -> bool | None:
     — distinct from False (checked and empty), since "we can't see that
     far" and "we looked and there's nothing there" need different
     handling by the far-edge search below."""
-    if px < 0 or px >= IMAGE_SIZE or py < 0 or py >= IMAGE_SIZE:
+    if px < 0 or px >= IMAGE_WIDTH or py < 0 or py >= IMAGE_HEIGHT:
         return None
     return img.getpixel((px, py))[3] > ALPHA_THRESHOLD
 
@@ -185,19 +200,18 @@ def _pixel_has_echo(img: Image.Image, px: int, py: int) -> bool | None:
 def _nearest_echo(img: Image.Image) -> tuple[float, float, float] | None:
     """(lat, lon, distance_km) of the closest detected echo pixel to
     WEATHER_LAT/WEATHER_LON, within NEARBY_RADIUS_KM — or None."""
-    cx, cy = IMAGE_SIZE // 2, IMAGE_SIZE // 2
-    deg_per_px = (2 * BBOX_MARGIN_DEGREES) / IMAGE_SIZE
+    cx, cy = IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2
     best = None
     for dy in range(-_SEARCH_PX, _SEARCH_PX + 1, _SAMPLE_STRIDE):
         py = cy + dy
-        if py < 0 or py >= IMAGE_SIZE:
+        if py < 0 or py >= IMAGE_HEIGHT:
             continue
         for dx in range(-_SEARCH_PX, _SEARCH_PX + 1, _SAMPLE_STRIDE):
             px = cx + dx
-            if px < 0 or px >= IMAGE_SIZE or img.getpixel((px, py))[3] <= ALPHA_THRESHOLD:
+            if px < 0 or px >= IMAGE_WIDTH or img.getpixel((px, py))[3] <= ALPHA_THRESHOLD:
                 continue
-            lat = WEATHER_LAT - dy * deg_per_px
-            lon = WEATHER_LON + dx * deg_per_px
+            lat = WEATHER_LAT - dy * _DEG_PER_PX
+            lon = WEATHER_LON + dx * _DEG_PER_PX
             dist = _distance_km(WEATHER_LAT, WEATHER_LON, lat, lon)
             if dist <= NEARBY_RADIUS_KM and (best is None or dist < best[2]):
                 best = (lat, lon, dist)
@@ -343,8 +357,8 @@ def tracking_overlay(kind: str = "rain") -> dict | None:
     px, py = _latlon_to_pixel(lat, lon)
     status = precip_status(kind)
     return {
-        "x_pct": max(0.0, min(100.0, px / IMAGE_SIZE * 100)),
-        "y_pct": max(0.0, min(100.0, py / IMAGE_SIZE * 100)),
+        "x_pct": max(0.0, min(100.0, px / IMAGE_WIDTH * 100)),
+        "y_pct": max(0.0, min(100.0, py / IMAGE_HEIGHT * 100)),
         "distance_km": distance_km,
         "active": status is not None,
         "minutes": status["minutes"] if status else None,
@@ -360,10 +374,10 @@ def nearby_city_markers() -> list[dict]:
     local pixel math, no fetch — any city that happens to fall outside
     the image's own bbox is silently dropped rather than shown clipped
     at the edge, so RADAR_NEARBY_CITIES doesn't need to stay hand-tuned
-    to BBOX_MARGIN_DEGREES."""
+    to BBOX_MARGIN_DEGREES_LAT/LON."""
     markers = []
     for city in RADAR_NEARBY_CITIES:
         px, py = _latlon_to_pixel(city["lat"], city["lon"])
-        if 0 <= px < IMAGE_SIZE and 0 <= py < IMAGE_SIZE:
-            markers.append({"label": city["label"], "x_pct": px / IMAGE_SIZE * 100, "y_pct": py / IMAGE_SIZE * 100})
+        if 0 <= px < IMAGE_WIDTH and 0 <= py < IMAGE_HEIGHT:
+            markers.append({"label": city["label"], "x_pct": px / IMAGE_WIDTH * 100, "y_pct": py / IMAGE_HEIGHT * 100})
     return markers

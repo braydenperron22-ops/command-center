@@ -12,9 +12,11 @@ TIMEZONE = "America/Toronto"
 # commute feature uses) and hardcoded here since these are fixed
 # locations — no reason to spend a live geocoding call rendering the
 # radar page every few minutes for coordinates that never change.
-# Sudbury was checked too but falls outside the radar image's own
-# ~115km longitudinal half-span at this latitude, so it's left out
-# rather than included as a marker that would never actually show up.
+# Sudbury was excluded at first for falling outside the radar image's
+# old square ~115km longitudinal half-span — the frame is wider now
+# (see ec_radar.IMAGE_ASPECT_RATIO), and Sudbury genuinely fits inside
+# it (confirmed live, pixel (438, 271) well within the new 1600x640
+# frame), so it's back in.
 # Callander was checked too but sits only ~7km from North Bay — close
 # enough that their labels overlapped illegibly on a narrow (mobile)
 # frame, so it's left out as redundant with North Bay at this zoom.
@@ -23,6 +25,7 @@ RADAR_NEARBY_CITIES = [
     {"label": "Powassan", "lat": 46.082132, "lon": -79.359081},
     {"label": "Sturgeon Falls", "lat": 46.3660968, "lon": -79.9309088},
     {"label": "Mattawa", "lat": 46.3132636, "lon": -78.709835},
+    {"label": "Sudbury", "lat": 46.489459, "lon": -80.989206},
 ]
 
 UV_HIGH_THRESHOLD = 5
