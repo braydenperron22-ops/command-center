@@ -34,6 +34,20 @@ def _game_html(status: dict) -> str:
         <div class="tile-prev">{result}</div>"""
 
 
+def _wildcard_html(status: dict) -> str:
+    """Division rank alone reads as "hopeless" for a team buried in a
+    tough division even when it's genuinely alive for a Wild Card spot
+    (see sports_client._fetch_mlb_wildcard) — MLB only, NHL's status
+    dict has no "wildcard" key at all. Omitted entirely once games_back
+    is "-" (division leaders don't need a Wild Card, and showing "- GB"
+    for a team already comfortably in a real playoff spot would read as
+    a broken stat, not a reassuring one)."""
+    wildcard = status.get("wildcard")
+    if not wildcard or wildcard.get("games_back") in (None, "-"):
+        return ""
+    return f'<div class="tile-prev">Wild Card: {wildcard["games_back"]} GB · rank {wildcard["rank"]}</div>'
+
+
 def _standings_table(status: dict) -> str:
     rows = "".join(
         f"""<div class="sports-standings-row{' sports-standings-row-team' if r['is_team'] else ''}">
@@ -79,6 +93,7 @@ def render() -> None:
                 f"""<div class="tile">
                     <div class="tile-label">{label} · {status['division_name'].upper()}</div>
                     {_game_html(status)}
+                    {_wildcard_html(status)}
                     {_standings_table(status)}</div>""",
                 unsafe_allow_html=True,
             )

@@ -40,6 +40,7 @@ STANDINGS_CACHE_TTL_SECONDS = 30 * 60  # standings only move once a game finishe
 
 _last_good_mlb_games: list[dict] | None = None
 _last_good_mlb_standings: list[dict] | None = None
+_last_good_mlb_wildcard: dict | None = None
 _last_good_nhl_games: list[dict] | None = None
 _last_good_nhl_standings: list[dict] | None = None
 
@@ -105,6 +106,35 @@ def _fetch_mlb_standings() -> list[dict]:
     return result or (_last_good_mlb_standings or [])
 
 
+# Division rank alone reads as "hopeless" for a team buried in a strong
+# division even when it's genuinely alive in the Wild Card race (e.g.
+# 12 games back in the AL East but only 2.5 back for a Wild Card spot,
+# confirmed live) — same free endpoint as the division standings above,
+# just a different standingsTypes value, one extra request only ever
+# hit once per STANDINGS_CACHE_TTL_SECONDS.
+@st.cache_data(ttl=STANDINGS_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_mlb_wildcard_raw() -> dict | None:
+    fetch_throttle.wait_turn()
+    resp = requests.get(MLB_STANDINGS_URL, params={"leagueId": 103, "standingsTypes": "wildCard"}, timeout=10)
+    resp.raise_for_status()
+    for record in resp.json().get("records", []):
+        for t in record.get("teamRecords", []):
+            if t["team"]["id"] == MLB_TEAM_ID:
+                return {"games_back": t.get("wildCardGamesBack"), "rank": t.get("wildCardRank")}
+    return None
+
+
+def _fetch_mlb_wildcard() -> dict | None:
+    global _last_good_mlb_wildcard
+    try:
+        result = _fetch_mlb_wildcard_raw()
+    except Exception:
+        return _last_good_mlb_wildcard
+    if result:
+        _last_good_mlb_wildcard = result
+    return result or _last_good_mlb_wildcard
+
+
 def _normalize_mlb_game(g: dict) -> dict:
     away, home = g["teams"]["away"], g["teams"]["home"]
     is_home = home["team"]["id"] == MLB_TEAM_ID
@@ -165,10 +195,10 @@ def _pick_current_game(games: list[dict], now: datetime) -> dict | None:
 
 def fetch_jays() -> dict | None:
     """{"game": {...}|None, "standings": [{"rank","team","wins","losses",
-    "extra","is_team"}, ...], "division_name"} — None entirely if the
-    Jays haven't played a regular/postseason game within
-    SEASON_WINDOW_DAYS of now (the actual offseason, not just a rest
-    day)."""
+    "extra","is_team"}, ...], "division_name", "wildcard": {"games_back",
+    "rank"}|None} — None entirely if the Jays haven't played a regular/
+    postseason game within SEASON_WINDOW_DAYS of now (the actual
+    offseason, not just a rest day)."""
     now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
     raw_games = _fetch_mlb_games(now)
     if raw_games is None:
@@ -190,7 +220,12 @@ def fetch_jays() -> dict | None:
         }
         for t in _fetch_mlb_standings()
     ]
-    return {"game": game, "standings": standings, "division_name": MLB_DIVISION_NAME}
+    return {
+        "game": game,
+        "standings": standings,
+        "division_name": MLB_DIVISION_NAME,
+        "wildcard": _fetch_mlb_wildcard(),
+    }
 
 
 @st.cache_data(ttl=GAME_CACHE_TTL_SECONDS, show_spinner=False)
