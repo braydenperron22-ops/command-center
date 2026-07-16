@@ -26,6 +26,7 @@ import pages_radar
 import pages_sports
 import pages_today
 import pages_weather
+import payday_schedule
 import theme
 import waste_schedule
 import weather_alerts_bar
@@ -33,6 +34,7 @@ import wildfire_client
 from config import (
     AQI_EXTREME,
     AQI_SHOW_THRESHOLD,
+    FEELS_LIKE_DIVERGENCE_THRESHOLD_C,
     MAX_BURST_ALERTS,
     PAGE_ROTATION_SECONDS,
     PAGES,
@@ -187,10 +189,23 @@ try:
 
     if night_dim > 0:
         # This runs 24/7 in a bedroom — night needs to be genuinely dim
-        # enough to sleep next to, not just "a bit darker."
-        brightness = 1 - night_dim * 0.82
+        # enough to sleep next to, not just "a bit darker." Used to be a
+        # `filter: brightness()` on the whole main container, but a CSS
+        # `filter` on an ancestor makes any `position: fixed` descendant
+        # position itself relative to THAT ancestor instead of the real
+        # viewport — confirmed live, this was quietly breaking the
+        # bottom ticker and both alert toasts specifically overnight
+        # (mis-positioned near the top of a scrolled page), the one
+        # window when nobody was looking at the screen to notice. A
+        # fixed black overlay dims the same way (and still covers the
+        # ticker/alert bars, matching the old filter's behavior — they
+        # were dimmed by it too) without touching `filter` on anything,
+        # so there's no containing-block side effect. pointer-events:
+        # none so it never blocks the phone nav pills underneath it.
+        overlay_alpha = night_dim * 0.82
         st.markdown(
-            f'<style>[data-testid="stMain"] {{ filter: brightness({brightness:.3f}); }}</style>',
+            f'<div style="position:fixed; inset:0; background:rgba(0,0,0,{overlay_alpha:.3f}); '
+            f'pointer-events:none; z-index:20;"></div>',
             unsafe_allow_html=True,
         )
 except Exception:
@@ -330,6 +345,22 @@ if weather:
             f'<span class="weather-extra" style="color:{uv_color}; '
             f'background:{uv_bg}; border-color:{uv_color};">UV {uv:.0f}</span>'
         )
+    # "Feels like" (Open-Meteo's apparent_temperature, same call as the
+    # actual temp above — no new fetch) only earns a badge once it
+    # genuinely diverges from the real temperature; most of the time
+    # it's within a degree and saying so would just be noise. Warmer
+    # gets heat's orange-red, colder gets a cold blue — same "color as
+    # a second signal alongside the word" convention as rain/snow above.
+    feels_like = weather.get("feels_like_c")
+    if feels_like is not None:
+        feels_diff = feels_like - weather["temp_c"]
+        if abs(feels_diff) >= FEELS_LIKE_DIVERGENCE_THRESHOLD_C:
+            feels_color = "#FF9F0A" if feels_diff > 0 else "#64D2FF"
+            feels_bg = _rgba(feels_color, 0.22)
+            extras.append(
+                f'<span class="weather-extra" style="color:{feels_color}; '
+                f'background:{feels_bg}; border-color:{feels_color};">Feels like {feels_like:.0f}°C</span>'
+            )
     # Wildfire smoke is a real recurring issue for this region — same
     # provider as the weather call above (Open-Meteo's Air Quality
     # API), no new vendor/key. Yellow->purple rather than UV's
@@ -382,6 +413,18 @@ if weather:
             f'<span class="weather-extra" style="color:#A2845E; '
             f'background:rgba(162,132,94,0.22); border-color:#A2845E;">'
             f'{pickup["kind"]} {when}</span>'
+        )
+    # Payday — same spot and same "today or tomorrow" gating as the
+    # garbage badge right above, not a permanent fixture. Green (the
+    # app's existing "good" tone, matching market-up/badge-good) rather
+    # than a color already claimed by another badge.
+    payday = payday_schedule.next_payday(now.date())
+    if payday["days_until"] <= 1:
+        payday_when = "today" if payday["days_until"] == 0 else "tomorrow"
+        extras.append(
+            f'<span class="weather-extra" style="color:#32D74B; '
+            f'background:rgba(50,215,75,0.22); border-color:#32D74B;">'
+            f'Payday {payday_when}</span>'
         )
     extras_html = f'<div class="weather-extras">{"".join(extras)}</div>' if extras else ""
 
@@ -557,9 +600,21 @@ try:
             commute_reminder.render_bar(current_alert, elapsed)
         else:
             news.render_alert_bar(current_alert, elapsed)
-    elif FRED_API_KEY and readings:
-        schedule = ticker.build_schedule(readings, FRED_API_KEY)
-        st.markdown(ticker.render_html(schedule, now), unsafe_allow_html=True)
+    else:
+        # Earnings dates (a small curated watchlist, see config.
+        # EARNINGS_TICKER_WATCHLIST) fold into the same scrolling strip
+        # as the macro release calendar rather than getting a section
+        # of their own — one more kind of item in something already on
+        # screen, not new real estate. Not gated on FRED_API_KEY like
+        # the release schedule below — earnings dates come from
+        # yfinance, a completely separate source.
+        schedule = []
+        if FRED_API_KEY and readings:
+            schedule.extend(ticker.build_schedule(readings, FRED_API_KEY))
+        schedule.extend(ticker.build_earnings_schedule())
+        schedule.sort(key=lambda it: it["date"])
+        if schedule:
+            st.markdown(ticker.render_html(schedule, now), unsafe_allow_html=True)
 except Exception:
     pass
 

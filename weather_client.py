@@ -39,7 +39,7 @@ def _fetch_weather_raw() -> dict | None:
     params = {
         "latitude": WEATHER_LAT,
         "longitude": WEATHER_LON,
-        "current": "temperature_2m,weather_code,uv_index",
+        "current": "temperature_2m,apparent_temperature,weather_code,uv_index",
         "daily": "sunrise,sunset,temperature_2m_max,temperature_2m_min",
         "temperature_unit": "celsius",
         "timezone": TIMEZONE,
@@ -70,6 +70,7 @@ def _fetch_weather_raw() -> dict | None:
 
     return {
         "temp_c": current["temperature_2m"],
+        "feels_like_c": current.get("apparent_temperature"),
         "weather_code": current.get("weather_code", 0),
         "uv_index": current.get("uv_index"),
         "sunrise": sunrise,

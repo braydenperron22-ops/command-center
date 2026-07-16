@@ -867,9 +867,14 @@ html, body, [class*="css"] {
     background: #64D2FF;
     box-shadow: 0 0 8px 1px rgba(100,210,255,0.5);
 }
+/* Was #32D74B, same green as Markets' beacon and as this app's
+   general "good/market-up" green everywhere else — the whole point of
+   a page beacon is telling pages apart at a glance, which doesn't
+   work when two share a color. Indigo isn't used as a beacon or a
+   semantic color anywhere else in the app. */
 .page-title-sports::before {
-    background: #32D74B;
-    box-shadow: 0 0 8px 1px rgba(50,215,75,0.5);
+    background: #5E5CE6;
+    box-shadow: 0 0 8px 1px rgba(94,92,230,0.5);
 }
 .page-title-radar::before {
     background: #FF375F;
@@ -1353,7 +1358,7 @@ html, body, [class*="css"] {
 .mobile-nav-item-household { color: #A2845E !important; }
 .mobile-nav-item-weather { color: #64D2FF !important; }
 .mobile-nav-item-radar { color: #FF375F !important; }
-.mobile-nav-item-sports { color: #32D74B !important; }
+.mobile-nav-item-sports { color: #5E5CE6 !important; }
 
 /* Phone breakpoint. Everything above this point is untouched at any
    width above it (including the kiosk monitor, always far wider) —

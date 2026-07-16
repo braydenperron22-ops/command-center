@@ -7,6 +7,7 @@ Markets-page-level freshness.
 """
 
 import functools
+import math
 import re
 
 import streamlit as st
@@ -44,7 +45,18 @@ def _fetch_one_year_return_raw(ticker: str) -> float:
     if hist.empty or len(hist) < 2:
         raise ValueError(f"no history for {ticker}")
     closes = hist["Close"]
-    return float((closes.iloc[-1] / closes.iloc[0] - 1) * 100)
+    value = float((closes.iloc[-1] / closes.iloc[0] - 1) * 100)
+    # `if ret is None` in one_year_return() doesn't catch NaN (bool/
+    # equality checks on NaN are their own trap) — confirmed live, this
+    # is exactly what produced "IBM 1Y nan%" earlier: yfinance's
+    # still-forming "today" row can have a NaN close before the session
+    # actually gets going, same class of bug already fixed in
+    # market_yf_client._pct_change. Raising here (like the "no history"
+    # case above) means a cache-miss just retries next time instead of
+    # caching a NaN for the full hour.
+    if math.isnan(value):
+        raise ValueError(f"NaN 1-year return for {ticker}")
+    return value
 
 
 def one_year_return(ticker: str) -> float | None:

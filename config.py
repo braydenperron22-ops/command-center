@@ -6,6 +6,10 @@ WEATHER_LON = -79.2920
 TIMEZONE = "America/Toronto"
 
 UV_HIGH_THRESHOLD = 5
+# "Feels like" only earns a hero badge once it diverges enough from the
+# actual temperature to matter — humidex/wind chill round to within a
+# degree of actual temp most of the time, which isn't worth a badge.
+FEELS_LIKE_DIVERGENCE_THRESHOLD_C = 2
 RAIN_PROBABILITY_THRESHOLD = 49  # percent, for the "Rain in Xh" nowcast label — driven by EC's own hourly forecast (ec_forecast.py)
 RAIN_LOOKAHEAD_HOURS = 12
 # US AQI scale: 0-50 Good, 51-100 Moderate, 101-150 Unhealthy for
@@ -52,6 +56,15 @@ SIGNIFICANT_Z = 2.5
 
 # Release is treated as "imminent" (countdown shown) inside this window
 COUNTDOWN_WINDOW_HOURS = 24
+
+# Earnings dates folded into the same bottom ticker as the macro release
+# calendar (see ticker.build_earnings_schedule) — deliberately just the
+# "mega-cap tech" names, not news.py's full ~90-ticker EARNINGS_COMPANIES
+# map (built for headline text-matching, not for populating a scrolling
+# ticker with 90 items nobody asked to track).
+EARNINGS_TICKER_WATCHLIST = [
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "NFLX", "AVGO", "BRK-B",
+]
 
 # Each indicator: FRED series id, display label, unit, frequency-aware
 # transform ("yoy" = compute YoY % change from an index; "level" = use

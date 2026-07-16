@@ -2,11 +2,18 @@
 
 from datetime import date, datetime, timedelta
 
+import streamlit as st
+import yfinance as yf
+
+import fetch_throttle
 from flags import flag_for
 import fred_client
-from config import COUNTDOWN_WINDOW_HOURS, INDICATORS
+from config import COUNTDOWN_WINDOW_HOURS, EARNINGS_TICKER_WATCHLIST, INDICATORS
 
 MONTH_DAY = "%b %d"
+EARNINGS_CACHE_TTL_SECONDS = 24 * 60 * 60  # a real earnings date rarely moves day to day
+
+_last_good_earnings: dict[str, str] = {}  # ticker -> ISO date string
 
 
 def _estimate_next(as_of: str, cadence_days: int) -> str:
@@ -20,6 +27,47 @@ def _estimate_next(as_of: str, cadence_days: int) -> str:
     while d <= today:
         d += timedelta(days=cadence_days)
     return d.isoformat()
+
+
+@st.cache_data(ttl=EARNINGS_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_earnings_date_raw(ticker: str) -> str | None:
+    fetch_throttle.wait_turn()
+    cal = yf.Ticker(ticker).calendar
+    dates = cal.get("Earnings Date") if cal else None
+    return min(dates).isoformat() if dates else None
+
+
+def _fetch_earnings_date(ticker: str) -> str | None:
+    global _last_good_earnings
+    try:
+        result = _fetch_earnings_date_raw(ticker)
+    except Exception:
+        return _last_good_earnings.get(ticker)
+    if result:
+        _last_good_earnings[ticker] = result
+    return result or _last_good_earnings.get(ticker)
+
+
+def build_earnings_schedule() -> list[dict]:
+    """Next earnings date for a small curated watchlist (see config.
+    EARNINGS_TICKER_WATCHLIST) — same item shape build_schedule already
+    produces, so render_html below needs no changes to show both kinds
+    together. Only future dates make it in; yfinance's calendar can
+    still carry an already-passed date for a day or two after it
+    actually happens rather than immediately rolling to the next one."""
+    today = date.today()
+    items = []
+    for ticker in EARNINGS_TICKER_WATCHLIST:
+        iso_date = _fetch_earnings_date(ticker)
+        if not iso_date or date.fromisoformat(iso_date) < today:
+            continue
+        items.append({
+            "country": "us",
+            "label": f"{ticker} Earnings",
+            "date": iso_date,
+            "confirmed": True,
+        })
+    return items
 
 
 def build_schedule(readings: dict, api_key: str) -> list[dict]:
