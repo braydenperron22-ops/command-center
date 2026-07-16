@@ -19,6 +19,18 @@ def _format_minutes(total_minutes: float) -> str:
     return f"{minutes} min"
 
 
+def _city_markers_html(cities: list[dict]) -> str:
+    """Small neutral-gray dots + labels for real nearby towns (see
+    ec_radar.nearby_city_markers) — deliberately much quieter than the
+    blue "you" marker or the storm marker, since these are just
+    reference points for reading the map, not something to react to."""
+    return "".join(
+        f'<div class="weather-radar-city-marker" style="left:{c["x_pct"]:.1f}%; top:{c["y_pct"]:.1f}%;"></div>'
+        f'<div class="weather-radar-city-label" style="left:{c["x_pct"]:.1f}%; top:{c["y_pct"]:.1f}%;">{c["label"]}</div>'
+        for c in cities
+    )
+
+
 def _tracking_overlay_html(overlay: dict | None) -> str:
     """A line drawn straight from the tracked echo to the user's own
     marker, plus a label at the echo's position — turns the map from
@@ -61,15 +73,17 @@ def render() -> None:
         badge_class = "badge-good"
 
     overlay_html = _tracking_overlay_html(ec_radar.tracking_overlay(kind))
+    city_markers_html = _city_markers_html(ec_radar.nearby_city_markers())
 
     st.markdown(
         f"""<div class="tile weather-radar-tile weather-radar-tile-large">
             <div class="tile-label compact">LIVE RADAR · {kind.upper()} · CORBEIL</div>
+            <div class="badge {badge_class}">{summary}</div>
             <div class="weather-radar-frame weather-radar-frame-large">
                 <img class="weather-radar-image" src="{ec_radar.radar_image_url(kind)}" />
+                {city_markers_html}
                 <div class="weather-radar-marker"></div>
                 {overlay_html}</div>
-            <div class="badge {badge_class}">{summary}</div>
         </div>""",
         unsafe_allow_html=True,
     )

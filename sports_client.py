@@ -25,6 +25,14 @@ MLB_DIVISION_NAME = "AL East"
 # "S" (spring training) and "A" (all-star) intentionally excluded — those
 # happening don't mean the real season is underway.
 MLB_SEASON_GAME_TYPES = {"R", "F", "D", "L", "W"}
+# MLB's own static logo CDN, keyed by team id — no API call, confirmed
+# live this returns a real SVG for every team id tried, not just 141.
+_MLB_LOGO_URL = "https://www.mlbstatic.com/team-logos/{team_id}.svg"
+
+
+def _mlb_logo_url(team_id: int) -> str:
+    return _MLB_LOGO_URL.format(team_id=team_id)
+
 
 NHL_SCHEDULE_URL = "https://api-web.nhle.com/v1/club-schedule-season/{team}/now"
 NHL_STANDINGS_URL = "https://api-web.nhle.com/v1/standings/now"
@@ -33,6 +41,16 @@ NHL_DIVISION_ABBREV = "A"  # Atlantic
 NHL_DIVISION_NAME = "Atlantic"
 # gameType 1 is preseason — same reasoning as MLB's "S" exclusion above.
 NHL_SEASON_GAME_TYPES = {2, 3}
+# Same idea as MLB above — the standings endpoint happens to return this
+# same URL shape per team (confirmed live), so it's built directly here
+# rather than needing a standings lookup just to find a logo. "_light"
+# is the version meant to read on a dark background, which is this
+# whole app's theme.
+_NHL_LOGO_URL = "https://assets.nhle.com/logos/nhl/svg/{abbrev}_light.svg"
+
+
+def _nhl_logo_url(abbrev: str) -> str:
+    return _NHL_LOGO_URL.format(abbrev=abbrev)
 
 SEASON_WINDOW_DAYS = 10  # no games at all in this wide a window either side of now => offseason
 GAME_CACHE_TTL_SECONDS = 5 * 60  # frequent enough to catch a live score changing
@@ -144,6 +162,7 @@ def _normalize_mlb_game(g: dict) -> dict:
     )
     return {
         "opponent": opp["team"]["name"],
+        "opponent_logo": _mlb_logo_url(opp["team"]["id"]),
         "is_home": is_home,
         "team_score": us.get("score"),
         "opp_score": opp.get("score"),
@@ -161,6 +180,7 @@ def _normalize_nhl_game(g: dict) -> dict:
     opponent = f"{opp['placeName']['default']} {opp['commonName']['default']}"
     return {
         "opponent": opponent,
+        "opponent_logo": _nhl_logo_url(opp["abbrev"]),
         "is_home": is_home,
         "team_score": us.get("score"),
         "opp_score": opp.get("score"),
@@ -196,9 +216,10 @@ def _pick_current_game(games: list[dict], now: datetime) -> dict | None:
 def fetch_jays() -> dict | None:
     """{"game": {...}|None, "standings": [{"rank","team","wins","losses",
     "extra","is_team"}, ...], "division_name", "wildcard": {"games_back",
-    "rank"}|None} — None entirely if the Jays haven't played a regular/
-    postseason game within SEASON_WINDOW_DAYS of now (the actual
-    offseason, not just a rest day)."""
+    "rank"}|None, "team_logo"} — None entirely if the Jays haven't played
+    a regular/postseason game within SEASON_WINDOW_DAYS of now (the
+    actual offseason, not just a rest day). "game", when not None, also
+    carries its own "opponent_logo"."""
     now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
     raw_games = _fetch_mlb_games(now)
     if raw_games is None:
@@ -225,6 +246,7 @@ def fetch_jays() -> dict | None:
         "standings": standings,
         "division_name": MLB_DIVISION_NAME,
         "wildcard": _fetch_mlb_wildcard(),
+        "team_logo": _mlb_logo_url(MLB_TEAM_ID),
     }
 
 
@@ -298,4 +320,9 @@ def fetch_habs() -> dict | None:
         }
         for t in _fetch_nhl_standings()
     ]
-    return {"game": game, "standings": standings, "division_name": NHL_DIVISION_NAME}
+    return {
+        "game": game,
+        "standings": standings,
+        "division_name": NHL_DIVISION_NAME,
+        "team_logo": _nhl_logo_url(NHL_TEAM_ABBR),
+    }

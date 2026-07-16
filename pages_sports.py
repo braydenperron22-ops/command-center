@@ -17,6 +17,7 @@ def _game_html(status: dict) -> str:
     if game is None:
         return '<div class="tile-prev">No game scheduled right now.</div>'
     opponent_word = "vs" if game["is_home"] else "@"
+    opponent_logo = f'<img class="sports-opponent-logo" src="{game["opponent_logo"]}" />'
     if game["state"] == "upcoming":
         start = game["start_time"]
         time_text = start.strftime("%I:%M %p").lstrip("0")
@@ -31,7 +32,7 @@ def _game_html(status: dict) -> str:
             value_class = "market-up" if won else "market-down"
             result = f"{'W' if won else 'L'} {opponent_word} {game['opponent']}"
     return f"""<div class="tile-value {value_class}">{value}</div>
-        <div class="tile-prev">{result}</div>"""
+        <div class="tile-prev">{opponent_logo}{result}</div>"""
 
 
 def _wildcard_html(status: dict) -> str:
@@ -91,7 +92,10 @@ def render() -> None:
                 continue
             st.markdown(
                 f"""<div class="tile">
-                    <div class="tile-label">{label} · {status['division_name'].upper()}</div>
+                    <div class="sports-team-header">
+                        <img class="sports-team-logo" src="{status['team_logo']}" />
+                        <div class="tile-label">{label} · {status['division_name'].upper()}</div>
+                    </div>
                     {_game_html(status)}
                     {_wildcard_html(status)}
                     {_standings_table(status)}</div>""",

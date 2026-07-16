@@ -27,7 +27,7 @@ import streamlit as st
 from PIL import Image
 
 import fetch_throttle
-from config import WEATHER_LAT, WEATHER_LON
+from config import RADAR_NEARBY_CITIES, WEATHER_LAT, WEATHER_LON
 
 WMS_URL = "https://geo.weather.gc.ca/geomet"
 RAIN_LAYER = "RADAR_1KM_RRAI"
@@ -350,3 +350,20 @@ def tracking_overlay(kind: str = "rain") -> dict | None:
         "minutes": status["minutes"] if status else None,
         "direction": status["direction"] if status else compass_abbr(_bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)),
     }
+
+
+def nearby_city_markers() -> list[dict]:
+    """Neutral reference points for real nearby towns (see config.
+    RADAR_NEARBY_CITIES), same 0-100 coordinate space tracking_overlay
+    already uses — so it's obvious where the rain actually is relative
+    to real places, not just relative to Corbeil's own marker. Purely
+    local pixel math, no fetch — any city that happens to fall outside
+    the image's own bbox is silently dropped rather than shown clipped
+    at the edge, so RADAR_NEARBY_CITIES doesn't need to stay hand-tuned
+    to BBOX_MARGIN_DEGREES."""
+    markers = []
+    for city in RADAR_NEARBY_CITIES:
+        px, py = _latlon_to_pixel(city["lat"], city["lon"])
+        if 0 <= px < IMAGE_SIZE and 0 <= py < IMAGE_SIZE:
+            markers.append({"label": city["label"], "x_pct": px / IMAGE_SIZE * 100, "y_pct": py / IMAGE_SIZE * 100})
+    return markers

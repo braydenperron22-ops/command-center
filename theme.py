@@ -881,6 +881,34 @@ html, body, [class*="css"] {
     box-shadow: 0 0 8px 1px rgba(255,55,95,0.5);
 }
 
+/* Team + opponent logos (sports_client.py — MLB's static logo CDN and
+   NHL's, both free, no key, keyed by team id/abbrev with no API call
+   needed to look one up). object-fit:contain since these come in a mix
+   of aspect ratios (MLB's are roughly square, NHL's vary team to team)
+   and a stretched logo would look broken immediately. */
+.sports-team-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.45rem;
+}
+.sports-team-header .tile-label {
+    margin-bottom: 0;
+}
+.sports-team-logo {
+    width: 2.2rem;
+    height: 2.2rem;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+.sports-opponent-logo {
+    width: 1.5rem;
+    height: 1.5rem;
+    object-fit: contain;
+    vertical-align: middle;
+    margin-right: 0.4rem;
+}
+
 /* Sports page's per-team division standings — a plain aligned table,
    own team's row picked out rather than colored (rank order already
    says everything a color would), matching the "quiet color cue,
@@ -1121,11 +1149,68 @@ html, body, [class*="css"] {
     white-space: nowrap;
 }
 
+/* Real nearby towns (see config.RADAR_NEARBY_CITIES / ec_radar.
+   nearby_city_markers) — plain neutral gray, deliberately much quieter
+   than the blue "you" marker or the red/white storm marker, since
+   these are just reference points for reading the map (where the rain
+   actually is relative to real places), not something to react to. */
+.weather-radar-city-marker {
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    margin: -2.5px 0 0 -2.5px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.4);
+}
+.weather-radar-city-label {
+    position: absolute;
+    transform: translate(6px, -50%);
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: rgba(255,255,255,0.55);
+    white-space: nowrap;
+    pointer-events: none;
+}
+
 /* Radar page's own version — a live map is the entire point of that
    page, so it gets real screen space instead of sharing a column with
-   the 7-day forecast the way it briefly did on the Weather page. */
+   the 7-day forecast the way it briefly did on the Weather page. Was
+   capped at 28rem (too small); widening to max-width:100% alone turned
+   out worse — this frame is a square (aspect-ratio 1/1), so on a wide
+   screen "100% of the tile's width" also means "just as tall," which
+   overran the viewport and pushed most of the map (including anything
+   below the vertical center, where the location marker sits) off
+   screen entirely. Confirmed live: the marker was still mathematically
+   dead center (50.0%/50.0%) the whole time — the frame itself was just
+   taller than what was visible. Sizing *width* itself via min(): Nvh
+   (a length here, N% of viewport height) caps the width at whatever
+   height allows, and aspect-ratio derives a matching height from that
+   same resolved width — a real square, bounded by whichever of
+   width/height is the tighter constraint. 55vh still overflowed the
+   viewport in testing at both 800px and 1080px window heights — the
+   hero row/badges/morning-briefing stack above this tile is close to a
+   fixed pixel height regardless of viewport, so it doesn't shrink as a
+   share of a taller viewport the way vh math assumes. Tuned down to
+   40vh against that real content stack (measured live, page title
+   through an active alert banner and the morning-briefing box) turned
+   out to still overflow slightly on retest — that content stack isn't
+   perfectly stable even at a fixed viewport size (badges/alerts change
+   with live conditions between one test and the next — confirmed live
+   that commute_reminder's page-independent "Leave in X min" headline,
+   which shows above the clock on every page including this one during
+   the actual pre-departure window, was what grew the stack mid-testing,
+   not measurement error), so there's no single vh value that's ever
+   *guaranteed* safe against every real content combination (leave
+   headline + an active EC alert + every hero badge + a long
+   morning-briefing sentence, all at once, is the genuine worst case)
+   without JS-measuring the actual remaining space, which isn't
+   practical for a static injected stylesheet. Settled on 28vh as a
+   deliberately conservative value with real margin built in, rather
+   than one tuned to exactly clear whatever happened to be on screen
+   during one test run. */
 .weather-radar-frame-large {
-    max-width: 28rem;
+    width: min(100%, 28vh);
+    max-width: 100%;
 }
 .weather-radar-tile-large {
     align-items: center;
@@ -1133,8 +1218,11 @@ html, body, [class*="css"] {
     padding-top: 1rem;
     padding-bottom: 0.9rem;
 }
+/* Was margin-top (the badge used to sit below the frame) — now sits
+   between the label and the map, so it needs its spacing on the other
+   side instead. */
 .weather-radar-tile-large .badge {
-    margin-top: 0.7rem;
+    margin-bottom: 0.7rem;
 }
 
 .conflict-headlines {

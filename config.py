@@ -5,6 +5,26 @@ WEATHER_LAT = 46.2616
 WEATHER_LON = -79.2920
 TIMEZONE = "America/Toronto"
 
+# Reference towns shown as neutral markers on the radar map (see
+# ec_radar.nearby_city_markers) — so it's obvious where rain actually is
+# relative to real places, not just relative to Corbeil's own marker.
+# Geocoded once via commute_client.geocode() (the same TomTom API the
+# commute feature uses) and hardcoded here since these are fixed
+# locations — no reason to spend a live geocoding call rendering the
+# radar page every few minutes for coordinates that never change.
+# Sudbury was checked too but falls outside the radar image's own
+# ~115km longitudinal half-span at this latitude, so it's left out
+# rather than included as a marker that would never actually show up.
+# Callander was checked too but sits only ~7km from North Bay — close
+# enough that their labels overlapped illegibly on a narrow (mobile)
+# frame, so it's left out as redundant with North Bay at this zoom.
+RADAR_NEARBY_CITIES = [
+    {"label": "North Bay", "lat": 46.309464, "lon": -79.46163},
+    {"label": "Powassan", "lat": 46.082132, "lon": -79.359081},
+    {"label": "Sturgeon Falls", "lat": 46.3660968, "lon": -79.9309088},
+    {"label": "Mattawa", "lat": 46.3132636, "lon": -78.709835},
+]
+
 UV_HIGH_THRESHOLD = 5
 # "Feels like" only earns a hero badge once it diverges enough from the
 # actual temperature to matter — humidex/wind chill round to within a
