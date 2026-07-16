@@ -106,6 +106,22 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * earth_radius_km * asin(sqrt(a))
 
 
+_COMPASS_ABBR = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+_COMPASS_WORDS = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"]
+
+
+def _compass_index(bearing_deg_: float) -> int:
+    return round(bearing_deg_ / 45) % 8
+
+
+def compass_abbr(bearing_deg_: float) -> str:
+    return _COMPASS_ABBR[_compass_index(bearing_deg_)]
+
+
+def compass_word(bearing_deg_: float) -> str:
+    return _COMPASS_WORDS[_compass_index(bearing_deg_)]
+
+
 def _bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     p1, p2, dl = radians(lat1), radians(lat2), radians(lon2 - lon1)
     x = sin(dl) * cos(p2)
@@ -260,6 +276,14 @@ def precip_status(kind: str = "rain") -> dict | None:
     yet (echo runs off the image edge, or a speed estimate isn't
     available yet).
 
+    Both states also carry "direction"/"direction_word" (e.g. "NW" /
+    "northwest") — the bearing from Corbeil to the nearest echo, so
+    where the storm currently *is*, not which way it's moving (that
+    would need tracking its position over time, not just its distance,
+    which is all HISTORY_WINDOW_MINUTES of samples give us). Least
+    meaningful right at "arrived", where the echo's close enough that
+    pixel-level jitter can swing the bearing around a bit.
+
     None — nothing detected within NEARBY_RADIUS_KM, or something's
     nearby but not moving in (sitting still, or drifting away): "only
     say something when it's happening or about to" is the point of this
@@ -280,20 +304,21 @@ def precip_status(kind: str = "rain") -> dict | None:
     if nearest is None:
         return None
     lat, lon, distance_km = nearest
+    bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)
+    direction = {"direction": compass_abbr(bearing_deg_), "direction_word": compass_word(bearing_deg_)}
 
     if distance_km <= ARRIVED_RADIUS_KM:
         minutes = None
         if trend["speed_kmh"]:
-            bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)
             far_km = _far_edge_km(img, bearing_deg_, distance_km)
             if far_km is not None:
                 minutes = round((far_km / trend["speed_kmh"]) * 60)
-        return {"state": "arrived", "minutes": minutes}
+        return {"state": "arrived", "minutes": minutes, **direction}
 
     if trend["trend"] != "approaching":
         return None
     eta_minutes = (distance_km / trend["speed_kmh"]) * 60
-    return {"state": "approaching", "minutes": round(eta_minutes)}
+    return {"state": "approaching", "minutes": round(eta_minutes), **direction}
 
 
 def tracking_overlay(kind: str = "rain") -> dict | None:
@@ -323,4 +348,5 @@ def tracking_overlay(kind: str = "rain") -> dict | None:
         "distance_km": distance_km,
         "active": status is not None,
         "minutes": status["minutes"] if status else None,
+        "direction": status["direction"] if status else compass_abbr(_bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)),
     }

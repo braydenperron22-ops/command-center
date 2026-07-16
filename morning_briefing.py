@@ -186,33 +186,39 @@ COLD_LINES = [
     "cold enough to feel it immediately — {temp}°C right now",
 ]
 
+# About half of these weave in {direction} (e.g. "northwest") — the
+# bearing from Corbeil to the nearest echo, which ec_radar.precip_status
+# now surfaces (see its docstring: this is where the storm currently
+# IS, not which way it's moving). The other half deliberately skip it —
+# every single line naming a direction would just trade one repetitive
+# pattern for another.
 RADAR_RAIN_LINES = [
     "radar's picking up rain heading your way, could hit in about {eta} min",
     "rain's closing in on the radar, roughly {eta} minutes out",
-    "heads up, rain looks to be moving in, ETA around {eta} minutes",
+    "heads up, rain looks to be moving in from the {direction}, ETA around {eta} minutes",
     "radar's showing rain on approach, about {eta} minutes off",
-    "rain's tracking toward you, roughly {eta} minutes away",
+    "rain's tracking toward you from the {direction}, roughly {eta} minutes away",
     "there's rain on the radar closing in, {eta} minutes or so",
-    "incoming rain, radar puts it around {eta} minutes out",
+    "incoming rain out of the {direction}, radar puts it around {eta} minutes out",
     "radar's caught rain moving in — {eta} minutes, give or take",
-    "worth knowing: rain's approaching, about {eta} minutes away",
+    "worth knowing: rain's approaching from the {direction}, about {eta} minutes away",
     "rain's on its way in per the radar, {eta} minutes out",
-    "radar shows a cell heading in, rain in roughly {eta} minutes",
-    "{eta} minutes and change before that rain on radar gets here",
+    "radar shows a cell heading in from the {direction}, rain in roughly {eta} minutes",
+    "{eta} minutes and change before that rain out of the {direction} gets here",
 ]
 RADAR_SNOW_LINES = [
     "radar's picking up snow heading your way, could hit in about {eta} min",
     "snow's closing in on the radar, roughly {eta} minutes out",
-    "heads up, snow looks to be moving in, ETA around {eta} minutes",
+    "heads up, snow looks to be moving in from the {direction}, ETA around {eta} minutes",
     "radar's showing snow on approach, about {eta} minutes off",
-    "snow's tracking toward you, roughly {eta} minutes away",
+    "snow's tracking toward you from the {direction}, roughly {eta} minutes away",
     "there's snow on the radar closing in, {eta} minutes or so",
-    "incoming snow, radar puts it around {eta} minutes out",
+    "incoming snow out of the {direction}, radar puts it around {eta} minutes out",
     "radar's caught snow moving in — {eta} minutes, give or take",
-    "worth knowing: snow's approaching, about {eta} minutes away",
+    "worth knowing: snow's approaching from the {direction}, about {eta} minutes away",
     "snow's on its way in per the radar, {eta} minutes out",
-    "radar shows a system heading in, snow in roughly {eta} minutes",
-    "{eta} minutes and change before that snow on radar gets here",
+    "radar shows a system heading in from the {direction}, snow in roughly {eta} minutes",
+    "{eta} minutes and change before that snow out of the {direction} gets here",
 ]
 ARRIVED_RAIN_LINES = [
     "rain's here now, radar's got it clearing in about {eta} min",
@@ -591,7 +597,7 @@ def _precip_clause(now: datetime, weather: dict, category: str) -> tuple[int, st
             lines = ARRIVED_SNOW_LINES if is_snow else ARRIVED_RAIN_LINES
         else:
             lines = RADAR_SNOW_LINES if is_snow else RADAR_RAIN_LINES
-        return 8, _pick(lines, now, "precip").format(eta=status["minutes"])
+        return 8, _pick(lines, now, "precip").format(eta=status["minutes"], direction=status["direction_word"])
 
     rain_at = weather.get("rain_at")
     chance = weather.get("precip_chance")

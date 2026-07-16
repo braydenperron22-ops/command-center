@@ -34,7 +34,7 @@ def _tracking_overlay_html(overlay: dict | None) -> str:
     x, y = overlay["x_pct"], overlay["y_pct"]
     modifier = "approaching" if overlay["active"] else "idle"
     minutes_text = f" · {_format_minutes(overlay['minutes'])}" if overlay["minutes"] is not None else ""
-    label_text = f"{overlay['distance_km']:.0f} km{minutes_text}"
+    label_text = f"{overlay['distance_km']:.0f} km {overlay['direction']}{minutes_text}"
     return f"""<svg class="weather-radar-track" viewBox="0 0 100 100" preserveAspectRatio="none">
             <line x1="{x:.1f}" y1="{y:.1f}" x2="50" y2="50" class="weather-radar-track-line weather-radar-track-line-{modifier}" />
         </svg>

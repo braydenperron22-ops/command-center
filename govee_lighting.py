@@ -45,6 +45,16 @@ FLASH_BRIGHTNESS = 100
 # overrides market color for genuinely bad air, not routine haze.
 SMOKE_COLOR = (255, 140, 20)
 
+# The screen's own sky (scenery.py's _SKY_STOPS) already blends to a warm
+# amber/peach glow during the sunrise/sunset transition — the room light
+# used to stay on plain market color straight through that, on a
+# completely separate track from what's actually on screen. These are
+# the exact horizon-glow stops from scenery._SKY_STOPS (the warmest tone
+# in each gradient), converted to RGB, so the room genuinely matches
+# what's rendered rather than approximating it with a new color.
+SUNRISE_COLOR = (253, 217, 160)  # scenery._SKY_STOPS["sunrise"][3], #fdd9a0
+SUNSET_COLOR = (248, 194, 122)  # scenery._SKY_STOPS["sunset"][3], #f8c27a
+
 # Gentle wake-up/wind-down curve, layered under the sunset/sunrise on/off
 # gate below — the light already powers on as early as real sunrise, well
 # before anyone's awake in summer, and previously jumped straight to
@@ -201,8 +211,14 @@ def sync_lights(
     breaking alert). A genuinely extreme AQI (real wildfire smoke, not
     routine haze) overrides the market color with SMOKE_COLOR instead —
     checked after the breaking-news flash (which still wins, being the
-    more urgent/immediate of the two) but before market color. Color
-    always applies instantly; brightness creeps toward its target
+    more urgent/immediate of the two) but before market color. During
+    the sunrise/sunset transition (the same `phase` scenery.py's own sky
+    gradient uses), the light tints to that gradient's own warm
+    horizon-glow color instead of market color — checked after the
+    flash/smoke overrides (both still win, being genuinely urgent) but
+    before market color, so the room actually matches the screen during
+    that window rather than sitting on a separate, unrelated track.
+    Color always applies instantly; brightness creeps toward its target
     instead (see _creep_brightness) except during a flash, which needs
     to be immediately attention-grabbing rather than easing into view."""
     if not st.secrets.get("GOVEE_API_KEY"):
@@ -219,6 +235,10 @@ def sync_lights(
         return
     if aqi is not None and aqi >= AQI_EXTREME:
         _apply_color(SMOKE_COLOR)
+        _creep_brightness(_brightness_envelope(now, DAY_BRIGHTNESS, sunset))
+        return
+    if phase in ("sunrise", "sunset"):
+        _apply_color(SUNRISE_COLOR if phase == "sunrise" else SUNSET_COLOR)
         _creep_brightness(_brightness_envelope(now, DAY_BRIGHTNESS, sunset))
         return
     color, brightness = _desired_base_state(market_intraday_pct, now, sunset)
