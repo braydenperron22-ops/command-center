@@ -41,9 +41,10 @@ RADAR_NEARBY_CITIES = [
 
 UV_HIGH_THRESHOLD = 5
 # "Feels like" only earns a hero badge once it diverges enough from the
-# actual temperature to matter — humidex/wind chill round to within a
-# degree of actual temp most of the time, which isn't worth a badge.
-FEELS_LIKE_DIVERGENCE_THRESHOLD_C = 2
+# actual temperature to matter — a couple degrees of humidex/wind
+# chill rounding is routine and reads as a bogus/noisy badge rather
+# than a genuinely useful signal; 7 is a real, noticeable divergence.
+FEELS_LIKE_DIVERGENCE_THRESHOLD_C = 7
 RAIN_PROBABILITY_THRESHOLD = 49  # percent, for the "Rain in Xh" nowcast label — driven by EC's own hourly forecast (ec_forecast.py)
 RAIN_LOOKAHEAD_HOURS = 12
 # US AQI scale: 0-50 Good, 51-100 Moderate, 101-150 Unhealthy for
