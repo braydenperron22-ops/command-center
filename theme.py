@@ -414,6 +414,24 @@ html, body, [class*="css"] {
 .badge-neutral { background: rgba(10,132,255,0.14); color: #5AC8FA; }
 .badge-inline { background: rgba(255,255,255,0.08); color: #D6D6DC; }
 
+/* Rotation countdown (app.py) — deliberately quiet: a slim track at the
+   very top, not another thing competing for attention with the hero
+   row right below it. z-index below the night-dim overlay (20) so it
+   dims along with everything else overnight, same as the ticker. */
+.rotation-timer-track {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: rgba(255,255,255,0.08);
+    z-index: 12;
+}
+.rotation-timer-fill {
+    height: 100%;
+    background: rgba(255,255,255,0.35);
+}
+
 .ticker-bar {
     position: fixed;
     left: 0;

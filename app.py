@@ -61,13 +61,23 @@ FRED_API_KEY = st.secrets.get("FRED_API_KEY")
 # instead of sitting through the kiosk's 5-minute rotation the way the
 # actual monitor does. The kiosk's own browser tab never sets this
 # param, so its rotation is completely untouched by any of this.
+# Captured once and reused for every rotation-timer computation this
+# run (page selection here, and pages_home's own US/Canada rotation
+# later) — confirmed live this was a real bug, not a hypothetical: with
+# each module independently calling time.time() at a slightly different
+# instant, a rerun landing right on a 300-second boundary could compute
+# page_index from the OLD bucket (still "home") while pages_home
+# computed its country from the NEW bucket, flashing the wrong country
+# for one rerun before the page itself rotated away — which is exactly
+# what "Canada shows for ~5 seconds then jumps to Conflicts" was.
+_rotation_epoch = time.time()
 _requested_page = None
 try:
     _requested_page = st.query_params.get("page")
     if _requested_page in PAGES:
         page = _requested_page
     else:
-        page = PAGES[int(time.time() // PAGE_ROTATION_SECONDS) % len(PAGES)]
+        page = PAGES[int(_rotation_epoch // PAGE_ROTATION_SECONDS) % len(PAGES)]
 except Exception:
     page = "today"
 
@@ -94,6 +104,25 @@ st.markdown(
     f'<div class="mobile-nav"><a class="mobile-nav-item mobile-nav-item-auto{_auto_active}" href="?">Auto</a>{_nav_items}</div>',
     unsafe_allow_html=True,
 )
+
+# Slim progress bar at the very top showing how far through the current
+# 5-minute window this page is, filling up toward the next rotation.
+# Only shown while real auto-rotation is actually driving the page — a
+# manual ?page= override (see above) pins the page regardless of this
+# timer, so a countdown then would be advertising a change that isn't
+# coming. No CSS transition on the fill: confirmed elsewhere in this
+# file (see scenery.py's own notes) that a transition can't survive
+# this app's autorefresh — every rerun re-emits the element fresh
+# already at its new width rather than animating into it, so it would
+# just silently do nothing. Discrete 5-second jumps instead, matching
+# how every other countdown in this app already behaves.
+if _requested_page not in PAGES:
+    _rotation_progress = (_rotation_epoch % PAGE_ROTATION_SECONDS) / PAGE_ROTATION_SECONDS
+    st.markdown(
+        f'<div class="rotation-timer-track">'
+        f'<div class="rotation-timer-fill" style="width:{_rotation_progress * 100:.2f}%;"></div></div>',
+        unsafe_allow_html=True,
+    )
 
 # Rotation is derived from elapsed real time (not a counter), so it
 # survives Streamlit Cloud sleep/wake without drifting into a
@@ -515,7 +544,7 @@ with st.container(key="page_body"):
                 unsafe_allow_html=True,
             )
         else:
-            _safe_render(pages_home.render, FRED_API_KEY, readings, new_flags)
+            _safe_render(pages_home.render, FRED_API_KEY, readings, new_flags, _rotation_epoch)
     elif page == "conflicts":
         _safe_render(pages_conflicts.render)
     elif page == "news":

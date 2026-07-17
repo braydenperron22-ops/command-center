@@ -25,8 +25,20 @@ _last_as_of: dict[tuple, str] = {}
 _detected_at: dict[tuple, float] = {}
 
 
-def current_country() -> str:
-    rotation_index = int(time.time() // ROTATION_SECONDS) % 2
+def current_country(epoch_seconds: float | None = None) -> str:
+    """`epoch_seconds` lets a caller (app.py) pass the exact same
+    time.time() snapshot it already used to pick the current *page* —
+    confirmed live that calling time.time() fresh here independently
+    could straddle the same 300-second boundary at a different instant
+    than app.py's own page-rotation calculation, computing this from the
+    NEW bucket while the page itself was still rendering the OLD one.
+    Since PAGE_ROTATION_SECONDS and ROTATION_SECONDS are both exactly
+    300s, that only ever happened right as the Home page was about to
+    rotate away — a one-rerun flash of the wrong country immediately
+    followed by the real page change, not a persistent bug. Defaults to
+    a fresh call so this still works standalone if ever needed."""
+    epoch_seconds = time.time() if epoch_seconds is None else epoch_seconds
+    rotation_index = int(epoch_seconds // ROTATION_SECONDS) % 2
     return "us" if rotation_index == 0 else "ca"
 
 
@@ -70,7 +82,7 @@ def fetch_readings(fred_api_key: str) -> tuple[dict, dict]:
     return readings, new_flags
 
 
-def render(fred_api_key: str, readings: dict, new_flags: dict):
+def render(fred_api_key: str, readings: dict, new_flags: dict, rotation_epoch: float | None = None):
     # Own try/except rather than relying on _safe_render's page-wide
     # catch in app.py — a regime bug should lose just the banner, not
     # blank the whole page's indicator tiles behind the generic error
@@ -80,7 +92,7 @@ def render(fred_api_key: str, readings: dict, new_flags: dict):
     except Exception:
         pass
 
-    country = current_country()
+    country = current_country(rotation_epoch)
     meta = COUNTRY_META[country]
 
     market_html = ""
