@@ -310,6 +310,26 @@ def _rgba(hex_color: str, alpha: float) -> str:
     return f"rgba({r},{g},{b},{alpha:.2f})"
 
 
+def _precip_timing_phrase(status: dict | None) -> str | None:
+    """"in 45 min" / "approaching" / "clears in 20 min" / "here now" —
+    None if there's no confirmed timing yet at all. Shared by both the
+    routine and severe precip badges below so a "Heavy rain" badge
+    doesn't drop the ETA a plain "Rain" badge would still show — severe
+    intensity and timing are two different questions, and knowing one
+    shouldn't cost you the other."""
+    if status is None:
+        return None
+    if status["state"] == "arrived":
+        return (
+            f"clears in {_format_countdown(status['minutes'] * 60)}"
+            if status["minutes"] is not None else "here now"
+        )
+    return (
+        f"in {_format_countdown(status['minutes'] * 60)}"
+        if status["minutes"] is not None else "approaching"
+    )
+
+
 UV_EXTREME = 11  # UV index at which the badge reaches full vibrant red
 
 weather_block = ""
@@ -349,7 +369,17 @@ if weather:
     severe = ec_radar.severe_precip_status(precip_kind)
     status = ec_radar.precip_status(precip_kind)
     if severe is not None:
-        text = f"Heavy {precip_label.lower()} · {severe['mm_h']:.0f} mm/h"
+        # Same timing phrase the routine badge below uses — severity
+        # and ETA are two different questions (see
+        # _precip_timing_phrase), so "Heavy rain" shouldn't drop the
+        # "in 15 min"/"clears in 20 min" part a plain "Rain" badge
+        # would still show. None (no confirmed timing yet at all) falls
+        # back to the intensity-only text this badge always showed.
+        timing = _precip_timing_phrase(status)
+        text = (
+            f"Heavy {precip_label.lower()} {timing} · {severe['mm_h']:.0f} mm/h"
+            if timing else f"Heavy {precip_label.lower()} · {severe['mm_h']:.0f} mm/h"
+        )
         extras.append(
             f'<span class="weather-extra" style="color:#FF6961; '
             f'background:rgba(255,105,97,0.28); border-color:#FF6961;">{text}</span>'
@@ -361,7 +391,19 @@ if weather:
                 if status["minutes"] is not None else f"{precip_label} now"
             )
         else:
-            text = f"{precip_label} in {_format_countdown(status['minutes'] * 60)}"
+            # Guarded the same way the "arrived" branch above already
+            # is, even though nothing currently reaching this branch
+            # constructs a None here — this whole hero row sits at
+            # module top level with no enclosing try/except (unlike
+            # every page render, which goes through _safe_render), so
+            # a crash here takes down the entire app on every rerun,
+            # not just one page. Cheap insurance against a catastrophic
+            # failure mode is worth it even without a concrete
+            # reproduction.
+            text = (
+                f"{precip_label} in {_format_countdown(status['minutes'] * 60)}"
+                if status["minutes"] is not None else f"{precip_label} approaching"
+            )
         extras.append(
             f'<span class="weather-extra" style="color:#64D2FF; '
             f'background:rgba(100,210,255,0.22); border-color:#64D2FF;">{text}</span>'

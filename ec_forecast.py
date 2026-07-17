@@ -140,7 +140,7 @@ def next_precip_at(now: datetime) -> tuple[datetime, str, int] | None:
 def _temp_value(temps: list[dict], cls: str) -> int | None:
     for t in temps:
         if t.get("class", {}).get("en") == cls:
-            return t["value"]["en"]
+            return t.get("value", {}).get("en")
     return None
 
 
@@ -159,11 +159,17 @@ def _period_detail(p: dict) -> dict:
     both halves of a daily_forecast() row."""
     long_summary = p.get("textSummary", {}).get("en", "")
     uv_index = p.get("uv", {}).get("index", {}).get("en")
+    uv_index_int = None
+    if uv_index is not None:
+        try:
+            uv_index_int = int(float(uv_index))
+        except (TypeError, ValueError):
+            uv_index_int = None
     return {
         "summary": p.get("abbreviatedForecast", {}).get("textSummary", {}).get("en", ""),
         "precip_chance": _percent_chance(long_summary),
         "wind": p.get("winds", {}).get("textSummary", {}).get("en", ""),
-        "uv_index": int(uv_index) if uv_index is not None else None,
+        "uv_index": uv_index_int,
     }
 
 

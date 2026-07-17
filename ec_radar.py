@@ -344,7 +344,8 @@ def _max_mm_h_in_blob(img: Image.Image, alpha_mask: np.ndarray, cells: list[tupl
 
 
 def _scan_nearby(img: Image.Image) -> dict:
-    """{"nearest", "max_mm_h", "nearest_any"} within NEARBY_RADIUS_KM.
+    """{"nearest", "max_mm_h", "nearest_any", "max_mm_h_any"} within
+    NEARBY_RADIUS_KM.
 
     "nearest"/"max_mm_h": the nearest point (and its blob's own peak
     intensity) belonging to whichever cluster of connected
@@ -354,25 +355,30 @@ def _scan_nearby(img: Image.Image) -> dict:
     distinction turned out to matter for real). None/0.0 if nothing
     qualifies.
 
-    "nearest_any": the nearest point belonging to ANY real blob
-    (MIN_REAL_CELLS, a much lower bar — just enough to exclude single-
-    pixel rendering noise), regardless of overall size. This exists
-    only so a small blob that doesn't clear the significance bar can
-    still be checked for whether its own direction of travel is a
-    genuine, direct hit on WEATHER_LAT/WEATHER_LON (see
-    _heading_toward_me) — being small shouldn't matter if it's
-    actually headed straight here."""
+    "nearest_any"/"max_mm_h_any": the nearest point (and ITS OWN blob's
+    peak intensity, not the significant blob's) belonging to ANY real
+    blob (MIN_REAL_CELLS, a much lower bar — just enough to exclude
+    single-pixel rendering noise), regardless of overall size. This
+    exists so a small blob that doesn't clear the significance bar can
+    still be checked for (a) whether its own direction of travel is a
+    genuine direct hit on WEATHER_LAT/WEATHER_LON (see
+    _heading_toward_me), and (b) whether IT is severe in its own right
+    — a small, fast, intense cell on a direct course is exactly the
+    kind of thing that shouldn't be under-reported just for lacking
+    the significant blob's areal extent."""
     cx, cy = IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2
     arr = np.array(img)
     alpha_mask = arr[:, :, 3] > ALPHA_THRESHOLD
     all_blobs = _cluster_blobs(alpha_mask)
 
     real_blobs = [b for b in all_blobs if len(b) >= MIN_REAL_CELLS]
-    nearest_any = None
+    any_blob, nearest_any = None, None
     for cells in real_blobs:
         point = _nearest_point_in_blob(alpha_mask, cells, cx, cy)
         if point is not None and (nearest_any is None or point[2] < nearest_any[2]):
             nearest_any = point
+            any_blob = cells
+    max_mm_h_any = _max_mm_h_in_blob(img, alpha_mask, any_blob) if any_blob is not None else 0.0
 
     significant_blobs = [b for b in real_blobs if len(b) >= MIN_SIGNIFICANT_CELLS]
     best_blob, best_nearest = None, None
@@ -382,8 +388,19 @@ def _scan_nearby(img: Image.Image) -> dict:
             best_nearest = point
             best_blob = cells
 
-    max_mm_h = _max_mm_h_in_blob(img, alpha_mask, best_blob) if best_blob is not None else 0.0
-    return {"nearest": best_nearest, "max_mm_h": max_mm_h, "nearest_any": nearest_any}
+    # The significant blob and the nearest-any blob are frequently the
+    # same one (whenever the closest real precipitation is itself
+    # significant) — skip re-scanning intensity in that case rather
+    # than doing the same work twice.
+    if best_blob is any_blob:
+        max_mm_h = max_mm_h_any
+    else:
+        max_mm_h = _max_mm_h_in_blob(img, alpha_mask, best_blob) if best_blob is not None else 0.0
+
+    return {
+        "nearest": best_nearest, "max_mm_h": max_mm_h,
+        "nearest_any": nearest_any, "max_mm_h_any": max_mm_h_any,
+    }
 
 
 def _far_edge_km(img: Image.Image, bearing_deg_: float, start_km: float) -> float | None:
@@ -543,8 +560,8 @@ _echo_cache: dict[str, tuple[int, dict]] = {}
 
 def _decode_and_scan(kind: str) -> dict:
     """{"img", "nearest", "trend", "max_mm_h", "nearest_any",
-    "heading_toward_me"} for the current radar frame — see
-    _heading_toward_me for that field's shape (a dict once a small
+    "max_mm_h_any", "heading_toward_me"} for the current radar frame —
+    see _heading_toward_me for that field's shape (a dict once a small
     blob's own path is a confirmed direct hit, else None)."""
     layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
     cache_bust = int(time.time() // REFRESH_SECONDS)
@@ -555,20 +572,21 @@ def _decode_and_scan(kind: str) -> dict:
     raw = _fetch_radar_bytes(layer)
     now = datetime.now()
     img = nearest = nearest_any = None
-    max_mm_h = 0.0
+    max_mm_h = max_mm_h_any = 0.0
     if raw:
         try:
             img = Image.open(io.BytesIO(raw)).convert("RGBA")
             scan = _scan_nearby(img)
-            nearest, max_mm_h, nearest_any = scan["nearest"], scan["max_mm_h"], scan["nearest_any"]
+            nearest, max_mm_h = scan["nearest"], scan["max_mm_h"]
+            nearest_any, max_mm_h_any = scan["nearest_any"], scan["max_mm_h_any"]
         except Exception:
             img = nearest = nearest_any = None
-            max_mm_h = 0.0
+            max_mm_h = max_mm_h_any = 0.0
     trend = _record_and_trend(kind, now, nearest[2] if nearest else None)
     heading_toward_me = _heading_toward_me(kind, now, nearest_any[:2] if nearest_any else None)
     result = {
         "img": img, "nearest": nearest, "trend": trend, "max_mm_h": max_mm_h,
-        "nearest_any": nearest_any, "heading_toward_me": heading_toward_me,
+        "nearest_any": nearest_any, "max_mm_h_any": max_mm_h_any, "heading_toward_me": heading_toward_me,
     }
     _echo_cache[kind] = (cache_bust, result)
     return result
@@ -654,22 +672,41 @@ def precip_status(kind: str = "rain") -> dict | None:
 
 def severe_precip_status(kind: str = "rain") -> dict | None:
     """{"mm_h", "direction", "direction_word"} once the strongest echo
-    anywhere within NEARBY_RADIUS_KM (not just the nearest point — a
-    genuinely severe cell is often small and embedded in broader
-    lighter precipitation, see _scan_nearby) meets or exceeds
-    SIGNIFICANT_MM_H, EC's own scale step from "moderate" into
-    "heavy". None most of the time — ordinary rain/snow sits well
-    under this. Direction is the bearing to the nearest echo pixel,
-    same convention as precip_status — not necessarily the exact spot
-    of the heaviest cell, but the closest real reference point for
-    "which way to look.\""""
+    within the tracked system (not just the nearest point — a genuinely
+    severe cell is often small and embedded in broader lighter
+    precipitation, see _scan_nearby) meets or exceeds SIGNIFICANT_MM_H,
+    EC's own scale step from "moderate" into "heavy". None most of the
+    time — ordinary rain/snow sits well under this.
+
+    Checks the significant blob first (see MIN_SIGNIFICANT_CELLS); if
+    that one isn't severe (or doesn't exist), also checks a smaller
+    blob's own intensity, but only when it's confirmed genuinely headed
+    straight at WEATHER_LAT/WEATHER_LON (see _heading_toward_me) — a
+    small, fast, intense cell on a direct course is exactly the kind of
+    thing that shouldn't be under-reported just for lacking the
+    significant blob's areal extent. Direction is the bearing to
+    whichever blob's own nearest pixel produced the match, same
+    convention as precip_status — not necessarily the exact spot of the
+    heaviest cell, but the closest real reference point for "which way
+    to look.\""""
     state = _decode_and_scan(kind)
-    if state["max_mm_h"] < SIGNIFICANT_MM_H or state["nearest"] is None:
+
+    if state["max_mm_h"] >= SIGNIFICANT_MM_H and state["nearest"] is not None:
+        lat, lon, _ = state["nearest"]
+        mm_h = state["max_mm_h"]
+    elif (
+        state["heading_toward_me"] is not None
+        and state["max_mm_h_any"] >= SIGNIFICANT_MM_H
+        and state["nearest_any"] is not None
+    ):
+        lat, lon, _ = state["nearest_any"]
+        mm_h = state["max_mm_h_any"]
+    else:
         return None
-    lat, lon, _ = state["nearest"]
+
     bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)
     return {
-        "mm_h": state["max_mm_h"],
+        "mm_h": mm_h,
         "direction": compass_abbr(bearing_deg_),
         "direction_word": compass_word(bearing_deg_),
     }
@@ -760,9 +797,17 @@ def tracking_overlay(kind: str = "rain") -> dict | None:
 
     Shares its decode+scan with precip_status via _decode_and_scan (see
     its comment above) — calling precip_status(kind) below reuses that
-    same cached state rather than repeating the work."""
+    same cached state rather than repeating the work.
+
+    Falls back to "nearest_any" (any real blob, not just a
+    significant-sized one) the same way precip_status does — confirmed
+    live this mattered: without it, a small blob confirmed heading
+    straight at WEATHER_LAT/WEATHER_LON would show up in the text badge
+    but draw no line/marker at all on the map itself, since this
+    function returned None outright whenever no significant blob
+    existed."""
     state = _decode_and_scan(kind)
-    nearest = state["nearest"]
+    nearest = state["nearest"] or state["nearest_any"]
     if nearest is None:
         return None
     lat, lon, distance_km = nearest

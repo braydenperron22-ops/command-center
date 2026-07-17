@@ -19,6 +19,19 @@ def _format_minutes(total_minutes: float) -> str:
     return f"{minutes} min"
 
 
+def _precip_timing_phrase(status: dict | None) -> str | None:
+    """"in 45 min" / "approaching" / "clears in 20 min" / "here now" —
+    None if there's no confirmed timing yet at all. Same reasoning as
+    app.py's identical helper: severity and ETA are two different
+    questions, so a "Heavy rain" badge shouldn't drop the timing a
+    plain "Rain" badge would still show."""
+    if status is None:
+        return None
+    if status["state"] == "arrived":
+        return f"clears in {_format_minutes(status['minutes'])}" if status["minutes"] is not None else "here now"
+    return f"in {_format_minutes(status['minutes'])}" if status["minutes"] is not None else "approaching"
+
+
 def _city_markers_html(cities: list[dict]) -> str:
     """Small neutral-gray dots + labels for real nearby towns (see
     ec_radar.nearby_city_markers) — deliberately much quieter than the
@@ -61,12 +74,34 @@ def render() -> None:
     kind = "snow" if current and current.get("category") == "snow" else "rain"
     label = "Snow" if kind == "snow" else "Rain"
 
+    # Checked before (and independent of) precip_status below — that
+    # one requires a CONFIRMED approaching trend (see
+    # ec_radar._record_and_trend), which a genuinely severe cell can
+    # still be waiting on right after a fresh detection or re-scan.
+    # Confirmed live this caused a real contradiction: this badge said
+    # "nothing approaching" while the hero row (app.py, which already
+    # checks severity first) said "Heavy rain" for the exact same storm
+    # at the exact same moment.
+    severe = ec_radar.severe_precip_status(kind)
     status = ec_radar.precip_status(kind)
-    if status is not None and status["state"] == "arrived":
+    if severe is not None:
+        timing = _precip_timing_phrase(status)
+        summary = (
+            f"Heavy {label.lower()} {timing} · {severe['mm_h']:.0f} mm/h"
+            if timing else f"Heavy {label.lower()} · {severe['mm_h']:.0f} mm/h"
+        )
+        badge_class = "badge-bad"
+    elif status is not None and status["state"] == "arrived":
         summary = f"Clears in {_format_minutes(status['minutes'])}" if status["minutes"] is not None else f"{label} now"
         badge_class = "badge-bad"
     elif status is not None:
-        summary = f"{label} in {_format_minutes(status['minutes'])}"
+        # Guarded the same way the "arrived" branch above already is —
+        # see app.py's identical guard for why, even without a concrete
+        # path that currently constructs a None here.
+        summary = (
+            f"{label} in {_format_minutes(status['minutes'])}"
+            if status["minutes"] is not None else f"{label} approaching"
+        )
         badge_class = "badge-bad"
     else:
         summary = "Nothing approaching right now"
