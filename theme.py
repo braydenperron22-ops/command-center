@@ -429,7 +429,20 @@ html, body, [class*="css"] {
 }
 .rotation-timer-fill {
     height: 100%;
+    width: 100%;
     background: rgba(255,255,255,0.35);
+    transform-origin: left;
+    /* 300s must match config.PAGE_ROTATION_SECONDS — animation-delay is
+       computed server-side each rerun (see app.py) as -(elapsed seconds
+       into the current window), which resumes this partway through
+       rather than restarting it, so the browser keeps it moving
+       smoothly on its own between reruns instead of jumping in
+       discrete 5-second steps. */
+    animation: rotation-timer-progress 300s linear infinite;
+}
+@keyframes rotation-timer-progress {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
 }
 
 .ticker-bar {

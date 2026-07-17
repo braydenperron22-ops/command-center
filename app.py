@@ -110,17 +110,21 @@ st.markdown(
 # Only shown while real auto-rotation is actually driving the page — a
 # manual ?page= override (see above) pins the page regardless of this
 # timer, so a countdown then would be advertising a change that isn't
-# coming. No CSS transition on the fill: confirmed elsewhere in this
-# file (see scenery.py's own notes) that a transition can't survive
-# this app's autorefresh — every rerun re-emits the element fresh
-# already at its new width rather than animating into it, so it would
-# just silently do nothing. Discrete 5-second jumps instead, matching
-# how every other countdown in this app already behaves.
+# coming. A flat width:X% set fresh each rerun only ever jumps in
+# discrete 5-second steps — same reason CSS transition doesn't survive
+# this app's autorefresh (see scenery.py's own notes): each rerun
+# re-emits the element already at its new value, with nothing to
+# interpolate from. Uses the same fix already proven elsewhere in this
+# app (news.py/commute_reminder.py's toast intro): a real @keyframes
+# animation with a server-computed *negative* animation-delay, which
+# resumes it partway through rather than restarting it — the browser's
+# own render loop then carries it smoothly between reruns on its own,
+# regardless of how long until the next one actually arrives.
 if _requested_page not in PAGES:
-    _rotation_progress = (_rotation_epoch % PAGE_ROTATION_SECONDS) / PAGE_ROTATION_SECONDS
+    _rotation_elapsed = _rotation_epoch % PAGE_ROTATION_SECONDS
     st.markdown(
         f'<div class="rotation-timer-track">'
-        f'<div class="rotation-timer-fill" style="width:{_rotation_progress * 100:.2f}%;"></div></div>',
+        f'<div class="rotation-timer-fill" style="animation-delay:-{_rotation_elapsed:.2f}s;"></div></div>',
         unsafe_allow_html=True,
     )
 

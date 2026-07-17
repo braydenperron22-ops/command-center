@@ -73,7 +73,76 @@ GREETINGS = [
     "Morning. ", "Hey, morning — ", "Top of the morning — ", "Here's where things stand: ",
     "Quick rundown — ", "Alright, here's today: ", "Morning briefing: ", "Here's what's up — ",
     "Kicking off the day — ", "First things first — ",
+    "",
+    "",
+    "",
+    "",
+    "Hey — ",
+    "Good day — ",
+    "Morning, friend — ",
+    "Here goes — ",
+    "Alright — ",
+    "Right then — ",
+    "Let's see — ",
+    "Okay, here's the scoop: ",
+    "Fresh update — ",
+    "Straight to it: ",
+    "No time to waste — ",
+    "Here's the deal: ",
 ]
+
+# How consecutive clauses get stitched together — picked once per join
+# position, per day (same seeding discipline as everything else here),
+# instead of always the same flat "; " between every single one. That
+# flat join was the single biggest reason the whole thing still read as
+# "here are N separate facts" rather than one thing someone actually
+# wrote — varying the connector (and occasionally starting a genuine
+# new sentence) does more for how "modular" it feels than any amount of
+# per-category line variety can, since it's the seams between clauses,
+# not the clauses themselves, that gave it away. Second element is
+# whether the connector starts a new sentence (True — capitalize the
+# clause that follows) or continues the current one (False — leave it
+# lowercase, matching how every clause is already written).
+CONNECTORS = [
+    ("; ", False),
+    (", and ", False),
+    (" — ", False),
+    (", plus ", False),
+    (", while ", False),
+    (", also, ", False),
+    (", meanwhile, ", False),
+    (". Also, ", True),
+    (". On top of that, ", True),
+    (". And ", True),
+    (". Plus, ", True),
+    (". Meanwhile, ", True),
+    (". Worth adding: ", True),
+    (". On the same note, ", True),
+]
+
+
+def _join_clauses(picked: list[str], now: datetime) -> str:
+    """Assembles the picked clause texts into one sentence (or short
+    run of sentences), varying the connector between each pair rather
+    than always joining with the same "; " — see CONNECTORS above.
+    Sampled without replacement (one Random draw for the whole day, not
+    one pick per join position) so the same connector can't turn up
+    twice in one sentence — confirmed live that independent per-position
+    picks could otherwise land on "Worth adding:" (or any other phrase)
+    twice in the same render, which undercuts the whole point of
+    varying them in the first place."""
+    num_joins = len(picked) - 1
+    if num_joins <= 0:
+        return picked[0]
+    rng = random.Random(f"{now.date().isoformat()}-connectors")
+    chosen = rng.sample(CONNECTORS, min(num_joins, len(CONNECTORS)))
+    parts = [picked[0]]
+    for clause_text, (connector_text, capitalize_next) in zip(picked[1:], chosen):
+        if capitalize_next and clause_text:
+            clause_text = clause_text[0].upper() + clause_text[1:]
+        parts.append(connector_text)
+        parts.append(clause_text)
+    return "".join(parts)
 
 HEAT_LINES = [
     "it's already {temp}°C — bracing for a scorcher, high near {high}°C",
@@ -96,6 +165,21 @@ HEAT_LINES = [
     "{high}°C high expected, and {temp}°C right now backs that up",
     "sticky and hot, {temp}°C at the moment, {high}°C coming",
     "today's the kind of hot where {temp}°C this early means {high}°C later",
+    "{temp}°C and rising fast — {high}°C by the time the day's done",
+    "blazing already, {temp}°C now, {high}°C on deck",
+    "{temp}°C out, the kind of heat that makes shade valuable — {high}°C later",
+    "scorching start, {temp}°C, climbing toward {high}°C",
+    "{temp}°C right now, and {high}°C is still coming — pace yourself today",
+    "heat index territory already, {temp}°C, {high}°C by afternoon",
+    "{high}°C on tap, and {temp}°C this early confirms it's a hot one",
+    "{temp}°C out there — the fans are earning their keep, {high}°C later",
+    "another scorcher, {temp}°C now, topping {high}°C",
+    "{temp}°C already at this hour, {high}°C waiting in the wings",
+    "real heat today, {temp}°C now, {high}°C the ceiling",
+    "{temp}°C out, thick and hot, {high}°C by later",
+    "the mercury's climbing fast — {temp}°C now, {high}°C ahead",
+    "{temp}°C this morning, sweat-through-your-shirt hot by {high}°C",
+    "{high}°C is the forecast, {temp}°C right now says it's on track",
 ]
 WARM_LINES = [
     "warm start at {temp}°C, climbing to {high}°C — good day to be outside",
@@ -118,6 +202,21 @@ WARM_LINES = [
     "outdoor-plans weather — {temp}°C now, {high}°C expected",
     "{temp}°C already and only getting warmer, {high}°C by later",
     "a genuinely pleasant warm day ahead, {temp}°C now, {high}°C to come",
+    "{temp}°C out, a genuinely lovely warm morning, {high}°C by later",
+    "warm and inviting, {temp}°C now, {high}°C on the way",
+    "{temp}°C already, the good kind of warm, {high}°C by afternoon",
+    "summer's doing its job today — {temp}°C now, {high}°C later",
+    "{temp}°C out there, warm enough to enjoy, {high}°C ahead",
+    "comfortable heat today, {temp}°C now, climbing to {high}°C",
+    "{high}°C expected, and {temp}°C this morning is a warm head start",
+    "{temp}°C right now, ideal outdoor weather building toward {high}°C",
+    "warm morning air, {temp}°C now, {high}°C later on",
+    "{temp}°C out, warm without tipping into uncomfortable, {high}°C ahead",
+    "a genuinely good-weather day, {temp}°C now, {high}°C by afternoon",
+    "{temp}°C already — shorts and t-shirt weather, {high}°C coming",
+    "nice warm start, {temp}°C, {high}°C expected by later",
+    "{temp}°C out there, warm and easy, {high}°C on the way",
+    "{high}°C today, and {temp}°C now sets the tone nicely",
 ]
 MILD_LINES = [
     "a comfortable {temp}°C to start the day",
@@ -140,6 +239,21 @@ MILD_LINES = [
     "steady, mild {temp}°C to kick off the day",
     "{temp}°C right now — comfortable, unremarkable, fine",
     "an easy {temp}°C morning, {high}°C expected later",
+    "{temp}°C out, right in the sweet spot",
+    "{temp}°C this morning, nothing to adjust plans around",
+    "a plain, pleasant {temp}°C to start things off",
+    "{temp}°C right now, {high}°C later, an easy day weather-wise",
+    "nothing notable temperature-wise — {temp}°C now",
+    "{temp}°C out there, the kind of mild you barely notice",
+    "middle-ground weather, {temp}°C now, {high}°C by afternoon",
+    "{temp}°C this morning, comfortably in between hot and cold",
+    "an agreeable {temp}°C to kick off the day",
+    "{temp}°C out, mild enough to not think about it twice",
+    "{high}°C expected, {temp}°C right now keeping it mild",
+    "{temp}°C now, a calm, undramatic start to the day",
+    "nothing to report weather-wise, {temp}°C and holding steady",
+    "{temp}°C out there — pleasant, forgettable, fine",
+    "a solidly average {temp}°C this morning, {high}°C later",
 ]
 COOL_LINES = [
     "cooler start, {temp}°C — worth a jacket on your way out",
@@ -162,6 +276,21 @@ COOL_LINES = [
     "{temp}°C out — nothing serious, just a cool morning edge",
     "a bit nippy out, {temp}°C now, warming toward {high}°C",
     "{temp}°C right now, cool enough for long sleeves",
+    "{temp}°C out, a little bite in the morning air",
+    "cooler than yesterday probably, {temp}°C now, {high}°C by later",
+    "{temp}°C right now, sweater weather for the early hours",
+    "a crisp {temp}°C to start, warming to {high}°C",
+    "{temp}°C out there, not cold exactly, but cool enough to notice",
+    "morning chill today, {temp}°C now, {high}°C coming",
+    "{temp}°C this morning, a light jacket wouldn't hurt",
+    "cool air out there, {temp}°C now, {high}°C by afternoon",
+    "{temp}°C right now — refreshing rather than uncomfortable",
+    "a cooler start than usual, {temp}°C, {high}°C later",
+    "{temp}°C out, the good kind of cool, {high}°C ahead",
+    "brisk but manageable, {temp}°C this morning",
+    "{temp}°C now, cool enough for coffee to actually help",
+    "a fresh {temp}°C out there, {high}°C by later",
+    "{temp}°C right now, cool mornings, warmer afternoons — {high}°C",
 ]
 COLD_LINES = [
     "it's {temp}°C — bundle up before you head out",
@@ -184,6 +313,21 @@ COLD_LINES = [
     "genuinely frigid, {temp}°C this morning",
     "{temp}°C out, the car's going to need a minute to warm up",
     "cold enough to feel it immediately — {temp}°C right now",
+    "{temp}°C out there, no sugar-coating it — dress warm",
+    "a real cold morning, {temp}°C now, {high}°C the best it gets",
+    "{temp}°C right now, gloves-and-hat kind of cold",
+    "deep into cold territory, {temp}°C this morning",
+    "{temp}°C out, the kind of cold that stings for a second",
+    "bundle-up weather, {temp}°C now, {high}°C by later",
+    "{temp}°C this morning — winter's making its point",
+    "a biting {temp}°C out there, {high}°C the ceiling today",
+    "{temp}°C right now, proper cold, no way around it",
+    "cold enough to see your breath, {temp}°C this morning",
+    "{temp}°C out, dress in layers today, {high}°C later",
+    "a hard cold morning, {temp}°C now",
+    "{temp}°C right now — the car's going to protest starting",
+    "genuinely frigid out there, {temp}°C, {high}°C by afternoon",
+    "{temp}°C this morning, winter's fully committed today",
 ]
 
 # About half of these weave in {direction} (e.g. "northwest") — the
@@ -205,6 +349,14 @@ RADAR_RAIN_LINES = [
     "rain's on its way in per the radar, {eta} minutes out",
     "radar shows a cell heading in from the {direction}, rain in roughly {eta} minutes",
     "{eta} minutes and change before that rain out of the {direction} gets here",
+    "rain's tracking in, radar puts the ETA around {eta} minutes",
+    "picking up rain on the radar, {eta} minutes before it lands",
+    "rain's on the move toward you, {eta} minutes out",
+    "radar's flagged incoming rain, roughly {eta} minutes away",
+    "{eta} minutes out — rain's genuinely headed this way",
+    "a real cell on the radar, rain in about {eta} minutes",
+    "rain's approaching per the live radar, {eta} minutes or so",
+    "radar shows rain closing the distance, {eta} minutes left",
 ]
 RADAR_SNOW_LINES = [
     "radar's picking up snow heading your way, could hit in about {eta} min",
@@ -219,6 +371,14 @@ RADAR_SNOW_LINES = [
     "snow's on its way in per the radar, {eta} minutes out",
     "radar shows a system heading in from the {direction}, snow in roughly {eta} minutes",
     "{eta} minutes and change before that snow out of the {direction} gets here",
+    "snow's tracking in, radar puts the ETA around {eta} minutes",
+    "picking up snow on the radar, {eta} minutes before it lands",
+    "snow's on the move toward you, {eta} minutes out",
+    "radar's flagged incoming snow, roughly {eta} minutes away",
+    "{eta} minutes out — snow's genuinely headed this way",
+    "a real system on the radar, snow in about {eta} minutes",
+    "snow's approaching per the live radar, {eta} minutes or so",
+    "radar shows snow closing the distance, {eta} minutes left",
 ]
 ARRIVED_RAIN_LINES = [
     "rain's here now, radar's got it clearing in about {eta} min",
@@ -231,6 +391,13 @@ ARRIVED_RAIN_LINES = [
     "it's actively raining, radar's tracking it clearing in {eta} min",
     "rain's on top of you now, {eta} minutes before it lets up",
     "yep, it's raining — should ease off in about {eta} minutes",
+    "it's raining right now, radar has it clearing in {eta} min",
+    "rain's here — {eta} minutes until the radar shows it gone",
+    "actively wet out there, {eta} minutes left on this one",
+    "rain's overhead now, should pass in about {eta} minutes",
+    "it's come in — radar's tracking {eta} minutes until it clears",
+    "rain's landed, {eta} minutes or so before it moves on",
+    "currently raining, {eta} minutes left per the radar",
 ]
 ARRIVED_SNOW_LINES = [
     "snow's here now, radar's got it clearing in about {eta} min",
@@ -243,6 +410,13 @@ ARRIVED_SNOW_LINES = [
     "it's actively snowing, radar's tracking it clearing in {eta} min",
     "snow's on top of you now, {eta} minutes before it lets up",
     "yep, it's snowing — should ease off in about {eta} minutes",
+    "it's snowing right now, radar has it clearing in {eta} min",
+    "snow's here — {eta} minutes until the radar shows it gone",
+    "actively snowing out there, {eta} minutes left on this one",
+    "snow's overhead now, should pass in about {eta} minutes",
+    "it's come in — radar's tracking {eta} minutes until it clears",
+    "snow's landed, {eta} minutes or so before it moves on",
+    "currently snowing, {eta} minutes left per the radar",
 ]
 FORECAST_RAIN_LINES = [
     "rain's in the forecast today, {chance}% chance around {time} — grab an umbrella on your way out",
@@ -259,6 +433,14 @@ FORECAST_RAIN_LINES = [
     "{chance}% chance of rain later — {time} is the window",
     "might want a jacket with a hood — {chance}% chance of rain near {time}",
     "rain's forecast for around {time} today, {chance}% likely",
+    "{chance}% chance of rain in the forecast, around {time}",
+    "rain's possible around {time} today, {chance}% odds",
+    "forecast's flagging rain near {time}, {chance}% likely",
+    "{chance}% chance today, rain expected around {time}",
+    "keep it in mind — {chance}% chance of rain near {time}",
+    "rain might show up around {time}, {chance}% chance per the forecast",
+    "{chance}% odds of rain later today, {time} is the target",
+    "forecast calls for a {chance}% shot at rain around {time}",
 ]
 FORECAST_SNOW_LINES = [
     "snow's in the forecast today, {chance}% chance around {time} — plan accordingly",
@@ -275,6 +457,14 @@ FORECAST_SNOW_LINES = [
     "{chance}% chance of snow later — {time} is the window",
     "might want to budget extra drive time — {chance}% chance of snow near {time}",
     "snow's forecast for around {time} today, {chance}% likely",
+    "{chance}% chance of snow in the forecast, around {time}",
+    "snow's possible around {time} today, {chance}% odds",
+    "forecast's flagging snow near {time}, {chance}% likely",
+    "{chance}% chance today, snow expected around {time}",
+    "keep it in mind — {chance}% chance of snow near {time}",
+    "snow might show up around {time}, {chance}% chance per the forecast",
+    "{chance}% odds of snow later today, {time} is the target",
+    "forecast calls for a {chance}% shot at snow around {time}",
 ]
 CLEAR_SKY_LINES = [
     "skies look clear for now",
@@ -295,6 +485,18 @@ CLEAR_SKY_LINES = [
     "no umbrella needed today, by the look of it",
     "skies are clear, nothing brewing on radar",
     "dry conditions expected all day",
+    "blue skies for now, nothing brewing",
+    "radar's clean, nothing to report",
+    "a dry stretch continues, nothing incoming",
+    "no weather drama today, by the look of it",
+    "clear conditions holding, nothing on the way",
+    "nothing wet in the forecast right now",
+    "skies are cooperating today, no rain in sight",
+    "radar's about as quiet as it gets",
+    "dry weather holding steady today",
+    "no precipitation anywhere close, radar-wise",
+    "a clean weather day ahead, nothing tracking in",
+    "clear straight through, nothing to plan around",
 ]
 
 WILDFIRE_LINES = [
@@ -310,6 +512,14 @@ WILDFIRE_LINES = [
     "{aqi} on the AQI scale this morning, wildfire smoke the likely reason, {distance:.0f}km away",
     "not the cleanest air today, {aqi} AQI, smoke traced to a fire {distance:.0f}km out",
     "wildfire smoke again — {aqi} AQI, fire's about {distance:.0f}km away",
+    "smoke's the likely culprit today, AQI {aqi}, source fire {distance:.0f}km out",
+    "{aqi} AQI this morning — wildfire smoke drifting in from about {distance:.0f}km away",
+    "air's hazy again, {aqi} on the scale, nearest fire roughly {distance:.0f}km off",
+    "wildfire smoke's the story today, {aqi} AQI, {distance:.0f}km from the source",
+    "{aqi} AQI, likely smoke — closest active fire about {distance:.0f}km out",
+    "hazy conditions continue, {aqi} AQI, fire source {distance:.0f}km away",
+    "smoke's drifting in again, {aqi} on the AQI scale, {distance:.0f}km out",
+    "{distance:.0f}km away and still affecting the air here — {aqi} AQI today",
 ]
 AQI_ONLY_LINES = [
     "air quality's elevated today ({aqi}) — maybe skip the outdoor workout",
@@ -324,6 +534,14 @@ AQI_ONLY_LINES = [
     "worth knowing — AQI's at {aqi} today",
     "{aqi} AQI right now, nothing alarming but noticeable",
     "air's a little heavier today, AQI sitting at {aqi}",
+    "{aqi} on the AQI scale — keep outdoor time modest today",
+    "air's a bit thick today, {aqi} AQI",
+    "{aqi} AQI this morning, mildly elevated",
+    "worth a glance — air quality's at {aqi} today",
+    "{aqi} on the scale, nothing severe but noticeable",
+    "air quality's ticked up to {aqi} today",
+    "{aqi} AQI right now, a touch worse than ideal",
+    "not the freshest air today, {aqi} on the AQI scale",
 ]
 
 COMMUTE_BAD_LINES = [
@@ -341,6 +559,14 @@ COMMUTE_BAD_LINES = [
     "budget extra time — {delay} minutes of traffic to {destination}{reason}",
     "not a fast one today, {delay} minutes over usual heading to {destination}{reason}",
     "{delay} minutes slower than normal to {destination} this morning{reason}",
+    "heavy traffic this morning, {delay} minutes over normal to {destination}{reason}",
+    "the drive's going to cost you — {delay} extra minutes to {destination}{reason}",
+    "{delay} minutes of real delay heading to {destination} today{reason}",
+    "roads are jammed, {delay} minutes over usual to {destination}{reason}",
+    "plan for a slow one — {delay} minutes extra to {destination}{reason}",
+    "traffic's genuinely bad, {delay} minutes over normal to {destination}{reason}",
+    "{delay} minutes tacked onto the drive to {destination} today{reason}",
+    "a rough commute ahead, {delay} extra minutes to {destination}{reason}",
 ]
 COMMUTE_MINOR_LINES = [
     "a few extra minutes on the roads today, {duration} min total to {destination}",
@@ -355,6 +581,14 @@ COMMUTE_MINOR_LINES = [
     "roads are mostly fine, just {delay} minutes slower to {destination}",
     "a bit of traffic, {duration} min to {destination} this morning",
     "{duration} minutes to {destination}, only slightly off pace today",
+    "{duration} minutes to {destination}, a touch slower than usual",
+    "nothing serious, {delay} minutes over normal to {destination}",
+    "{duration} min to {destination} today, minor slowdown",
+    "a small bit of traffic, {delay} minutes added to {destination}",
+    "{duration} minutes to {destination}, marginally slower than normal",
+    "light delay today, {delay} min over usual to {destination}",
+    "{duration} min total to {destination} — nothing to worry about",
+    "slightly slower drive, {delay} minutes over normal to {destination}",
 ]
 COMMUTE_CLEAR_LINES = [
     "roads are clear, {duration} min to {destination} like normal",
@@ -371,6 +605,14 @@ COMMUTE_CLEAR_LINES = [
     "{duration} minutes to {destination} — right on schedule",
     "smooth sailing to {destination} today, {duration} min",
     "commute's a non-event today, {duration} minutes to {destination}",
+    "{duration} minutes to {destination}, textbook normal",
+    "clean drive today, {duration} min to {destination}",
+    "{duration} minutes to {destination} — couldn't ask for better",
+    "roads are wide open, {duration} min to {destination}",
+    "{duration} minutes to {destination}, nothing in the way",
+    "an uneventful drive today, {duration} min to {destination}",
+    "{duration} minutes to {destination}, right as expected",
+    "smooth as it gets, {duration} min to {destination}",
 ]
 
 AGENDA_BUSY_LINES = [
@@ -386,6 +628,14 @@ AGENDA_BUSY_LINES = [
     "{count} things to get through today, starting with {first_event} at {time}",
     "no quiet day today — {count} events, first is {first_event} at {time}",
     "busy calendar today, {count} entries, opening with {first_event} at {time}",
+    "{count} things lined up today, {first_event} leads it off at {time}",
+    "a packed calendar — {count} events, starting with {first_event} at {time}",
+    "{count} on today's docket, {first_event} first at {time}",
+    "today's full, {count} things scheduled, {first_event} at {time} to open",
+    "{count} entries on the calendar, kicking off with {first_event} at {time}",
+    "lots going on — {count} events today, {first_event} at {time} first",
+    "{count} things to work through today, {first_event} at {time} starts it",
+    "a busy calendar today, {count} items, {first_event} leading at {time}",
 ]
 AGENDA_LIGHT_LINES = [
     "just {first_event} at {time} on the calendar today",
@@ -400,6 +650,14 @@ AGENDA_LIGHT_LINES = [
     "not a busy one — {first_event} at {time} is it",
     "the calendar's quiet aside from {first_event} at {time}",
     "{first_event} at {time} is the sole thing on today's agenda",
+    "{first_event} at {time} — that's really it for today",
+    "today's light, just {first_event} at {time} to plan around",
+    "{first_event} at {time}, and otherwise the day's open",
+    "one thing on deck today — {first_event} at {time}",
+    "{first_event} at {time} is the only fixed point today",
+    "not much scheduled, {first_event} at {time} is it",
+    "{first_event} at {time}, nothing else on the calendar",
+    "just {first_event} at {time} today, plenty of open time otherwise",
 ]
 AGENDA_EMPTY_LINES = [
     "calendar's wide open today",
@@ -416,6 +674,14 @@ AGENDA_EMPTY_LINES = [
     "nothing pulling at your schedule today",
     "a rare open day — nothing on the books",
     "the calendar's empty today, for once",
+    "completely open today, nothing on the books",
+    "the calendar's got nothing today",
+    "a genuinely free day ahead",
+    "nothing scheduled at all today",
+    "wide open — no commitments today",
+    "today's a blank page, calendar-wise",
+    "not one thing booked today",
+    "the day's entirely yours, nothing planned",
 ]
 
 GARBAGE_LINES = [
@@ -429,6 +695,14 @@ GARBAGE_LINES = [
     "{kind} day today, worth setting a reminder for tonight",
     "bins out tonight — it's {kind} day",
     "today's the day — {kind} pickup",
+    "{kind} day today, bins out before you head out",
+    "heads up — {kind} pickup today",
+    "today's {kind} day, don't forget the bins",
+    "{kind} day — worth a reminder before tonight",
+    "bins out for {kind} day today",
+    "{kind} pickup today, keep it in mind",
+    "don't forget — it's {kind} day",
+    "{kind} day today, bins out tonight without fail",
 ]
 PAYDAY_TODAY_LINES = [
     "and it's payday today",
@@ -443,6 +717,14 @@ PAYDAY_TODAY_LINES = [
     "payday today — that's something",
     "today's the day the paycheck lands",
     "silver lining: payday's today",
+    "good news first: it's payday",
+    "payday's here today",
+    "the paycheck lands today",
+    "today's a payday, worth noting",
+    "nice timing — payday's today",
+    "it's officially payday today",
+    "payday today, if that changes your morning",
+    "today's the biweekly payday",
 ]
 PAYDAY_TOMORROW_LINES = [
     "payday's tomorrow",
@@ -455,6 +737,12 @@ PAYDAY_TOMORROW_LINES = [
     "the paycheck lands tomorrow",
     "one more sleep till payday",
     "tomorrow brings payday",
+    "payday's tomorrow, for what it's worth",
+    "tomorrow's the payday",
+    "one day out from payday",
+    "payday lands tomorrow",
+    "almost payday — tomorrow's the day",
+    "the paycheck's due tomorrow",
 ]
 GAS_ECO_LINES = [
     "gas ticked up to {price:.1f}¢, might hold off on filling up if you can",
@@ -467,6 +755,14 @@ GAS_ECO_LINES = [
     "worth noting: gas is at {price:.1f}¢/L today, a bit above average",
     "fuel's up to {price:.1f}¢/L — eco mode earns its keep today",
     "{price:.1f}¢/L at the pump — maybe stretch the tank a bit longer",
+    "{price:.1f}¢/L today — a pricier stretch at the pump",
+    "gas prices sitting at {price:.1f}¢/L, worth conserving today",
+    "{price:.1f}¢/L right now, eco driving actually pays off today",
+    "prices are elevated, {price:.1f}¢/L — maybe skip the fill-up",
+    "{price:.1f}¢/L at the pump today, a bit above the norm",
+    "fuel's pricier today at {price:.1f}¢/L",
+    "{price:.1f}¢/L right now — worth easing off the accelerator today",
+    "gas is up to {price:.1f}¢/L, hold off on filling up if you can",
 ]
 
 ALERT_LINES = [
@@ -480,6 +776,12 @@ ALERT_LINES = [
     "today's notable one: {title}",
     "don't skip this: {title}",
     "on the radar today: {title}",
+    "heads up today: {title}",
+    "important: {title}",
+    "flagging this: {title}",
+    "keep this on your radar: {title}",
+    "worth your attention: {title}",
+    "a real one today — {title}",
 ]
 
 MARKET_UP_LINES = [
@@ -497,6 +799,14 @@ MARKET_UP_LINES = [
     "markets kicking off positive, S&P +{pct}%",
     "up {pct}% so far — a decent start",
     "S&P's ahead {pct}% this morning",
+    "S&P's off to a green start, +{pct}%",
+    "markets are trading up, +{pct}% so far",
+    "a positive open, S&P +{pct}%",
+    "green so far this morning, up {pct}%",
+    "markets are cooperating today, +{pct}%",
+    "S&P's ahead by {pct}% this morning",
+    "a good sign for the market, +{pct}% so far",
+    "up {pct}% out of the gate this morning",
 ]
 MARKET_DOWN_LINES = [
     "markets are red this morning, S&P -{pct}%",
@@ -513,6 +823,14 @@ MARKET_DOWN_LINES = [
     "markets are in the red, down {pct}%",
     "a bit of a pullback this morning, -{pct}%",
     "S&P's off to a rough start, -{pct}%",
+    "S&P's off to a red start, -{pct}%",
+    "markets are trading down, -{pct}% so far",
+    "a negative open, S&P -{pct}%",
+    "red so far this morning, down {pct}%",
+    "markets aren't cooperating today, -{pct}%",
+    "S&P's behind by {pct}% this morning",
+    "a rough sign for the market, -{pct}% so far",
+    "down {pct}% out of the gate this morning",
 ]
 MARKET_FLAT_LINES = [
     "markets are flat this morning",
@@ -527,6 +845,12 @@ MARKET_FLAT_LINES = [
     "no real direction in the markets yet",
     "markets are sitting still so far",
     "S&P's barely moved this morning",
+    "markets are directionless this morning",
+    "S&P's essentially flat to start",
+    "not much happening in the markets yet",
+    "a non-event morning for the S&P",
+    "markets are stuck in place so far",
+    "nothing decisive in the markets this morning",
 ]
 
 # Deliberately the lowest-priority clause of all of them (see its
@@ -547,6 +871,14 @@ DAYLIGHT_GAINING_LINES = [
     "sunset's later today — {sunset}, {delta} minutes more daylight than yesterday",
     "the daylight stretch continues, {delta} minutes gained",
     "{delta} minutes of extra daylight today, sunset creeping to {sunset}",
+    "daylight keeps building, {delta} minutes more than yesterday",
+    "{delta} minutes gained since yesterday, sunset now at {sunset}",
+    "the light's stretching further, {delta} minutes more today",
+    "more daylight again today, {delta} minutes up from yesterday",
+    "{delta} minutes added to the daylight today",
+    "sunset's crept later — {sunset}, {delta} minutes more than yesterday",
+    "the days keep lengthening, {delta} minutes gained",
+    "{delta} more minutes of light today than yesterday",
 ]
 DAYLIGHT_LOSING_LINES = [
     "days are shrinking — {delta} fewer minutes of daylight than yesterday, sunset at {sunset}",
@@ -561,6 +893,14 @@ DAYLIGHT_LOSING_LINES = [
     "sunset's earlier today — {sunset}, {delta} minutes less daylight than yesterday",
     "the daylight retreat continues, {delta} minutes lost",
     "{delta} fewer minutes of daylight today, sunset creeping to {sunset}",
+    "daylight keeps shrinking, {delta} minutes less than yesterday",
+    "{delta} minutes lost since yesterday, sunset now at {sunset}",
+    "the light's retreating, {delta} minutes less today",
+    "less daylight again today, {delta} minutes down from yesterday",
+    "{delta} minutes shaved off the daylight today",
+    "sunset's crept earlier — {sunset}, {delta} minutes less than yesterday",
+    "the days keep shortening, {delta} minutes lost",
+    "{delta} fewer minutes of light today than yesterday",
 ]
 
 
@@ -759,7 +1099,7 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         return
     clauses.sort(key=lambda c: c[0], reverse=True)
     picked = [text for _, text in clauses[:MAX_CLAUSES]]
-    sentence = "; ".join(picked)
+    sentence = _join_clauses(picked, now)
     sentence = sentence[0].upper() + sentence[1:] + "."
     greeting = _pick(GREETINGS, now, "greeting")
 
