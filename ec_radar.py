@@ -19,9 +19,11 @@ cached to the radar's own real update cadence.
 
 import io
 import time
+from collections import deque
 from datetime import datetime
 from math import asin, atan2, cos, degrees, radians, sin, sqrt
 
+import numpy as np
 import requests
 import streamlit as st
 from PIL import Image
@@ -255,38 +257,104 @@ def _classify_mm_h(rgb: tuple[int, int, int]) -> float:
     return best_value
 
 
+# A storm system needs real areal extent to count as the thing being
+# tracked — confirmed live (a real screenshot from the actual kiosk)
+# that plain "whichever single pixel is geometrically closest" tracking
+# locked onto a tiny, likely-noise blob at 40km while a genuinely
+# massive, coherent storm system sat at 64km, 274x the size, completely
+# ignored. A coarse CELL_PX x CELL_PX grid (not per-pixel) keeps the
+# clustering fast in pure Python — confirmed live ~15-35ms for a full
+# wide-frame scan — without needing scipy, which isn't a dependency
+# here. Roughly 12 km² per cell at this latitude, so MIN_SIGNIFICANT_CELLS
+# is a ~500km² minimum footprint: comfortably bigger than a stray
+# sprinkle, comfortably smaller than a real system worth tracking.
+_CLUSTER_CELL_PX = 8
+MIN_SIGNIFICANT_CELLS = 40
+
+
+def _cluster_blobs(alpha_mask: np.ndarray) -> list[list[tuple[int, int]]]:
+    """8-connected clusters of occupied _CLUSTER_CELL_PX-sized grid
+    cells over the full echo mask (each list entry is that blob's
+    (grid_y, grid_x) cell coordinates)."""
+    h, w = alpha_mask.shape
+    gh, gw = h // _CLUSTER_CELL_PX, w // _CLUSTER_CELL_PX
+    trimmed = alpha_mask[: gh * _CLUSTER_CELL_PX, : gw * _CLUSTER_CELL_PX]
+    occupied = trimmed.reshape(gh, _CLUSTER_CELL_PX, gw, _CLUSTER_CELL_PX).any(axis=(1, 3))
+
+    visited = np.zeros_like(occupied)
+    blobs = []
+    for gy in range(gh):
+        for gx in range(gw):
+            if not occupied[gy, gx] or visited[gy, gx]:
+                continue
+            queue = deque([(gy, gx)])
+            visited[gy, gx] = True
+            cells = []
+            while queue:
+                y, x = queue.popleft()
+                cells.append((y, x))
+                for dy in (-1, 0, 1):
+                    for dx in (-1, 0, 1):
+                        ny, nx = y + dy, x + dx
+                        if 0 <= ny < gh and 0 <= nx < gw and occupied[ny, nx] and not visited[ny, nx]:
+                            visited[ny, nx] = True
+                            queue.append((ny, nx))
+            blobs.append(cells)
+    return blobs
+
+
 def _scan_nearby(img: Image.Image) -> dict:
-    """Single pass within NEARBY_RADIUS_KM of WEATHER_LAT/WEATHER_LON —
-    {"nearest": (lat, lon, distance_km)|None, "max_mm_h": float}. Both
-    come from the same scan rather than two separate ones: the closest
-    echo pixel and the most intense one aren't always the same pixel
-    (a genuinely severe cell is often small and embedded within
-    broader lighter precipitation), so both are tracked together.
-    max_mm_h is 0.0, never None, when nothing's in range — callers can
-    compare it directly without an extra guard."""
+    """{"nearest": (lat, lon, distance_km)|None, "max_mm_h": float} for
+    the nearest point belonging to whichever cluster of connected
+    precipitation within NEARBY_RADIUS_KM actually has real areal
+    extent (see MIN_SIGNIFICANT_CELLS) — not just whichever single
+    pixel happens to be geometrically closest (see _cluster_blobs'
+    comment for why that distinction turned out to matter for real).
+    max_mm_h is scoped to that same tracked blob, not stray intensity
+    elsewhere in the frame, and is 0.0 (never None) when nothing
+    qualifies — callers can compare it directly without an extra
+    guard."""
     cx, cy = IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2
-    nearest = None
+    arr = np.array(img)
+    alpha_mask = arr[:, :, 3] > ALPHA_THRESHOLD
+
+    candidates = [b for b in _cluster_blobs(alpha_mask) if len(b) >= MIN_SIGNIFICANT_CELLS]
+    if not candidates:
+        return {"nearest": None, "max_mm_h": 0.0}
+
+    best_blob, best_nearest = None, None
+    for cells in candidates:
+        blob_nearest = None
+        for gy, gx in cells:
+            py0, px0 = gy * _CLUSTER_CELL_PX, gx * _CLUSTER_CELL_PX
+            for py in range(py0, min(py0 + _CLUSTER_CELL_PX, IMAGE_HEIGHT), _SAMPLE_STRIDE):
+                for px in range(px0, min(px0 + _CLUSTER_CELL_PX, IMAGE_WIDTH), _SAMPLE_STRIDE):
+                    if not alpha_mask[py, px]:
+                        continue
+                    lat = WEATHER_LAT - (py - cy) * _DEG_PER_PX
+                    lon = WEATHER_LON + (px - cx) * _DEG_PER_PX
+                    dist = _distance_km(WEATHER_LAT, WEATHER_LON, lat, lon)
+                    if dist > NEARBY_RADIUS_KM:
+                        continue
+                    if blob_nearest is None or dist < blob_nearest[2]:
+                        blob_nearest = (lat, lon, dist)
+        if blob_nearest is not None and (best_nearest is None or blob_nearest[2] < best_nearest[2]):
+            best_nearest = blob_nearest
+            best_blob = cells
+
+    if best_nearest is None:
+        return {"nearest": None, "max_mm_h": 0.0}
+
     max_mm_h = 0.0
-    for dy in range(-_SEARCH_PX, _SEARCH_PX + 1, _SAMPLE_STRIDE):
-        py = cy + dy
-        if py < 0 or py >= IMAGE_HEIGHT:
-            continue
-        for dx in range(-_SEARCH_PX, _SEARCH_PX + 1, _SAMPLE_STRIDE):
-            px = cx + dx
-            if px < 0 or px >= IMAGE_WIDTH:
-                continue
-            pixel = img.getpixel((px, py))
-            if pixel[3] <= ALPHA_THRESHOLD:
-                continue
-            lat = WEATHER_LAT - dy * _DEG_PER_PX
-            lon = WEATHER_LON + dx * _DEG_PER_PX
-            dist = _distance_km(WEATHER_LAT, WEATHER_LON, lat, lon)
-            if dist > NEARBY_RADIUS_KM:
-                continue
-            if nearest is None or dist < nearest[2]:
-                nearest = (lat, lon, dist)
-            max_mm_h = max(max_mm_h, _classify_mm_h(pixel[:3]))
-    return {"nearest": nearest, "max_mm_h": max_mm_h}
+    for gy, gx in best_blob:
+        py0, px0 = gy * _CLUSTER_CELL_PX, gx * _CLUSTER_CELL_PX
+        for py in range(py0, min(py0 + _CLUSTER_CELL_PX, IMAGE_HEIGHT), _SAMPLE_STRIDE):
+            for px in range(px0, min(px0 + _CLUSTER_CELL_PX, IMAGE_WIDTH), _SAMPLE_STRIDE):
+                if not alpha_mask[py, px]:
+                    continue
+                max_mm_h = max(max_mm_h, _classify_mm_h(img.getpixel((px, py))[:3]))
+
+    return {"nearest": best_nearest, "max_mm_h": max_mm_h}
 
 
 def _far_edge_km(img: Image.Image, bearing_deg_: float, start_km: float) -> float | None:
