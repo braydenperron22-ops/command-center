@@ -863,6 +863,7 @@ html, body, [class*="css"] {
 .news-alert-tag.news-cat-market-news { background: rgba(255,214,10,0.9); color: #4d3c00; }
 .news-alert-tag.news-cat-mergers { background: rgba(255,159,10,0.9); color: #4d2c00; }
 .news-alert-tag.news-cat-milestone { background: rgba(100,210,255,0.9); color: #0a2c3d; }
+.news-alert-tag.news-cat-severe-weather { background: rgba(255,105,97,0.9); color: #4d0f0d; }
 
 .severity-track {
     position: relative;

@@ -336,8 +336,26 @@ if weather:
     # in time than its 6-min cadence has caught up to).
     is_snow = category == "snow"
     precip_label = "Snow" if is_snow else "Rain"
-    status = ec_radar.precip_status("snow" if is_snow else "rain")
-    if status is not None:
+    precip_kind = "snow" if is_snow else "rain"
+    # Checked independent of (and before) the routine approaching/
+    # arrived badge below — that classification needs multiple radar
+    # samples spaced minutes apart before it'll call something
+    # "approaching" (see ec_radar._record_and_trend), but genuinely
+    # heavy precipitation (ec_radar.SIGNIFICANT_MM_H) is worth flagging
+    # the moment it's detected, not once a trend has had time to
+    # establish. Same red as a breaking-news/bad-tile accent, and
+    # persists for as long as the condition actually holds
+    # (severe_weather_alert's own toast is just a one-time ping when
+    # it first starts).
+    severe = ec_radar.severe_precip_status(precip_kind)
+    status = ec_radar.precip_status(precip_kind)
+    if severe is not None:
+        text = f"Heavy {precip_label.lower()} · {severe['mm_h']:.0f} mm/h"
+        extras.append(
+            f'<span class="weather-extra" style="color:#FF6961; '
+            f'background:rgba(255,105,97,0.28); border-color:#FF6961;">{text}</span>'
+        )
+    elif status is not None:
         if status["state"] == "arrived":
             text = (
                 f"Clears in {_format_countdown(status['minutes'] * 60)}"
@@ -625,6 +643,20 @@ try:
     commute_alert = commute_reminder.check(now)
     if commute_alert:
         new_alerts.append(commute_alert)
+except Exception:
+    pass
+
+# Same bottom-bar queue, same isolation reasoning — a genuinely heavy
+# (not just present) precipitation cell newly detected nearby, edge-
+# triggered so it fires once per event rather than every rerun while
+# it persists (see ec_radar.severe_weather_alert). Falls through to
+# news.render_alert_bar below (kind isn't "commute"), reusing its
+# existing red/urgent treatment since this alert always sets
+# important=True.
+try:
+    severe_alert = ec_radar.severe_weather_alert()
+    if severe_alert:
+        new_alerts.append(severe_alert)
 except Exception:
     pass
 

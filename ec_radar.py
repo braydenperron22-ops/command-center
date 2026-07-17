@@ -197,25 +197,78 @@ def _pixel_has_echo(img: Image.Image, px: int, py: int) -> bool | None:
     return img.getpixel((px, py))[3] > ALPHA_THRESHOLD
 
 
-def _nearest_echo(img: Image.Image) -> tuple[float, float, float] | None:
-    """(lat, lon, distance_km) of the closest detected echo pixel to
-    WEATHER_LAT/WEATHER_LON, within NEARBY_RADIUS_KM — or None."""
+# Sampled directly from EC's own RADAR_1KM_RRAI GetLegendGraphic
+# (confirmed live via a real GetLegendGraphic request — light blue
+# 0.1mm/h up through green/yellow/orange/red/magenta to dark purple at
+# 200mm/h; RADAR_1KM_RSNO uses the identical color scale, confirmed
+# too) — lets a detected echo be classified by actual intensity, not
+# just "is there an echo at all."
+_INTENSITY_SWATCHES = [
+    (200.0, (48, 0, 73)),
+    (125.0, (93, 0, 140)),
+    (100.0, (150, 49, 201)),
+    (64.0, (254, 2, 146)),
+    (50.0, (254, 13, 0)),
+    (32.0, (254, 112, 0)),
+    (24.0, (254, 169, 0)),
+    (16.0, (254, 226, 0)),
+    (12.0, (106, 165, 0)),
+    (8.0, (0, 135, 0)),
+    (4.0, (0, 191, 0)),
+    (2.0, (0, 248, 89)),
+    (1.0, (0, 152, 254)),
+    (0.1, (76, 178, 254)),
+]
+# EC's own scale steps from "moderate" (16) to this tick — used as the
+# bar for "worth flagging as genuinely heavy," not just "there's rain
+# or snow somewhere nearby."
+SIGNIFICANT_MM_H = 24.0
+
+
+def _classify_mm_h(rgb: tuple[int, int, int]) -> float:
+    """Nearest-color match (by Euclidean RGB distance) against EC's own
+    legend swatches — an approximate precipitation rate in mm/h for a
+    single pixel's color."""
+    best_value, best_dist = 0.1, None
+    for value, swatch in _INTENSITY_SWATCHES:
+        dist = sum((a - b) ** 2 for a, b in zip(rgb, swatch))
+        if best_dist is None or dist < best_dist:
+            best_value, best_dist = value, dist
+    return best_value
+
+
+def _scan_nearby(img: Image.Image) -> dict:
+    """Single pass within NEARBY_RADIUS_KM of WEATHER_LAT/WEATHER_LON —
+    {"nearest": (lat, lon, distance_km)|None, "max_mm_h": float}. Both
+    come from the same scan rather than two separate ones: the closest
+    echo pixel and the most intense one aren't always the same pixel
+    (a genuinely severe cell is often small and embedded within
+    broader lighter precipitation), so both are tracked together.
+    max_mm_h is 0.0, never None, when nothing's in range — callers can
+    compare it directly without an extra guard."""
     cx, cy = IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2
-    best = None
+    nearest = None
+    max_mm_h = 0.0
     for dy in range(-_SEARCH_PX, _SEARCH_PX + 1, _SAMPLE_STRIDE):
         py = cy + dy
         if py < 0 or py >= IMAGE_HEIGHT:
             continue
         for dx in range(-_SEARCH_PX, _SEARCH_PX + 1, _SAMPLE_STRIDE):
             px = cx + dx
-            if px < 0 or px >= IMAGE_WIDTH or img.getpixel((px, py))[3] <= ALPHA_THRESHOLD:
+            if px < 0 or px >= IMAGE_WIDTH:
+                continue
+            pixel = img.getpixel((px, py))
+            if pixel[3] <= ALPHA_THRESHOLD:
                 continue
             lat = WEATHER_LAT - dy * _DEG_PER_PX
             lon = WEATHER_LON + dx * _DEG_PER_PX
             dist = _distance_km(WEATHER_LAT, WEATHER_LON, lat, lon)
-            if dist <= NEARBY_RADIUS_KM and (best is None or dist < best[2]):
-                best = (lat, lon, dist)
-    return best
+            if dist > NEARBY_RADIUS_KM:
+                continue
+            if nearest is None or dist < nearest[2]:
+                nearest = (lat, lon, dist)
+            max_mm_h = max(max_mm_h, _classify_mm_h(pixel[:3]))
+    return {"nearest": nearest, "max_mm_h": max_mm_h}
 
 
 def _far_edge_km(img: Image.Image, bearing_deg_: float, start_km: float) -> float | None:
@@ -287,7 +340,8 @@ _echo_cache: dict[str, tuple[int, dict]] = {}
 
 
 def _decode_and_scan(kind: str) -> dict:
-    """{"img", "nearest", "trend"} for the current radar frame."""
+    """{"img", "nearest", "trend", "max_mm_h"} for the current radar
+    frame."""
     layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
     cache_bust = int(time.time() // REFRESH_SECONDS)
     cached = _echo_cache.get(kind)
@@ -297,14 +351,17 @@ def _decode_and_scan(kind: str) -> dict:
     raw = _fetch_radar_bytes(layer)
     now = datetime.now()
     img = nearest = None
+    max_mm_h = 0.0
     if raw:
         try:
             img = Image.open(io.BytesIO(raw)).convert("RGBA")
-            nearest = _nearest_echo(img)
+            scan = _scan_nearby(img)
+            nearest, max_mm_h = scan["nearest"], scan["max_mm_h"]
         except Exception:
             img = nearest = None
+            max_mm_h = 0.0
     trend = _record_and_trend(kind, now, nearest[2] if nearest else None)
-    result = {"img": img, "nearest": nearest, "trend": trend}
+    result = {"img": img, "nearest": nearest, "trend": trend, "max_mm_h": max_mm_h}
     _echo_cache[kind] = (cache_bust, result)
     return result
 
@@ -359,6 +416,60 @@ def precip_status(kind: str = "rain") -> dict | None:
         return None
     eta_minutes = (distance_km / trend["speed_kmh"]) * 60
     return {"state": "approaching", "minutes": round(eta_minutes), **direction}
+
+
+def severe_precip_status(kind: str = "rain") -> dict | None:
+    """{"mm_h", "direction", "direction_word"} once the strongest echo
+    anywhere within NEARBY_RADIUS_KM (not just the nearest point — a
+    genuinely severe cell is often small and embedded in broader
+    lighter precipitation, see _scan_nearby) meets or exceeds
+    SIGNIFICANT_MM_H, EC's own scale step from "moderate" into
+    "heavy". None most of the time — ordinary rain/snow sits well
+    under this. Direction is the bearing to the nearest echo pixel,
+    same convention as precip_status — not necessarily the exact spot
+    of the heaviest cell, but the closest real reference point for
+    "which way to look.\""""
+    state = _decode_and_scan(kind)
+    if state["max_mm_h"] < SIGNIFICANT_MM_H or state["nearest"] is None:
+        return None
+    lat, lon, _ = state["nearest"]
+    bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)
+    return {
+        "mm_h": state["max_mm_h"],
+        "direction": compass_abbr(bearing_deg_),
+        "direction_word": compass_word(bearing_deg_),
+    }
+
+
+# Tracks whether each kind was already flagged as severe as of the last
+# check — module-level (not st.session_state) so the "only alert once
+# per event" edge-detection below is shared process-wide the same way
+# _history already is, not reset by a session reconnect.
+_severe_flagged: dict[str, bool] = {"rain": False, "snow": False}
+
+
+def severe_weather_alert() -> dict | None:
+    """A one-time toast-ready alert dict (see app.py's news_queue) the
+    moment genuinely heavy precipitation is newly detected nearby —
+    fires once per event (edge-triggered off _severe_flagged), not
+    every rerun while it persists, and resets once conditions drop
+    back under SIGNIFICANT_MM_H so a later, genuinely new event can
+    fire again. Checks rain before snow; whichever crosses first wins
+    if both were somehow flagged in the same instant."""
+    for kind in ("rain", "snow"):
+        status = severe_precip_status(kind)
+        was_flagged = _severe_flagged[kind]
+        _severe_flagged[kind] = status is not None
+        if status is not None and not was_flagged:
+            label = "Snow" if kind == "snow" else "Rain"
+            return {
+                "kind": "weather",
+                "headline": f"Heavy {label.lower()} moving in from the {status['direction_word']} "
+                f"— {status['mm_h']:.0f} mm/h",
+                "category": "Severe Weather",
+                "important": True,
+            }
+    return None
 
 
 def tracking_overlay(kind: str = "rain") -> dict | None:
