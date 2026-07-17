@@ -303,58 +303,87 @@ def _cluster_blobs(alpha_mask: np.ndarray) -> list[list[tuple[int, int]]]:
     return blobs
 
 
-def _scan_nearby(img: Image.Image) -> dict:
-    """{"nearest": (lat, lon, distance_km)|None, "max_mm_h": float} for
-    the nearest point belonging to whichever cluster of connected
-    precipitation within NEARBY_RADIUS_KM actually has real areal
-    extent (see MIN_SIGNIFICANT_CELLS) — not just whichever single
-    pixel happens to be geometrically closest (see _cluster_blobs'
-    comment for why that distinction turned out to matter for real).
-    max_mm_h is scoped to that same tracked blob, not stray intensity
-    elsewhere in the frame, and is 0.0 (never None) when nothing
-    qualifies — callers can compare it directly without an extra
-    guard."""
-    cx, cy = IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2
-    arr = np.array(img)
-    alpha_mask = arr[:, :, 3] > ALPHA_THRESHOLD
+# A blob this small (in cells) is almost certainly a rendering/
+# compression artifact rather than a real, distinct shower — filters
+# out single-pixel noise from the "any size" trajectory check below
+# without imposing the full MIN_SIGNIFICANT_CELLS size bar on it.
+MIN_REAL_CELLS = 3
 
-    candidates = [b for b in _cluster_blobs(alpha_mask) if len(b) >= MIN_SIGNIFICANT_CELLS]
-    if not candidates:
-        return {"nearest": None, "max_mm_h": 0.0}
 
-    best_blob, best_nearest = None, None
-    for cells in candidates:
-        blob_nearest = None
-        for gy, gx in cells:
-            py0, px0 = gy * _CLUSTER_CELL_PX, gx * _CLUSTER_CELL_PX
-            for py in range(py0, min(py0 + _CLUSTER_CELL_PX, IMAGE_HEIGHT), _SAMPLE_STRIDE):
-                for px in range(px0, min(px0 + _CLUSTER_CELL_PX, IMAGE_WIDTH), _SAMPLE_STRIDE):
-                    if not alpha_mask[py, px]:
-                        continue
-                    lat = WEATHER_LAT - (py - cy) * _DEG_PER_PX
-                    lon = WEATHER_LON + (px - cx) * _DEG_PER_PX
-                    dist = _distance_km(WEATHER_LAT, WEATHER_LON, lat, lon)
-                    if dist > NEARBY_RADIUS_KM:
-                        continue
-                    if blob_nearest is None or dist < blob_nearest[2]:
-                        blob_nearest = (lat, lon, dist)
-        if blob_nearest is not None and (best_nearest is None or blob_nearest[2] < best_nearest[2]):
-            best_nearest = blob_nearest
-            best_blob = cells
+def _nearest_point_in_blob(alpha_mask: np.ndarray, cells: list[tuple[int, int]], cx: int, cy: int) -> tuple | None:
+    """(lat, lon, distance_km) of the closest in-range echo pixel
+    belonging to this one blob, or None if every pixel in it (after
+    NEARBY_RADIUS_KM filtering) turns out to be out of range."""
+    nearest = None
+    for gy, gx in cells:
+        py0, px0 = gy * _CLUSTER_CELL_PX, gx * _CLUSTER_CELL_PX
+        for py in range(py0, min(py0 + _CLUSTER_CELL_PX, IMAGE_HEIGHT), _SAMPLE_STRIDE):
+            for px in range(px0, min(px0 + _CLUSTER_CELL_PX, IMAGE_WIDTH), _SAMPLE_STRIDE):
+                if not alpha_mask[py, px]:
+                    continue
+                lat = WEATHER_LAT - (py - cy) * _DEG_PER_PX
+                lon = WEATHER_LON + (px - cx) * _DEG_PER_PX
+                dist = _distance_km(WEATHER_LAT, WEATHER_LON, lat, lon)
+                if dist > NEARBY_RADIUS_KM:
+                    continue
+                if nearest is None or dist < nearest[2]:
+                    nearest = (lat, lon, dist)
+    return nearest
 
-    if best_nearest is None:
-        return {"nearest": None, "max_mm_h": 0.0}
 
+def _max_mm_h_in_blob(img: Image.Image, alpha_mask: np.ndarray, cells: list[tuple[int, int]]) -> float:
     max_mm_h = 0.0
-    for gy, gx in best_blob:
+    for gy, gx in cells:
         py0, px0 = gy * _CLUSTER_CELL_PX, gx * _CLUSTER_CELL_PX
         for py in range(py0, min(py0 + _CLUSTER_CELL_PX, IMAGE_HEIGHT), _SAMPLE_STRIDE):
             for px in range(px0, min(px0 + _CLUSTER_CELL_PX, IMAGE_WIDTH), _SAMPLE_STRIDE):
                 if not alpha_mask[py, px]:
                     continue
                 max_mm_h = max(max_mm_h, _classify_mm_h(img.getpixel((px, py))[:3]))
+    return max_mm_h
 
-    return {"nearest": best_nearest, "max_mm_h": max_mm_h}
+
+def _scan_nearby(img: Image.Image) -> dict:
+    """{"nearest", "max_mm_h", "nearest_any"} within NEARBY_RADIUS_KM.
+
+    "nearest"/"max_mm_h": the nearest point (and its blob's own peak
+    intensity) belonging to whichever cluster of connected
+    precipitation actually has real areal extent (see
+    MIN_SIGNIFICANT_CELLS) — not just whichever single pixel happens to
+    be geometrically closest (see _cluster_blobs' comment for why that
+    distinction turned out to matter for real). None/0.0 if nothing
+    qualifies.
+
+    "nearest_any": the nearest point belonging to ANY real blob
+    (MIN_REAL_CELLS, a much lower bar — just enough to exclude single-
+    pixel rendering noise), regardless of overall size. This exists
+    only so a small blob that doesn't clear the significance bar can
+    still be checked for whether its own direction of travel is a
+    genuine, direct hit on WEATHER_LAT/WEATHER_LON (see
+    _heading_toward_me) — being small shouldn't matter if it's
+    actually headed straight here."""
+    cx, cy = IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2
+    arr = np.array(img)
+    alpha_mask = arr[:, :, 3] > ALPHA_THRESHOLD
+    all_blobs = _cluster_blobs(alpha_mask)
+
+    real_blobs = [b for b in all_blobs if len(b) >= MIN_REAL_CELLS]
+    nearest_any = None
+    for cells in real_blobs:
+        point = _nearest_point_in_blob(alpha_mask, cells, cx, cy)
+        if point is not None and (nearest_any is None or point[2] < nearest_any[2]):
+            nearest_any = point
+
+    significant_blobs = [b for b in real_blobs if len(b) >= MIN_SIGNIFICANT_CELLS]
+    best_blob, best_nearest = None, None
+    for cells in significant_blobs:
+        point = _nearest_point_in_blob(alpha_mask, cells, cx, cy)
+        if point is not None and (best_nearest is None or point[2] < best_nearest[2]):
+            best_nearest = point
+            best_blob = cells
+
+    max_mm_h = _max_mm_h_in_blob(img, alpha_mask, best_blob) if best_blob is not None else 0.0
+    return {"nearest": best_nearest, "max_mm_h": max_mm_h, "nearest_any": nearest_any}
 
 
 def _far_edge_km(img: Image.Image, bearing_deg_: float, start_km: float) -> float | None:
@@ -406,6 +435,93 @@ def _record_and_trend(kind: str, now: datetime, nearest_km: float | None) -> dic
     return {"speed_kmh": speed_kmh, "trend": "approaching" if change_km > 0 else "receding"}
 
 
+# Separate, parallel position history for the nearest blob of ANY real
+# size (see _scan_nearby's "nearest_any", MIN_REAL_CELLS) — used only
+# to work out whether a small blob's own direction of travel is a
+# genuine, direct hit on WEATHER_LAT/WEATHER_LON, not just "it's
+# somewhere nearby and getting closer in a generic sense" (which could
+# just as easily mean it's going to pass 50km to one side). Confirmed
+# by session request: a small blob should still be tracked, but only
+# when it's actually headed here — being small on its own is no longer
+# disqualifying by itself, the way MIN_SIGNIFICANT_CELLS alone would
+# otherwise make it.
+_any_history: dict[str, list[tuple[datetime, float, float]]] = {"rain": [], "snow": []}
+# How close the extrapolated path needs to pass to WEATHER_LAT/LON to
+# count as "heading toward my exact location" — wider than a literal 0
+# to allow for real imprecision in a bearing estimated from only two
+# radar samples, not a demand for pixel-perfect aim.
+DIRECT_HIT_RADIUS_KM = 15
+
+
+def _closest_approach_km(
+    storm_lat: float, storm_lon: float, bearing_deg_: float, target_lat: float, target_lon: float
+) -> float | None:
+    """Perpendicular (cross-track) distance from the target to the
+    storm's forward path, given its current position and bearing of
+    travel — standard point-to-ray geometry, using a local flat-earth
+    approximation (fine at these ranges, well under 150km). None if the
+    closest point on that path lies BEHIND the storm's current
+    position: it's already moving away from the target along its own
+    track, not toward it, regardless of the raw straight-line distance
+    between them right now."""
+    dir_east = sin(radians(bearing_deg_))
+    dir_north = cos(radians(bearing_deg_))
+    rel_east = (target_lon - storm_lon) * 111.0 * cos(radians(storm_lat))
+    rel_north = (target_lat - storm_lat) * 111.0
+    along_track = rel_east * dir_east + rel_north * dir_north
+    if along_track <= 0:
+        return None
+    return abs(rel_east * dir_north - rel_north * dir_east)
+
+
+def _heading_toward_me(kind: str, now: datetime, position: tuple[float, float] | None) -> dict | None:
+    """{"eta_minutes", "direction", "direction_word"} once at least two
+    real position samples (spaced MIN_TREND_GAP_MINUTES apart, same
+    convention as _record_and_trend) show this blob's own direction of
+    travel would bring it within DIRECT_HIT_RADIUS_KM of
+    WEATHER_LAT/WEATHER_LON if it keeps moving the way it has been —
+    None otherwise (not enough samples yet, not moving meaningfully, or
+    genuinely headed somewhere else). eta_minutes is how long until it
+    reaches the closest point on that path to here, at its currently
+    tracked speed — not necessarily a literal overhead pass, just
+    within DIRECT_HIT_RADIUS_KM of it. Called once per real radar
+    refresh from _decode_and_scan, same "one point per real sample"
+    discipline as _record_and_trend."""
+    history = _any_history[kind]
+    if position is not None:
+        history.append((now, position[0], position[1]))
+    cutoff = now.timestamp() - HISTORY_WINDOW_MINUTES * 60
+    history[:] = [(t, lat, lon) for t, lat, lon in history if t.timestamp() >= cutoff]
+
+    if len(history) < 2:
+        return None
+    old_t, old_lat, old_lon = history[0]
+    new_t, new_lat, new_lon = history[-1]
+    gap_minutes = (new_t - old_t).total_seconds() / 60
+    if gap_minutes < MIN_TREND_GAP_MINUTES:
+        return None
+
+    moved_km = _distance_km(old_lat, old_lon, new_lat, new_lon)
+    if moved_km < STATIONARY_THRESHOLD_KM:
+        return None  # not moving meaningfully enough to trust a bearing from it
+    bearing_deg_ = _bearing_deg(old_lat, old_lon, new_lat, new_lon)
+    approach = _closest_approach_km(new_lat, new_lon, bearing_deg_, WEATHER_LAT, WEATHER_LON)
+    if approach is None or approach > DIRECT_HIT_RADIUS_KM:
+        return None
+
+    speed_kmh = moved_km / (gap_minutes / 60)
+    rel_east = (WEATHER_LON - new_lon) * 111.0 * cos(radians(new_lat))
+    rel_north = (WEATHER_LAT - new_lat) * 111.0
+    along_track_km = rel_east * sin(radians(bearing_deg_)) + rel_north * cos(radians(bearing_deg_))
+    eta_minutes = round((along_track_km / speed_kmh) * 60)
+    to_bearing = _bearing_deg(WEATHER_LAT, WEATHER_LON, new_lat, new_lon)
+    return {
+        "eta_minutes": max(0, eta_minutes),
+        "direction": compass_abbr(to_bearing),
+        "direction_word": compass_word(to_bearing),
+    }
+
+
 # Within this distance, the nearest echo counts as "here" rather than
 # "approaching" — the badge switches from a countdown-to-arrival to a
 # countdown-to-clearing at this point (see precip_status below).
@@ -426,8 +542,10 @@ _echo_cache: dict[str, tuple[int, dict]] = {}
 
 
 def _decode_and_scan(kind: str) -> dict:
-    """{"img", "nearest", "trend", "max_mm_h"} for the current radar
-    frame."""
+    """{"img", "nearest", "trend", "max_mm_h", "nearest_any",
+    "heading_toward_me"} for the current radar frame — see
+    _heading_toward_me for that field's shape (a dict once a small
+    blob's own path is a confirmed direct hit, else None)."""
     layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
     cache_bust = int(time.time() // REFRESH_SECONDS)
     cached = _echo_cache.get(kind)
@@ -436,18 +554,22 @@ def _decode_and_scan(kind: str) -> dict:
 
     raw = _fetch_radar_bytes(layer)
     now = datetime.now()
-    img = nearest = None
+    img = nearest = nearest_any = None
     max_mm_h = 0.0
     if raw:
         try:
             img = Image.open(io.BytesIO(raw)).convert("RGBA")
             scan = _scan_nearby(img)
-            nearest, max_mm_h = scan["nearest"], scan["max_mm_h"]
+            nearest, max_mm_h, nearest_any = scan["nearest"], scan["max_mm_h"], scan["nearest_any"]
         except Exception:
-            img = nearest = None
+            img = nearest = nearest_any = None
             max_mm_h = 0.0
     trend = _record_and_trend(kind, now, nearest[2] if nearest else None)
-    result = {"img": img, "nearest": nearest, "trend": trend, "max_mm_h": max_mm_h}
+    heading_toward_me = _heading_toward_me(kind, now, nearest_any[:2] if nearest_any else None)
+    result = {
+        "img": img, "nearest": nearest, "trend": trend, "max_mm_h": max_mm_h,
+        "nearest_any": nearest_any, "heading_toward_me": heading_toward_me,
+    }
     _echo_cache[kind] = (cache_bust, result)
     return result
 
@@ -481,11 +603,37 @@ def precip_status(kind: str = "rain") -> dict | None:
     nearby but not moving in (sitting still, or drifting away): "only
     say something when it's happening or about to" is the point of this
     over a flat nearby-or-not signal.
+
+    Below MIN_SIGNIFICANT_CELLS, a blob is still reported here if (and
+    only if) its own tracked direction of travel is a confirmed direct
+    hit on WEATHER_LAT/WEATHER_LON (see _heading_toward_me) — a small
+    cell that's genuinely headed straight here matters regardless of
+    its size; one that's merely nearby but on course to pass well to
+    one side stays correctly ignored.
     """
     state = _decode_and_scan(kind)
     img, nearest, trend = state["img"], state["nearest"], state["trend"]
+
     if nearest is None:
-        return None
+        # No significant-sized system nearby — but a smaller blob can
+        # still matter if it's genuinely on course for here (see
+        # _heading_toward_me): being small no longer disqualifies it on
+        # its own, only "not actually headed this way" does.
+        nearest_any = state["nearest_any"]
+        if nearest_any is not None and nearest_any[2] <= ARRIVED_RADIUS_KM:
+            bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, nearest_any[0], nearest_any[1])
+            return {
+                "state": "arrived", "minutes": None,
+                "direction": compass_abbr(bearing_deg_), "direction_word": compass_word(bearing_deg_),
+            }
+        direct_hit = state["heading_toward_me"]
+        if direct_hit is None:
+            return None
+        return {
+            "state": "approaching", "minutes": direct_hit["eta_minutes"],
+            "direction": direct_hit["direction"], "direction_word": direct_hit["direction_word"],
+        }
+
     lat, lon, distance_km = nearest
     bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)
     direction = {"direction": compass_abbr(bearing_deg_), "direction_word": compass_word(bearing_deg_)}
