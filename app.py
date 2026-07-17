@@ -30,6 +30,7 @@ import payday_schedule
 import theme
 import waste_schedule
 import weather_alerts_bar
+import weather_records_client
 import wildfire_client
 from config import (
     AQI_EXTREME,
@@ -404,6 +405,26 @@ if weather:
                 f'<span class="weather-extra" style="color:{feels_color}; '
                 f'background:{feels_bg}; border-color:{feels_color};">Feels like {feels_like:.0f}°C</span>'
             )
+    # Today's forecast against the historical extreme for this exact
+    # calendar date (see weather_records_client) — only shows up on the
+    # rare day today's actually close to or past it, same "only badge a
+    # real threshold crossing" convention as UV/AQI above. Same warm/
+    # cool convention as "Feels like" just above: orange for a hot
+    # extreme, blue for a cold one.
+    record = weather_records_client.record_context(high, low)
+    if record is not None:
+        exceeded = (
+            (record["kind"] == "high" and record["value"] >= record["record"])
+            or (record["kind"] == "low" and record["value"] <= record["record"])
+        )
+        record_label = "Record" if exceeded else "Near record"
+        record_color = "#FF9F0A" if record["kind"] == "high" else "#64D2FF"
+        record_bg = _rgba(record_color, 0.22)
+        extras.append(
+            f'<span class="weather-extra" style="color:{record_color}; '
+            f'background:{record_bg}; border-color:{record_color};">'
+            f'{record_label} {record["kind"]} · {record["record"]:.0f}° in {record["year"]}</span>'
+        )
     # Wildfire smoke is a real recurring issue for this region — same
     # provider as the weather call above (Open-Meteo's Air Quality
     # API), no new vendor/key. Yellow->purple rather than UV's
