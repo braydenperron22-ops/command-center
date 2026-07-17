@@ -7,6 +7,8 @@ overlap in February) — no manual upkeep needed as real seasons start
 and end.
 """
 
+import html
+
 import streamlit as st
 
 import sports_client
@@ -16,21 +18,22 @@ def _game_html(status: dict) -> str:
     game = status["game"]
     if game is None:
         return '<div class="tile-prev">No game scheduled right now.</div>'
+    opponent = html.escape(game["opponent"])
     opponent_word = "vs" if game["is_home"] else "@"
     opponent_logo = f'<img class="sports-opponent-logo" src="{game["opponent_logo"]}" />'
     if game["state"] == "upcoming":
         start = game["start_time"]
         time_text = start.strftime("%I:%M %p").lstrip("0")
         value = f"{start.strftime('%a %b')} {start.day}, {time_text}"
-        value_class, result = "", f"{opponent_word} {game['opponent']}"
+        value_class, result = "", f"{opponent_word} {opponent}"
     else:
         value = f"{game['team_score']}-{game['opp_score']}"
         if game["state"] == "live":
-            value_class, result = "", f"LIVE {opponent_word} {game['opponent']}"
+            value_class, result = "", f"LIVE {opponent_word} {opponent}"
         else:
             won = game["team_score"] > game["opp_score"]
             value_class = "market-up" if won else "market-down"
-            result = f"{'W' if won else 'L'} {opponent_word} {game['opponent']}"
+            result = f"{'W' if won else 'L'} {opponent_word} {opponent}"
     return f"""<div class="tile-value {value_class}">{value}</div>
         <div class="tile-prev">{opponent_logo}{result}</div>"""
 
@@ -43,7 +46,12 @@ def _wildcard_html(status: dict) -> str:
     fetchers already return None themselves once a team holds a real
     division spot, so there's nothing left to gate on here."""
     wildcard = status.get("wildcard")
-    if not wildcard or wildcard.get("value") is None:
+    # Both value and rank are pulled from the same API payload as two
+    # independent fields (see sports_client._fetch_mlb_wildcard/
+    # _fetch_nhl_wildcard) — a response with one present but not the
+    # other is possible, and used to render the literal text "rank
+    # None" on the kiosk since only "value" was ever null-checked.
+    if not wildcard or wildcard.get("value") is None or wildcard.get("rank") is None:
         return ""
     return f'<div class="tile-prev">Wild Card: {wildcard["value"]} {wildcard["unit"]} · rank {wildcard["rank"]}</div>'
 
@@ -52,7 +60,7 @@ def _standings_table(status: dict) -> str:
     rows = "".join(
         f"""<div class="sports-standings-row{' sports-standings-row-team' if r['is_team'] else ''}">
             <span class="sports-standings-rank">{r['rank']}</span>
-            <span class="sports-standings-team">{r['team']}</span>
+            <span class="sports-standings-team">{html.escape(r['team'])}</span>
             <span class="sports-standings-record">{r['wins']}-{r['losses']}</span>
             <span class="sports-standings-extra">{r['extra']}</span>
         </div>"""

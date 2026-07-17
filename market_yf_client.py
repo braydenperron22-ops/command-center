@@ -20,6 +20,7 @@ from config import (
     MARKET_INSTRUMENTS_OPEN,
     MARKET_INSTRUMENTS_WEEKEND,
     MARKET_SPARKLINE_PERIOD,
+    TIMEZONE,
 )
 
 ONE_MONTH_TRADING_DAYS = 21
@@ -61,6 +62,17 @@ def market_status(now: datetime | None = None) -> str:
     stale index quote — not worth the complexity of a full holiday
     calendar for that edge case alone.
     """
+    # A caller-supplied `now` (morning_briefing.py threads its own
+    # shared snapshot through) arrives naive but already IN TIMEZONE —
+    # same convention as pages_today.py's _row_class. .astimezone()
+    # on a naive datetime instead assumes the *system's* zone, which is
+    # UTC on Streamlit Cloud: confirmed live this silently threw the
+    # open/closed determination off by a full 4-5 hours (Toronto's own
+    # UTC offset) whenever a threaded `now` was passed, since it got
+    # reinterpreted as if it were already UTC before converting to ET.
+    # The no-argument default path (aware UTC) was never affected.
+    if now is not None and now.tzinfo is None:
+        now = now.replace(tzinfo=ZoneInfo(TIMEZONE))
     eastern = (now or datetime.now(ZoneInfo("UTC"))).astimezone(ZoneInfo("America/New_York"))
     weekday = eastern.weekday()  # Monday=0 ... Saturday=5, Sunday=6
     if weekday == 6 and eastern.hour >= 18:  # Sunday, futures already reopened for the week

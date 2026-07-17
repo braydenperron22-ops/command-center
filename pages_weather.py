@@ -19,8 +19,25 @@ def _render_current(current: dict | None) -> None:
     wind = ""
     if current.get("wind_speed") is not None:
         gust = f" gust {current['wind_gust']}" if current.get("wind_gust") else ""
-        wind = f"{current.get('wind_dir', '')} {current['wind_speed']} km/h{gust}"
+        wind_dir = current.get("wind_dir") or ""
+        wind = f"{wind_dir} {current['wind_speed']} km/h{gust}"
     tendency_arrow = {"falling": "↓", "rising": "↑", "steady": "→"}.get(current.get("pressure_tendency"), "")
+
+    # EC's station can independently omit any of humidity/dewpoint/
+    # pressure even while temperature still reports (a real sensor-gap
+    # pattern, not hypothetical) — only temp is guaranteed non-None by
+    # ec_forecast.current_conditions(), so every other metric here needs
+    # its own None guard rather than assuming the whole reading is
+    # all-or-nothing.
+    humidity_html = f"<span>Humidity {current['humidity']}%</span>" if current.get("humidity") is not None else ""
+    wind_html = f"<span>Wind {wind}</span>" if wind else ""
+    dewpoint_html = (
+        f"<span>Dewpoint {current['dewpoint_c']:.0f}°C</span>" if current.get("dewpoint_c") is not None else ""
+    )
+    pressure_html = (
+        f"<span>Pressure {current['pressure_kpa']:.1f} kPa {tendency_arrow}</span>"
+        if current.get("pressure_kpa") is not None else ""
+    )
 
     st.markdown(
         f"""<div class="tile weather-current-tile">
@@ -30,10 +47,7 @@ def _render_current(current: dict | None) -> None:
                 <div class="weather-current-temp">{current['temp_c']:.0f}°C</div>
                 <div class="weather-current-condition">{current['condition']}</div>
                 <div class="weather-current-metrics">
-                    <span>Humidity {current['humidity']}%</span>
-                    <span>Wind {wind}</span>
-                    <span>Dewpoint {current['dewpoint_c']:.0f}°C</span>
-                    <span>Pressure {current['pressure_kpa']:.1f} kPa {tendency_arrow}</span>
+                    {humidity_html}{wind_html}{dewpoint_html}{pressure_html}
                 </div>
             </div>
         </div>""",

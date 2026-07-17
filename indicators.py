@@ -61,7 +61,10 @@ def build_reading(dates: list[str], values: list[float], transform: str) -> dict
 
     current = series[-1]
     previous = series[-2]
-    trend_window = series[-(TREND_WINDOW + 1):-1] or series[:-1]
+    # build_reading only ever reaches here with len(series) >= 3 (both
+    # early-return checks above guarantee it), for which this slice is
+    # always non-empty — confirmed for every n>=3, not just assumed.
+    trend_window = series[-(TREND_WINDOW + 1):-1]
     trend_mean = statistics.fmean(trend_window)
     trend_stdev = statistics.pstdev(trend_window) if len(trend_window) > 1 else 0.0
 

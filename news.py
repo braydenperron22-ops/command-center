@@ -41,6 +41,11 @@ FEEDS = [
 ]
 
 TOAST_SECONDS = 30
+# Cap for get_new_alerts()'s "seen headline hashes" tracker — see its
+# own comment for why this needs a bound at all on a kiosk session that
+# can run for weeks. 500 comfortably covers many days of real headline
+# volume across all 4 feeds combined at ~20-40 bytes/hash.
+MAX_SEEN_HEADLINES = 500
 
 # Intro sequencing: "BREAKING NEWS" stretches into view, holds, then slides
 # aside to reveal the headline underneath, via the toast-label-intro/
@@ -497,7 +502,15 @@ def get_new_alerts() -> list[dict]:
     qualifies as "seen" without alerting) so opening the dashboard doesn't
     immediately flood every historical headline as if it just broke.
     """
-    seen = st.session_state.setdefault("seen_headlines", set())
+    # A plain set only ever grew — fine for a normal Streamlit session,
+    # but this kiosk's one browser tab can stay open for weeks without a
+    # reload, so it was a real unbounded-forever accumulator on a process
+    # that has crash-looped from memory pressure before. A dict (Python
+    # 3.7+ preserves insertion order) doubles as an ordered set here so
+    # the oldest hash can be evicted once the cap's hit — headlines this
+    # old have long since rolled off every RSS feed's own window anyway,
+    # so they'd never need to be recognized as "seen" again regardless.
+    seen = st.session_state.setdefault("seen_headlines", {})
     baseline_done = st.session_state.get("news_baseline_done", False)
 
     alerts = []
@@ -508,7 +521,9 @@ def get_new_alerts() -> list[dict]:
         h = hashlib.sha1(item["headline"].encode()).hexdigest()
         if h in seen:
             continue
-        seen.add(h)
+        seen[h] = True
+        if len(seen) > MAX_SEEN_HEADLINES:
+            seen.pop(next(iter(seen)))
         if baseline_done:
             alerts.append({**item, "category": category, "important": is_important(item["headline"])})
 
@@ -516,7 +531,7 @@ def get_new_alerts() -> list[dict]:
     return alerts
 
 
-def render_alert_bar(alert: dict, elapsed: float):
+def render_alert_bar(alert: dict, elapsed: float, variant: str = "a"):
     """Bottom-strip takeover bar (normally the release-calendar ticker): a
     label stretches into view, holds, then slides aside to reveal the
     category tag + headline underneath.
@@ -525,6 +540,12 @@ def render_alert_bar(alert: dict, elapsed: float):
     important target words (`is_important`), black "MARKET NEWS"
     otherwise, so the bar's own color signals how urgent a given item
     actually is before you even read the headline.
+
+    `variant` ("a"/"b") picks between two functionally identical
+    keyframe animations (theme.py) — alternated by the caller each
+    rerun so a new alert always gets a genuine restart rather than
+    reusing a completed animation instance on the same DOM node (see
+    theme.py's comment above the toast-*-intro keyframes).
     """
     is_breaking = alert.get("important", alert["category"] != "Market News")
     bar_class = "news-alert-bar" if is_breaking else "news-alert-bar-market"
@@ -532,9 +553,9 @@ def render_alert_bar(alert: dict, elapsed: float):
     delay = f"animation-delay: -{elapsed:.2f}s;"
     st.markdown(
         f"""<div class="{bar_class}">
-            <span class="news-breaking-label toast-label-anim" style="{delay}">{label_text}</span>
-            <span class="news-alert-tag {category_class(alert['category'])} toast-headline-anim" style="{delay}">{alert['category']}</span>
-            <span class="news-alert-headline toast-headline-anim" style="{delay}">{alert['headline']}</span>
+            <span class="news-breaking-label toast-label-anim-{variant}" style="{delay}">{label_text}</span>
+            <span class="news-alert-tag {category_class(alert['category'])} toast-headline-anim-{variant}" style="{delay}">{alert['category']}</span>
+            <span class="news-alert-headline toast-headline-anim-{variant}" style="{delay}">{alert['headline']}</span>
         </div>""",
         unsafe_allow_html=True,
     )

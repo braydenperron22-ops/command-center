@@ -262,16 +262,19 @@ def render_leave_headline(now: datetime) -> None:
     st.markdown(f'<div class="leave-headline">{text}</div>', unsafe_allow_html=True)
 
 
-def render_bar(alert: dict, elapsed: float) -> None:
+def render_bar(alert: dict, elapsed: float, variant: str = "a") -> None:
     """Same stretch-then-slide intro as news.render_alert_bar (kept as
     a separate, smaller implementation rather than teaching that
     function a third "kind" — commute reminders aren't news, and
-    shouldn't grow that module's scope to accommodate them)."""
+    shouldn't grow that module's scope to accommodate them).
+
+    `variant` — see news.render_alert_bar's docstring; same reason,
+    same fix."""
     delay = f"animation-delay: -{elapsed:.2f}s;"
     st.markdown(
         f"""<div class="commute-alert-bar">
-            <span class="news-breaking-label toast-label-anim" style="{delay}">LEAVE SOON</span>
-            <span class="news-alert-headline toast-headline-anim" style="{delay}">{alert['headline']}</span>
+            <span class="news-breaking-label toast-label-anim-{variant}" style="{delay}">LEAVE SOON</span>
+            <span class="news-alert-headline toast-headline-anim-{variant}" style="{delay}">{alert['headline']}</span>
         </div>""",
         unsafe_allow_html=True,
     )

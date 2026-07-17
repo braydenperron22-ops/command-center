@@ -12,6 +12,7 @@ something worth getting subtly wrong via a custom implementation.
 """
 
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import icalendar
 import recurring_ical_events
@@ -19,6 +20,7 @@ import requests
 import streamlit as st
 
 import fetch_throttle
+from config import TIMEZONE
 
 CACHE_TTL_SECONDS = 15 * 60
 
@@ -70,6 +72,24 @@ def _events_from_one(calendar: dict, today: date) -> list[dict]:
         end_field = e.get("DTEND")
         end = end_field.dt if end_field else start
         all_day = not isinstance(start, datetime)
+        # Merging multiple ICS sources (see module docstring) means a
+        # naive (floating-time) DTSTART from one calendar can end up
+        # sorted alongside an aware one from another — comparing them
+        # directly raises TypeError and blanks the whole agenda for this
+        # cache window. Normalized to aware right after parsing rather
+        # than only guarding the sort site, so every consumer of
+        # "start"/"end" downstream gets a consistent type. Assumed to be
+        # TIMEZONE, not UTC: a floating ICS time is meant to be read in
+        # the viewer's own local zone, which for this always-local kiosk
+        # is exactly TIMEZONE — and pages_today.py's _row_class already
+        # reuses event["start"].tzinfo directly to reinterpret a naive
+        # `now` as that same zone, so this also has to actually BE
+        # TIMEZONE, not just any aware zone, for that to stay correct.
+        if not all_day:
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=ZoneInfo(TIMEZONE))
+            if isinstance(end, datetime) and end.tzinfo is None:
+                end = end.replace(tzinfo=ZoneInfo(TIMEZONE))
         events.append({
             "summary": _normalize_summary(str(e.get("SUMMARY", "Untitled"))),
             "start": start,

@@ -11,6 +11,7 @@ that "around the house" cluster instead of squeezing everything into
 one page.
 """
 
+import html
 import time
 from datetime import datetime, timedelta
 
@@ -112,14 +113,14 @@ def _render_agenda(now: datetime) -> None:
     next_id = _next_event_id(events, now)
     rows = "".join(
         f"""<div class="news-feed-row {_row_class(e, now, id(e) == next_id)}">
-            <div class="news-feed-headline">{e['summary']}{
+            <div class="news-feed-headline">{html.escape(e['summary'])}{
                 # Venue name only, not the full street address — the
                 # commute tile below already shows the same place this
                 # way, and the full address wrapping to 2-3 lines here
                 # (see commute_reminder._destination_for_shift for the
                 # matching truncation) was a big chunk of why this page
                 # was overrunning when the global banners stack up top.
-                f'<div class="news-feed-meta">{e["location"].splitlines()[0].split(",")[0].strip()}</div>'
+                f'<div class="news-feed-meta">{html.escape(e["location"].splitlines()[0].split(",")[0].strip())}</div>'
                 if e['location'] else ''
             }</div>
             <div class="news-feed-meta">{_time_range(e)}</div>

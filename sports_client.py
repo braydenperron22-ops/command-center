@@ -77,6 +77,7 @@ def _to_local(iso_utc: str) -> datetime:
 
 @st.cache_data(ttl=GAME_CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_mlb_games_raw(start_date: str, end_date: str) -> list[dict]:
+    fetch_throttle.wait_turn()
     resp = requests.get(
         MLB_SCHEDULE_URL,
         params={"sportId": 1, "teamId": MLB_TEAM_ID, "startDate": start_date, "endDate": end_date},
@@ -93,7 +94,6 @@ def _fetch_mlb_games(now: datetime) -> list[dict] | None:
     global _last_good_mlb_games
     start = (now - timedelta(days=SEASON_WINDOW_DAYS)).strftime("%Y-%m-%d")
     end = (now + timedelta(days=SEASON_WINDOW_DAYS)).strftime("%Y-%m-%d")
-    fetch_throttle.wait_turn()
     try:
         result = _fetch_mlb_games_raw(start, end)
     except Exception:

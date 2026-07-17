@@ -7,6 +7,7 @@ and more strictly curated.
 """
 
 import hashlib
+import html
 import time
 
 import streamlit as st
@@ -103,7 +104,7 @@ def render():
 
     rows = "".join(
         f"""<div class="news-feed-row {_row_class(e)}">
-            <div class="news-feed-headline">{e['headline']}{headline_tickers.ticker_badge_html(e['headline'])}"""
+            <div class="news-feed-headline">{html.escape(e['headline'])}{headline_tickers.ticker_badge_html(e['headline'])}"""
         f"""{news_market_reaction.reaction_badge_html(e.get('reaction_symbol'), e.get('baseline_spx'))}</div>
             <div class="news-feed-meta">{_meta_text(e, now_ts)}</div>
         </div>"""

@@ -16,6 +16,7 @@ the whole point is catching you during the actual morning routine,
 regardless of which of the 10 rotating pages happens to be up.
 """
 
+import functools
 import random
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -994,7 +995,14 @@ def _markets_clause(now: datetime) -> tuple[int, str] | None:
     return 3, _pick(lines, now, "markets").format(**fmt)
 
 
+@functools.lru_cache(maxsize=8)
 def _day_length_minutes(day) -> float:
+    """Cached — this is called twice (today, yesterday) on every rerun
+    for the whole MORNING_WINDOW (up to ~3600 reruns/day at the 5s
+    autorefresh interval), but astral's sun() calculation only actually
+    changes once a calendar day. maxsize=8 evicts old dates on its own
+    (LRU) rather than needing any manual bookkeeping for a long-running
+    process — this only ever needs the last couple of days anyway."""
     s = sun(_LOCATION.observer, date=day, tzinfo=ZoneInfo(TIMEZONE))
     return (s["sunset"] - s["sunrise"]).total_seconds() / 60
 

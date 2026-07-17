@@ -808,20 +808,50 @@ html, body, [class*="css"] {
    how long until the next rerun. Percentages below encode
    STRETCH_END=1.8s/SLIDE_END=3.0s from news.py/commute_reminder.py —
    keep in sync if either changes. */
-@keyframes toast-label-intro {
+/* Confirmed live (same finding as the rotation-timer bar above):
+   Streamlit patches this element's style attribute on the same
+   persisted DOM node across reruns rather than replacing it, and once
+   an animation has started OR finished on a node, mutating
+   animation-delay is a no-op — it does not reposition a running
+   animation, and does not restart a completed one either. With a
+   single class, only the FIRST alert to ever occupy this node position
+   gets the real stretch-then-slide intro; a burst of several alerts in
+   a row (a real scenario — see MAX_BURST_ALERTS in app.py) has every
+   alert after the first reuse the same already-completed animation
+   instance and just appear instantly, with no intro at all. Fixed the
+   same way: alternate between two functionally identical keyframe
+   animations each time a new alert renders (see the variant argument
+   threaded through news.render_alert_bar/commute_reminder.render_bar
+   from app.py) — changing animation-name always forces a genuine
+   restart even on the same node. */
+@keyframes toast-label-intro-a {
     0%    { opacity: 0; letter-spacing: 0em; transform: translateX(0%); }
     60%   { opacity: 1; letter-spacing: 0.5em; transform: translateX(0%); }
     90.8% { opacity: 0; letter-spacing: 0.5em; transform: translateX(-107.7%); }
     100%  { opacity: 0; letter-spacing: 0.5em; transform: translateX(-140%); }
 }
-@keyframes toast-headline-intro {
+@keyframes toast-label-intro-b {
+    0%    { opacity: 0; letter-spacing: 0em; transform: translateX(0%); }
+    60%   { opacity: 1; letter-spacing: 0.5em; transform: translateX(0%); }
+    90.8% { opacity: 0; letter-spacing: 0.5em; transform: translateX(-107.7%); }
+    100%  { opacity: 0; letter-spacing: 0.5em; transform: translateX(-140%); }
+}
+@keyframes toast-headline-intro-a {
     0%    { opacity: 0; transform: translateX(16px); }
     60%   { opacity: 0; transform: translateX(16px); }
     90.8% { opacity: 1; transform: translateX(3.7px); }
     100%  { opacity: 1; transform: translateX(0px); }
 }
-.toast-label-anim { animation: toast-label-intro 3s linear forwards; }
-.toast-headline-anim { animation: toast-headline-intro 3s linear forwards; }
+@keyframes toast-headline-intro-b {
+    0%    { opacity: 0; transform: translateX(16px); }
+    60%   { opacity: 0; transform: translateX(16px); }
+    90.8% { opacity: 1; transform: translateX(3.7px); }
+    100%  { opacity: 1; transform: translateX(0px); }
+}
+.toast-label-anim-a { animation: toast-label-intro-a 3s linear forwards; }
+.toast-label-anim-b { animation: toast-label-intro-b 3s linear forwards; }
+.toast-headline-anim-a { animation: toast-headline-intro-a 3s linear forwards; }
+.toast-headline-anim-b { animation: toast-headline-intro-b 3s linear forwards; }
 
 /* Scoped to .news-alert-tag specifically — these category classes are
    reused on .news-feed-row (below) for just a left-border accent color,

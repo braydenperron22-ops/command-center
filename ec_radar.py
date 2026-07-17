@@ -272,6 +272,42 @@ def _record_and_trend(kind: str, now: datetime, nearest_km: float | None) -> dic
 # countdown-to-clearing at this point (see precip_status below).
 ARRIVED_RADIUS_KM = 5
 
+# precip_status is called independently from the hero badge, the
+# morning briefing, and the Radar page itself — which in turn calls
+# tracking_overlay, which used to call precip_status AGAIN internally.
+# That meant a single rerun could decode + pixel-scan the same radar
+# frame up to 4 times over, and worse, called _record_and_trend that
+# many times too, each with its own datetime.now() — its own docstring
+# says "one point per real API call (~every 6 min)" but it was actually
+# recording one point per CALLER per rerun. Keyed by kind (only ever
+# "rain"/"snow", so inherently bounded) the same way _history already
+# is, this caches the decode+scan+trend-record once per real
+# REFRESH_SECONDS window regardless of how many callers ask for it.
+_echo_cache: dict[str, tuple[int, dict]] = {}
+
+
+def _decode_and_scan(kind: str) -> dict:
+    """{"img", "nearest", "trend"} for the current radar frame."""
+    layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
+    cache_bust = int(time.time() // REFRESH_SECONDS)
+    cached = _echo_cache.get(kind)
+    if cached is not None and cached[0] == cache_bust:
+        return cached[1]
+
+    raw = _fetch_radar_bytes(layer)
+    now = datetime.now()
+    img = nearest = None
+    if raw:
+        try:
+            img = Image.open(io.BytesIO(raw)).convert("RGBA")
+            nearest = _nearest_echo(img)
+        except Exception:
+            img = nearest = None
+    trend = _record_and_trend(kind, now, nearest[2] if nearest else None)
+    result = {"img": img, "nearest": nearest, "trend": trend}
+    _echo_cache[kind] = (cache_bust, result)
+    return result
+
 
 def precip_status(kind: str = "rain") -> dict | None:
     """The one signal behind the hero badge and the Radar page's own
@@ -303,18 +339,8 @@ def precip_status(kind: str = "rain") -> dict | None:
     say something when it's happening or about to" is the point of this
     over a flat nearby-or-not signal.
     """
-    layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
-    raw = _fetch_radar_bytes(layer)
-    now = datetime.now()
-    if not raw:
-        return None
-    try:
-        img = Image.open(io.BytesIO(raw)).convert("RGBA")
-    except Exception:
-        return None
-
-    nearest = _nearest_echo(img)
-    trend = _record_and_trend(kind, now, nearest[2] if nearest else None)
+    state = _decode_and_scan(kind)
+    img, nearest, trend = state["img"], state["nearest"], state["trend"]
     if nearest is None:
         return None
     lat, lon, distance_km = nearest
@@ -341,16 +367,13 @@ def tracking_overlay(kind: str = "rain") -> dict | None:
     positioned with top/left percentages), so the Radar page can draw a
     real line from the threat to the user's own marker instead of
     leaving the tracking data as a separate text-only badge underneath
-    the map. None if nothing's within NEARBY_RADIUS_KM right now."""
-    layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
-    raw = _fetch_radar_bytes(layer)
-    if not raw:
-        return None
-    try:
-        img = Image.open(io.BytesIO(raw)).convert("RGBA")
-    except Exception:
-        return None
-    nearest = _nearest_echo(img)
+    the map. None if nothing's within NEARBY_RADIUS_KM right now.
+
+    Shares its decode+scan with precip_status via _decode_and_scan (see
+    its comment above) — calling precip_status(kind) below reuses that
+    same cached state rather than repeating the work."""
+    state = _decode_and_scan(kind)
+    nearest = state["nearest"]
     if nearest is None:
         return None
     lat, lon, distance_km = nearest

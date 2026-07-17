@@ -639,10 +639,20 @@ try:
             current_alert, elapsed = None, None
 
     if current_alert:
+        # Alternated every render (see the toast-*-anim comment in
+        # theme.py) — Streamlit reuses this same bottom-bar DOM node
+        # across reruns, and a burst of several alerts in a row would
+        # otherwise have every alert after the first reuse the prior
+        # one's already-completed animation and just appear instantly,
+        # with no intro. A per-rerun toggle always forces a genuine
+        # restart, whether this is a new alert or the same one
+        # continuing to render.
+        st.session_state["_toast_anim_tick"] = st.session_state.get("_toast_anim_tick", 0) + 1
+        _toast_variant = "a" if st.session_state["_toast_anim_tick"] % 2 == 0 else "b"
         if current_alert.get("kind") == "commute":
-            commute_reminder.render_bar(current_alert, elapsed)
+            commute_reminder.render_bar(current_alert, elapsed, _toast_variant)
         else:
-            news.render_alert_bar(current_alert, elapsed)
+            news.render_alert_bar(current_alert, elapsed, _toast_variant)
     else:
         # Earnings dates (a small curated watchlist, see config.
         # EARNINGS_TICKER_WATCHLIST) fold into the same scrolling strip

@@ -32,16 +32,23 @@ FLASH_SECONDS = 4  # how long a breaking-news pulse holds before reverting
 DAY_BRIGHTNESS = 100  # peak brightness while the light is on — one tier, no market-hours step
 MARKET_UP_COLOR = (0, 255, 0)
 MARKET_DOWN_COLOR = (255, 0, 0)
-MARKET_FLAT_BAND = 0.1  # +/- percent treated as flat, avoids flicker right at 0
 # The room used to sit on market color all day, every day, even on a dead-
 # flat 0.2% afternoon — every real move got the same green/red treatment
 # as a genuinely notable one. Market color is now reserved for a move
 # actually worth glancing at; anything under this reverts to mirroring
 # the environment instead (see condition_light_color below). A full
 # percentage point on a broad index is a real, headline-worthy single-
-# session move, not routine noise — well above MARKET_FLAT_BAND, which
-# only exists to kill flicker right at 0.
+# session move, not routine noise.
+#
+# Two thresholds, not one — a plain single cutoff meant a move sitting
+# right at 1.0% (real, happens on an actively choppy session) could
+# flip the light between market and environment color on every tick
+# that nudged it a hair either side, each flip a real API call. Once a
+# move is significant, it has to fall back below the (lower) RELEASE
+# threshold before the light reverts — standard hysteresis, tracked
+# per-session in govee_market_significant below.
 MARKET_SIGNIFICANT_MOVE = 1.0
+MARKET_SIGNIFICANT_RELEASE = 0.7
 FLASH_RED = (255, 0, 0)
 FLASH_WHITE = (255, 255, 255)
 FLASH_BRIGHTNESS = 100
@@ -122,8 +129,19 @@ def _desired_base_state(
     same as the sunrise/sunset override already does for that specific
     window. `category` is None only if the weather fetch itself failed —
     condition_light_color's own "cloudy" fallback covers that case, same
-    as scenery.py's own rendering does."""
-    if market_intraday_pct is not None and abs(market_intraday_pct) >= MARKET_SIGNIFICANT_MOVE:
+    as scenery.py's own rendering does.
+
+    Whether today's move counts as "significant" is itself hysteresis-
+    gated (see MARKET_SIGNIFICANT_RELEASE above) rather than a flat
+    >=MARKET_SIGNIFICANT_MOVE check, so a move sitting right at the
+    threshold on a choppy session doesn't flip the light back and forth
+    every time it nudges a hair either side."""
+    was_significant = st.session_state.get("govee_market_significant", False)
+    threshold = MARKET_SIGNIFICANT_RELEASE if was_significant else MARKET_SIGNIFICANT_MOVE
+    is_significant = market_intraday_pct is not None and abs(market_intraday_pct) >= threshold
+    st.session_state["govee_market_significant"] = is_significant
+
+    if is_significant:
         color = MARKET_UP_COLOR if market_intraday_pct > 0 else MARKET_DOWN_COLOR
     else:
         color = scenery.condition_light_color(category)
@@ -157,9 +175,20 @@ def _apply_color(color: tuple[int, int, int], min_gap: float = MIN_CALL_GAP_SECO
         return
     if time.time() - st.session_state.get("govee_last_call_ts", 0) < min_gap:
         return
-    govee_client.set_color(GOVEE_LIGHT, color)
-    st.session_state["govee_light_color_applied"] = color
-    st.session_state["govee_last_call_ts"] = time.time()
+    # Gated on the actual API result (same pattern as _apply_power below)
+    # — a failed call (rate limit, WiFi hiccup, momentary Govee outage,
+    # all real events on a 24/7 kiosk) used to get cached as "applied"
+    # regardless, so the early-return guard above would then suppress
+    # every future retry for that value: the physical light would
+    # silently diverge from what the dashboard believes it's showing
+    # and never self-correct until the next *different* desired color
+    # came along. Not updating govee_last_call_ts on failure is
+    # deliberate too, matching _apply_power — retry sooner than
+    # min_gap once something's actually wrong, not wait out a normal
+    # cooldown for a call that never went through.
+    if govee_client.set_color(GOVEE_LIGHT, color):
+        st.session_state["govee_light_color_applied"] = color
+        st.session_state["govee_last_call_ts"] = time.time()
 
 
 def _apply_brightness_immediate(value: int, min_gap: float = MIN_CALL_GAP_SECONDS) -> None:
@@ -168,15 +197,16 @@ def _apply_brightness_immediate(value: int, min_gap: float = MIN_CALL_GAP_SECOND
     and the very first apply of a session (nothing to creep FROM yet).
     Resets the creep clock too, so _creep_brightness's next step starts
     fresh from wherever this just landed rather than firing again
-    immediately."""
+    immediately. Gated on the API result — see _apply_color's comment
+    on why an unconditional write here was a real bug."""
     if st.session_state.get("govee_light_brightness_applied") == value:
         return
     if time.time() - st.session_state.get("govee_last_call_ts", 0) < min_gap:
         return
-    govee_client.set_brightness(GOVEE_LIGHT, value)
-    st.session_state["govee_light_brightness_applied"] = value
-    st.session_state["govee_brightness_step_ts"] = time.time()
-    st.session_state["govee_last_call_ts"] = time.time()
+    if govee_client.set_brightness(GOVEE_LIGHT, value):
+        st.session_state["govee_light_brightness_applied"] = value
+        st.session_state["govee_brightness_step_ts"] = time.time()
+        st.session_state["govee_last_call_ts"] = time.time()
 
 
 def _creep_brightness(target: int) -> None:
@@ -197,9 +227,13 @@ def _creep_brightness(target: int) -> None:
     next_value = current + step
     if (step > 0 and next_value > target) or (step < 0 and next_value < target):
         next_value = target
-    govee_client.set_brightness(GOVEE_LIGHT, next_value)
-    st.session_state["govee_light_brightness_applied"] = next_value
-    st.session_state["govee_brightness_step_ts"] = time.time()
+    # Gated on the API result — see _apply_color's comment; a failed
+    # step used to be recorded as if it landed, permanently offsetting
+    # every subsequent step in this creep from where the light actually
+    # is.
+    if govee_client.set_brightness(GOVEE_LIGHT, next_value):
+        st.session_state["govee_light_brightness_applied"] = next_value
+        st.session_state["govee_brightness_step_ts"] = time.time()
 
 
 def sync_lights(

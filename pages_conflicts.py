@@ -9,6 +9,7 @@ over the last week surfaces automatically, so this gives a genuine sense
 of what's heating up vs. going quiet, rather than a static watchlist.
 """
 
+import html
 import re
 from datetime import datetime, timezone
 
@@ -74,6 +75,28 @@ def _word_in(term: str, text: str) -> bool:
     return re.search(r"\b" + re.escape(term) + r"s?\b", text) is not None
 
 
+def _country_codes_in(text: str) -> set[str]:
+    """Every CONFLICT_COUNTRIES code mentioned in `text`, checking longer
+    (multi-word) names first and skipping any shorter name whose match
+    falls entirely inside a longer one's already-claimed span — a plain
+    "does this name appear anywhere" check per name (the previous
+    approach) let "sudan" match inside "south sudan" (a genuine whole
+    word there too, separated by a space), silently merging two
+    distinct conflicts into one inflated group any time a South-Sudan-
+    only headline appeared. Longer-name-wins mirrors how a human reader
+    would parse "south sudan" as naming one country, not two."""
+    codes = set()
+    claimed_spans = []
+    for name in sorted(CONFLICT_COUNTRIES, key=len, reverse=True):
+        pattern = r"\b" + re.escape(name) + r"s?\b"
+        for m in re.finditer(pattern, text):
+            if any(m.start() >= s and m.end() <= e for s, e in claimed_spans):
+                continue
+            codes.add(CONFLICT_COUNTRIES[name])
+            claimed_spans.append((m.start(), m.end()))
+    return codes
+
+
 def _coverage_level(count: int) -> tuple[str, str]:
     """(label, badge tone) for how much coverage a conflict is getting."""
     if count == 1:
@@ -95,7 +118,7 @@ def _detect_conflicts(headlines: list[dict]) -> list[dict]:
         h = item["headline"].lower()
         if not any(_word_in(term, h) for term in CONFLICT_TERMS):
             continue
-        codes = {code for name, code in CONFLICT_COUNTRIES.items() if _word_in(name, h)}
+        codes = _country_codes_in(h)
         if not codes:
             continue
         key = frozenset(codes)
@@ -151,7 +174,7 @@ def render():
 
         flags_html = "".join(f'<span class="conflict-flag">{flag_for(code)}</span>' for code in entry["codes"])
         headlines_html = "".join(
-            f'<div class="conflict-headline{" conflict-headline-recent" if h["published"] and (now_utc - h["published"]).total_seconds() < RECENT_WINDOW_SECONDS else ""}">{h["headline"]}</div>'
+            f'<div class="conflict-headline{" conflict-headline-recent" if h["published"] and (now_utc - h["published"]).total_seconds() < RECENT_WINDOW_SECONDS else ""}">{html.escape(h["headline"])}</div>'
             for h in entry["headlines"][:3]
         )
 
