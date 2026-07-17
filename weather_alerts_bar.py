@@ -94,6 +94,21 @@ def _fallback_text(weather: dict | None) -> str | None:
     return None
 
 
+def current_severity() -> str | None:
+    """The same alert render() below would show, resolved to just its
+    severity tier — for callers elsewhere in the app (the Govee light)
+    that need to react to real EC alerts without duplicating the
+    fetch/selection logic. None if nothing's active, or if the only
+    thing showing is our own manual heat/cold fallback (that's a
+    self-generated heuristic, not a genuine EC alert, and shouldn't
+    trigger a real-alert response anywhere)."""
+    alerts = ec_alerts.fetch_alerts()
+    if not alerts:
+        return None
+    alert = max(alerts, key=_selection_score)
+    return _severity(alert["title"])
+
+
 def render(weather: dict | None) -> None:
     alerts = ec_alerts.fetch_alerts()
     if alerts:

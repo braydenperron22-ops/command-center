@@ -195,33 +195,54 @@ def sync_lights(
     now: datetime,
     sunset: datetime | None,
     aqi: float | None = None,
+    extreme_weather: bool = False,
 ) -> None:
     """Call once per rerun. Light follows the exact same sunset/sunrise
-    pattern as the plug — off at night, no exceptions (including no
-    breaking-news flash overnight, since the point is an uninterrupted
-    rest period). During the day it stays on and reactive: market-direction
-    color normally, brightness ramping per the morning/evening curve above
-    (1 up to 100, the evening side timed backward from real `sunset` so it
-    lands on the floor right as the light powers off) — or an alternating
+    pattern as the plug — off at night, with one deliberate exception
+    (extreme_weather, see below); every other override here (breaking
+    news, smoke, sunrise/sunset tint) still respects night/off, since
+    the point of that window is an uninterrupted rest period. During
+    the day it stays on and reactive: market-direction color normally,
+    brightness ramping per the morning/evening curve above (1 up to
+    100, the evening side timed backward from real `sunset` so it lands
+    on the floor right as the light powers off) — or an alternating
     red/white pulse, at full unramped brightness since a breaking alert
-    should still grab attention, while `breaking_alert_elapsed` is not None
-    (the seconds elapsed since a fresh breaking alert started showing — the
-    caller already tracks each alert's shown_at for the toast bar, so this
-    reuses that instead of tracking its own copy; None means no active
-    breaking alert). A genuinely extreme AQI (real wildfire smoke, not
-    routine haze) overrides the market color with SMOKE_COLOR instead —
-    checked after the breaking-news flash (which still wins, being the
-    more urgent/immediate of the two) but before market color. During
-    the sunrise/sunset transition (the same `phase` scenery.py's own sky
-    gradient uses), the light tints to that gradient's own warm
-    horizon-glow color instead of market color — checked after the
-    flash/smoke overrides (both still win, being genuinely urgent) but
-    before market color, so the room actually matches the screen during
-    that window rather than sitting on a separate, unrelated track.
-    Color always applies instantly; brightness creeps toward its target
-    instead (see _creep_brightness) except during a flash, which needs
-    to be immediately attention-grabbing rather than easing into view."""
+    should still grab attention, while `breaking_alert_elapsed` is not
+    None (the seconds elapsed since a fresh breaking alert started
+    showing — the caller already tracks each alert's shown_at for the
+    toast bar, so this reuses that instead of tracking its own copy;
+    None means no active breaking alert). A genuinely extreme AQI (real
+    wildfire smoke, not routine haze) overrides the market color with
+    SMOKE_COLOR instead — checked after the breaking-news flash (which
+    still wins, being the more urgent/immediate of the two) but before
+    market color. During the sunrise/sunset transition (the same
+    `phase` scenery.py's own sky gradient uses), the light tints to
+    that gradient's own warm horizon-glow color instead of market color
+    — checked after the flash/smoke overrides (both still win, being
+    genuinely urgent) but before market color, so the room actually
+    matches the screen during that window rather than sitting on a
+    separate, unrelated track. Color always applies instantly;
+    brightness creeps toward its target instead (see _creep_brightness)
+    except during a flash, which needs to be immediately
+    attention-grabbing rather than easing into view.
+
+    extreme_weather (see weather_alerts_bar.current_severity — true
+    only for EC's own most dangerous hazard tier: tornado, hurricane,
+    tsunami) is the one thing in this whole function that overrides
+    night/off. Every other override here respects an uninterrupted
+    night's sleep on purpose; a tornado warning is the one case where
+    that's the wrong call — it's worth actually waking up for, which
+    nothing else this function reacts to genuinely is. Checked first,
+    before the night gate, and bypasses the normal brightness ramp too
+    (snaps to full FLASH_BRIGHTNESS immediately, same as the breaking-
+    news flash) since a real emergency shouldn't ease into visibility."""
     if not st.secrets.get("GOVEE_API_KEY"):
+        return
+    if extreme_weather:
+        if _apply_power(True):
+            color = FLASH_RED if int(time.time()) % 2 == 0 else FLASH_WHITE
+            _apply_color(color, min_gap=FLASH_CALL_GAP_SECONDS)
+            _apply_brightness_immediate(FLASH_BRIGHTNESS, min_gap=FLASH_CALL_GAP_SECONDS)
         return
     if phase == "night":
         _apply_power(False)

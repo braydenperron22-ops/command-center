@@ -627,8 +627,16 @@ try:
     if current_alert and current_alert.get("important") and elapsed is not None and elapsed < govee_lighting.FLASH_SECONDS:
         breaking_elapsed = elapsed
     aqi_for_lights = air_quality.get("us_aqi") if air_quality else None
+    # A real EC tornado/hurricane/tsunami warning is worth waking up for
+    # — the one thing sync_lights() reacts to that overrides night/off
+    # (see its own docstring). Resolved here rather than inside
+    # govee_lighting itself so that module stays free of any direct EC
+    # dependency, matching how it already takes aqi/market/breaking-news
+    # as plain values rather than fetching them itself.
+    extreme_weather = weather_alerts_bar.current_severity() == "extreme"
     govee_lighting.sync_lights(
-        phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None, aqi_for_lights
+        phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
+        aqi_for_lights, extreme_weather,
     )
     govee_lighting.sync_plug(now, weather["first_light"] if weather else None, weather["last_light"] if weather else None)
 except Exception:
