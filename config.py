@@ -26,6 +26,17 @@ RADAR_NEARBY_CITIES = [
     {"label": "Sturgeon Falls", "lat": 46.3660968, "lon": -79.9309088},
     {"label": "Mattawa", "lat": 46.3132636, "lon": -78.709835},
     {"label": "Sudbury", "lat": 46.489459, "lon": -80.989206},
+    # Added once the radar frame widened to a 2.5:1 image (see
+    # ec_radar.py) — these sit well outside the old square bbox but
+    # comfortably inside the new one, confirmed via ec_radar's own
+    # _latlon_to_pixel/nearby_city_markers (which already silently drops
+    # anything landing outside the frame, so there's no risk in listing
+    # a town that turns out to be just out of range).
+    {"label": "Parry Sound", "lat": 45.3502, "lon": -80.0329},
+    {"label": "Huntsville", "lat": 45.3238, "lon": -79.2177},
+    {"label": "Pembroke", "lat": 45.8168, "lon": -77.1141},
+    {"label": "Temiskaming Shores", "lat": 47.5169, "lon": -79.6810},
+    {"label": "Deep River", "lat": 46.1001, "lon": -77.4931},
 ]
 
 UV_HIGH_THRESHOLD = 5

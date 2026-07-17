@@ -114,17 +114,27 @@ st.markdown(
 # discrete 5-second steps — same reason CSS transition doesn't survive
 # this app's autorefresh (see scenery.py's own notes): each rerun
 # re-emits the element already at its new value, with nothing to
-# interpolate from. Uses the same fix already proven elsewhere in this
-# app (news.py/commute_reminder.py's toast intro): a real @keyframes
-# animation with a server-computed *negative* animation-delay, which
-# resumes it partway through rather than restarting it — the browser's
-# own render loop then carries it smoothly between reruns on its own,
-# regardless of how long until the next one actually arrives.
+# interpolate from.
+#
+# A server-computed *negative* animation-delay alone isn't enough here
+# (confirmed live: the bar would drift off the real rotation clock and
+# stop lining up with the actual page flip) — Streamlit patches this
+# element's style attribute on the SAME persisted DOM node across
+# reruns rather than replacing it, and mutating animation-delay on an
+# already-running animation is a no-op per the CSS spec; only a
+# genuinely new animation instance respects a new delay. So the class
+# is alternated every rerun between two functionally identical
+# keyframe animations (rotation-timer-fill-a/-b, theme.py) — changing
+# animation-name always forces a real restart even on the same node,
+# which makes the freshly computed delay actually take effect each
+# time, while the browser still tweens smoothly in between reruns.
 if _requested_page not in PAGES:
     _rotation_elapsed = _rotation_epoch % PAGE_ROTATION_SECONDS
+    st.session_state["_rotation_bar_tick"] = st.session_state.get("_rotation_bar_tick", 0) + 1
+    _bar_variant = "a" if st.session_state["_rotation_bar_tick"] % 2 == 0 else "b"
     st.markdown(
         f'<div class="rotation-timer-track">'
-        f'<div class="rotation-timer-fill" style="animation-delay:-{_rotation_elapsed:.2f}s;"></div></div>',
+        f'<div class="rotation-timer-fill-{_bar_variant}" style="animation-delay:-{_rotation_elapsed:.2f}s;"></div></div>',
         unsafe_allow_html=True,
     )
 
@@ -669,7 +679,7 @@ try:
     extreme_weather = weather_alerts_bar.current_severity() == "extreme"
     govee_lighting.sync_lights(
         phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
-        aqi_for_lights, extreme_weather,
+        aqi_for_lights, extreme_weather, category,
     )
     govee_lighting.sync_plug(now, weather["first_light"] if weather else None, weather["last_light"] if weather else None)
 except Exception:

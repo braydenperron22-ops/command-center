@@ -138,7 +138,7 @@ def _fetch_mlb_wildcard_raw() -> dict | None:
     for record in resp.json().get("records", []):
         for t in record.get("teamRecords", []):
             if t["team"]["id"] == MLB_TEAM_ID:
-                return {"games_back": t.get("wildCardGamesBack"), "rank": t.get("wildCardRank")}
+                return {"value": t.get("wildCardGamesBack"), "rank": t.get("wildCardRank"), "unit": "GB"}
     return None
 
 
@@ -288,6 +288,45 @@ def _fetch_nhl_standings() -> list[dict]:
     return result or (_last_good_nhl_standings or [])
 
 
+NHL_CONFERENCE_ABBREV = "E"  # Eastern
+
+
+@st.cache_data(ttl=STANDINGS_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_nhl_wildcard_raw() -> dict | None:
+    """Division rank alone reads as "buried" for a team outside its
+    division's own top 3 even when it's genuinely alive for one of the
+    conference's 2 Wild Card berths — same standings endpoint as the
+    division table above, just unfiltered by division so the whole
+    conference is visible. Unlike MLB's endpoint, the NHL one exposes a
+    wildcardSequence but no ready-made "points back" number, so the Wild
+    Card pool (every team not already in its own division's real top 3)
+    is built and ranked by points here directly. None whenever MTL
+    already holds a real Atlantic top-3 spot — Wild Card context isn't
+    relevant to a team that doesn't need it."""
+    fetch_throttle.wait_turn()
+    resp = requests.get(NHL_STANDINGS_URL, timeout=10, allow_redirects=True)
+    resp.raise_for_status()
+    conference = [t for t in resp.json().get("standings", []) if t["conferenceAbbrev"] == NHL_CONFERENCE_ABBREV]
+    mtl = next((t for t in conference if t["teamAbbrev"]["default"] == NHL_TEAM_ABBR), None)
+    if mtl is None or mtl["divisionSequence"] <= 3:
+        return None
+
+    pool = sorted((t for t in conference if t["divisionSequence"] > 3), key=lambda t: -t["points"])
+    rank = next(i for i, t in enumerate(pool) if t["teamAbbrev"]["default"] == NHL_TEAM_ABBR) + 1
+    # Points behind whoever holds the pool's 2nd (last) Wild Card spot —
+    # 0 or negative means MTL holds a spot itself, by that many points.
+    cutoff_points = pool[1]["points"]
+    points_back = cutoff_points - mtl["points"]
+    return {"value": points_back, "rank": rank, "unit": "PTS"}
+
+
+def _fetch_nhl_wildcard() -> dict | None:
+    try:
+        return _fetch_nhl_wildcard_raw()
+    except Exception:
+        return None
+
+
 def fetch_habs() -> dict | None:
     """Same shape as fetch_jays() — None entirely outside the NHL season
     (this is what makes the whole page fall back to just the Jays, or
@@ -324,5 +363,6 @@ def fetch_habs() -> dict | None:
         "game": game,
         "standings": standings,
         "division_name": NHL_DIVISION_NAME,
+        "wildcard": _fetch_nhl_wildcard(),
         "team_logo": _nhl_logo_url(NHL_TEAM_ABBR),
     }

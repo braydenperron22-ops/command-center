@@ -21,6 +21,47 @@ from flags import flag_for
 RECENT_WINDOW_SECONDS = 24 * 60 * 60
 _MIN_DATETIME = datetime.min.replace(tzinfo=timezone.utc)
 
+# Coverage-trend arrow: same idea as air_quality_client's rising/falling
+# trend, but doesn't need to accumulate samples over time — the 7-day
+# headline pool already carries real `published` timestamps, so a
+# recent-vs-older split is available on the very first render. The two
+# windows are different widths (3 days vs. 4), so raw counts are
+# compared as a per-day RATE, not a raw count — otherwise the wider
+# "older" bucket would always out-count the narrower "recent" one for
+# genuinely steady coverage and read as false "de-escalating".
+TREND_RECENT_DAYS = 3
+TREND_OLDER_DAYS = 4  # covers days 4-7 back
+TREND_MIN_SAMPLE = 4  # fewer dated headlines than this isn't enough to call a direction from
+TREND_RATIO_THRESHOLD = 1.4  # rate must differ by at least this factor to read as a real move, not noise
+
+
+def _coverage_trend(headlines: list[dict], now_utc: datetime) -> str | None:
+    """"rising" / "falling" / "steady", or None if there's too little
+    dated coverage to judge a trend from."""
+    recent = older = 0
+    for h in headlines:
+        published = h["published"]
+        if published is None:
+            continue
+        age_days = (now_utc - published).total_seconds() / 86400
+        if age_days < TREND_RECENT_DAYS:
+            recent += 1
+        elif age_days < TREND_RECENT_DAYS + TREND_OLDER_DAYS:
+            older += 1
+
+    if recent + older < TREND_MIN_SAMPLE:
+        return None
+    recent_rate = recent / TREND_RECENT_DAYS
+    older_rate = older / TREND_OLDER_DAYS
+    if older_rate == 0:
+        return "rising"
+    ratio = recent_rate / older_rate
+    if ratio >= TREND_RATIO_THRESHOLD:
+        return "rising"
+    if ratio <= 1 / TREND_RATIO_THRESHOLD:
+        return "falling"
+    return "steady"
+
 
 def _word_in(term: str, text: str) -> bool:
     """Whole-word match — plain substring matching let "war" match inside
@@ -101,6 +142,9 @@ def render():
     for i, entry in enumerate(entries):
         count = len(entry["headlines"])
         label, tone = _coverage_level(count)
+        trend = _coverage_trend(entry["headlines"], now_utc)
+        trend_arrow = {"rising": " ↑", "falling": " ↓", "steady": " →"}.get(trend, "")
+        label = f"{label}{trend_arrow}"
         badge_class = f"badge-{tone}"
         fill_class = f"severity-fill-{tone}"
         fill_pct = min(count / 5, 1.0) * 100

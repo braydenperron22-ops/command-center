@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 import streamlit as st
 
 import govee_client
+import scenery
 from config import AQI_EXTREME, GOVEE_LIGHT, GOVEE_PLUG
 
 MIN_CALL_GAP_SECONDS = 10
@@ -31,8 +32,16 @@ FLASH_SECONDS = 4  # how long a breaking-news pulse holds before reverting
 DAY_BRIGHTNESS = 100  # peak brightness while the light is on — one tier, no market-hours step
 MARKET_UP_COLOR = (0, 255, 0)
 MARKET_DOWN_COLOR = (255, 0, 0)
-MARKET_NEUTRAL_COLOR = (255, 255, 255)
 MARKET_FLAT_BAND = 0.1  # +/- percent treated as flat, avoids flicker right at 0
+# The room used to sit on market color all day, every day, even on a dead-
+# flat 0.2% afternoon — every real move got the same green/red treatment
+# as a genuinely notable one. Market color is now reserved for a move
+# actually worth glancing at; anything under this reverts to mirroring
+# the environment instead (see condition_light_color below). A full
+# percentage point on a broad index is a real, headline-worthy single-
+# session move, not routine noise — well above MARKET_FLAT_BAND, which
+# only exists to kill flicker right at 0.
+MARKET_SIGNIFICANT_MOVE = 1.0
 FLASH_RED = (255, 0, 0)
 FLASH_WHITE = (255, 255, 255)
 FLASH_BRIGHTNESS = 100
@@ -105,14 +114,19 @@ def _brightness_envelope(now: datetime, base_brightness: int, sunset: datetime |
 
 
 def _desired_base_state(
-    market_intraday_pct: float | None, now: datetime, sunset: datetime | None
+    market_intraday_pct: float | None, category: str | None, now: datetime, sunset: datetime | None
 ) -> tuple[tuple[int, int, int], int]:
-    if market_intraday_pct is None or abs(market_intraday_pct) < MARKET_FLAT_BAND:
-        color = MARKET_NEUTRAL_COLOR
-    elif market_intraday_pct > 0:
-        color = MARKET_UP_COLOR
+    """Market color only for a move actually worth noticing
+    (MARKET_SIGNIFICANT_MOVE); otherwise the light just mirrors whatever
+    condition is actually on screen (scenery.condition_light_color),
+    same as the sunrise/sunset override already does for that specific
+    window. `category` is None only if the weather fetch itself failed —
+    condition_light_color's own "cloudy" fallback covers that case, same
+    as scenery.py's own rendering does."""
+    if market_intraday_pct is not None and abs(market_intraday_pct) >= MARKET_SIGNIFICANT_MOVE:
+        color = MARKET_UP_COLOR if market_intraday_pct > 0 else MARKET_DOWN_COLOR
     else:
-        color = MARKET_DOWN_COLOR
+        color = scenery.condition_light_color(category)
     return color, _brightness_envelope(now, DAY_BRIGHTNESS, sunset)
 
 
@@ -196,35 +210,38 @@ def sync_lights(
     sunset: datetime | None,
     aqi: float | None = None,
     extreme_weather: bool = False,
+    category: str | None = None,
 ) -> None:
     """Call once per rerun. Light follows the exact same sunset/sunrise
     pattern as the plug — off at night, with one deliberate exception
     (extreme_weather, see below); every other override here (breaking
     news, smoke, sunrise/sunset tint) still respects night/off, since
     the point of that window is an uninterrupted rest period. During
-    the day it stays on and reactive: market-direction color normally,
-    brightness ramping per the morning/evening curve above (1 up to
-    100, the evening side timed backward from real `sunset` so it lands
-    on the floor right as the light powers off) — or an alternating
-    red/white pulse, at full unramped brightness since a breaking alert
-    should still grab attention, while `breaking_alert_elapsed` is not
-    None (the seconds elapsed since a fresh breaking alert started
-    showing — the caller already tracks each alert's shown_at for the
-    toast bar, so this reuses that instead of tracking its own copy;
-    None means no active breaking alert). A genuinely extreme AQI (real
-    wildfire smoke, not routine haze) overrides the market color with
+    the day it stays on and reactive: market color only for a genuinely
+    significant move (see MARKET_SIGNIFICANT_MOVE), otherwise mirroring
+    whatever condition is actually on screen (see
+    scenery.condition_light_color) — brightness ramping per the
+    morning/evening curve above either way (1 up to 100, the evening
+    side timed backward from real `sunset` so it lands on the floor
+    right as the light powers off). Or an alternating red/white pulse,
+    at full unramped brightness since a breaking alert should still
+    grab attention, while `breaking_alert_elapsed` is not None (the
+    seconds elapsed since a fresh breaking alert started showing — the
+    caller already tracks each alert's shown_at for the toast bar, so
+    this reuses that instead of tracking its own copy; None means no
+    active breaking alert). A genuinely extreme AQI (real wildfire
+    smoke, not routine haze) overrides everything below it with
     SMOKE_COLOR instead — checked after the breaking-news flash (which
-    still wins, being the more urgent/immediate of the two) but before
-    market color. During the sunrise/sunset transition (the same
-    `phase` scenery.py's own sky gradient uses), the light tints to
-    that gradient's own warm horizon-glow color instead of market color
-    — checked after the flash/smoke overrides (both still win, being
-    genuinely urgent) but before market color, so the room actually
-    matches the screen during that window rather than sitting on a
-    separate, unrelated track. Color always applies instantly;
-    brightness creeps toward its target instead (see _creep_brightness)
-    except during a flash, which needs to be immediately
-    attention-grabbing rather than easing into view.
+    still wins, being the more urgent/immediate of the two). During the
+    sunrise/sunset transition (the same `phase` scenery.py's own sky
+    gradient uses), the light tints to that gradient's own warm
+    horizon-glow color — checked after the flash/smoke overrides (both
+    still win, being genuinely urgent) but before the market/environment
+    base state, so the room actually matches the screen during that
+    window rather than sitting on a separate, unrelated track. Color
+    always applies instantly; brightness creeps toward its target
+    instead (see _creep_brightness) except during a flash, which needs
+    to be immediately attention-grabbing rather than easing into view.
 
     extreme_weather (see weather_alerts_bar.current_severity — true
     only for EC's own most dangerous hazard tier: tornado, hurricane,
@@ -262,7 +279,7 @@ def sync_lights(
         _apply_color(SUNRISE_COLOR if phase == "sunrise" else SUNSET_COLOR)
         _creep_brightness(_brightness_envelope(now, DAY_BRIGHTNESS, sunset))
         return
-    color, brightness = _desired_base_state(market_intraday_pct, now, sunset)
+    color, brightness = _desired_base_state(market_intraday_pct, category, now, sunset)
     _apply_color(color)
     _creep_brightness(brightness)
 

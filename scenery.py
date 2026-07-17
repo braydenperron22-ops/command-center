@@ -112,6 +112,20 @@ def _hex_to_rgb(h: str) -> tuple[int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
+def condition_light_color(category: str) -> tuple[int, int, int]:
+    """RGB for the bedroom Govee light's environment-mirroring base state
+    (see govee_lighting.py) — the same horizon-glow stop (the brightest,
+    most saturated of each condition's 4-stop gradient) already used for
+    the on-screen sky itself, so the room's ambient color is always
+    drawn from the identical source of truth as whatever's actually
+    rendered, not a second, separately maintained approximation that
+    could quietly drift out of sync with it. Falls back to "cloudy" for
+    an unrecognized category rather than raising, since a light with a
+    reasonable neutral color beats a crashed rerun."""
+    stops = _SKY_STOPS.get((category, "day"), _SKY_STOPS[("cloudy", "day")])
+    return _hex_to_rgb(stops[3])
+
+
 def _lerp_hex(a: str, b: str, t: float) -> str:
     ar, ag, ab = _hex_to_rgb(a)
     br, bg, bb = _hex_to_rgb(b)

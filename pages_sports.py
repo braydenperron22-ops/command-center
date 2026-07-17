@@ -38,15 +38,14 @@ def _game_html(status: dict) -> str:
 def _wildcard_html(status: dict) -> str:
     """Division rank alone reads as "hopeless" for a team buried in a
     tough division even when it's genuinely alive for a Wild Card spot
-    (see sports_client._fetch_mlb_wildcard) — MLB only, NHL's status
-    dict has no "wildcard" key at all. Omitted entirely once games_back
-    is "-" (division leaders don't need a Wild Card, and showing "- GB"
-    for a team already comfortably in a real playoff spot would read as
-    a broken stat, not a reassuring one)."""
+    (see sports_client._fetch_mlb_wildcard / _fetch_nhl_wildcard).
+    Omitted entirely whenever "wildcard" is missing/None — both leagues'
+    fetchers already return None themselves once a team holds a real
+    division spot, so there's nothing left to gate on here."""
     wildcard = status.get("wildcard")
-    if not wildcard or wildcard.get("games_back") in (None, "-"):
+    if not wildcard or wildcard.get("value") is None:
         return ""
-    return f'<div class="tile-prev">Wild Card: {wildcard["games_back"]} GB · rank {wildcard["rank"]}</div>'
+    return f'<div class="tile-prev">Wild Card: {wildcard["value"]} {wildcard["unit"]} · rank {wildcard["rank"]}</div>'
 
 
 def _standings_table(status: dict) -> str:

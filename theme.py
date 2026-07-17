@@ -432,15 +432,31 @@ html, body, [class*="css"] {
     width: 100%;
     background: rgba(255,255,255,0.35);
     transform-origin: left;
-    /* 300s must match config.PAGE_ROTATION_SECONDS — animation-delay is
-       computed server-side each rerun (see app.py) as -(elapsed seconds
-       into the current window), which resumes this partway through
-       rather than restarting it, so the browser keeps it moving
-       smoothly on its own between reruns instead of jumping in
-       discrete 5-second steps. */
-    animation: rotation-timer-progress 300s linear infinite;
 }
-@keyframes rotation-timer-progress {
+/* Confirmed live (see app.py) that Streamlit patches this element's
+   style attribute in place across reruns rather than replacing the
+   node — so a fresh animation-delay value alone was a no-op: per the
+   CSS Animations spec, mutating animation-delay on an ALREADY-RUNNING
+   animation does not reposition it, only a genuinely new animation
+   instance respects a new delay. That's exactly why the bar used to
+   drift off the real rotation clock and stop lining up with the actual
+   page flip. Fixed by alternating between two functionally identical
+   keyframe animations every rerun (see _rotation_bar_class in app.py)
+   — changing animation-name always forces a real restart even on the
+   same node, so the freshly computed delay actually takes effect each
+   time, while the browser still tweens smoothly in between reruns.
+   300s in both must match config.PAGE_ROTATION_SECONDS. */
+.rotation-timer-fill-a {
+    animation: rotation-timer-progress-a 300s linear infinite;
+}
+.rotation-timer-fill-b {
+    animation: rotation-timer-progress-b 300s linear infinite;
+}
+@keyframes rotation-timer-progress-a {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+}
+@keyframes rotation-timer-progress-b {
     from { transform: scaleX(0); }
     to { transform: scaleX(1); }
 }
