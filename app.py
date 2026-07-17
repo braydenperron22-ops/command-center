@@ -405,13 +405,16 @@ if weather:
                 f'<span class="weather-extra" style="color:{feels_color}; '
                 f'background:{feels_bg}; border-color:{feels_color};">Feels like {feels_like:.0f}°C</span>'
             )
-    # Today's forecast against the historical extreme for this exact
-    # calendar date (see weather_records_client) — only shows up on the
-    # rare day today's actually close to or past it, same "only badge a
-    # real threshold crossing" convention as UV/AQI above. Same warm/
-    # cool convention as "Feels like" just above: orange for a hot
-    # extreme, blue for a cold one.
-    record = weather_records_client.record_context(high, low)
+    # The CURRENT actual reading against the historical extreme for
+    # this exact calendar date (see weather_records_client) — the
+    # day's forecast high/low deliberately isn't used here: showing
+    # "Record low" all afternoon because of an 8am forecast reading
+    # would be describing a moment that isn't actually happening right
+    # now. Only shows up on the rare moment it's genuinely close to or
+    # past the record, same "only badge a real threshold crossing"
+    # convention as UV/AQI above. Same warm/cool convention as "Feels
+    # like" just above: orange for a hot extreme, blue for a cold one.
+    record = weather_records_client.record_context(weather["temp_c"])
     if record is not None:
         exceeded = (
             (record["kind"] == "high" and record["value"] >= record["record"])

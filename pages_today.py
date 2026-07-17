@@ -21,7 +21,9 @@ import calendar_client
 import commute_client
 import commute_history
 import commute_reminder
+import road_conditions
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
+from weather_client import fetch_weather
 
 # From this hour onward, the agenda switches from today's remaining
 # events to tomorrow's full day — checking the dashboard in the evening
@@ -180,17 +182,28 @@ def _render_commute(now: datetime) -> None:
     # — comparing today's drive to a one-off shift location against the
     # usual commute's history would be comparing two different routes.
     trend_html = _commute_trend_html(data["duration_seconds"]) if using_default else ""
-    # trend_html folded onto the closing tag's line rather than given its
-    # own — when it's "" (no comparison data yet), a lone whitespace line
-    # ahead of an indented "</div>" reads to the markdown parser as a
-    # blank line followed by an indented code block, and it renders that
-    # closing tag as literal text instead of parsing it as HTML.
+
+    # Black-ice / slick-road risk (see road_conditions.py) — a real
+    # safety signal, not just a "nice to know," so it gets the same red
+    # as a breaking-news/bad-tile accent rather than blending in with
+    # the routine traffic-delay text above it.
+    ice_html = ""
+    weather = fetch_weather()
+    if weather and road_conditions.ice_risk(weather["temp_c"], weather.get("forecast_low_c"), weather):
+        ice_html = '<div class="severity-caption compact"><span class="market-down">⚠ Watch for ice</span></div>'
+
+    # trend_html/ice_html folded onto the closing tag's line rather than
+    # given their own — when either is "" (no comparison data yet, or
+    # no ice risk), a lone whitespace line ahead of an indented "</div>"
+    # reads to the markdown parser as a blank line followed by an
+    # indented code block, and it renders that closing tag as literal
+    # text instead of parsing it as HTML.
     st.markdown(
         f"""<div class="tile compact">
             <div class="tile-label compact">{COMMUTE_ORIGIN['label'].upper()} → {destination['label'].upper()}</div>
             <div class="tile-value">{minutes} min</div>
             <div class="tile-prev">{data['distance_km']:.1f} km · <span class="{delay_class}">{delay_text}</span></div>
-            {trend_html}</div>""",
+            {trend_html}{ice_html}</div>""",
         unsafe_allow_html=True,
     )
 

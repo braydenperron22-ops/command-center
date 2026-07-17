@@ -68,12 +68,17 @@ def _fetch_records_raw(today: date) -> dict | None:
     }
 
 
-def record_context(forecast_high_c: float | None, forecast_low_c: float | None) -> dict | None:
-    """{"kind": "high"|"low", "value", "record", "year"} once today's
-    forecast is within RECORD_MARGIN_C of (or past) the historical
-    extreme for this date — None on the (large majority of) days when
-    there's nothing record-worthy to flag, or the archive fetch itself
-    is unavailable with no prior good copy to fall back on yet."""
+def record_context(current_temp_c: float | None) -> dict | None:
+    """{"kind": "high"|"low", "value", "record", "year"} once the
+    CURRENT actual temperature — not the day's forecast high/low — is
+    within RECORD_MARGIN_C of (or past) the historical extreme for this
+    date. Gated on the live reading on purpose: the day's forecast low
+    might be a genuine near-record 8am reading, but showing "Record
+    low" all afternoon while it's actually 24° out would be describing
+    a moment that's already over (or hasn't happened yet). None on the
+    (large majority of) days when nothing's record-worthy right now, or
+    the archive fetch itself is unavailable with no prior good copy to
+    fall back on yet."""
     global _last_good_records
     today = date.today()
     try:
@@ -82,19 +87,17 @@ def record_context(forecast_high_c: float | None, forecast_low_c: float | None) 
         records = _last_good_records
     if records is not None:
         _last_good_records = records
-    if not records:
+    if not records or current_temp_c is None:
         return None
 
-    if forecast_high_c is not None and records.get("record_high_c") is not None:
-        if forecast_high_c >= records["record_high_c"] - RECORD_MARGIN_C:
-            return {
-                "kind": "high", "value": forecast_high_c,
-                "record": records["record_high_c"], "year": records["record_high_year"],
-            }
-    if forecast_low_c is not None and records.get("record_low_c") is not None:
-        if forecast_low_c <= records["record_low_c"] + RECORD_MARGIN_C:
-            return {
-                "kind": "low", "value": forecast_low_c,
-                "record": records["record_low_c"], "year": records["record_low_year"],
-            }
+    if records.get("record_high_c") is not None and current_temp_c >= records["record_high_c"] - RECORD_MARGIN_C:
+        return {
+            "kind": "high", "value": current_temp_c,
+            "record": records["record_high_c"], "year": records["record_high_year"],
+        }
+    if records.get("record_low_c") is not None and current_temp_c <= records["record_low_c"] + RECORD_MARGIN_C:
+        return {
+            "kind": "low", "value": current_temp_c,
+            "record": records["record_low_c"], "year": records["record_low_year"],
+        }
     return None
