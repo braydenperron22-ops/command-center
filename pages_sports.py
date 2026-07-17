@@ -65,9 +65,19 @@ def _game_html(status: dict, kickoff_label: str, now: datetime) -> str:
             won = game["team_score"] > game["opp_score"]
             value_class = "market-up" if won else "market-down"
             result = f"{'W' if won else 'L'} {opponent_word} {opponent}"
-    return f"""<div class="tile-value {value_class}">{value}</div>
-        <div class="tile-prev">{opponent_logo}{result}</div>
-        {starting_soon_html}"""
+    # Built as one flat line, no embedded newlines/indentation — a
+    # multi-line f-string here reads to the markdown parser as an
+    # indented code block once it's nested inside render()'s own
+    # multi-line template below (confirmed live: adding the third line
+    # for starting_soon_html was what tipped an already-borderline
+    # 2-line version over into this — same class of bug already
+    # documented in pages_weather.py/pages_today.py/pages_scores.py for
+    # exactly this reason).
+    return (
+        f'<div class="tile-value {value_class}">{value}</div>'
+        f'<div class="tile-prev">{opponent_logo}{result}</div>'
+        f"{starting_soon_html}"
+    )
 
 
 def _wildcard_html(status: dict) -> str:
@@ -89,13 +99,14 @@ def _wildcard_html(status: dict) -> str:
 
 
 def _standings_table(status: dict) -> str:
+    # Flattened to one line per row, same reasoning as _game_html above.
     rows = "".join(
-        f"""<div class="sports-standings-row{' sports-standings-row-team' if r['is_team'] else ''}">
-            <span class="sports-standings-rank">{r['rank']}</span>
-            <span class="sports-standings-team">{html.escape(r['team'])}</span>
-            <span class="sports-standings-record">{r['wins']}-{r['losses']}</span>
-            <span class="sports-standings-extra">{r['extra']}</span>
-        </div>"""
+        f'<div class="sports-standings-row{" sports-standings-row-team" if r["is_team"] else ""}">'
+        f'<span class="sports-standings-rank">{r["rank"]}</span>'
+        f'<span class="sports-standings-team">{html.escape(r["team"])}</span>'
+        f'<span class="sports-standings-record">{r["wins"]}-{r["losses"]}</span>'
+        f'<span class="sports-standings-extra">{r["extra"]}</span>'
+        f"</div>"
         for r in status["standings"]
     )
     return f'<div class="sports-standings">{rows}</div>' if rows else ""
