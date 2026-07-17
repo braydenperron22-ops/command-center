@@ -91,59 +91,6 @@ GREETINGS = [
     "Here's the deal: ",
 ]
 
-# How consecutive clauses get stitched together — picked once per join
-# position, per day (same seeding discipline as everything else here),
-# instead of always the same flat "; " between every single one. That
-# flat join was the single biggest reason the whole thing still read as
-# "here are N separate facts" rather than one thing someone actually
-# wrote — varying the connector (and occasionally starting a genuine
-# new sentence) does more for how "modular" it feels than any amount of
-# per-category line variety can, since it's the seams between clauses,
-# not the clauses themselves, that gave it away. Second element is
-# whether the connector starts a new sentence (True — capitalize the
-# clause that follows) or continues the current one (False — leave it
-# lowercase, matching how every clause is already written).
-CONNECTORS = [
-    ("; ", False),
-    (", and ", False),
-    (" — ", False),
-    (", plus ", False),
-    (", while ", False),
-    (", also, ", False),
-    (", meanwhile, ", False),
-    (". Also, ", True),
-    (". On top of that, ", True),
-    (". And ", True),
-    (". Plus, ", True),
-    (". Meanwhile, ", True),
-    (". Worth adding: ", True),
-    (". On the same note, ", True),
-]
-
-
-def _join_clauses(picked: list[str], now: datetime) -> str:
-    """Assembles the picked clause texts into one sentence (or short
-    run of sentences), varying the connector between each pair rather
-    than always joining with the same "; " — see CONNECTORS above.
-    Sampled without replacement (one Random draw for the whole day, not
-    one pick per join position) so the same connector can't turn up
-    twice in one sentence — confirmed live that independent per-position
-    picks could otherwise land on "Worth adding:" (or any other phrase)
-    twice in the same render, which undercuts the whole point of
-    varying them in the first place."""
-    num_joins = len(picked) - 1
-    if num_joins <= 0:
-        return picked[0]
-    rng = random.Random(f"{now.date().isoformat()}-connectors")
-    chosen = rng.sample(CONNECTORS, min(num_joins, len(CONNECTORS)))
-    parts = [picked[0]]
-    for clause_text, (connector_text, capitalize_next) in zip(picked[1:], chosen):
-        if capitalize_next and clause_text:
-            clause_text = clause_text[0].upper() + clause_text[1:]
-        parts.append(connector_text)
-        parts.append(clause_text)
-    return "".join(parts)
-
 HEAT_LINES = [
     "it's already {temp}°C — bracing for a scorcher, high near {high}°C",
     "{temp}°C and climbing, today's shaping up to be a hot one up to {high}°C",
@@ -1099,7 +1046,7 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         return
     clauses.sort(key=lambda c: c[0], reverse=True)
     picked = [text for _, text in clauses[:MAX_CLAUSES]]
-    sentence = _join_clauses(picked, now)
+    sentence = "; ".join(picked)
     sentence = sentence[0].upper() + sentence[1:] + "."
     greeting = _pick(GREETINGS, now, "greeting")
 
