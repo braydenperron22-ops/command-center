@@ -82,6 +82,14 @@ TOP_ALERT_HOLD_SECONDS = 2 * 60 * 60
 MAX_BURST_ALERTS = 6
 
 ROTATION_SECONDS = 5 * 60
+# How often the Scores page flips to the next active league (MLB/NBA/
+# NHL/NFL) — deliberately much shorter than PAGE_ROTATION_SECONDS
+# (5 min): the Scores page itself is only ever on screen for one
+# PAGE_ROTATION_SECONDS window before the kiosk rotates away entirely,
+# so cycling leagues on that same 5-minute cadence would mean a given
+# visit only ever shows ONE league. This needs to be short enough that
+# a single visit to the page actually cycles through all of them.
+SCORES_LEAGUE_ROTATION_SECONDS = 20
 
 # Standard-deviation band used to classify a reading vs its trailing trend
 HOT_COOL_THRESHOLD = 0.75
@@ -149,9 +157,12 @@ YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 
 # --- Multi-page ambient rotation -------------------------------------------
 # Home / Conflicts / News / Markets / Internals / Today / Household /
-# Weather / Radar / Sports cycle the same way US/CA already does: a
+# Weather / Radar / Sports / Scores cycle the same way US/CA already does: a
 # time.time()-based index, no Streamlit multipage chrome, no scrolling.
-PAGES = ["home", "conflicts", "news", "markets", "internals", "today", "household", "weather", "radar", "sports"]
+PAGES = [
+    "home", "conflicts", "news", "markets", "internals", "today", "household",
+    "weather", "radar", "sports", "scores",
+]
 PAGE_ROTATION_SECONDS = 5 * 60
 
 # Commute origin coordinate is the exact one embedded in the calendar

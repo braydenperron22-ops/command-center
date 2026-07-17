@@ -23,6 +23,7 @@ import pages_internals
 import pages_markets
 import pages_news
 import pages_radar
+import pages_scores
 import pages_sports
 import pages_today
 import pages_weather
@@ -39,7 +40,6 @@ from config import (
     MAX_BURST_ALERTS,
     PAGE_ROTATION_SECONDS,
     PAGES,
-    RAIN_LOOKAHEAD_HOURS,
     TIMEZONE,
     UV_HIGH_THRESHOLD,
 )
@@ -85,7 +85,7 @@ except Exception:
 _PAGE_LABELS = {
     "home": "Home", "conflicts": "Conflicts", "news": "News", "markets": "Markets",
     "internals": "Internals", "today": "Today", "household": "Household",
-    "weather": "Weather", "radar": "Radar", "sports": "Sports",
+    "weather": "Weather", "radar": "Radar", "sports": "Sports", "scores": "Scores",
 }
 
 # Invisible on the kiosk monitor — theme.py hides .mobile-nav entirely
@@ -311,7 +311,6 @@ def _rgba(hex_color: str, alpha: float) -> str:
 
 
 UV_EXTREME = 11  # UV index at which the badge reaches full vibrant red
-RAIN_LOOKAHEAD_SECONDS = RAIN_LOOKAHEAD_HOURS * 3600
 
 weather_block = ""
 if weather:
@@ -367,37 +366,12 @@ if weather:
             f'<span class="weather-extra" style="color:#64D2FF; '
             f'background:rgba(100,210,255,0.22); border-color:#64D2FF;">{text}</span>'
         )
-    else:
-        precip_at = weather.get("rain_at")
-        if precip_at is not None:
-            remaining = (precip_at - now).total_seconds()
-            if remaining > 0:
-                # Ticks down every second between weather refreshes since
-                # precip_at is a fixed target timestamp, not a relative
-                # "hours from now" that would otherwise sit frozen (or go
-                # stale) for the full 15-minute cache window. Background
-                # darkens as it gets closer — pale and airy when it's hours
-                # off, heavy and imminent right before it hits — but the
-                # text stays a fixed bright color rather than darkening
-                # along with it: that used to mean the badge nearly
-                # vanished (dark-on-dark) right when it mattered most.
-                # Snow gets its own icier palette rather than reusing rain's
-                # blue for everything — this location gets real winter
-                # weather (see weather_client._next_precip_at), and the
-                # color is a second, glance-only signal alongside the word
-                # itself for which one it actually is.
-                fc_is_snow = weather.get("precip_kind") == "snow"
-                fc_label = "Snow" if fc_is_snow else "Rain"
-                fill_start = "#EAF6FF" if fc_is_snow else "#64D2FF"
-                fill_end = "#243449" if fc_is_snow else "#0A2472"
-                closeness = 1 - min(remaining / RAIN_LOOKAHEAD_SECONDS, 1.0)
-                precip_fill = _lerp_hex(fill_start, fill_end, closeness)
-                precip_bg = _rgba(precip_fill, 0.22 + closeness * 0.5)
-                countdown = _format_countdown(remaining)
-                extras.append(
-                    f'<span class="weather-extra" style="color:{fill_start}; '
-                    f'background:{precip_bg}; border-color:{precip_fill};">{fc_label} in {countdown}</span>'
-                )
+    # No EC-forecast fallback here on purpose (there used to be one,
+    # using weather["rain_at"]) — EC's hourly forecast timing can be
+    # genuinely unreliable, and radar (ec_radar.precip_status, above)
+    # is real detected precipitation, not a prediction. Nothing shows
+    # here at all until radar itself has something confident to say,
+    # rather than falling back to a number that might be hours off.
     if weather["uv_index"] is not None and weather["uv_index"] > UV_HIGH_THRESHOLD:
         uv = weather["uv_index"]
         intensity = min((uv - UV_HIGH_THRESHOLD) / (UV_EXTREME - UV_HIGH_THRESHOLD), 1.0)
@@ -619,6 +593,8 @@ with st.container(key="page_body"):
         _safe_render(pages_radar.render)
     elif page == "sports":
         _safe_render(pages_sports.render)
+    elif page == "scores":
+        _safe_render(pages_scores.render, _rotation_epoch)
     else:
         # Every other branch above has a fallback (a real page render,
         # or _safe_render's own error tile) — this is the one path with
@@ -646,6 +622,14 @@ try:
 except Exception:
     pass
 
+# Same kind resolution the hero badge uses (category comes from the
+# real weather fetch, defaulting to "cloudy" above if that failed) —
+# EC's snow radar layer isn't itself gated by temperature and can show
+# the same reflectivity echo as the rain layer regardless of season, so
+# only ever checking the kind that actually matches today's real
+# weather avoids a nonsense "heavy snow" alert firing in July.
+_alert_precip_kind = "snow" if category == "snow" else "rain"
+
 # Same bottom-bar queue, same isolation reasoning — a genuinely heavy
 # (not just present) precipitation cell newly detected nearby, edge-
 # triggered so it fires once per event rather than every rerun while
@@ -654,9 +638,21 @@ except Exception:
 # existing red/urgent treatment since this alert always sets
 # important=True.
 try:
-    severe_alert = ec_radar.severe_weather_alert()
+    severe_alert = ec_radar.severe_weather_alert(_alert_precip_kind)
     if severe_alert:
         new_alerts.append(severe_alert)
+except Exception:
+    pass
+
+# Same idea, earlier trigger — the moment radar first has ANYTHING to
+# track nearby, regardless of confirmed direction or intensity (see
+# ec_radar.tracking_started_alert). Lower-key styling than the severe
+# alert above: important=False, so news.render_alert_bar gives it the
+# muted black treatment instead of red.
+try:
+    tracking_alert = ec_radar.tracking_started_alert(_alert_precip_kind)
+    if tracking_alert:
+        new_alerts.append(tracking_alert)
 except Exception:
     pass
 
@@ -668,10 +664,11 @@ except Exception:
 # A feed outage that recovers can surface dozens of headlines in one
 # batch (everything that was never marked "seen" while it was down) —
 # capped to the most recent MAX_BURST_ALERTS so that doesn't turn into
-# hours of backlog playing through this bar one at a time. The commute
-# reminder appended above is always the last element of new_alerts at
-# that point, so this trim (which keeps the most recent items) can
-# never drop it even during a real burst.
+# hours of backlog playing through this bar one at a time. commute_alert/
+# severe_alert/tracking_alert above are each appended AFTER new_alerts
+# is first populated from news.get_new_alerts(), so they always sit at
+# the tail end of the list — this trim (which keeps the most recent
+# items) can never drop any of the three even during a real news burst.
 #
 # Defined here (not just inside the try) so the Govee block below always
 # has a real value to check even if this try body fails before reaching

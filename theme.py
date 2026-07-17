@@ -211,7 +211,7 @@ html, body, [class*="css"] {
    keyframe) since this app reruns its whole script every second for the
    clock tick and an animated shadow here would fight that the same way
    the old background elements did — depth without motion. */
-.tile, .market-pill, .news-feed-list {
+.tile, .market-pill, .news-feed-list, .score-card {
     background: rgba(12,12,16,0.86);
     border: 1px solid rgba(255,255,255,0.09);
     border-radius: 16px;
@@ -864,6 +864,7 @@ html, body, [class*="css"] {
 .news-alert-tag.news-cat-mergers { background: rgba(255,159,10,0.9); color: #4d2c00; }
 .news-alert-tag.news-cat-milestone { background: rgba(100,210,255,0.9); color: #0a2c3d; }
 .news-alert-tag.news-cat-severe-weather { background: rgba(255,105,97,0.9); color: #4d0f0d; }
+.news-alert-tag.news-cat-weather-tracking { background: rgba(100,210,255,0.9); color: #0a2c3d; }
 
 .severity-track {
     position: relative;
@@ -958,6 +959,10 @@ html, body, [class*="css"] {
     background: #FF375F;
     box-shadow: 0 0 8px 1px rgba(255,55,95,0.5);
 }
+.page-title-scores::before {
+    background: #30D5C8;
+    box-shadow: 0 0 8px 1px rgba(48,213,200,0.5);
+}
 
 /* Team + opponent logos (sports_client.py — MLB's static logo CDN and
    NHL's, both free, no key, keyed by team id/abbrev with no API call
@@ -1023,6 +1028,68 @@ html, body, [class*="css"] {
     width: 3rem;
     text-align: right;
     color: #8E8E93;
+}
+
+/* Scores page — a whole league's slate can run to 15 games (MLB), too
+   many for st.columns to lay out sensibly at kiosk width, so this is a
+   plain CSS grid instead: as many cards per row as comfortably fit,
+   wrapping on its own rather than a fixed column count. */
+.scores-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 0.9rem;
+}
+.score-card {
+    padding: 0.9rem 1.1rem;
+}
+.score-card-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.3rem 0;
+}
+.score-card-team {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+}
+.score-card-logo {
+    width: 1.9rem;
+    height: 1.9rem;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+.score-card-abbr {
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #F5F5F7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.score-card-value {
+    font-weight: 800;
+    font-size: 1.3rem;
+    color: #F5F5F7;
+    flex-shrink: 0;
+    margin-left: 0.6rem;
+}
+.score-card-winner .score-card-abbr,
+.score-card-winner .score-card-value {
+    color: #32D74B;
+}
+.score-card-status {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    font-size: 0.85rem;
+    color: #ABB2C4;
+    text-align: center;
+}
+.score-card-status-live {
+    color: #FF6961;
+    font-weight: 700;
 }
 
 /* Weather page's 7 day columns — icon + high/low is the headline (same
@@ -1549,6 +1616,7 @@ html, body, [class*="css"] {
 .mobile-nav-item-weather { color: #64D2FF !important; }
 .mobile-nav-item-radar { color: #FF375F !important; }
 .mobile-nav-item-sports { color: #5E5CE6 !important; }
+.mobile-nav-item-scores { color: #30D5C8 !important; }
 
 /* Phone breakpoint. Everything above this point is untouched at any
    width above it (including the kiosk monitor, always far wider) —

@@ -57,11 +57,17 @@ BBOX_MARGIN_DEGREES_LON = BBOX_MARGIN_DEGREES_LAT * IMAGE_ASPECT_RATIO
 _DEG_PER_PX = (2 * BBOX_MARGIN_DEGREES_LAT) / IMAGE_HEIGHT
 REFRESH_SECONDS = 6 * 60  # matches the radar composite's own update cadence
 
-# How far out counts as "nearby" for the hero-row badge — roughly what
-# a cell moving at typical storm speeds (20-30 km/h, EC's own forecasts
-# for today) could cover within the hour, not the ~166km (vertical) by
-# ~288km (horizontal) the wide image itself now spans.
-NEARBY_RADIUS_KM = 25
+# How far out counts as "nearby" for the hero-row badge — widened from
+# a original 25km (which only ever caught a cell already close enough
+# to arrive within the hour) after confirming live that a genuinely
+# large, coherent system can sit with its closest edge 130km+ out while
+# still filling most of the visible frame — 25km meant tracking simply
+# never started until the storm was nearly on top of the user. 150km
+# comfortably covers that and leaves real margin to keep tracking it
+# closing in, while staying safely inside the image's own ~166km
+# vertical half-span (the tighter of its two axes) so the search below
+# doesn't run off the edge of the fetched frame.
+NEARBY_RADIUS_KM = 150
 # How far past the near edge to probe for where the echo ends, to
 # estimate a clearing time — well within the image's own ~166km
 # half-span in every direction (the tighter of the two axes), so a real
@@ -73,7 +79,19 @@ FAR_EDGE_STEP_KM = 2
 # above that. A small margin above 0 filters out compression artifacts
 # at tile edges without needing to hand-check every legend color.
 ALPHA_THRESHOLD = 20
-_SEARCH_PX = 90  # comfortably covers NEARBY_RADIUS_KM in both axes at this latitude; real distance is what actually filters below
+# Must actually reach NEARBY_RADIUS_KM in pixel terms along the
+# TIGHTER axis for km-per-pixel, which is horizontal/longitude here
+# (~0.36 km/px at this latitude — longitude lines are closer together
+# away from the equator), not vertical/latitude (~0.52 km/px, farther-
+# reaching per pixel). Confirmed live this actually matters: a real
+# echo sitting at dx=-330px was silently missed by a 300px box sized
+# off the vertical ratio, 30px short of reaching it. 150km needs
+# ~418px on the horizontal axis; 430 leaves a small margin. This can
+# run past the image's own ~320px vertical half-height without issue —
+# the existing in-bounds check below just skips those rows, which is
+# correct: there's no data past the real edge of the fetched frame
+# regardless of how far the search loop itself reaches.
+_SEARCH_PX = 430
 _SAMPLE_STRIDE = 3
 
 # How much history to keep for the approach/recede trend, and how far
@@ -448,27 +466,71 @@ def severe_precip_status(kind: str = "rain") -> dict | None:
 _severe_flagged: dict[str, bool] = {"rain": False, "snow": False}
 
 
-def severe_weather_alert() -> dict | None:
+def severe_weather_alert(kind: str = "rain") -> dict | None:
     """A one-time toast-ready alert dict (see app.py's news_queue) the
     moment genuinely heavy precipitation is newly detected nearby —
     fires once per event (edge-triggered off _severe_flagged), not
     every rerun while it persists, and resets once conditions drop
     back under SIGNIFICANT_MM_H so a later, genuinely new event can
-    fire again. Checks rain before snow; whichever crosses first wins
-    if both were somehow flagged in the same instant."""
-    for kind in ("rain", "snow"):
-        status = severe_precip_status(kind)
-        was_flagged = _severe_flagged[kind]
-        _severe_flagged[kind] = status is not None
-        if status is not None and not was_flagged:
-            label = "Snow" if kind == "snow" else "Rain"
-            return {
-                "kind": "weather",
-                "headline": f"Heavy {label.lower()} moving in from the {status['direction_word']} "
-                f"— {status['mm_h']:.0f} mm/h",
-                "category": "Severe Weather",
-                "important": True,
-            }
+    fire again.
+
+    Takes a single `kind`, caller-chosen, rather than checking both
+    rain and snow internally — confirmed live that EC's snow layer
+    (RADAR_1KM_RSNO) isn't itself gated by temperature and can show the
+    exact same reflectivity echo as the rain layer regardless of
+    season, so checking both unconditionally could fire a "heavy snow"
+    alert in the middle of July. Callers should pass whichever kind
+    actually matches the current weather category (see app.py's own
+    `precip_kind`, computed from the real forecast) the same way
+    precip_status already expects."""
+    status = severe_precip_status(kind)
+    was_flagged = _severe_flagged[kind]
+    _severe_flagged[kind] = status is not None
+    if status is not None and not was_flagged:
+        label = "Snow" if kind == "snow" else "Rain"
+        return {
+            "kind": "weather",
+            "headline": f"Heavy {label.lower()} moving in from the {status['direction_word']} "
+            f"— {status['mm_h']:.0f} mm/h",
+            "category": "Severe Weather",
+            "important": True,
+        }
+    return None
+
+
+# Tracks whether each kind had anything detected nearby as of the last
+# check — a separate, earlier-firing flag from _severe_flagged above
+# (this one triggers on mere detection, not on crossing an intensity
+# threshold), same module-level/edge-triggered reasoning.
+_tracking_flagged: dict[str, bool] = {"rain": False, "snow": False}
+
+
+def tracking_started_alert(kind: str = "rain") -> dict | None:
+    """A one-time toast-ready alert dict the moment radar first picks
+    up ANYTHING within NEARBY_RADIUS_KM — regardless of confirmed
+    direction or intensity (see severe_weather_alert for the intensity-
+    gated version of this same idea, and for why this takes a single
+    caller-chosen `kind` rather than checking both internally). This is
+    deliberately the earliest possible signal: precip_status itself
+    won't call something "approaching" until a real closing trend has
+    had time to establish, but this fires the moment there's anything
+    to track at all. Edge-triggered off _tracking_flagged the same way
+    severe_weather_alert is off _severe_flagged — fires once per event,
+    resets once nothing's detected so a later, genuinely new detection
+    can fire again."""
+    state = _decode_and_scan(kind)
+    currently_tracking = state["nearest"] is not None
+    was_tracking = _tracking_flagged[kind]
+    _tracking_flagged[kind] = currently_tracking
+    if currently_tracking and not was_tracking:
+        distance_km = state["nearest"][2]
+        label = "Snow" if kind == "snow" else "Rain"
+        return {
+            "kind": "weather",
+            "headline": f"{label} now on the radar, {distance_km:.0f} km out",
+            "category": "Weather Tracking",
+            "important": False,
+        }
     return None
 
 
