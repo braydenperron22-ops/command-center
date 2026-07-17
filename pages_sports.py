@@ -8,19 +8,50 @@ and end.
 """
 
 import html
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 import sports_client
+from config import TIMEZONE
+
+# How close to first pitch/puck drop before the "starting soon" badge
+# shows up — 2 hours is a reasonable "worth knowing about" window
+# without flagging every game the moment it's merely today.
+STARTING_SOON_MINUTES = 120
 
 
-def _game_html(status: dict) -> str:
+def _format_countdown(total_minutes: float) -> str:
+    total = max(0, int(total_minutes))
+    hours, minutes = divmod(total, 60)
+    return f"{hours}h {minutes}m" if hours > 0 else f"{minutes} min"
+
+
+def _starting_soon_html(game: dict, kickoff_label: str, now: datetime) -> str:
+    """A "First pitch in 45 min"/"Puck drop in 1h 30m" badge once an
+    upcoming game is within STARTING_SOON_MINUTES — "" otherwise (not
+    yet close, already started, or no game at all). Deliberately a
+    plain neutral badge, not an animated/pulsing one — a static,
+    confident cue reads clearly without competing for attention the
+    way a pulsing element would (same reasoning tile-significant
+    already uses)."""
+    if game["state"] != "upcoming":
+        return ""
+    remaining_minutes = (game["start_time"] - now).total_seconds() / 60
+    if not (0 <= remaining_minutes <= STARTING_SOON_MINUTES):
+        return ""
+    return f'<div class="badge badge-neutral">{kickoff_label} in {_format_countdown(remaining_minutes)}</div>'
+
+
+def _game_html(status: dict, kickoff_label: str, now: datetime) -> str:
     game = status["game"]
     if game is None:
         return '<div class="tile-prev">No game scheduled right now.</div>'
     opponent = html.escape(game["opponent"])
     opponent_word = "vs" if game["is_home"] else "@"
     opponent_logo = f'<img class="sports-opponent-logo" src="{game["opponent_logo"]}" />'
+    starting_soon_html = _starting_soon_html(game, kickoff_label, now)
     if game["state"] == "upcoming":
         start = game["start_time"]
         time_text = start.strftime("%I:%M %p").lstrip("0")
@@ -35,7 +66,8 @@ def _game_html(status: dict) -> str:
             value_class = "market-up" if won else "market-down"
             result = f"{'W' if won else 'L'} {opponent_word} {opponent}"
     return f"""<div class="tile-value {value_class}">{value}</div>
-        <div class="tile-prev">{opponent_logo}{result}</div>"""
+        <div class="tile-prev">{opponent_logo}{result}</div>
+        {starting_soon_html}"""
 
 
 def _wildcard_html(status: dict) -> str:
@@ -82,11 +114,15 @@ def render() -> None:
         )
         return
 
+    now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
+
     # Always two columns, even with only one team in season — a single
     # team otherwise stretches to the full page width and reads sparse.
     # The out-of-season slot gets its own quiet placeholder instead of
     # just disappearing, so the layout doesn't reflow every few months.
-    for col, label, status in zip(st.columns(2), ("BLUE JAYS", "CANADIENS"), (jays, habs)):
+    for col, label, status, kickoff_label in zip(
+        st.columns(2), ("BLUE JAYS", "CANADIENS"), (jays, habs), ("First pitch", "Puck drop")
+    ):
         with col:
             if status is None:
                 st.markdown(
@@ -103,7 +139,7 @@ def render() -> None:
                         <img class="sports-team-logo" src="{status['team_logo']}" />
                         <div class="tile-label">{label} · {status['division_name'].upper()}</div>
                     </div>
-                    {_game_html(status)}
+                    {_game_html(status, kickoff_label, now)}
                     {_wildcard_html(status)}
                     {_standings_table(status)}</div>""",
                 unsafe_allow_html=True,
