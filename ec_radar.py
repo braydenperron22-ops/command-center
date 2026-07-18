@@ -143,7 +143,28 @@ def radar_image_url(kind: str = "rain") -> str:
 # browser composites its own transparent PNG against this same tile
 # background), so the loop looks identical, just animated.
 _RADAR_TILE_BG = (0x0A, 0x14, 0x20, 255)
-RADAR_LOOP_FRAME_MS = 600  # per-frame duration; the last frame holds roughly 2x this so the "current" moment is easy to register before it loops
+RADAR_LOOP_FRAME_MS = 600  # per-frame duration
+# How much longer the true final frame holds, relative to every other
+# frame — dialed back from 2x to 1.5x (900ms): with FRAME_HISTORY_SIZE
+# now spanning up to an hour, real consecutive captures can genuinely
+# look near-identical when a storm's motion is slow, which combined
+# with a long hold on the last one can read as "more than one frame is
+# lingering" even though the duration metadata itself only ever marks
+# the single true final frame — confirmed live by decoding a real saved
+# GIF and checking its own per-frame durations directly. A shorter hold
+# still gives the "current moment" a distinguishing pause without
+# making that impression last as long.
+RADAR_LOOP_FINAL_HOLD_MULTIPLIER = 1.5
+
+# Rebuilding and re-encoding the whole GIF is real work (decode N real
+# PNGs, composite each against the tile background, re-encode as GIF)
+# that only ever needs to happen once per real REFRESH_SECONDS window —
+# the underlying frames don't change in between. This used to run fresh
+# on every single 5s autorefresh rerun regardless, for no benefit,
+# producing an identical result every time within that window. Cached
+# by exactly which real frame timestamps are currently in play, so a
+# genuinely new frame arriving still rebuilds it right away.
+_loop_cache: dict[str, tuple[tuple, str]] = {}
 
 
 def radar_loop_data_uri(kind: str = "rain") -> str | None:
@@ -163,27 +184,34 @@ def radar_loop_data_uri(kind: str = "rain") -> str | None:
     this."""
     layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
     _fetch_radar_bytes(layer)  # ensures this rerun's frame is recorded before reading history
-    frames_raw = [raw for _, raw in _frame_history[kind]]
-    if len(frames_raw) < 2:
+    history = _frame_history[kind]
+    if len(history) < 2:
         return None
+
+    cache_key = tuple(t for t, _ in history)
+    cached = _loop_cache.get(kind)
+    if cached is not None and cached[0] == cache_key:
+        return cached[1]
 
     try:
         composited = []
-        for raw in frames_raw:
+        for _, raw in history:
             frame = Image.open(io.BytesIO(raw)).convert("RGBA")
             bg = Image.new("RGBA", frame.size, _RADAR_TILE_BG)
             composited.append(Image.alpha_composite(bg, frame).convert("RGB"))
     except Exception:
         return None
 
-    durations = [RADAR_LOOP_FRAME_MS] * (len(composited) - 1) + [RADAR_LOOP_FRAME_MS * 2]
+    durations = [RADAR_LOOP_FRAME_MS] * (len(composited) - 1) + [round(RADAR_LOOP_FRAME_MS * RADAR_LOOP_FINAL_HOLD_MULTIPLIER)]
     buf = io.BytesIO()
     composited[0].save(
         buf, format="GIF", save_all=True, append_images=composited[1:],
         duration=durations, loop=0, optimize=True,
     )
     encoded = base64.b64encode(buf.getvalue()).decode("ascii")
-    return f"data:image/gif;base64,{encoded}"
+    result = f"data:image/gif;base64,{encoded}"
+    _loop_cache[kind] = (cache_key, result)
+    return result
 
 
 def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
