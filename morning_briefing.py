@@ -25,6 +25,7 @@ import streamlit as st
 from astral import LocationInfo
 from astral.sun import sun
 
+import air_quality_client
 import calendar_client
 import commute_client
 import commute_reminder
@@ -902,11 +903,15 @@ def _air_clause(now: datetime, air_quality: dict | None) -> tuple[int, str] | No
     aqi = air_quality.get("us_aqi") if air_quality else None
     if aqi is None or aqi <= AQI_SHOW_THRESHOLD:
         return None
+    # 1-10 level, same as the hero badge (see air_quality_client.level)
+    # — this used to quote the raw 0-500 AQI number, which would now
+    # silently disagree with the badge showing the same reading.
+    aqi_level = air_quality_client.level(aqi)
     wildfire = wildfire_client.nearest_wildfire()
     if wildfire is not None:
-        text = _pick(WILDFIRE_LINES, now, "air").format(aqi=round(aqi), distance=wildfire["distance_km"])
+        text = _pick(WILDFIRE_LINES, now, "air").format(aqi=aqi_level, distance=wildfire["distance_km"])
         return 8, text
-    return 5, _pick(AQI_ONLY_LINES, now, "air").format(aqi=round(aqi))
+    return 5, _pick(AQI_ONLY_LINES, now, "air").format(aqi=aqi_level)
 
 
 def _commute_clause(now: datetime) -> tuple[int, str] | None:

@@ -16,7 +16,7 @@ import requests
 import streamlit as st
 
 import fetch_throttle
-from config import WEATHER_LAT, WEATHER_LON
+from config import AQI_EXTREME, AQI_SHOW_THRESHOLD, WEATHER_LAT, WEATHER_LON
 
 AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
@@ -78,3 +78,19 @@ def fetch_air_quality() -> dict | None:
     if result is not None:
         _last_good_aqi = result
     return result if result is not None else _last_good_aqi
+
+
+def level(aqi: float) -> int:
+    """The raw 0-500 US AQI collapsed to a 1-10 index — session
+    request: "1 is the minimum concerning value and 10 is maximum,"
+    which is exactly what AQI_SHOW_THRESHOLD (this app's own "worth
+    noticing" floor, see the hero badge) and AQI_EXTREME (its own
+    "fully saturated, most severe" ceiling) already mean, rather than
+    inventing a second scale. Shared by app.py's hero badge and
+    morning_briefing.py's own prose so both always agree with each
+    other, instead of one showing a level and the other a raw AQI
+    number for the exact same reading. Also brings this reading onto
+    roughly the same 1-10 shape as EC's own AQHI, so the two read as
+    comparable at a glance instead of very differently-scaled numbers."""
+    intensity = min((aqi - AQI_SHOW_THRESHOLD) / (AQI_EXTREME - AQI_SHOW_THRESHOLD), 1.0)
+    return max(1, min(10, round(1 + intensity * 9)))

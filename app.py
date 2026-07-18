@@ -564,9 +564,13 @@ if weather:
         aqi_color = _lerp_hex("#FFD60A", "#8B008B", intensity)
         aqi_bg = _rgba(aqi_color, 0.22 + intensity * 0.25)
         trend_arrow = {"rising": " ↑", "falling": " ↓", "steady": " →"}.get(air_quality.get("trend"), "")
+        # 1-10 level instead of the raw 0-500 AQI number (see
+        # air_quality_client.level — shared with morning_briefing.py's
+        # own prose so both always agree on the same reading).
+        aqi_level = air_quality_client.level(aqi)
         extras.append(
             f'<span class="weather-extra" style="color:{aqi_color}; '
-            f'background:{aqi_bg}; border-color:{aqi_color};">AQI {aqi:.0f}{trend_arrow}</span>'
+            f'background:{aqi_bg}; border-color:{aqi_color};">AQI {aqi_level}{trend_arrow}</span>'
         )
     # The actual cause behind a bad-AQI day is often a wildfire hundreds
     # of km away, not anything local — this is the one badge answering
