@@ -19,9 +19,10 @@ cached to the radar's own real update cadence.
 
 import base64
 import io
+import re
 import time
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from math import asin, atan2, cos, degrees, radians, sin, sqrt
 
 import numpy as np
@@ -250,18 +251,142 @@ def _fetch_radar_bytes_raw(layer: str, cache_bust: int) -> bytes:
     return resp.content
 
 
+def _parse_ec_time(s: str) -> datetime:
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ")
+
+
+_TIME_DIMENSION_RE_TEMPLATE = (
+    r'<Name>{layer}</Name>.*?<Dimension name="time"[^>]*default="([^"]+)"[^>]*>([^<]+)</Dimension>'
+)
+
+
+@st.cache_data(ttl=REFRESH_SECONDS, show_spinner=False)
+def _fetch_time_dimension_raw(layer: str) -> tuple[datetime, datetime]:
+    """(default_time, start_time) — the newest and oldest real radar
+    timestamps EC's own WMS currently has available for this layer
+    (confirmed live: a rolling ~3 hour window at native PT6M steps),
+    read straight from its own GetCapabilities Dimension element rather
+    than assumed, since EC controls both numbers, not us."""
+    fetch_throttle.wait_turn()
+    resp = requests.get(
+        WMS_URL, params={"service": "WMS", "version": "1.3.0", "request": "GetCapabilities", "layers": layer},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    match = re.search(_TIME_DIMENSION_RE_TEMPLATE.format(layer=re.escape(layer)), resp.text, re.DOTALL)
+    if not match:
+        raise ValueError(f"no time dimension found for {layer}")
+    default_str, extent_str = match.groups()
+    return _parse_ec_time(default_str), _parse_ec_time(extent_str.split("/")[0])
+
+
+_last_good_time_dimension: dict[str, tuple[datetime, datetime]] = {}
+
+
+def _fetch_time_dimension(layer: str) -> tuple[datetime, datetime] | None:
+    try:
+        result = _fetch_time_dimension_raw(layer)
+    except Exception:
+        return _last_good_time_dimension.get(layer)
+    _last_good_time_dimension[layer] = result
+    return result
+
+
+def _fetch_radar_bytes_at(layer: str, frame_time: datetime) -> bytes | None:
+    """One specific past real radar frame, fetched directly from EC's
+    own WMS TIME dimension instead of waited-for organically — see
+    _fetch_time_dimension for how far back that's actually available.
+    None on any failure: a network error, or (confirmed live) EC
+    rejecting a timestamp outside its own retained window with an XML
+    ServiceExceptionReport instead of a PNG — either way, a missing
+    historical frame just means a shorter loop/motion sample this one
+    time, not a crash."""
+    try:
+        fetch_throttle.wait_turn()
+        resp = requests.get(
+            WMS_URL,
+            params={
+                "service": "WMS", "version": "1.3.0", "request": "GetMap", "layers": layer,
+                "format": "image/png", "transparent": "true",
+                "width": IMAGE_WIDTH, "height": IMAGE_HEIGHT, "crs": "EPSG:4326", "bbox": _bbox(),
+                "time": frame_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        if not resp.headers.get("content-type", "").startswith("image"):
+            return None  # a ServiceExceptionReport came back instead of a real frame
+        return resp.content
+    except Exception:
+        return None
+
+
 # Last few real radar frames, oldest first, so a short loop can show
 # where the storm's actually been moving — not just a single static
 # snapshot (session request: "cache the last three pulls... play them
-# in order", later widened to 5: "use this to actually gauge storm
-# direction instead of guessing"). Each real fetch is REFRESH_SECONDS
-# (~6 min) apart, so 5 frames covers roughly the last 24-30 minutes of
-# real motion — the same raw frames storm_motion() below measures
-# actual bearing/speed from, not just what the loop animates. Keyed by
-# kind ("rain"/"snow", inherently bounded) the same way _history
-# already is.
+# in order", later widened to 5 and backfilled straight from EC's own
+# TIME dimension: "use this to actually gauge storm direction instead
+# of guessing" / "pull previous radar images directly from the source
+# without having to build the cache manually"). Each real frame is
+# REFRESH_SECONDS (~6 min) apart, so 5 frames covers roughly the last
+# 24-30 minutes of real motion — the same raw frames storm_motion()
+# below measures actual bearing/speed from, not just what the loop
+# animates. Keyed by the frame's own real EC timestamp (not a locally-
+# computed bucket) so live-fetched and backfilled frames share one
+# consistent, ground-truth timeline — storm_motion's elapsed-time math
+# is then a real measured duration, not an assumption that our own
+# clock lines up with EC's composite schedule. Keyed by kind ("rain"/
+# "snow", inherently bounded) the same way _history already is.
 FRAME_HISTORY_SIZE = 5
-_frame_history: dict[str, list[tuple[int, bytes]]] = {"rain": [], "snow": []}
+_frame_history: dict[str, list[tuple[datetime, bytes]]] = {"rain": [], "snow": []}
+# Throttles backfill attempts to at most once per REFRESH_SECONDS once
+# history is short — avoids hammering EC's GetCapabilities/GetMap every
+# 5s rerun if the first attempt (or EC itself) is having a bad moment.
+_backfill_attempted_at: dict[str, float] = {"rain": 0.0, "snow": 0.0}
+
+
+def _record_frame(kind: str, layer: str, raw: bytes) -> None:
+    dims = _fetch_time_dimension(layer)
+    if dims is None:
+        return  # can't stamp this frame with a real timestamp right now — skip recording it, try again next rerun
+    frame_time = dims[0]
+    history = _frame_history[kind]
+    if history and history[-1][0] == frame_time:
+        return  # already recorded this exact real frame
+    history.append((frame_time, raw))
+    history.sort(key=lambda item: item[0])
+    del history[: -FRAME_HISTORY_SIZE]
+
+
+def _ensure_frame_history(kind: str, layer: str) -> None:
+    """Backfills _frame_history straight from EC's own real historical
+    frames (see _fetch_radar_bytes_at) the first time this kind needs
+    it, instead of waiting ~24-30 real minutes for FRAME_HISTORY_SIZE
+    frames to accumulate one real refresh at a time."""
+    history = _frame_history[kind]
+    if len(history) >= FRAME_HISTORY_SIZE:
+        return
+    now_ts = time.time()
+    if now_ts - _backfill_attempted_at[kind] < REFRESH_SECONDS:
+        return
+    _backfill_attempted_at[kind] = now_ts
+
+    dims = _fetch_time_dimension(layer)
+    if dims is None:
+        return
+    default_time, start_time = dims
+
+    have = {t for t, _ in history}
+    for i in range(1, FRAME_HISTORY_SIZE):
+        frame_time = default_time - timedelta(seconds=REFRESH_SECONDS * i)
+        if frame_time < start_time or frame_time in have:
+            continue
+        raw = _fetch_radar_bytes_at(layer, frame_time)
+        if raw is not None:
+            history.append((frame_time, raw))
+            have.add(frame_time)
+    history.sort(key=lambda item: item[0])
+    del history[: -FRAME_HISTORY_SIZE]
 
 
 def _fetch_radar_bytes(layer: str) -> bytes | None:
@@ -273,10 +398,8 @@ def _fetch_radar_bytes(layer: str) -> bytes | None:
         return _last_good_bytes.get(layer)
     _last_good_bytes[layer] = result
 
-    history = _frame_history[kind]
-    if not history or history[-1][0] != cache_bust:
-        history.append((cache_bust, result))
-        del history[: -FRAME_HISTORY_SIZE]
+    _record_frame(kind, layer, result)
+    _ensure_frame_history(kind, layer)
     return result
 
 
@@ -438,16 +561,23 @@ def _blob_centroid(alpha_mask: np.ndarray, cells: list[tuple[int, int]], cx: int
 
 
 def _track_blob_for_motion(img: Image.Image) -> tuple[float, float] | None:
-    """This one frame's own centroid (see _blob_centroid) for whichever
-    blob is "the storm" to track for motion purposes — the largest
-    significant-sized blob if one exists (same MIN_SIGNIFICANT_CELLS
-    bar the badges use), else the largest blob of any real size. No
-    frame-to-frame object identity/correspondence is attempted (there's
-    no cell-tracking algorithm here, just this one heuristic) — for a
-    single dominant system near the location this tracks the same real
-    storm each frame; for genuinely scattered, unrelated showers it can
-    occasionally jump between them, same honest approximation this
-    whole module already is (see its own module docstring)."""
+    """This one frame's centroid (see _blob_centroid) of the UNION of
+    every significant-sized blob (same MIN_SIGNIFICANT_CELLS bar the
+    badges use), or every real-sized blob if none are significant —
+    the whole nearby precipitation mass treated as one bulk system,
+    not any single internal cell picked out of it.
+
+    Confirmed live this distinction matters a lot for a large, sprawling
+    multi-cell complex (exactly tonight's storm): picking just the
+    LARGEST individual blob each frame measured bearing/speed off
+    whichever cell happened to be biggest at that instant — different
+    cells within the same complex at different times — producing a
+    physically implausible ~230 km/h "speed" from jumping between them.
+    The union's centroid instead tracks the bulk motion of the whole
+    mass, which stayed smooth and physically reasonable (~65 km/h) on
+    the same real data. For a single isolated storm cell this reduces
+    to that one blob's own centroid anyway, so it doesn't change
+    anything in the simpler case."""
     cx, cy = IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2
     arr = np.array(img)
     alpha_mask = arr[:, :, 3] > ALPHA_THRESHOLD
@@ -455,42 +585,44 @@ def _track_blob_for_motion(img: Image.Image) -> tuple[float, float] | None:
     if not real_blobs:
         return None
     significant = [b for b in real_blobs if len(b) >= MIN_SIGNIFICANT_CELLS]
-    largest = max(significant or real_blobs, key=len)
-    return _blob_centroid(alpha_mask, largest, cx, cy)
+    pool = significant or real_blobs
+    merged_cells = [cell for blob in pool for cell in blob]
+    return _blob_centroid(alpha_mask, merged_cells, cx, cy)
 
 
 def storm_motion(kind: str) -> dict | None:
     """{"bearing_deg", "speed_kmh", "sample_count"} measured directly
     from the real cached radar frames (see _frame_history,
     FRAME_HISTORY_SIZE) — the dominant tracked blob's own centroid in
-    the oldest cached frame vs. the newest, which is a genuine measured
-    displacement over real elapsed time rather than a guess. Session
-    request: "use this [the cached frames] to actually gauge storm
-    direction instead of guessing."
+    the oldest cached frame vs. the newest, over the real elapsed time
+    between their own EC-reported valid times (not an assumed uniform
+    cadence), a genuine measured displacement rather than a guess.
+    Session request: "use this [the cached frames] to actually gauge
+    storm direction instead of guessing."
 
     None if fewer than 2 cached frames have a trackable blob at all
-    (early in a fresh deploy/restart, or right after switching kind,
-    before enough real pulls have accumulated), the two usable samples
-    are less than MIN_TREND_GAP_MINUTES apart (guards the same "not
-    actually a new sample" case _record_and_trend already guards
-    against), or the measured displacement is under
+    (early in a fresh deploy/restart or right after switching kind,
+    before _ensure_frame_history's backfill has completed), the two
+    usable samples are less than MIN_TREND_GAP_MINUTES apart (guards
+    the same "not actually a new sample" case _record_and_trend already
+    guards against), or the measured displacement is under
     STATIONARY_THRESHOLD_KM (not moving meaningfully enough to trust a
     bearing from it)."""
     points = []
-    for cache_bust, raw in _frame_history[kind]:
+    for frame_time, raw in _frame_history[kind]:
         try:
             img = Image.open(io.BytesIO(raw)).convert("RGBA")
         except Exception:
             continue
         centroid = _track_blob_for_motion(img)
         if centroid is not None:
-            points.append((cache_bust, centroid[0], centroid[1]))
+            points.append((frame_time, centroid[0], centroid[1]))
     if len(points) < 2:
         return None
 
-    old_bust, old_lat, old_lon = points[0]
-    new_bust, new_lat, new_lon = points[-1]
-    gap_minutes = (new_bust - old_bust) * REFRESH_SECONDS / 60
+    old_t, old_lat, old_lon = points[0]
+    new_t, new_lat, new_lon = points[-1]
+    gap_minutes = (new_t - old_t).total_seconds() / 60
     if gap_minutes < MIN_TREND_GAP_MINUTES:
         return None
     moved_km = _distance_km(old_lat, old_lon, new_lat, new_lon)
@@ -501,6 +633,20 @@ def storm_motion(kind: str) -> dict | None:
         "speed_kmh": moved_km / (gap_minutes / 60),
         "sample_count": len(points),
     }
+
+
+def storm_motion_label(kind: str = "rain") -> str | None:
+    """A plain "Moving NE at 32 km/h" readout of the dominant tracked
+    system's real measured motion (see storm_motion) — shown
+    independent of whether it's confirmed to be a direct hit on
+    WEATHER_LAT/WEATHER_LON (see _heading_toward_me), so a storm that's
+    genuinely just passing by to one side still reads as real,
+    grounded information instead of no information at all. None
+    whenever storm_motion itself has nothing to report yet."""
+    motion = storm_motion(kind)
+    if motion is None:
+        return None
+    return f"Moving {compass_abbr(motion['bearing_deg'])} at {motion['speed_kmh']:.0f} km/h"
 
 
 def _scan_nearby(img: Image.Image) -> dict:
@@ -774,6 +920,13 @@ def precip_status(kind: str = "rain") -> dict | None:
 
     {"state": "approaching", "minutes": int} — nearest echo is outside
     ARRIVED_RADIUS_KM and genuinely closing in; minutes is the ETA.
+    Whenever a real measured trajectory confirms this system is headed
+    straight at WEATHER_LAT/WEATHER_LON (see storm_motion,
+    _heading_toward_me), minutes is that trajectory's own ETA — "when
+    it actually reaches here" rather than "when the nearest edge point
+    would reach ARRIVED_RADIUS_KM by extrapolating raw distance," which
+    can't tell a direct hit apart from a system merely sweeping past to
+    one side.
 
     {"state": "arrived", "minutes": int|None} — nearest echo is within
     ARRIVED_RADIUS_KM (it's here); minutes is when it's expected to
@@ -836,6 +989,20 @@ def precip_status(kind: str = "rain") -> dict | None:
             if far_km is not None:
                 minutes = round((far_km / trend["speed_kmh"]) * 60)
         return {"state": "arrived", "minutes": minutes, **direction}
+
+    # Prefer the trajectory-confirmed ETA (real measured bearing/speed,
+    # see storm_motion, checked against WEATHER_LAT/WEATHER_LON's exact
+    # coordinates via _closest_approach_km) over the plain distance-
+    # closing extrapolation below whenever it's available — "the
+    # nearest point is getting closer" alone doesn't distinguish a
+    # storm headed straight here from one sweeping past a real distance
+    # to one side while still nominally closing for a while first.
+    # Falls back to the distance-based estimate when no confirmed
+    # trajectory exists yet (same cold-start window storm_motion has),
+    # so this never regresses to reporting nothing during that window.
+    direct_hit = state["heading_toward_me"]
+    if direct_hit is not None:
+        return {"state": "approaching", "minutes": direct_hit["eta_minutes"], **direction}
 
     if trend["trend"] != "approaching":
         return None

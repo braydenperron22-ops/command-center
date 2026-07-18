@@ -110,18 +110,30 @@ def render() -> None:
     overlay_html = _tracking_overlay_html(ec_radar.tracking_overlay(kind))
     city_markers_html = _city_markers_html(ec_radar.nearby_city_markers())
 
-    # A short looping GIF of the last few real radar pulls once enough
-    # have been captured (session request: cache and play the last
-    # three so storm motion is actually visible, not just a single
-    # snapshot) — falls back to the plain static frame right after a
-    # fresh deploy/restart, before 2+ real frames exist yet to loop.
+    # A short looping GIF of the last few real radar pulls, backfilled
+    # straight from EC's own TIME dimension rather than waited-for
+    # organically (session request: cache and play the last few so
+    # storm motion is actually visible; then "pull previous radar
+    # images directly from the source without having to build the
+    # cache manually") — falls back to the plain static frame only in
+    # the rare case that backfill hasn't produced 2+ real frames yet.
     loop_uri = ec_radar.radar_loop_data_uri(kind)
     image_src = loop_uri if loop_uri is not None else ec_radar.radar_image_url(kind)
+
+    # Plain "moving NE at 32 km/h" readout of the real measured
+    # trajectory (see ec_radar.storm_motion) — shown even when it isn't
+    # a confirmed direct hit on the exact location, so a system that's
+    # genuinely just passing by to one side still reads as real,
+    # grounded information rather than nothing at all. "" when there's
+    # no measured motion to report yet.
+    motion_label = ec_radar.storm_motion_label(kind)
+    motion_html = f'<div class="tile-prev">{motion_label}</div>' if motion_label else ""
 
     st.markdown(
         f"""<div class="tile weather-radar-tile weather-radar-tile-large">
             <div class="tile-label compact">LIVE RADAR · {kind.upper()} · CORBEIL</div>
             <div class="badge {badge_class}">{summary}</div>
+            {motion_html}
             <div class="weather-radar-frame weather-radar-frame-large">
                 <img class="weather-radar-image" src="{image_src}" />
                 {city_markers_html}
