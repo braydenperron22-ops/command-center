@@ -474,6 +474,12 @@ _INTENSITY_SWATCHES = [
 # bar for "worth flagging as genuinely heavy," not just "there's rain
 # or snow somewhere nearby."
 SIGNIFICANT_MM_H = 24.0
+# Ceiling for the hero badge's own severe-rain color gradient (see
+# app.py) — a real EC scale tick (see _INTENSITY_SWATCHES' own 100.0
+# entry, a distinct purple), chosen so the badge saturating fully at
+# this intensity means the same thing "fully saturated" would mean on
+# the radar map itself, not an arbitrary separate number.
+SEVERE_BADGE_MAX_MM_H = 100.0
 
 
 def _classify_mm_h(rgb: tuple[int, int, int]) -> float:

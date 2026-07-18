@@ -468,9 +468,23 @@ if weather:
             f"Heavy {precip_label.lower()} {timing} · {severe['mm_h']:.0f} mm/h"
             if timing else f"Heavy {precip_label.lower()} · {severe['mm_h']:.0f} mm/h"
         )
+        # Same "scales with real magnitude" treatment as UV/AQI/wildfire
+        # above — this badge used to render every severe reading in the
+        # exact same fixed red whether it was 24 mm/h (just over the
+        # threshold) or 100+ mm/h (genuinely torrential), flattening a
+        # real difference into one color. End color (violet) is EC's
+        # own radar-legend color at this same intensity (see
+        # ec_radar.SEVERE_BADGE_MAX_MM_H) — this badge and the actual
+        # map now agree on what "worse" looks like.
+        severe_intensity = min(
+            (severe["mm_h"] - ec_radar.SIGNIFICANT_MM_H) / (ec_radar.SEVERE_BADGE_MAX_MM_H - ec_radar.SIGNIFICANT_MM_H),
+            1.0,
+        )
+        severe_color = _lerp_hex("#FF6961", "#BF5AF2", severe_intensity)
+        severe_bg = _rgba(severe_color, 0.28 + severe_intensity * 0.15)
         extras.append(
-            f'<span class="weather-extra" style="color:#FF6961; '
-            f'background:rgba(255,105,97,0.28); border-color:#FF6961;">{text}</span>'
+            f'<span class="weather-extra" style="color:{severe_color}; '
+            f'background:{severe_bg}; border-color:{severe_color};">{text}</span>'
         )
     elif status is not None:
         if status["state"] == "arrived":
