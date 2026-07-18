@@ -858,10 +858,32 @@ def _heading_toward_me(kind: str, now: datetime, position: tuple[float, float] |
     }
 
 
-# Within this distance, the nearest echo counts as "here" rather than
-# "approaching" — the badge switches from a countdown-to-arrival to a
-# countdown-to-clearing at this point (see precip_status below).
-ARRIVED_RADIUS_KM = 5
+# How far (in pixels) around the image's exact center — where
+# WEATHER_LAT/WEATHER_LON always sits, by construction of _bbox — to
+# check for real detected precipitation before calling it "arrived."
+# Small on purpose: this needs to mean "genuinely raining at my exact
+# coordinates," not "a storm is broadly nearby." A few pixels of
+# tolerance (~1-1.5km) absorbs normal radar rendering/georeferencing
+# jitter without inflating into a real buffer distance. Confirmed live
+# this distinction is exactly what was wrong before: the previous
+# distance-radius check (ARRIVED_RADIUS_KM, a generous 5km) called a
+# storm still ~3km south "here now" while the pixel directly at the
+# coordinates was still fully clear — contradicting both Apple
+# Weather's "rain in 15" and EC's own station observation ("Cloudy")
+# for the same moment.
+_LOCATION_CHECK_PX = 3
+
+
+def _echo_at_location(img: Image.Image) -> bool:
+    """Is there real detected precipitation AT the user's own exact
+    coordinates right now, not just somewhere nearby — see
+    _LOCATION_CHECK_PX."""
+    cx, cy = IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2
+    for dx in range(-_LOCATION_CHECK_PX, _LOCATION_CHECK_PX + 1):
+        for dy in range(-_LOCATION_CHECK_PX, _LOCATION_CHECK_PX + 1):
+            if _pixel_has_echo(img, cx + dx, cy + dy):
+                return True
+    return False
 
 # precip_status is called independently from the hero badge, the
 # morning briefing, and the Radar page itself — which in turn calls
@@ -918,18 +940,23 @@ def precip_status(kind: str = "rain") -> dict | None:
     rather than the previous separate distance/eta/end-time fields a
     caller had to assemble into text itself.
 
-    {"state": "approaching", "minutes": int} — nearest echo is outside
-    ARRIVED_RADIUS_KM and genuinely closing in; minutes is the ETA.
-    Whenever a real measured trajectory confirms this system is headed
-    straight at WEATHER_LAT/WEATHER_LON (see storm_motion,
-    _heading_toward_me), minutes is that trajectory's own ETA — "when
-    it actually reaches here" rather than "when the nearest edge point
-    would reach ARRIVED_RADIUS_KM by extrapolating raw distance," which
-    can't tell a direct hit apart from a system merely sweeping past to
-    one side.
+    {"state": "approaching", "minutes": int} — nothing detected at the
+    user's own exact coordinates yet (see _echo_at_location) but a
+    nearby system is genuinely closing in; minutes is the ETA. Whenever
+    a real measured trajectory confirms this system is headed straight
+    at WEATHER_LAT/WEATHER_LON (see storm_motion, _heading_toward_me),
+    minutes is that trajectory's own ETA — "when it actually reaches
+    here" rather than "when the nearest edge point's raw distance would
+    reach some fixed threshold by extrapolation," which can't tell a
+    direct hit apart from a system merely sweeping past to one side.
 
-    {"state": "arrived", "minutes": int|None} — nearest echo is within
-    ARRIVED_RADIUS_KM (it's here); minutes is when it's expected to
+    {"state": "arrived", "minutes": int|None} — real detected
+    precipitation AT the user's own exact coordinates right now (see
+    _echo_at_location; confirmed live this needed to be a direct pixel
+    check, not "the nearest echo edge is within some buffer distance,"
+    which called it "arrived" while the exact coordinates were still
+    clear and both Apple Weather and EC's own station observation
+    agreed it hadn't started yet); minutes is when it's expected to
     clear, from the same tracked speed used for the ETA above, probing
     outward for the echo's far edge — None if that can't be pinned down
     yet (echo runs off the image edge, or a speed estimate isn't
@@ -964,7 +991,7 @@ def precip_status(kind: str = "rain") -> dict | None:
         # _heading_toward_me): being small no longer disqualifies it on
         # its own, only "not actually headed this way" does.
         nearest_any = state["nearest_any"]
-        if nearest_any is not None and nearest_any[2] <= ARRIVED_RADIUS_KM:
+        if nearest_any is not None and img is not None and _echo_at_location(img):
             bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, nearest_any[0], nearest_any[1])
             return {
                 "state": "arrived", "minutes": None,
@@ -982,7 +1009,7 @@ def precip_status(kind: str = "rain") -> dict | None:
     bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)
     direction = {"direction": compass_abbr(bearing_deg_), "direction_word": compass_word(bearing_deg_)}
 
-    if distance_km <= ARRIVED_RADIUS_KM:
+    if _echo_at_location(img):
         minutes = None
         if trend["speed_kmh"]:
             far_km = _far_edge_km(img, bearing_deg_, distance_km)
