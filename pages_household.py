@@ -13,6 +13,16 @@ import streamlit as st
 
 import fuel_price_client
 import local_news_client
+import tiles
+
+# Same window eco mode's own baseline is judged against (see
+# fuel_price_client.BASELINE_WEEKS) plus a few extra weeks of lead-in,
+# so the sparkline actually shows the shape of the trend the price is
+# being compared to, not just a single flat average number standing in
+# for it. fetch_readings() already pulls this much real history for
+# eco_mode_status's own baseline calculation — it just wasn't being
+# shown anywhere until now.
+SPARKLINE_WEEKS = fuel_price_client.BASELINE_WEEKS + 4
 
 
 def _render_fuel_price(now: datetime) -> None:
@@ -25,19 +35,23 @@ def _render_fuel_price(now: datetime) -> None:
     if not status:
         return
     if status["eco_recommended"]:
-        badge_class, badge_text = "badge-bad", "Eco mode recommended"
+        badge_class, badge_text, tone = "badge-bad", "Eco mode recommended", "bad"
     else:
-        badge_class, badge_text = "badge-good", "Eco mode not needed"
+        badge_class, badge_text, tone = "badge-good", "Eco mode not needed", "good"
     as_of = f"{status['as_of'].strftime('%b')} {status['as_of'].day}"
     # Day-granularity only, not a specific time — the survey publishes
     # "before end of business" on its update day, not at a fixed hour,
     # so anything more precise than "today" would be a made-up promise.
     days_until_update = (status["next_update"] - now.date()).days
     update_text = "updates today" if days_until_update <= 0 else f"next update in {days_until_update}d"
+    history = [r["price_cents_per_litre"] for r in fuel_price_client.fetch_readings()[-SPARKLINE_WEEKS:]]
+    sparkline = tiles.sparkline_svg(history, tone)
     st.markdown(
         f"""<div class="tile compact">
             <div class="tile-label compact">NORTH BAY GAS</div>
-            <div class="tile-value">{status['price']:.1f}¢/L</div>
+            <div class="tile-value-row">
+                <div class="tile-value">{status['price']:.1f}¢/L</div>{sparkline}
+            </div>
             <div class="tile-prev">vs {status['baseline']:.1f}¢ 12wk avg · as of {as_of} · {update_text}</div>
             <div class="badge {badge_class}">{badge_text}</div>
         </div>""",

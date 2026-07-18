@@ -1,10 +1,14 @@
 """Renders the weather-statement banner: an active Environment Canada
-alert takes priority; our own extreme-heat/extreme-cold fallback only
-ever shows when EC has nothing active for the region."""
+alert takes priority — pulled from two genuinely separate EC products,
+its general weather-warnings feed (ec_alerts) and its AQHI air quality
+observations (ec_aqhi), confirmed live to not overlap at all — and our
+own extreme-heat/extreme-cold fallback only ever shows when neither
+has anything active for the region."""
 
 import streamlit as st
 
 import ec_alerts
+import ec_aqhi
 from config import EXTREME_COLD_THRESHOLD_C, EXTREME_HEAT_THRESHOLD_C
 
 
@@ -31,7 +35,13 @@ _HAZARD_RANK = {
     "thunderstorm": 80, "tropical storm": 75, "flood": 70,
     "blizzard": 65, "winter storm": 65, "ice storm": 63, "freezing rain": 60,
     "wind": 55, "rainfall": 50, "snowfall": 45,
-    "heat": 30, "cold": 30, "frost": 20, "fog": 15, "air quality": 15,
+    # Ranked above heat/cold, not with fog/frost: by the time
+    # ec_aqhi.aqhi_alert() ever produces a title at all, it's already
+    # filtered to High Risk or worse (see ec_aqhi._HIGH_RISK_AQHI) —
+    # a genuinely serious condition, not the routine end of the
+    # "air quality" bucket the old rank of 15 (tied with fog) assumed.
+    "air quality": 35,
+    "heat": 30, "cold": 30, "frost": 20, "fog": 15,
 }
 _DEFAULT_HAZARD_RANK = 40  # an unrecognized hazard — assume moderate rather than trivial or extreme
 _TIER_TIEBREAK = {"warning": 2, "watch": 1, "statement": 0}
@@ -94,6 +104,28 @@ def _fallback_text(weather: dict | None) -> str | None:
     return None
 
 
+def _combined_alerts() -> list[dict]:
+    """EC's general weather-warnings feed plus, separately, a
+    synthesized alert for a genuinely elevated AQHI reading (see
+    ec_aqhi.aqhi_alert) — confirmed live these are two real,
+    independent EC products with no overlap (the weather feed does not
+    carry air quality at all), so both need fetching and both need to
+    participate in the same selection/severity logic below. Each
+    guarded separately so a failure fetching one doesn't also hide the
+    other."""
+    try:
+        alerts = list(ec_alerts.fetch_alerts())
+    except Exception:
+        alerts = []
+    try:
+        aqhi = ec_aqhi.aqhi_alert()
+    except Exception:
+        aqhi = None
+    if aqhi is not None:
+        alerts.append(aqhi)
+    return alerts
+
+
 def current_severity() -> str | None:
     """The same alert render() below would show, resolved to just its
     severity tier — for callers elsewhere in the app (the Govee light)
@@ -102,7 +134,7 @@ def current_severity() -> str | None:
     thing showing is our own manual heat/cold fallback (that's a
     self-generated heuristic, not a genuine EC alert, and shouldn't
     trigger a real-alert response anywhere)."""
-    alerts = ec_alerts.fetch_alerts()
+    alerts = _combined_alerts()
     if not alerts:
         return None
     alert = max(alerts, key=_selection_score)
@@ -110,7 +142,7 @@ def current_severity() -> str | None:
 
 
 def render(weather: dict | None) -> None:
-    alerts = ec_alerts.fetch_alerts()
+    alerts = _combined_alerts()
     if alerts:
         # Several alerts can technically be active at once (e.g. a Heat
         # Warning alongside a Severe Thunderstorm Watch) — showing just
