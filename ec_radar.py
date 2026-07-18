@@ -885,6 +885,24 @@ def _echo_at_location(img: Image.Image) -> bool:
                 return True
     return False
 
+
+def _mm_h_at_location(img: Image.Image) -> float:
+    """The actual measured intensity (mm/h) within the same small
+    neighborhood _echo_at_location checks — what's really happening AT
+    the user's exact coordinates, as opposed to anywhere else within
+    the broader tracked system (see severe_precip_status for why that
+    distinction turned out to matter for real)."""
+    cx, cy = IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2
+    max_mm_h = 0.0
+    for dx in range(-_LOCATION_CHECK_PX, _LOCATION_CHECK_PX + 1):
+        for dy in range(-_LOCATION_CHECK_PX, _LOCATION_CHECK_PX + 1):
+            px, py = cx + dx, cy + dy
+            if 0 <= px < IMAGE_WIDTH and 0 <= py < IMAGE_HEIGHT:
+                pixel = img.getpixel((px, py))
+                if pixel[3] > ALPHA_THRESHOLD:
+                    max_mm_h = max(max_mm_h, _classify_mm_h(pixel[:3]))
+    return max_mm_h
+
 # precip_status is called independently from the hero badge, the
 # morning briefing, and the Radar page itself — which in turn calls
 # tracking_overlay, which used to call precip_status AGAIN internally.
@@ -1038,45 +1056,65 @@ def precip_status(kind: str = "rain") -> dict | None:
 
 
 def severe_precip_status(kind: str = "rain") -> dict | None:
-    """{"mm_h", "direction", "direction_word"} once the strongest echo
-    within the tracked system (not just the nearest point — a genuinely
-    severe cell is often small and embedded in broader lighter
-    precipitation, see _scan_nearby) meets or exceeds SIGNIFICANT_MM_H,
-    EC's own scale step from "moderate" into "heavy". None most of the
-    time — ordinary rain/snow sits well under this.
+    """{"mm_h", "direction", "direction_word"} once precipitation
+    genuinely severe enough to matter (SIGNIFICANT_MM_H, EC's own scale
+    step from "moderate" into "heavy") is either confirmed to be
+    happening right now — at the user's exact coordinates (see
+    _echo_at_location) — or, before it's actually arrived there,
+    tracked as the peak intensity anywhere within the approaching
+    system. None most of the time — ordinary rain/snow sits well under
+    this.
 
-    Checks the significant blob first (see MIN_SIGNIFICANT_CELLS); if
-    that one isn't severe (or doesn't exist), also checks a smaller
-    blob's own intensity, but only when it's confirmed genuinely headed
-    straight at WEATHER_LAT/WEATHER_LON (see _heading_toward_me) — a
-    small, fast, intense cell on a direct course is exactly the kind of
-    thing that shouldn't be under-reported just for lacking the
-    significant blob's areal extent. Direction is the bearing to
-    whichever blob's own nearest pixel produced the match, same
-    convention as precip_status — not necessarily the exact spot of the
-    heaviest cell, but the closest real reference point for "which way
-    to look.\""""
+    Once real precipitation is confirmed AT the exact location, mm_h is
+    the intensity actually measured there (see _mm_h_at_location) — NOT
+    the tracked system's own peak elsewhere in the frame, which is
+    frequently a completely different, far more (or less) intense cell
+    many km away within the same broad storm. Confirmed live this was a
+    real, visible discrepancy: the badge read "100 mm/h" (the system's
+    own peak) while the pixel exactly at the location classified at
+    just 1 mm/h — matching Apple Weather/Open-Meteo's own "light
+    drizzle" for the same moment, not this badge's "heavy rain."
+
+    Before arrival, still reports the tracked system's own peak
+    (checking the significant blob first, see MIN_SIGNIFICANT_CELLS,
+    then falling back to a smaller blob's own intensity but only when
+    confirmed genuinely headed straight at WEATHER_LAT/WEATHER_LON, see
+    _heading_toward_me) — legitimate forward-looking information about
+    how intense an approaching system could get, not a claim about
+    what's happening at the location right now. Direction is always the
+    bearing to whichever tracked blob is closest, regardless of which
+    intensity source is being reported — not necessarily the exact spot
+    of the heaviest cell, but the closest real reference point for
+    "which way to look.\""""
     state = _decode_and_scan(kind)
+    img = state["img"]
+    reference = state["nearest"] or state["nearest_any"]
+    direction = None
+    if reference is not None:
+        bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, reference[0], reference[1])
+        direction = {"direction": compass_abbr(bearing_deg_), "direction_word": compass_word(bearing_deg_)}
 
+    if img is not None and _echo_at_location(img):
+        if direction is None:
+            return None  # echo at the exact pixel but no real-sized blob to anchor a direction to — too uncertain to report
+        mm_h_here = _mm_h_at_location(img)
+        if mm_h_here < SIGNIFICANT_MM_H:
+            return None
+        return {"mm_h": mm_h_here, **direction}
+
+    if direction is None:
+        return None
     if state["max_mm_h"] >= SIGNIFICANT_MM_H and state["nearest"] is not None:
-        lat, lon, _ = state["nearest"]
         mm_h = state["max_mm_h"]
     elif (
         state["heading_toward_me"] is not None
         and state["max_mm_h_any"] >= SIGNIFICANT_MM_H
         and state["nearest_any"] is not None
     ):
-        lat, lon, _ = state["nearest_any"]
         mm_h = state["max_mm_h_any"]
     else:
         return None
-
-    bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)
-    return {
-        "mm_h": mm_h,
-        "direction": compass_abbr(bearing_deg_),
-        "direction_word": compass_word(bearing_deg_),
-    }
+    return {"mm_h": mm_h, **direction}
 
 
 # Tracks whether each kind was already flagged as severe as of the last
@@ -1116,6 +1154,36 @@ def severe_weather_alert(kind: str = "rain") -> dict | None:
             "important": True,
         }
     return None
+
+
+# How long a "stint" of severe weather stays considered active after
+# the last genuinely severe reading, for callers that want a settled
+# yes/no over the whole event rather than reacting to every individual
+# radar refresh — real intensity flickers back and forth across
+# SIGNIFICANT_MM_H reading to reading (confirmed live during the same
+# real storm: 32 -> 50 -> 100 -> 32 mm/h across consecutive real 6-min
+# refreshes), so treating each dip below the threshold as "the stint is
+# over" would flap a caller's own response (e.g. a light, or a screen's
+# night-dim override) on and off every few minutes throughout what's
+# really one ongoing event.
+STINT_GRACE_MINUTES = 45
+_stint_last_severe_at: dict[str, datetime | None] = {"rain": None, "snow": None}
+
+
+def severe_weather_stint_active(kind: str) -> bool:
+    """True while a "stint" of genuinely severe precipitation (see
+    severe_precip_status) is either happening right now or happened
+    within the last STINT_GRACE_MINUTES. Call once per rerun per kind
+    (same "call it and let it update its own state" convention as
+    severe_weather_alert) — a brief dip back under SIGNIFICANT_MM_H
+    doesn't instantly end what's really one ongoing severe stretch, but
+    STINT_GRACE_MINUTES of genuine quiet does."""
+    now = datetime.now()
+    if severe_precip_status(kind) is not None:
+        _stint_last_severe_at[kind] = now
+        return True
+    last = _stint_last_severe_at[kind]
+    return last is not None and (now - last).total_seconds() <= STINT_GRACE_MINUTES * 60
 
 
 # Tracks whether each kind had anything detected nearby as of the last

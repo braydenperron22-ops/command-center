@@ -190,6 +190,51 @@ else:
 if air_quality and (air_quality.get("us_aqi") or 0) >= AQI_EXTREME:
     category = "smoke"
 
+# Same kind resolution the hero badge and the radar-derived alerts
+# below all use — EC's snow radar layer isn't itself gated by
+# temperature and can show the same reflectivity echo as the rain
+# layer regardless of season, so only ever checking the kind that
+# actually matches today's real weather avoids a nonsense "heavy snow"
+# alert firing in July. Resolved here (rather than down where it's
+# first used) so severe_weather_active below can use it too.
+_alert_precip_kind = "snow" if category == "snow" else "rain"
+
+# True during EC's own most dangerous hazard tier (tornado/hurricane/
+# tsunami, from its official alert feed) OR a real ongoing stretch of
+# our own radar-confirmed heavy precipitation (see
+# ec_radar.severe_weather_stint_active) — checking EC's feed alone
+# isn't enough: confirmed live it had nothing active at all for a real,
+# radar-confirmed heavy-rain night, so relying on it by itself would
+# miss the actual event entirely. This is the "genuine emergency"
+# tier — the screen goes fully bright (not just dimmed less) and the
+# light does its existing full wake behavior for it (see
+# govee_lighting.sync_lights). Each half guarded separately so a radar
+# hiccup can't also take out the (already reliable) EC-alert half.
+try:
+    extreme_weather = weather_alerts_bar.current_severity() == "extreme"
+except Exception:
+    extreme_weather = False
+try:
+    severe_weather_active = extreme_weather or ec_radar.severe_weather_stint_active(_alert_precip_kind)
+except Exception:
+    severe_weather_active = extreme_weather
+
+# A softer pair of signals for ordinary (non-severe) rain — session
+# request: the screen should still dim overnight during a rain storm,
+# just not all the way to the "genuinely dim enough to sleep next to"
+# floor, and the bedroom light should wake for rain that's still
+# incoming (a real heads-up), not stay lit for the whole time it's
+# already just quietly raining. rain_active covers both approaching and
+# already-arrived precipitation (any kind detected at all, see
+# ec_radar.precip_status); rain_incoming is specifically the
+# not-arrived-yet subset of that.
+try:
+    _wake_precip_status = ec_radar.precip_status(_alert_precip_kind)
+except Exception:
+    _wake_precip_status = None
+rain_active = _wake_precip_status is not None
+rain_incoming = _wake_precip_status is not None and _wake_precip_status["state"] == "approaching"
+
 # Background/scenery rendering never touches the network (weather is
 # already fetched above), but this whole block still runs before any page
 # content — wrapped so a bug here can't blank the entire dashboard, only
@@ -222,6 +267,7 @@ try:
     # with a black sky behind them. Ramps with the same fade progress
     # already tracked above rather than snapping dim on/off at the phase
     # boundary.
+    RAIN_NIGHT_DIM_CAP = 0.5  # night_dim ceiling during ordinary rain — dimmer than day, well short of the full sleep-dim floor
     if phase == "night" and bg_fade_from == "night":
         night_dim = 1.0
     elif phase == "night":
@@ -230,6 +276,22 @@ try:
         night_dim = 1.0 - bg_blend
     else:
         night_dim = 0.0
+
+    # A severe weather stint overrides the usual overnight dim-for-sleep
+    # entirely — the whole point of that dimming is an undisturbed rest
+    # period, but that's the wrong call while something worth actually
+    # watching (radar, alerts) is genuinely happening. Same
+    # severe_weather_active signal the bedroom light below reacts to,
+    # so both stay in sync rather than one waking up and the other not.
+    # Ordinary (non-severe) rain gets a softer version of the same idea
+    # — session request: the screen should still dim during a rain
+    # storm, just not all the way down to the full sleep-dim floor, so
+    # it's still glanceable without needing genuinely severe conditions
+    # to earn full brightness.
+    if severe_weather_active:
+        night_dim = 0.0
+    elif rain_active:
+        night_dim = min(night_dim, RAIN_NIGHT_DIM_CAP)
 
     if night_dim > 0:
         # This runs 24/7 in a bedroom — night needs to be genuinely dim
@@ -664,14 +726,6 @@ try:
 except Exception:
     pass
 
-# Same kind resolution the hero badge uses (category comes from the
-# real weather fetch, defaulting to "cloudy" above if that failed) —
-# EC's snow radar layer isn't itself gated by temperature and can show
-# the same reflectivity echo as the rain layer regardless of season, so
-# only ever checking the kind that actually matches today's real
-# weather avoids a nonsense "heavy snow" alert firing in July.
-_alert_precip_kind = "snow" if category == "snow" else "rain"
-
 # Same bottom-bar queue, same isolation reasoning — a genuinely heavy
 # (not just present) precipitation cell newly detected nearby, edge-
 # triggered so it fires once per event rather than every rerun while
@@ -775,16 +829,17 @@ try:
     if current_alert and current_alert.get("important") and elapsed is not None and elapsed < govee_lighting.FLASH_SECONDS:
         breaking_elapsed = elapsed
     aqi_for_lights = air_quality.get("us_aqi") if air_quality else None
-    # A real EC tornado/hurricane/tsunami warning is worth waking up for
-    # — the one thing sync_lights() reacts to that overrides night/off
-    # (see its own docstring). Resolved here rather than inside
-    # govee_lighting itself so that module stays free of any direct EC
-    # dependency, matching how it already takes aqi/market/breaking-news
-    # as plain values rather than fetching them itself.
-    extreme_weather = weather_alerts_bar.current_severity() == "extreme"
+    # severe_weather_active and rain_incoming (both resolved above,
+    # alongside the same night_dim override) are what sync_lights()
+    # reacts to that override night/off (see its own docstring) — a
+    # real EC tornado/hurricane/tsunami warning or radar-confirmed
+    # heavy-precipitation stint gets the full urgent flash, while
+    # ordinary rain that's still incoming gets a calmer heads-up
+    # instead of staying lit the whole time it's already just quietly
+    # raining.
     govee_lighting.sync_lights(
         phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
-        aqi_for_lights, extreme_weather, category,
+        aqi_for_lights, severe_weather_active, category, rain_incoming,
     )
     govee_lighting.sync_plug(now, weather["first_light"] if weather else None, weather["last_light"] if weather else None)
 except Exception:
