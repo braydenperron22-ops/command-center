@@ -61,17 +61,21 @@ BBOX_MARGIN_DEGREES_LON = BBOX_MARGIN_DEGREES_LAT * IMAGE_ASPECT_RATIO
 _DEG_PER_PX = (2 * BBOX_MARGIN_DEGREES_LAT) / IMAGE_HEIGHT
 REFRESH_SECONDS = 6 * 60  # matches the radar composite's own update cadence
 
-# How far out counts as "nearby" for the hero-row badge — widened from
-# a original 25km (which only ever caught a cell already close enough
-# to arrive within the hour) after confirming live that a genuinely
-# large, coherent system can sit with its closest edge 130km+ out while
-# still filling most of the visible frame — 25km meant tracking simply
-# never started until the storm was nearly on top of the user. 150km
-# comfortably covers that and leaves real margin to keep tracking it
-# closing in, while staying safely inside the image's own ~166km
-# vertical half-span (the tighter of its two axes) so the search below
-# doesn't run off the edge of the fetched frame.
-NEARBY_RADIUS_KM = 150
+# How far out counts as "nearby" for the hero-row badge. Widened to
+# 150km earlier this session to track a genuinely large system sitting
+# with its closest edge 130km+ out — but confirmed live that a wide
+# radius on a big, sprawling multi-cell complex pulls in intensity
+# readings from cells tens of km away as the tracked system's own
+# "peak," which reads as confusing/inconsistent moment to moment even
+# though each individual reading is technically accurate for
+# *somewhere* in range. Session judgment call: back to a tighter 25km —
+# only track/report on precipitation close enough to be genuinely
+# relevant to the user's own exact spot, at the cost of not starting to
+# track a system until it's closer in. The wide radar image itself
+# (IMAGE_WIDTH/BBOX_MARGIN_DEGREES_LAT, the actual visible map) is
+# unrelated to this and stays as wide as it already is — this only
+# controls the detection/tracking radius the badges reason about.
+NEARBY_RADIUS_KM = 25
 # How far past the near edge to probe for where the echo ends, to
 # estimate a clearing time — well within the image's own ~166km
 # half-span in every direction (the tighter of the two axes), so a real
@@ -87,15 +91,10 @@ ALPHA_THRESHOLD = 20
 # TIGHTER axis for km-per-pixel, which is horizontal/longitude here
 # (~0.36 km/px at this latitude — longitude lines are closer together
 # away from the equator), not vertical/latitude (~0.52 km/px, farther-
-# reaching per pixel). Confirmed live this actually matters: a real
-# echo sitting at dx=-330px was silently missed by a 300px box sized
-# off the vertical ratio, 30px short of reaching it. 150km needs
-# ~418px on the horizontal axis; 430 leaves a small margin. This can
-# run past the image's own ~320px vertical half-height without issue —
-# the existing in-bounds check below just skips those rows, which is
-# correct: there's no data past the real edge of the fetched frame
-# regardless of how far the search loop itself reaches.
-_SEARCH_PX = 430
+# reaching per pixel) — confirmed live earlier this session that sizing
+# off the wrong axis silently misses real echoes. 25km needs ~70px on
+# the horizontal axis; 90 leaves a comfortable margin.
+_SEARCH_PX = 90
 _SAMPLE_STRIDE = 3
 
 # How much history to keep for the approach/recede trend, and how far
@@ -959,14 +958,16 @@ def precip_status(kind: str = "rain") -> dict | None:
     caller had to assemble into text itself.
 
     {"state": "approaching", "minutes": int} — nothing detected at the
-    user's own exact coordinates yet (see _echo_at_location) but a
-    nearby system is genuinely closing in; minutes is the ETA. Whenever
-    a real measured trajectory confirms this system is headed straight
-    at WEATHER_LAT/WEATHER_LON (see storm_motion, _heading_toward_me),
-    minutes is that trajectory's own ETA — "when it actually reaches
-    here" rather than "when the nearest edge point's raw distance would
-    reach some fixed threshold by extrapolation," which can't tell a
-    direct hit apart from a system merely sweeping past to one side.
+    user's own exact coordinates yet (see _echo_at_location), but a
+    real measured trajectory confirms some tracked system is genuinely
+    on course to reach WEATHER_LAT/WEATHER_LON (see storm_motion,
+    _heading_toward_me); minutes is that trajectory's own ETA. Being
+    nearby with its raw distance nominally shrinking is NOT enough on
+    its own — confirmed live that's a real false positive (a storm
+    sitting east of the user while genuinely moving further east reads
+    as "getting closer" in nearest-edge terms for a while even though
+    it's pulling away, not closing in) — so a confirmed trajectory is
+    required, not just used as a preferred ETA source.
 
     {"state": "arrived", "minutes": int|None} — real detected
     precipitation AT the user's own exact coordinates right now (see
@@ -988,17 +989,15 @@ def precip_status(kind: str = "rain") -> dict | None:
     meaningful right at "arrived", where the echo's close enough that
     pixel-level jitter can swing the bearing around a bit.
 
-    None — nothing detected within NEARBY_RADIUS_KM, or something's
-    nearby but not moving in (sitting still, or drifting away): "only
-    say something when it's happening or about to" is the point of this
-    over a flat nearby-or-not signal.
-
-    Below MIN_SIGNIFICANT_CELLS, a blob is still reported here if (and
-    only if) its own tracked direction of travel is a confirmed direct
-    hit on WEATHER_LAT/WEATHER_LON (see _heading_toward_me) — a small
-    cell that's genuinely headed straight here matters regardless of
-    its size; one that's merely nearby but on course to pass well to
-    one side stays correctly ignored.
+    None — nothing detected within NEARBY_RADIUS_KM, nothing arrived at
+    the exact coordinates, or a real trajectory hasn't confirmed a
+    direct hit yet (not enough motion samples, genuinely stationary, or
+    genuinely headed somewhere else): "only say something when it's
+    happening or genuinely on course to" is the point of this over a
+    flat nearby-or-not signal. This applies the same way regardless of
+    blob size — a small cell genuinely headed straight here matters
+    just as much as a large one, and neither gets reported just for
+    being nearby without a confirmed course.
     """
     state = _decode_and_scan(kind)
     img, nearest, trend = state["img"], state["nearest"], state["trend"]
@@ -1035,24 +1034,24 @@ def precip_status(kind: str = "rain") -> dict | None:
                 minutes = round((far_km / trend["speed_kmh"]) * 60)
         return {"state": "arrived", "minutes": minutes, **direction}
 
-    # Prefer the trajectory-confirmed ETA (real measured bearing/speed,
-    # see storm_motion, checked against WEATHER_LAT/WEATHER_LON's exact
-    # coordinates via _closest_approach_km) over the plain distance-
-    # closing extrapolation below whenever it's available — "the
-    # nearest point is getting closer" alone doesn't distinguish a
-    # storm headed straight here from one sweeping past a real distance
-    # to one side while still nominally closing for a while first.
-    # Falls back to the distance-based estimate when no confirmed
-    # trajectory exists yet (same cold-start window storm_motion has),
-    # so this never regresses to reporting nothing during that window.
+    # Session complaint, confirmed live and correct: a cell sitting
+    # nearby with its raw distance nominally shrinking for a while
+    # (trend["trend"] == "approaching") is NOT the same thing as a cell
+    # actually on course to reach WEATHER_LAT/WEATHER_LON — a real
+    # storm moving broadly eastward while it happens to sit east of the
+    # user reads as "getting closer" in nearest-edge-distance terms for
+    # a while even though it's actually pulling away, not closing in.
+    # Only a real measured trajectory that's been checked against the
+    # exact coordinates (see storm_motion, _heading_toward_me,
+    # _closest_approach_km) counts as "approaching" here now — no
+    # distance-trend fallback. This does mean nothing gets reported
+    # until enough real motion samples exist to confirm a direction
+    # (storm_motion's own cold-start window), rather than an earlier,
+    # less trustworthy guess.
     direct_hit = state["heading_toward_me"]
-    if direct_hit is not None:
-        return {"state": "approaching", "minutes": direct_hit["eta_minutes"], **direction}
-
-    if trend["trend"] != "approaching":
+    if direct_hit is None:
         return None
-    eta_minutes = (distance_km / trend["speed_kmh"]) * 60
-    return {"state": "approaching", "minutes": round(eta_minutes), **direction}
+    return {"state": "approaching", "minutes": direct_hit["eta_minutes"], **direction}
 
 
 def severe_precip_status(kind: str = "rain") -> dict | None:
@@ -1075,17 +1074,21 @@ def severe_precip_status(kind: str = "rain") -> dict | None:
     just 1 mm/h — matching Apple Weather/Open-Meteo's own "light
     drizzle" for the same moment, not this badge's "heavy rain."
 
-    Before arrival, still reports the tracked system's own peak
+    Before arrival, only reports the tracked system's own peak
     (checking the significant blob first, see MIN_SIGNIFICANT_CELLS,
-    then falling back to a smaller blob's own intensity but only when
-    confirmed genuinely headed straight at WEATHER_LAT/WEATHER_LON, see
-    _heading_toward_me) — legitimate forward-looking information about
-    how intense an approaching system could get, not a claim about
-    what's happening at the location right now. Direction is always the
-    bearing to whichever tracked blob is closest, regardless of which
-    intensity source is being reported — not necessarily the exact spot
-    of the heaviest cell, but the closest real reference point for
-    "which way to look.\""""
+    then a smaller blob's own intensity) once a real measured
+    trajectory confirms it's genuinely on course to reach
+    WEATHER_LAT/WEATHER_LON (see storm_motion, _heading_toward_me) —
+    NOT just "nearby and intense," which a storm that's merely passing
+    by, or actively moving away, can be just as easily. Confirmed live
+    this was a real bug: a cell sitting 14km east while the tracked
+    system's own motion was measured moving further east (i.e. away,
+    not toward) was still firing this as "severe" purely for being
+    close and strong, with no check on where it was actually headed.
+    Direction is always the bearing to whichever tracked blob is
+    closest, regardless of which intensity source is being reported —
+    not necessarily the exact spot of the heaviest cell, but the
+    closest real reference point for "which way to look.\""""
     state = _decode_and_scan(kind)
     img = state["img"]
     reference = state["nearest"] or state["nearest_any"]
@@ -1104,13 +1107,21 @@ def severe_precip_status(kind: str = "rain") -> dict | None:
 
     if direction is None:
         return None
+    # Session complaint, confirmed live and correct: an intense cell
+    # sitting nearby (within NEARBY_RADIUS_KM) is NOT the same thing as
+    # one actually on course to reach WEATHER_LAT/WEATHER_LON — a real
+    # storm sitting east of the user while it moves further east is
+    # genuinely severe and genuinely nearby, but it's moving away, not
+    # in. Requiring a confirmed direct-hit trajectory (see storm_motion,
+    # _heading_toward_me) before reporting anything here, not just
+    # "nearby and intense," is what actually distinguishes "on pace to
+    # hit this exact spot" from a storm merely grazing past or
+    # departing.
+    if state["heading_toward_me"] is None:
+        return None
     if state["max_mm_h"] >= SIGNIFICANT_MM_H and state["nearest"] is not None:
         mm_h = state["max_mm_h"]
-    elif (
-        state["heading_toward_me"] is not None
-        and state["max_mm_h_any"] >= SIGNIFICANT_MM_H
-        and state["nearest_any"] is not None
-    ):
+    elif state["max_mm_h_any"] >= SIGNIFICANT_MM_H and state["nearest_any"] is not None:
         mm_h = state["max_mm_h_any"]
     else:
         return None

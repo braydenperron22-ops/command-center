@@ -235,6 +235,32 @@ except Exception:
 rain_active = _wake_precip_status is not None
 rain_incoming = _wake_precip_status is not None and _wake_precip_status["state"] == "approaching"
 
+# Session request: staying fully bright (or even just less-dim) for an
+# entire severe stint or rain approach — which can run for hours — was
+# itself keeping the room awake; the actual point was only ever to
+# "let me know, then let me go back to sleep." After QUIET_HOURS_START_
+# HOUR, the screen now defaults to full sleep-dim regardless of ongoing
+# weather, briefly brightening only around when something NEW actually
+# starts, not for its whole duration. hour < 12 (rather than a second
+# fixed hour) catches every hour from midnight through morning without
+# needing its own boundary — phase == "night" already can't extend
+# into the afternoon, so this only ever matters for the pre-dawn half
+# of the night.
+QUIET_HOURS_START_HOUR = 21
+quiet_hours = phase == "night" and (now.hour >= QUIET_HOURS_START_HOUR or now.hour < 12)
+# How long the brief brightening lasts once triggered — long enough to
+# actually wake up, look, and read the badge, short enough that it
+# can't turn into "bright all night" the way the previous whole-stint
+# override did.
+WEATHER_WAKE_WINDOW_SECONDS = 90
+weather_worth_waking_for = severe_weather_active or rain_incoming
+if weather_worth_waking_for and not st.session_state.get("weather_was_worth_waking_for", False):
+    st.session_state["weather_wake_started_at"] = time.time()
+st.session_state["weather_was_worth_waking_for"] = weather_worth_waking_for
+weather_wake_recent = weather_worth_waking_for and (
+    time.time() - st.session_state.get("weather_wake_started_at", 0) < WEATHER_WAKE_WINDOW_SECONDS
+)
+
 # Background/scenery rendering never touches the network (weather is
 # already fetched above), but this whole block still runs before any page
 # content — wrapped so a bug here can't blank the entire dashboard, only
@@ -277,18 +303,17 @@ try:
     else:
         night_dim = 0.0
 
-    # A severe weather stint overrides the usual overnight dim-for-sleep
-    # entirely — the whole point of that dimming is an undisturbed rest
-    # period, but that's the wrong call while something worth actually
-    # watching (radar, alerts) is genuinely happening. Same
-    # severe_weather_active signal the bedroom light below reacts to,
-    # so both stay in sync rather than one waking up and the other not.
-    # Ordinary (non-severe) rain gets a softer version of the same idea
-    # — session request: the screen should still dim during a rain
-    # storm, just not all the way down to the full sleep-dim floor, so
-    # it's still glanceable without needing genuinely severe conditions
-    # to earn full brightness.
-    if severe_weather_active:
+    # Past quiet hours, weather only brightens the screen briefly around
+    # when something new starts (weather_wake_recent) — otherwise it
+    # stays on the full sleep-dim floor no matter how long a stint or
+    # approach has been running, which is the whole fix for "this kept
+    # me awake." Before quiet hours (still evening, presumably awake
+    # anyway), the previous whole-duration behavior still applies:
+    # severe weather overrides dimming entirely, ordinary rain only
+    # softens it to RAIN_NIGHT_DIM_CAP.
+    if quiet_hours and not weather_wake_recent:
+        night_dim = 1.0
+    elif severe_weather_active:
         night_dim = 0.0
     elif rain_active:
         night_dim = min(night_dim, RAIN_NIGHT_DIM_CAP)
