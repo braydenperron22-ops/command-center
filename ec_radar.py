@@ -326,26 +326,44 @@ def _fetch_radar_bytes_at(layer: str, frame_time: datetime) -> bytes | None:
 # in order", later widened to 5 and backfilled straight from EC's own
 # TIME dimension: "use this to actually gauge storm direction instead
 # of guessing" / "pull previous radar images directly from the source
-# without having to build the cache manually"). Each real frame is
-# REFRESH_SECONDS (~6 min) apart, so 5 frames covers roughly the last
-# 24-30 minutes of real motion — the same raw frames storm_motion()
-# below measures actual bearing/speed from, not just what the loop
-# animates. Keyed by the frame's own real EC timestamp (not a locally-
-# computed bucket) so live-fetched and backfilled frames share one
-# consistent, ground-truth timeline — storm_motion's elapsed-time math
-# is then a real measured duration, not an assumption that our own
-# clock lines up with EC's composite schedule. Keyed by kind ("rain"/
-# "snow", inherently bounded) the same way _history already is.
-FRAME_HISTORY_SIZE = 5
+# without having to build the cache manually", then to 10: "get an
+# hour's worth of movement to make our forecasting more accurate").
+# Each real frame is REFRESH_SECONDS (~6 min) apart, so 10 frames
+# covers roughly the last 54-60 minutes of real motion — the same raw
+# frames storm_motion() below measures actual bearing/speed from, not
+# just what the loop animates. Keyed by the frame's own real EC
+# timestamp (not a locally-computed bucket) so live-fetched and
+# backfilled frames share one consistent, ground-truth timeline —
+# storm_motion's elapsed-time math is then a real measured duration,
+# not an assumption that our own clock lines up with EC's composite
+# schedule. Keyed by kind ("rain"/"snow", inherently bounded) the same
+# way _history already is.
+FRAME_HISTORY_SIZE = 10
 _frame_history: dict[str, list[tuple[datetime, bytes]]] = {"rain": [], "snow": []}
+# How many NEW historical frames _ensure_frame_history will fetch in a
+# single call, and how soon it's allowed to pick up where it left off.
+# Confirmed live earlier this session that even ONE extra network-
+# shaped call on the cold-start path was enough to stall the app's
+# entire autorefresh cycle — backfilling all of a 10-frame gap (9
+# sequential throttled fetches) in one script run risked a much bigger
+# version of that exact outage. Spreading it across several quick
+# reruns instead keeps any single run's own fetch burden small, at the
+# cost of the full cache taking a few real seconds longer to fill —
+# invisible for a background cache nothing blocks on.
+MAX_BACKFILL_FETCHES_PER_CALL = 2
+BACKFILL_RETRY_SECONDS = 4
 # Throttles backfill attempts to at most once per REFRESH_SECONDS once
-# history is short — avoids hammering EC's GetCapabilities/GetMap every
-# 5s rerun if the first attempt (or EC itself) is having a bad moment.
+# an attempt comes back completely empty-handed (a real failure, e.g.
+# EC's own service having a bad moment) — avoids hammering EC's
+# GetCapabilities/GetMap every few seconds in that case. Only applies
+# once nothing new was found; while genuinely still making progress
+# toward FRAME_HISTORY_SIZE, the much shorter BACKFILL_RETRY_SECONDS
+# governs instead (see _backfill_stalled).
 _backfill_attempted_at: dict[str, float] = {"rain": 0.0, "snow": 0.0}
+_backfill_stalled: dict[str, bool] = {"rain": False, "snow": False}
 
 
-def _record_frame(kind: str, layer: str, raw: bytes) -> None:
-    dims = _fetch_time_dimension(layer)
+def _record_frame(kind: str, raw: bytes, dims: tuple[datetime, datetime] | None) -> None:
     if dims is None:
         return  # can't stamp this frame with a real timestamp right now — skip recording it, try again next rerun
     frame_time = dims[0]
@@ -357,26 +375,41 @@ def _record_frame(kind: str, layer: str, raw: bytes) -> None:
     del history[: -FRAME_HISTORY_SIZE]
 
 
-def _ensure_frame_history(kind: str, layer: str) -> None:
+def _ensure_frame_history(kind: str, layer: str, dims: tuple[datetime, datetime] | None) -> None:
     """Backfills _frame_history straight from EC's own real historical
     frames (see _fetch_radar_bytes_at) the first time this kind needs
-    it, instead of waiting ~24-30 real minutes for FRAME_HISTORY_SIZE
-    frames to accumulate one real refresh at a time."""
+    it, instead of waiting the better part of an hour for
+    FRAME_HISTORY_SIZE frames to accumulate one real refresh at a time.
+    Fetches at most MAX_BACKFILL_FETCHES_PER_CALL new frames per call,
+    accumulating across however many reruns it takes to fill the gap
+    rather than blocking any single one for the whole thing (see
+    MAX_BACKFILL_FETCHES_PER_CALL's own comment for why).
+
+    Takes `dims` from the caller (see _fetch_radar_bytes) rather than
+    fetching it itself — _record_frame right before this already needs
+    the exact same value, and even a cache-hit second call turned out
+    to be worth avoiding on the cold-start path (see
+    MAX_BACKFILL_FETCHES_PER_CALL's own comment on why that path is
+    sensitive to any extra call at all)."""
     history = _frame_history[kind]
     if len(history) >= FRAME_HISTORY_SIZE:
         return
     now_ts = time.time()
-    if now_ts - _backfill_attempted_at[kind] < REFRESH_SECONDS:
+    cooldown = REFRESH_SECONDS if _backfill_stalled[kind] else BACKFILL_RETRY_SECONDS
+    if now_ts - _backfill_attempted_at[kind] < cooldown:
         return
     _backfill_attempted_at[kind] = now_ts
 
-    dims = _fetch_time_dimension(layer)
     if dims is None:
+        _backfill_stalled[kind] = True
         return
     default_time, start_time = dims
 
     have = {t for t, _ in history}
+    fetched_count = 0
     for i in range(1, FRAME_HISTORY_SIZE):
+        if fetched_count >= MAX_BACKFILL_FETCHES_PER_CALL:
+            break
         frame_time = default_time - timedelta(seconds=REFRESH_SECONDS * i)
         if frame_time < start_time or frame_time in have:
             continue
@@ -384,6 +417,8 @@ def _ensure_frame_history(kind: str, layer: str) -> None:
         if raw is not None:
             history.append((frame_time, raw))
             have.add(frame_time)
+            fetched_count += 1
+    _backfill_stalled[kind] = fetched_count == 0
     history.sort(key=lambda item: item[0])
     del history[: -FRAME_HISTORY_SIZE]
 
@@ -397,8 +432,9 @@ def _fetch_radar_bytes(layer: str) -> bytes | None:
         return _last_good_bytes.get(layer)
     _last_good_bytes[layer] = result
 
-    _record_frame(kind, layer, result)
-    _ensure_frame_history(kind, layer)
+    dims = _fetch_time_dimension(layer)
+    _record_frame(kind, result, dims)
+    _ensure_frame_history(kind, layer, dims)
     return result
 
 
@@ -849,37 +885,81 @@ CONFIDENCE_HORIZON_MINUTES = 150.0
 STALENESS_CONFIDENCE_HORIZON_MINUTES = 20.0
 
 
+# How many real tracked points already count as a fully-trusted sample
+# depth — deliberately its own constant, NOT tied to FRAME_HISTORY_SIZE
+# (how much raw cache capacity exists). A track built from this many
+# consistent real points already spans a comfortable ~24 minutes at the
+# radar's own 6-min cadence, real evidence in its own right — bumping
+# the cache bigger (more history to measure a longer-baseline
+# bearing/speed from) shouldn't silently make ordinary tracks read as
+# less confident just because the denominator changed under it.
+MIN_SAMPLES_FOR_FULL_CONFIDENCE = 5
+
+
 def _motion_confidence(motion: dict) -> float:
     """0-1 confidence in a storm_motion reading itself, from three
     independent factors: how many real cached frames it's built from
-    (sample_count, out of FRAME_HISTORY_SIZE), how much any one
-    tracked segment's own bearing disagreed with the overall measured
-    bearing (max_angular_error_deg), and how physically plausible the
-    measured speed is (MAX_PLAUSIBLE_SPEED_KMH). Doesn't know about
-    lead time or frame staleness — those are project_rain_arrival's own
-    concerns, folded in separately."""
-    sample_factor = motion["sample_count"] / FRAME_HISTORY_SIZE
+    (sample_count, out of MIN_SAMPLES_FOR_FULL_CONFIDENCE), how much
+    any one tracked segment's own bearing disagreed with the overall
+    measured bearing (max_angular_error_deg), and how physically
+    plausible the measured speed is (MAX_PLAUSIBLE_SPEED_KMH). Doesn't
+    know about lead time or frame staleness — those are
+    project_rain_arrival's own concerns, folded in separately."""
+    sample_factor = min(1.0, motion["sample_count"] / MIN_SAMPLES_FOR_FULL_CONFIDENCE)
     consistency_factor = max(0.0, 1.0 - motion["max_angular_error_deg"] / MAX_TRUSTED_ANGULAR_ERROR_DEG)
     speed_kmh = motion["speed_kmh"]
     plausibility_factor = 1.0 if speed_kmh <= MAX_PLAUSIBLE_SPEED_KMH else MAX_PLAUSIBLE_SPEED_KMH / speed_kmh
     return sample_factor * consistency_factor * plausibility_factor
 
 
-def _echo_at_backprojected_point(alpha_mask: np.ndarray, bearing_deg_: float, distance_km: float) -> bool | None:
-    """Does the CURRENT radar frame already show echo at the point
-    distance_km directly behind (the reverse of) bearing_deg_ from the
-    user's own exact coordinates — i.e. exactly where a patch of
-    precipitation would have to be sitting right now for the storm's
-    own measured motion to carry it onto the user's exact location
-    after traveling this far. None if that point falls outside the
-    fetched frame entirely (can't tell either way — distinct from a
-    confirmed "no echo there")."""
+# How wide a corridor to search perpendicular to the storm's own
+# measured bearing at each backward-projected distance, and how finely
+# — a single razor-thin ray along the exact bearing turned out to be
+# far too brittle: confirmed live a real tracked storm's own bearing
+# routinely disagrees with itself by 10-20+ degrees between individual
+# frame pairs (see storm_motion's max_angular_error_deg), and at real
+# search distances (tens of km) an error that size walks the exact
+# backward ray several km away from where the storm's actual echo
+# sits — missing it outright even while the storm is genuinely still
+# heading roughly this way. This was the reason the badge stopped
+# showing an ETA at all and only ever reported "here now" once the
+# storm had already arrived, which brought none of the lead-time value
+# the whole feature was built for. A corridor (not a point) absorbs
+# that realistic wobble; PROJECTION_BEAM_HALF_WIDTH_KM roughly matches
+# the old point+radius system's own DIRECT_HIT_RADIUS_KM tolerance.
+PROJECTION_BEAM_HALF_WIDTH_KM = 12.0
+PROJECTION_BEAM_STEP_KM = 3.0
+
+_OFF_FRAME = object()
+
+
+def _echo_near_backprojected_point(
+    alpha_mask: np.ndarray, bearing_deg_: float, distance_km: float
+) -> tuple[float, float] | None | object:
+    """(lat, lon) of the first echo pixel found in a corridor centered
+    on — and perpendicular to — the point distance_km directly behind
+    (the reverse of) bearing_deg_ from the user's own exact
+    coordinates (see PROJECTION_BEAM_HALF_WIDTH_KM for the corridor's
+    width). None if no point in the corridor has echo; the module-level
+    _OFF_FRAME sentinel if the corridor's own CENTER point falls
+    outside the fetched frame entirely (can't tell either way — a
+    corridor that only partly leaves the frame still searches whatever
+    part of it remains in-bounds, rather than aborting on that basis
+    alone)."""
     reverse_bearing = (bearing_deg_ + 180) % 360
-    lat, lon = _destination(WEATHER_LAT, WEATHER_LON, reverse_bearing, distance_km)
-    px, py = _latlon_to_pixel(lat, lon)
-    if px < 0 or px >= IMAGE_WIDTH or py < 0 or py >= IMAGE_HEIGHT:
-        return None
-    return bool(alpha_mask[py, px])
+    center_lat, center_lon = _destination(WEATHER_LAT, WEATHER_LON, reverse_bearing, distance_km)
+    center_px, center_py = _latlon_to_pixel(center_lat, center_lon)
+    if center_px < 0 or center_px >= IMAGE_WIDTH or center_py < 0 or center_py >= IMAGE_HEIGHT:
+        return _OFF_FRAME
+    perpendicular_bearing = (reverse_bearing + 90) % 360
+    offset_km = -PROJECTION_BEAM_HALF_WIDTH_KM
+    while offset_km <= PROJECTION_BEAM_HALF_WIDTH_KM:
+        lat, lon = _destination(center_lat, center_lon, perpendicular_bearing, offset_km)
+        px, py = _latlon_to_pixel(lat, lon)
+        if 0 <= px < IMAGE_WIDTH and 0 <= py < IMAGE_HEIGHT and alpha_mask[py, px]:
+            return lat, lon
+        offset_km += PROJECTION_BEAM_STEP_KM
+    return None
 
 
 def project_rain_arrival(kind: str, img: Image.Image) -> dict | None:
@@ -894,8 +974,11 @@ def project_rain_arrival(kind: str, img: Image.Image) -> dict | None:
     linear advection (the standard basic nowcasting technique): walking
     backward from the user's own location along the reverse of the
     storm's own bearing, at the storm's own measured speed, and
-    checking the CURRENT frame's real echo mask at each point along
-    that line. Whether the current frame's actual shape, translated
+    checking the CURRENT frame's real echo mask near each point along
+    that line (a corridor, not a single razor-thin ray — see
+    PROJECTION_BEAM_HALF_WIDTH_KM/_echo_near_backprojected_point for
+    why a bare line turned out to be too brittle against real bearing
+    wobble). Whether the current frame's actual shape, translated
     forward this way, genuinely reaches the exact coordinates is a
     direct answer to "will this hit me," not a coarse point-plus-radius
     approximation of it — replaces the old
@@ -935,12 +1018,14 @@ def project_rain_arrival(kind: str, img: Image.Image) -> dict | None:
 
     minutes = 0
     first_hit_minutes = None
+    first_hit_point = None
     while minutes <= PROJECTION_MAX_MINUTES:
-        hit = _echo_at_backprojected_point(alpha_mask, bearing_deg_, speed_kmh * (minutes / 60))
-        if hit is None:
+        hit = _echo_near_backprojected_point(alpha_mask, bearing_deg_, speed_kmh * (minutes / 60))
+        if hit is _OFF_FRAME:
             return None
-        if hit:
+        if hit is not None:
             first_hit_minutes = minutes
+            first_hit_point = hit
             break
         minutes += PROJECTION_STEP_MINUTES
     if first_hit_minutes is None:
@@ -949,17 +1034,24 @@ def project_rain_arrival(kind: str, img: Image.Image) -> dict | None:
     duration_minutes = None
     minutes = first_hit_minutes + PROJECTION_STEP_MINUTES
     while minutes <= PROJECTION_MAX_MINUTES:
-        hit = _echo_at_backprojected_point(alpha_mask, bearing_deg_, speed_kmh * (minutes / 60))
-        if hit is None or not hit:
+        hit = _echo_near_backprojected_point(alpha_mask, bearing_deg_, speed_kmh * (minutes / 60))
+        if hit is _OFF_FRAME or hit is None:
             duration_minutes = minutes - first_hit_minutes
             break
         minutes += PROJECTION_STEP_MINUTES
 
-    reverse_bearing = (bearing_deg_ + 180) % 360
-    distance_km = speed_kmh * (first_hit_minutes / 60)
-    lat, lon = _destination(WEATHER_LAT, WEATHER_LON, reverse_bearing, distance_km)
+    # lat/lon/distance_km/mm_h below describe the ACTUAL echo pixel the
+    # corridor search found, not the idealized point straight along the
+    # storm's own bearing — those can differ by up to
+    # PROJECTION_BEAM_HALF_WIDTH_KM now that the search has real width,
+    # and using the genuine match keeps distance/direction/intensity
+    # honest about what was actually found, not what the math assumed
+    # would be there.
+    lat, lon = first_hit_point
+    distance_km = _distance_km(WEATHER_LAT, WEATHER_LON, lat, lon)
     px, py = _latlon_to_pixel(lat, lon)
     mm_h = _classify_mm_h(img.getpixel((px, py))[:3]) if 0 <= px < IMAGE_WIDTH and 0 <= py < IMAGE_HEIGHT else 0.0
+    reverse_bearing = _bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)
 
     # first_hit_minutes above counts forward from THIS FRAME's own real
     # valid moment (see _fetch_time_dimension), not from right now — EC
