@@ -589,15 +589,35 @@ def _track_blob_for_motion(img: Image.Image) -> tuple[float, float] | None:
     return _blob_centroid(alpha_mask, merged_cells, cx, cy)
 
 
+def _angle_diff_deg(a: float, b: float) -> float:
+    """Smallest signed difference a-b between two compass bearings,
+    wrapped to (-180, 180] — a naive subtraction is wrong near the
+    0/360 seam (e.g. 350 vs 10 should read as 20 degrees apart, not
+    340)."""
+    return (a - b + 180) % 360 - 180
+
+
 def storm_motion(kind: str) -> dict | None:
-    """{"bearing_deg", "speed_kmh", "sample_count"} measured directly
-    from the real cached radar frames (see _frame_history,
-    FRAME_HISTORY_SIZE) — the dominant tracked blob's own centroid in
-    the oldest cached frame vs. the newest, over the real elapsed time
-    between their own EC-reported valid times (not an assumed uniform
-    cadence), a genuine measured displacement rather than a guess.
-    Session request: "use this [the cached frames] to actually gauge
-    storm direction instead of guessing."
+    """{"bearing_deg", "speed_kmh", "sample_count", "max_angular_error_deg"}
+    measured directly from the real cached radar frames (see
+    _frame_history, FRAME_HISTORY_SIZE) — the dominant tracked blob's
+    own centroid in the oldest cached frame vs. the newest, over the
+    real elapsed time between their own EC-reported valid times (not an
+    assumed uniform cadence), a genuine measured displacement rather
+    than a guess. Session request: "use this [the cached frames] to
+    actually gauge storm direction instead of guessing."
+
+    max_angular_error_deg checks every IN-BETWEEN consecutive frame
+    pair too (not just the oldest-vs-newest endpoints that bearing_deg
+    itself comes from) and reports the single largest disagreement
+    between any one segment's own bearing and the overall bearing — 0
+    for a storm tracking in a dead straight line, large for one that's
+    curving, splitting, or being tracked erratically. Segments too
+    short to trust a bearing from (under STATIONARY_THRESHOLD_KM,
+    same bar the overall measurement itself uses) are skipped rather
+    than counted as a disagreement. Feeds confidence scoring in
+    project_rain_arrival — this function itself stays focused on
+    describing the motion, not judging it.
 
     None if fewer than 2 cached frames have a trackable blob at all
     (early in a fresh deploy/restart or right after switching kind,
@@ -627,10 +647,22 @@ def storm_motion(kind: str) -> dict | None:
     moved_km = _distance_km(old_lat, old_lon, new_lat, new_lon)
     if moved_km < STATIONARY_THRESHOLD_KM:
         return None
+    bearing_deg_ = _bearing_deg(old_lat, old_lon, new_lat, new_lon)
+
+    max_angular_error_deg = 0.0
+    for i in range(len(points) - 1):
+        _, lat1, lon1 = points[i]
+        _, lat2, lon2 = points[i + 1]
+        if _distance_km(lat1, lon1, lat2, lon2) < STATIONARY_THRESHOLD_KM:
+            continue
+        segment_bearing = _bearing_deg(lat1, lon1, lat2, lon2)
+        max_angular_error_deg = max(max_angular_error_deg, abs(_angle_diff_deg(segment_bearing, bearing_deg_)))
+
     return {
-        "bearing_deg": _bearing_deg(old_lat, old_lon, new_lat, new_lon),
+        "bearing_deg": bearing_deg_,
         "speed_kmh": moved_km / (gap_minutes / 60),
         "sample_count": len(points),
+        "max_angular_error_deg": max_angular_error_deg,
     }
 
 
@@ -768,6 +800,71 @@ PROJECTION_MAX_MINUTES = 180
 PROJECTION_STEP_MINUTES = 2
 
 
+# Confidence scoring — session request: "only show things you're
+# confident about." Each factor below is an independent 0-1 multiplier
+# reflecting one specific reason a projection might not be trustworthy;
+# multiplying them together (rather than averaging) means any ONE
+# genuinely bad factor can sink the whole score, which is the right
+# behavior — a projection built on a fast-but-implausible speed reading
+# from a sparse, curving track shouldn't average out to "medium
+# confidence," it should read as genuinely unreliable.
+MIN_CONFIDENCE = 0.5
+
+# Real storms essentially never sustain speeds anywhere near this in
+# this region — a measurement above it is far more likely a tracking
+# artifact (e.g. the centroid jumping between different cells within a
+# large complex, confirmed live earlier this session as a real failure
+# mode) than an actual storm. Soft falloff rather than a hard cutoff:
+# scales down proportionally past the ceiling instead of a cliff, since
+# a genuinely fast squall line isn't strictly impossible.
+MAX_PLAUSIBLE_SPEED_KMH = 120.0
+# Beyond this angular disagreement between any two tracked segments,
+# the storm's own path is treated as having essentially no consistency
+# left to trust a straight-line projection from (a real 45-degree swing
+# between two consecutive real segments means it's curving, splitting,
+# or being mistracked, not holding a steady course).
+MAX_TRUSTED_ANGULAR_ERROR_DEG = 45.0
+# How far into the future a projection can reach before confidence
+# decays to zero — nowcasting skill drops off well before
+# PROJECTION_MAX_MINUTES' full 3-hour search window; a hit found 5
+# minutes out in the CURRENT frame is a real observation, one found
+# 170 minutes out is mostly an assumption that nothing about the storm
+# changes for the next three hours. Calibrated generously (150, not a
+# tighter ~60-90) because this multiplies against several OTHER
+# factors below — confirmed live that a tighter horizon combined with
+# ordinary, unremarkable staleness sank even a clean, fully-sampled,
+# dead-straight 32-minute prediction under MIN_CONFIDENCE, which is far
+# too aggressive for what's meant to be a routine, useful lead time.
+CONFIDENCE_HORIZON_MINUTES = 150.0
+# How stale a frame can be before ITS OWN content (not the ETA, which
+# eta_minutes above already numerically corrects for) is treated as
+# untrustworthy. Deliberately much larger than REFRESH_SECONDS (6 min)
+# — a frame at the normal maximum staleness, right before the next
+# refresh, is completely ordinary operation, not a red flag, and
+# confirmed live that using REFRESH_SECONDS itself here was a real bug:
+# it decayed to EXACTLY zero confidence at 6 minutes stale, meaning
+# every single frame failed right before its own routine refresh. Real
+# degradation — backfill stalling, several missed refresh cycles in a
+# row — is what this should actually catch.
+STALENESS_CONFIDENCE_HORIZON_MINUTES = 20.0
+
+
+def _motion_confidence(motion: dict) -> float:
+    """0-1 confidence in a storm_motion reading itself, from three
+    independent factors: how many real cached frames it's built from
+    (sample_count, out of FRAME_HISTORY_SIZE), how much any one
+    tracked segment's own bearing disagreed with the overall measured
+    bearing (max_angular_error_deg), and how physically plausible the
+    measured speed is (MAX_PLAUSIBLE_SPEED_KMH). Doesn't know about
+    lead time or frame staleness — those are project_rain_arrival's own
+    concerns, folded in separately."""
+    sample_factor = motion["sample_count"] / FRAME_HISTORY_SIZE
+    consistency_factor = max(0.0, 1.0 - motion["max_angular_error_deg"] / MAX_TRUSTED_ANGULAR_ERROR_DEG)
+    speed_kmh = motion["speed_kmh"]
+    plausibility_factor = 1.0 if speed_kmh <= MAX_PLAUSIBLE_SPEED_KMH else MAX_PLAUSIBLE_SPEED_KMH / speed_kmh
+    return sample_factor * consistency_factor * plausibility_factor
+
+
 def _echo_at_backprojected_point(alpha_mask: np.ndarray, bearing_deg_: float, distance_km: float) -> bool | None:
     """Does the CURRENT radar frame already show echo at the point
     distance_km directly behind (the reverse of) bearing_deg_ from the
@@ -816,11 +913,18 @@ def project_rain_arrival(kind: str, img: Image.Image) -> dict | None:
     frame.
 
     None if there's no confirmed motion yet (storm_motion's own
-    cold-start window, or a genuinely near-stationary system), or the
+    cold-start window, or a genuinely near-stationary system), the
     projected path runs off the edge of the fetched frame before ever
     confirming an answer either way (the storm's too far out, or
     moving too slowly, for this frame's extent to say anything useful
-    within PROJECTION_MAX_MINUTES)."""
+    within PROJECTION_MAX_MINUTES), or the combined confidence in this
+    specific answer falls under MIN_CONFIDENCE (see _motion_confidence
+    and the lead-time/staleness factors below) — a technically-computed
+    but shaky prediction is deliberately withheld rather than shown.
+    "confidence" (0-1) is included in the result for whatever survives
+    that bar, for future callers that might want to distinguish "fairly
+    confident" from "just barely over the line" rather than only a
+    plain yes/no."""
     motion = storm_motion(kind)
     if motion is None:
         return None
@@ -870,12 +974,37 @@ def project_rain_arrival(kind: str, img: Image.Image) -> dict | None:
     # lon/mm_h above are correctly left alone (they describe the
     # frame's own geometry, not a time-from-now), but eta_minutes needs
     # this correction to actually mean "from now."
-    layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
-    dims = _fetch_time_dimension(layer)
+    #
+    # Reads the frame's own timestamp straight from _frame_history
+    # (already populated by the time this runs, see _fetch_radar_bytes)
+    # rather than an independent _fetch_time_dimension call — confirmed
+    # live that an extra network-shaped call here, even one that should
+    # cache-hit, was enough to stall the whole app's autorefresh cycle
+    # on a cold start (every genuine cache-miss fetch app-wide is
+    # globally serialized through fetch_throttle, one at a time).
+    # _frame_history already has this for free.
+    history = _frame_history[kind]
     staleness_minutes = 0.0
-    if dims is not None:
-        staleness_minutes = max(0.0, (datetime.utcnow() - dims[0]).total_seconds() / 60)
+    if history:
+        staleness_minutes = max(0.0, (datetime.utcnow() - history[-1][0]).total_seconds() / 60)
     eta_minutes = max(0, round(first_hit_minutes - staleness_minutes))
+
+    # Session request: "only show things you're confident about."
+    # _motion_confidence covers the motion reading itself (sample
+    # depth, path consistency, speed plausibility); the two factors
+    # below are specific to THIS projection — how far into the future
+    # it reaches (CONFIDENCE_HORIZON_MINUTES) and how stale the frame
+    # it's built from already is. Multiplied together, not averaged, so
+    # any single genuinely bad factor sinks the whole score rather than
+    # getting diluted by otherwise-fine ones. Below MIN_CONFIDENCE, this
+    # returns None rather than a technically-computed but shaky answer
+    # — the same "don't say something we can't back up" standard
+    # already applied everywhere else in this module.
+    lead_time_factor = max(0.0, 1.0 - eta_minutes / CONFIDENCE_HORIZON_MINUTES)
+    staleness_factor = max(0.0, 1.0 - staleness_minutes / STALENESS_CONFIDENCE_HORIZON_MINUTES)
+    confidence = _motion_confidence(motion) * lead_time_factor * staleness_factor
+    if confidence < MIN_CONFIDENCE:
+        return None
 
     # distance_km/direction describe the SAME specific patch of
     # precipitation eta_minutes was computed from — deliberately NOT
@@ -896,6 +1025,7 @@ def project_rain_arrival(kind: str, img: Image.Image) -> dict | None:
         "lon": lon,
         "direction": compass_abbr(reverse_bearing),
         "direction_word": compass_word(reverse_bearing),
+        "confidence": confidence,
     }
 
 
