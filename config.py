@@ -161,9 +161,18 @@ YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 # time.time()-based index, no Streamlit multipage chrome, no scrolling.
 PAGES = [
     "home", "conflicts", "news", "markets", "internals", "today", "household",
-    "weather", "radar", "sports", "scores",
+    "weather", "radar", "sports", "scores", "recovery",
 ]
 PAGE_ROTATION_SECONDS = 5 * 60
+
+# Temporary: added while recovering from wisdom teeth surgery (see
+# pages_recovery.py) — worth more than one uniform rotation slot so it's
+# actually on screen long enough to read, not just flash past for the
+# same 5 minutes as every other ambient page. Any page not listed here
+# just falls back to PAGE_ROTATION_SECONDS above.
+# Remove this override, the "recovery" entry above, pages_recovery.py,
+# and recovery_timer.html once recovery's done.
+PAGE_DURATION_OVERRIDES = {"recovery": 10 * 60}
 
 # Commute origin coordinate is the exact one embedded in the calendar
 # feed's own Apple-geocoded location for 281 Ouellette Rd (Nominatim's

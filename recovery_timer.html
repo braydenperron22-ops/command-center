@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Recovery Monitor</title>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --panel: #12151b;
+    --panel-2: #161a21;
+    --border: #232830;
+    --text-hi: #e6e8eb;
+    --text-mid: #8b929e;
+    --text-low: #565d68;
+    --accent: #c9a876;
+    --accent-soft: rgba(201,168,118,0.12);
+    --good: #6ee7a8;
+    --bad: #e2705f;
+    --mono: "SF Mono", "JetBrains Mono", "Roboto Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background:
+      radial-gradient(circle at 15% 0%, rgba(201,168,118,0.05), transparent 40%),
+      var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--text-hi);
+    padding: 3vw;
+    min-height: 100vh;
+  }
+
+  .dash { width: 100%; max-width: 900px; margin: 0 auto; }
+
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding-bottom: 16px; margin-bottom: 22px; border-bottom: 1px solid var(--border); }
+  .brand-title { font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--text-mid); }
+  .live { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; letter-spacing: 1px; color: var(--good); text-transform: uppercase; }
+  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good); animation: pulse 2s infinite; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(110,231,168,0.5); }
+    70% { box-shadow: 0 0 0 6px rgba(110,231,168,0); }
+    100% { box-shadow: 0 0 0 0 rgba(110,231,168,0); }
+  }
+
+  .hero { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 32px 36px; margin-bottom: 16px; text-align: center; }
+  .hero-eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--text-low); font-weight: 700; margin-bottom: 10px; }
+  .hero-timer { font-family: var(--mono); font-size: clamp(36px, 6vw, 56px); font-weight: 700; letter-spacing: -1px; margin-bottom: 6px; }
+  .hero-timer .unit { font-size: 0.4em; color: var(--text-low); font-weight: 500; margin-right: 0.25em; }
+  .hero-phase { font-size: clamp(20px, 2.4vw, 27px); font-weight: 700; color: var(--accent); margin-bottom: 10px; }
+  .hero-normal { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:700; color: var(--good); background: rgba(110,231,168,0.1); padding: 6px 12px; border-radius: 999px; }
+  .hero-normal::before { content:"✓"; }
+  .hero-desc { font-size: 14px; color: var(--text-mid); max-width: 56ch; margin: 14px auto 0; line-height: 1.55; }
+
+  .timeline-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px 26px 16px; margin-bottom: 16px; }
+  .timeline-top { display:flex; justify-content: space-between; font-size: 11px; color: var(--text-low); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; }
+  .timeline-track { position: relative; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.05); margin-bottom: 10px; }
+  .timeline-fill { position: absolute; top:0; left:0; height:100%; border-radius: 999px; background: var(--accent); opacity: 0.85; }
+  .timeline-labels { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--text-low); }
+  .timeline-labels span { flex: 1; text-align: center; }
+  .timeline-labels span:first-child { text-align: left; }
+  .timeline-labels span:last-child { text-align: right; }
+
+  .facts-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .fact { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .fact-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-low); font-weight: 700; margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center; }
+  .trend { font-size: 9.5px; font-weight: 700; padding: 2px 6px; border-radius: 999px; }
+  .trend.up { color: var(--bad); background: rgba(226,112,95,0.12); }
+  .trend.down { color: var(--good); background: rgba(110,231,168,0.12); }
+  .trend.flat { color: var(--text-low); background: rgba(255,255,255,0.05); }
+  .fact-value { font-size: 15px; font-weight: 600; color: var(--text-hi); margin-bottom: 8px; }
+  .fact-value.small { font-size: 13px; font-weight: 500; color: var(--text-mid); margin-bottom: 0; }
+  .level-track { height: 6px; border-radius: 999px; background: rgba(255,255,255,0.06); overflow: hidden; }
+  .level-fill { height: 100%; border-radius: 999px; background: var(--accent); opacity: 0.85; transition: width 0.6s ease; }
+
+  @media (max-width: 640px) { .facts-row { grid-template-columns: 1fr; } }
+
+  .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 640px) { .details-grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+  .panel-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-low); font-weight: 700; margin-bottom: 12px; }
+  .simple-list { margin: 0; padding: 0; list-style: none; }
+  .simple-list li { position: relative; padding-left: 16px; margin-bottom: 8px; font-size: 13px; color: var(--text-mid); line-height: 1.5; }
+  .simple-list li:last-child { margin-bottom: 0; }
+  .simple-list li::before { content:""; position:absolute; left:0; top:0.5em; width:5px; height:5px; border-radius:50%; background: var(--text-low); }
+  .next-line { font-size: 13px; color: var(--text-mid); }
+  .next-line b { color: var(--accent); font-family: var(--mono); font-weight: 600; }
+
+  .watch-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; margin-bottom: 8px; }
+  .watch-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--bad); font-weight: 700; margin-bottom: 10px; opacity: 0.85; }
+  .watch-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .watch-chip { font-size: 11.5px; color: var(--text-mid); background: var(--panel-2); border: 1px solid var(--border); padding: 6px 10px; border-radius: 999px; }
+
+  .footer-note { margin-top: 14px; font-size: 10.5px; color: var(--text-low); line-height: 1.5; text-align: center; }
+</style>
+</head>
+<body>
+<div class="dash">
+
+  <div class="topbar">
+    <div class="brand-title">Recovery Monitor</div>
+    <div class="live"><span class="live-dot"></span>Live</div>
+  </div>
+
+  <div class="hero">
+    <div class="hero-eyebrow">Time Since Surgery</div>
+    <div class="hero-timer" id="timer">--</div>
+    <div class="hero-phase" id="phaseTitle">--</div>
+    <div class="hero-normal" id="normalFlag">Normal for this stage</div>
+    <div class="hero-desc" id="stageDesc"></div>
+  </div>
+
+  <div class="timeline-panel">
+    <div class="timeline-top"><span id="phaseCounter">Checkpoint - / -</span><span id="nextMilestone">--</span></div>
+    <div class="timeline-track"><div class="timeline-fill" id="timelineFill"></div></div>
+    <div class="timeline-labels"><span>Surgery</span><span>Day 3</span><span>Wk 2</span><span>~3 mo</span></div>
+  </div>
+
+  <div class="facts-row">
+    <div class="fact">
+      <div class="fact-label"><span>Pain</span><span class="trend" id="painTrend">--</span></div>
+      <div class="fact-value" id="painWord">--</div>
+      <div class="level-track"><div class="level-fill" id="painFill" style="width:0%"></div></div>
+    </div>
+    <div class="fact">
+      <div class="fact-label"><span>Swelling</span><span class="trend" id="swellTrend">--</span></div>
+      <div class="fact-value" id="swellWord">--</div>
+      <div class="level-track"><div class="level-fill" id="swellFill" style="width:0%"></div></div>
+    </div>
+    <div class="fact">
+      <div class="fact-label"><span>Diet Today</span></div>
+      <div class="fact-value small" id="dietVal">--</div>
+    </div>
+  </div>
+
+  <div class="details-grid">
+    <div class="panel">
+      <div class="panel-title">What to Expect Right Now</div>
+      <ul class="simple-list" id="expectList"></ul>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Activity Level</div>
+      <div class="fact-value" id="activityVal" style="margin-bottom:14px;">--</div>
+      <div class="panel-title">Coming Up Next</div>
+      <div class="next-line"><b id="nextTitle">--</b><br><span id="nextIn">--</span></div>
+    </div>
+  </div>
+
+  <div class="watch-panel">
+    <div class="watch-title">Call your surgeon if</div>
+    <div class="watch-list">
+      <div class="watch-chip">Bleeding won't slow after 24h</div>
+      <div class="watch-chip">Pain worsens after day 3-4</div>
+      <div class="watch-chip">Fever over 101°F</div>
+      <div class="watch-chip">Foul odor / bad taste</div>
+      <div class="watch-chip">Numbness lasting too long</div>
+    </div>
+  </div>
+
+  <div class="footer-note">Informational guide only, not medical advice — individual healing varies, and this reflects typical patterns, not a diagnosis of your specific symptoms.</div>
+</div>
+
+<script>
+  const start = new Date(2026, 6, 17, 12, 0, 0);
+
+  // Finer-grained checkpoints so text + gauges track much closer to real time,
+  // especially across the critical first week.
+  const stages = [
+    { hours: 0, title: "Anesthesia Wearing Off",
+      desc: "Numbness is fading and the surgical sites are just beginning to clot. Protecting the clot now prevents complications later.",
+      pain: 1, swelling: 1, diet: "Liquids only", activity: "Full rest, head elevated",
+      expect: ["Lingering numbness in lips/tongue/cheek", "Light oozing or pink-tinged saliva", "Gentle, steady bite pressure on gauze", "Grogginess if sedation was used"] },
+
+    { hours: 3, title: "Feeling Returning",
+      desc: "As numbness fades further, you may notice the first real tenderness at the extraction sites.",
+      pain: 1, swelling: 1, diet: "Liquids only", activity: "Full rest, head elevated",
+      expect: ["Numbness patchy — coming and going in spots", "Occasional brief twinges as nerves wake up", "Mild taste of blood is normal", "Still avoiding straws, spitting, rinsing"] },
+
+    { hours: 6, title: "First Soreness Sets In",
+      desc: "Mild soreness begins as anesthesia clears. Swelling hasn't peaked yet — it's still building underneath the surface.",
+      pain: 2, swelling: 2, diet: "Cool soft foods", activity: "Rest, minimal talking or chewing",
+      expect: ["Mild to moderate soreness near the jaw hinge", "First full dose of prescribed pain medication", "Occasional brief sharp twinges are normal", "Ice 20 min on/20 off to slow swelling"] },
+
+    { hours: 12, title: "Settling Into Night One",
+      desc: "Discomfort is present but should feel manageable. This is a good stretch to prioritize rest.",
+      pain: 2, swelling: 2, diet: "Cool soft foods", activity: "Rest, sleep with head elevated",
+      expect: ["Steady, dull soreness rather than sharp pain", "Swelling may feel tight but not alarming", "Keep gauze nearby in case of light oozing overnight", "Medication on schedule, even before sleep"] },
+
+    { hours: 24, title: "Day 2 — Swelling Building",
+      desc: "Swelling and stiffness increase noticeably today — expected, not a sign something's wrong.",
+      pain: 2, swelling: 3, diet: "Soft, lukewarm foods", activity: "Short walks around the house",
+      expect: ["Visible cheek swelling, may look worse than yesterday", "Jaw stiffness makes opening wide harder", "Can begin gentle warm salt-water rinses after meals", "Bruising may start on cheek/jawline"] },
+
+    { hours: 36, title: "Swelling Continues Climbing",
+      desc: "You're approaching the peak — some brief sharp twinges around the site are common as tissue shifts and settles.",
+      pain: 3, swelling: 3, diet: "Soft, lukewarm foods", activity: "Short walks, mostly resting",
+      expect: ["Brief, passing sharp twinges are normal", "Swelling likely still increasing", "Soreness may feel more noticeable by evening", "Continue rinses and medication schedule"] },
+
+    { hours: 48, title: "Day 3 — Peak Swelling Window",
+      desc: "Typically the worst day for swelling and stiffness. If it feels like it's peaking now, that's exactly on schedule.",
+      pain: 3, swelling: 4, diet: "Eggs, mashed potatoes, thick smoothies", activity: "Still mostly resting",
+      expect: ["Maximum swelling — often more than day 1 or 2", "Bruising discoloration is normal", "Discomfort may plateau rather than worsen", "Keep taking medication on schedule"] },
+
+    { hours: 60, title: "Peak Plateau",
+      desc: "Swelling is likely at or just past its peak. Pain should feel steady rather than escalating from here.",
+      pain: 3, swelling: 4, diet: "Eggs, mashed potatoes, thick smoothies", activity: "Still mostly resting",
+      expect: ["Swelling holding steady or just starting to ease", "Stiffness at its most noticeable", "Any sharp pain should still be brief, not constant", "This is the last stretch before things improve"] },
+
+    { hours: 72, title: "Day 4 — Corner Turning",
+      desc: "Swelling should start visibly going down, and many people reduce or stop prescription pain meds around now.",
+      pain: 2, swelling: 3, diet: "Soft pasta, cooked vegetables, fish", activity: "Light normal activity",
+      expect: ["Swelling and bruising steadily fading", "Pain manageable with OTC medication", "Watch closely for dry socket signs from here on", "Energy levels returning"] },
+
+    { hours: 96, title: "Day 4-5 — Continued Improvement",
+      desc: "Noticeable day-over-day improvement. Occasional brief twinges can still occur but should be easing overall.",
+      pain: 2, swelling: 2, diet: "Soft pasta, cooked vegetables, fish", activity: "Light normal activity",
+      expect: ["Swelling continuing to drop", "Pain more intermittent than constant", "Diet expanding as chewing gets more comfortable", "Any worsening (not just occasional twinges) is worth watching"] },
+
+    { hours: 120, title: "Day 6 — Stitches & Tissue Closing",
+      desc: "Gum tissue over the sites is visibly closing. Non-dissolving stitches are often removed around now.",
+      pain: 1, swelling: 2, diet: "Rice, soft bread, tender meat", activity: "Most normal daily activity",
+      expect: ["Little visible swelling remaining", "Occasional mild twinges when chewing near the site", "Follow-up visit if scheduled", "Salt-water rinses still helpful after meals"] },
+
+    { hours: 144, title: "Day 7 — Nearly Settled",
+      desc: "Most day-to-day discomfort should be behind you by now, with only occasional mild sensitivity.",
+      pain: 1, swelling: 1, diet: "Widening soft diet", activity: "Most normal daily activity",
+      expect: ["Swelling essentially gone for most people", "Mild tenderness only when directly touched", "Jaw stiffness mostly resolved", "Any sharp, worsening pain now is atypical — flag it"] },
+
+    { hours: 168, title: "Week 2 — Surface Healing Complete",
+      desc: "The visible part of recovery is essentially done. Underneath, the socket is still filling in.",
+      pain: 0, swelling: 0, diet: "Normal, avoiding hard/crunchy foods near site", activity: "Cleared for most exercise",
+      expect: ["Minimal to no discomfort day to day", "Small socket 'divots' may still catch food", "Brushing normally around the area", "Any lingering stiffness should be gone"] },
+
+    { hours: 336, title: "Weeks 3-4 — Deeper Healing Continues",
+      desc: "Nothing to feel here — this phase is bone quietly filling the socket behind the scenes.",
+      pain: 0, swelling: 0, diet: "Fully normal", activity: "Fully normal",
+      expect: ["No expected symptoms at this point", "Socket sites gradually shrinking", "Mild sensitivity still within normal range", "New sharp pain now is worth mentioning to your surgeon"] },
+
+    { hours: 840, title: "Months 2-3 — Bone Remodeling",
+      desc: "Full bone fill of the sites typically completes over 2-3 months, invisibly and without symptoms.",
+      pain: 0, swelling: 0, diet: "Normal", activity: "Normal",
+      expect: ["Recovery is functionally complete", "Bone continues remodeling internally", "No further monitoring typically needed"] }
+  ];
+
+  const TOTAL_HOURS = 2160; // ~12 weeks reference span for the timeline bar
+  const levelWords = ["None", "Mild", "Moderate", "Noticeable", "High", "Peak"];
+
+  function getStageIndex(hoursElapsed) {
+    let idx = 0;
+    stages.forEach((s, i) => { if (hoursElapsed >= s.hours) idx = i; });
+    return idx;
+  }
+
+  // Linearly interpolate a numeric field between the surrounding checkpoints,
+  // so the gauges move continuously through the day instead of jumping.
+  function interpolate(hoursElapsed, field) {
+    const idx = getStageIndex(hoursElapsed);
+    const cur = stages[idx];
+    const next = stages[idx + 1];
+    if (!next) return cur[field];
+    const span = next.hours - cur.hours;
+    const t = span > 0 ? (hoursElapsed - cur.hours) / span : 1;
+    return cur[field] + (next[field] - cur[field]) * Math.min(1, Math.max(0, t));
+  }
+
+  function formatElapsed(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const totalHours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return totalHours + '<span class="unit">h</span>' +
+      String(minutes).padStart(2,"0") + '<span class="unit">m</span>' +
+      String(seconds).padStart(2,"0") + '<span class="unit">s</span>';
+  }
+
+  function formatDuration(hoursFloat) {
+    if (hoursFloat < 1) return Math.round(hoursFloat * 60) + "m";
+    const h = Math.floor(hoursFloat);
+    const m = Math.round((hoursFloat - h) * 60);
+    if (h < 24) return h + "h " + m + "m";
+    const d = Math.floor(h / 24);
+    const remH = h % 24;
+    return d + "d " + remH + "h";
+  }
+
+  function setTrend(elId, delta) {
+    const el = document.getElementById(elId);
+    el.classList.remove("up","down","flat");
+    if (delta > 0.15) { el.textContent = "Rising"; el.classList.add("up"); }
+    else if (delta < -0.15) { el.textContent = "Easing"; el.classList.add("down"); }
+    else { el.textContent = "Steady"; el.classList.add("flat"); }
+  }
+
+  let lastStageIdx = -1;
+
+  function renderStage(idx) {
+    const stage = stages[idx];
+    document.getElementById("phaseTitle").textContent = stage.title;
+    document.getElementById("stageDesc").textContent = stage.desc;
+    document.getElementById("phaseCounter").textContent = "Checkpoint " + (idx+1) + " / " + stages.length;
+    document.getElementById("dietVal").textContent = stage.diet;
+    document.getElementById("activityVal").textContent = stage.activity;
+
+    const list = document.getElementById("expectList");
+    list.innerHTML = "";
+    stage.expect.forEach(item => {
+      const li = document.createElement("li");
+      li.textContent = item;
+      list.appendChild(li);
+    });
+  }
+
+  function update() {
+    const now = new Date();
+    const diffMs = now - start;
+
+    if (diffMs < 0) {
+      document.getElementById("timer").innerHTML = "Not started";
+      return;
+    }
+
+    document.getElementById("timer").innerHTML = formatElapsed(diffMs);
+
+    const hoursElapsed = diffMs / (1000 * 60 * 60);
+    const idx = getStageIndex(hoursElapsed);
+
+    if (idx !== lastStageIdx) {
+      renderStage(idx);
+      lastStageIdx = idx;
+    }
+
+    // Continuous, interpolated symptom levels — updates every tick, not just at checkpoints
+    const painVal = interpolate(hoursElapsed, "pain");
+    const swellVal = interpolate(hoursElapsed, "swelling");
+    document.getElementById("painFill").style.width = (painVal / 5 * 100) + "%";
+    document.getElementById("swellFill").style.width = (swellVal / 5 * 100) + "%";
+    document.getElementById("painWord").textContent = levelWords[Math.round(painVal)];
+    document.getElementById("swellWord").textContent = levelWords[Math.round(swellVal)];
+
+    // Trend: compare current interpolated value to value ~2 hours ahead
+    setTrend("painTrend", interpolate(hoursElapsed + 2, "pain") - painVal);
+    setTrend("swellTrend", interpolate(hoursElapsed + 2, "swelling") - swellVal);
+
+    const next = stages[idx + 1];
+    if (next) {
+      const remaining = next.hours - hoursElapsed;
+      document.getElementById("nextTitle").textContent = next.title;
+      document.getElementById("nextIn").textContent = "in " + formatDuration(Math.max(0, remaining));
+      document.getElementById("nextMilestone").textContent = "Next: " + next.title + " in " + formatDuration(Math.max(0, remaining));
+    } else {
+      document.getElementById("nextTitle").textContent = "Recovery complete";
+      document.getElementById("nextIn").textContent = "";
+      document.getElementById("nextMilestone").textContent = "All checkpoints complete";
+    }
+
+    const pct = Math.min(100, (hoursElapsed / TOTAL_HOURS) * 100);
+    document.getElementById("timelineFill").style.width = pct + "%";
+  }
+
+  update();
+  setInterval(update, 1000);
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) update();
+  });
+</script>
+</body>
+</html>

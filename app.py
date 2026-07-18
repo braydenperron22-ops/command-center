@@ -23,6 +23,7 @@ import pages_internals
 import pages_markets
 import pages_news
 import pages_radar
+import pages_recovery
 import pages_scores
 import pages_sports
 import pages_today
@@ -38,6 +39,7 @@ from config import (
     AQI_SHOW_THRESHOLD,
     FEELS_LIKE_DIVERGENCE_THRESHOLD_C,
     MAX_BURST_ALERTS,
+    PAGE_DURATION_OVERRIDES,
     PAGE_ROTATION_SECONDS,
     PAGES,
     TIMEZONE,
@@ -71,6 +73,25 @@ FRED_API_KEY = st.secrets.get("FRED_API_KEY")
 # computed its country from the NEW bucket, flashing the wrong country
 # for one rerun before the page itself rotated away — which is exactly
 # what "Canada shows for ~5 seconds then jumps to Conflicts" was.
+def _scheduled_page(epoch_seconds: float) -> tuple[str, float, float]:
+    """Which page is up right now, plus how far into its own window
+    (seconds) and how long that window is. Most pages share the uniform
+    PAGE_ROTATION_SECONDS, but PAGE_DURATION_OVERRIDES (config.py) can
+    give a specific page more than one slot's worth of time — currently
+    just "recovery" — without disturbing the plain modulo math the
+    uniform pages still rely on elsewhere (pages_home's own US/Canada
+    rotation, pages_scores' league rotation) since those aren't derived
+    from this cumulative schedule at all.
+    """
+    durations = [PAGE_DURATION_OVERRIDES.get(p, PAGE_ROTATION_SECONDS) for p in PAGES]
+    position = epoch_seconds % sum(durations)
+    for p, d in zip(PAGES, durations):
+        if position < d:
+            return p, position, d
+        position -= d
+    return PAGES[-1], 0.0, durations[-1]  # unreachable: position < sum(durations) always
+
+
 _rotation_epoch = time.time()
 _requested_page = None
 try:
@@ -78,7 +99,7 @@ try:
     if _requested_page in PAGES:
         page = _requested_page
     else:
-        page = PAGES[int(_rotation_epoch // PAGE_ROTATION_SECONDS) % len(PAGES)]
+        page, _, _ = _scheduled_page(_rotation_epoch)
 except Exception:
     page = "today"
 
@@ -86,6 +107,7 @@ _PAGE_LABELS = {
     "home": "Home", "conflicts": "Conflicts", "news": "News", "markets": "Markets",
     "internals": "Internals", "today": "Today", "household": "Household",
     "weather": "Weather", "radar": "Radar", "sports": "Sports", "scores": "Scores",
+    "recovery": "Recovery",
 }
 
 # Invisible on the kiosk monitor — theme.py hides .mobile-nav entirely
@@ -130,12 +152,20 @@ st.markdown(
 # which makes the freshly computed delay actually take effect each
 # time, while the browser still tweens smoothly in between reruns.
 if _requested_page not in PAGES:
-    _rotation_elapsed = _rotation_epoch % PAGE_ROTATION_SECONDS
+    _, _rotation_elapsed, _rotation_page_seconds = _scheduled_page(_rotation_epoch)
     st.session_state["_rotation_bar_tick"] = st.session_state.get("_rotation_bar_tick", 0) + 1
     _bar_variant = "a" if st.session_state["_rotation_bar_tick"] % 2 == 0 else "b"
+    # animation-duration set inline (longhand) alongside animation-delay
+    # so a page with a PAGE_DURATION_OVERRIDES entry (currently just
+    # "recovery") fills over its own real window instead of the CSS
+    # class's plain 300s — inline longhand wins over the shorthand's
+    # duration component without touching animation-name/timing-
+    # function/iteration-count, which still need to come from the class
+    # for the a/b restart trick above to work.
     st.markdown(
         f'<div class="rotation-timer-track">'
-        f'<div class="rotation-timer-fill-{_bar_variant}" style="animation-delay:-{_rotation_elapsed:.2f}s;"></div></div>',
+        f'<div class="rotation-timer-fill-{_bar_variant}" '
+        f'style="animation-delay:-{_rotation_elapsed:.2f}s; animation-duration:{_rotation_page_seconds:.0f}s;"></div></div>',
         unsafe_allow_html=True,
     )
 
@@ -743,6 +773,8 @@ with st.container(key="page_body"):
         _safe_render(pages_sports.render)
     elif page == "scores":
         _safe_render(pages_scores.render, _rotation_epoch)
+    elif page == "recovery":
+        _safe_render(pages_recovery.render)
     else:
         # Every other branch above has a fallback (a real page render,
         # or _safe_render's own error tile) — this is the one path with

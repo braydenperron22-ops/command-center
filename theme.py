@@ -989,6 +989,13 @@ html, body, [class*="css"] {
     background: #30D5C8;
     box-shadow: 0 0 8px 1px rgba(48,213,200,0.5);
 }
+/* Matches recovery_timer.html's own --accent so the beacon and the
+   embedded page agree on a color instead of introducing an unrelated
+   third one. Remove alongside pages_recovery.py once recovery's done. */
+.page-title-recovery::before {
+    background: #c9a876;
+    box-shadow: 0 0 8px 1px rgba(201,168,118,0.5);
+}
 
 /* Team + opponent logos (sports_client.py — MLB's static logo CDN and
    NHL's, both free, no key, keyed by team id/abbrev with no API call
@@ -1603,6 +1610,7 @@ html, body, [class*="css"] {
 .mobile-nav-item-radar { color: #FF375F !important; }
 .mobile-nav-item-sports { color: #5E5CE6 !important; }
 .mobile-nav-item-scores { color: #30D5C8 !important; }
+.mobile-nav-item-recovery { color: #c9a876 !important; }
 
 /* Phone breakpoint. Everything above this point is untouched at any
    width above it (including the kiosk monitor, always far wider) —
