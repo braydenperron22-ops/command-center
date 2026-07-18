@@ -52,14 +52,6 @@ MARKET_SIGNIFICANT_RELEASE = 0.7
 FLASH_RED = (255, 0, 0)
 FLASH_WHITE = (255, 255, 255)
 FLASH_BRIGHTNESS = 100
-# A calmer heads-up for rain that's still incoming, not yet a genuine
-# emergency (see severe_weather_active above for that tier) — a plain
-# steady tint rather than the same urgent flash, so an ordinary "rain's
-# coming" doesn't read with the same alarm as a real severe warning.
-# Fixed, not the normal day/night brightness envelope: at 2am that
-# envelope sits at MIN_DAY_BRIGHTNESS (practically off), which would
-# defeat the entire point of a wake-for-rain signal.
-RAIN_INCOMING_BRIGHTNESS = 50
 # A physical, ambient signal for real wildfire smoke — the room itself
 # tells you the air's bad without needing to look at the screen.
 # Deliberately not pulsing like the breaking-news flash: this is an
@@ -251,19 +243,15 @@ def sync_lights(
     now: datetime,
     sunset: datetime | None,
     aqi: float | None = None,
-    severe_weather_active: bool = False,
     category: str | None = None,
-    rain_incoming: bool = False,
 ) -> None:
     """Call once per rerun. Light follows the exact same sunset/sunrise
-    pattern as the plug — off at night, with two deliberate exceptions
-    (severe_weather_active and rain_incoming, see below); every other
-    override here (breaking news, smoke, sunrise/sunset tint) still
-    respects night/off, since the point of that window is an
-    uninterrupted rest period. During
-    the day it stays on and reactive: market color only for a genuinely
-    significant move (see MARKET_SIGNIFICANT_MOVE), otherwise mirroring
-    whatever condition is actually on screen (see
+    pattern as the plug — off at night, no exceptions. Every override
+    below (breaking news, smoke, sunrise/sunset tint) respects that
+    gate, since the point of night is an uninterrupted rest period.
+    During the day it stays on and reactive: market color only for a
+    genuinely significant move (see MARKET_SIGNIFICANT_MOVE), otherwise
+    mirroring whatever condition is actually on screen (see
     scenery.condition_light_color) — brightness ramping per the
     morning/evening curve above either way (1 up to 100, the evening
     side timed backward from real `sunset` so it lands on the floor
@@ -287,43 +275,12 @@ def sync_lights(
     instead (see _creep_brightness) except during a flash, which needs
     to be immediately attention-grabbing rather than easing into view.
 
-    severe_weather_active and rain_incoming are both resolved by the
-    caller (this module stays free of any direct EC/radar dependency,
-    same as it already takes aqi/market/breaking-news as plain values
-    rather than fetching them itself) and are the two things that
-    override night/off, checked in this order — every other override
-    here respects an uninterrupted night's sleep on purpose, but real
-    weather worth knowing about is the exception:
-
-    severe_weather_active (true for EC's own most dangerous hazard tier
-    — tornado, hurricane, tsunami, see weather_alerts_bar.current_severity
-    — OR a real ongoing stretch of our own radar-confirmed heavy
-    precipitation, see ec_radar.severe_weather_stint_active) gets the
-    full urgent treatment: bypasses the normal brightness ramp, snapping
-    to an alternating red/white pulse at full FLASH_BRIGHTNESS
-    immediately, same as the breaking-news flash, since a real emergency
-    shouldn't ease into visibility.
-
-    rain_incoming (ordinary, non-severe precipitation that's still on
-    its way in but hasn't arrived yet, see ec_radar.precip_status's
-    "approaching" state) gets a calmer heads-up instead — a plain steady
-    tint (scenery.condition_light_color("rain"), the same color the
-    screen's own sky already uses for rain) at a fixed, moderate
-    RAIN_INCOMING_BRIGHTNESS, not the alarming flash treatment, since
-    "you may want to know it's about to rain" isn't the same tier of
-    urgency as a genuine severe warning."""
+    Used to also wake for severe weather and incoming rain, bypassing
+    night/off — session feedback: waking the room for weather overnight
+    was the wrong call, full stop. The screen still does its own,
+    separate thing for weather overnight (see app.py's night_dim
+    override) — this module no longer reacts to weather at all."""
     if not st.secrets.get("GOVEE_API_KEY"):
-        return
-    if severe_weather_active:
-        if _apply_power(True):
-            color = FLASH_RED if int(time.time()) % 2 == 0 else FLASH_WHITE
-            _apply_color(color, min_gap=FLASH_CALL_GAP_SECONDS)
-            _apply_brightness_immediate(FLASH_BRIGHTNESS, min_gap=FLASH_CALL_GAP_SECONDS)
-        return
-    if rain_incoming:
-        if _apply_power(True):
-            _apply_color(scenery.condition_light_color("rain"))
-            _apply_brightness_immediate(RAIN_INCOMING_BRIGHTNESS)
         return
     if phase == "night":
         _apply_power(False)
