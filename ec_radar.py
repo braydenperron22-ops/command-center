@@ -17,6 +17,7 @@ server-side (to read pixels), so it goes through fetch_throttle and is
 cached to the radar's own real update cadence.
 """
 
+import base64
 import io
 import time
 from collections import deque
@@ -133,6 +134,58 @@ def radar_image_url(kind: str = "rain") -> str:
     )
 
 
+# Matches .weather-radar-frame's own CSS background (theme.py) — GIF
+# has no partial-alpha transparency (only a single fully-transparent
+# color index), unlike the PNG this app fetches directly, so each
+# frame is flattened against this exact color before encoding rather
+# than trying to preserve any transparency in the loop itself. The
+# static single-frame <img> already visually reads this same way (the
+# browser composites its own transparent PNG against this same tile
+# background), so the loop looks identical, just animated.
+_RADAR_TILE_BG = (0x0A, 0x14, 0x20, 255)
+RADAR_LOOP_FRAME_MS = 600  # per-frame duration; the last frame holds roughly 2x this so the "current" moment is easy to register before it loops
+
+
+def radar_loop_data_uri(kind: str = "rain") -> str | None:
+    """A short looping GIF built from the last FRAME_HISTORY_SIZE real
+    radar frames (oldest first, see _fetch_radar_bytes), as a data:
+    URI ready to drop straight into an <img src="...">. None until at
+    least 2 real frames have been captured (right after a fresh
+    deploy/restart there's only ever the current one yet) — the
+    static single-frame image is the correct fallback for that window,
+    not an error.
+
+    All frames share the exact same bbox (same WMS request shape every
+    time, just a different moment), so anything already positioned
+    against the image by percentage — the city markers, the tracking
+    line — stays correctly placed regardless of which frame the loop
+    happens to be showing; nothing else needs to change to support
+    this."""
+    layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
+    _fetch_radar_bytes(layer)  # ensures this rerun's frame is recorded before reading history
+    frames_raw = [raw for _, raw in _frame_history[kind]]
+    if len(frames_raw) < 2:
+        return None
+
+    try:
+        composited = []
+        for raw in frames_raw:
+            frame = Image.open(io.BytesIO(raw)).convert("RGBA")
+            bg = Image.new("RGBA", frame.size, _RADAR_TILE_BG)
+            composited.append(Image.alpha_composite(bg, frame).convert("RGB"))
+    except Exception:
+        return None
+
+    durations = [RADAR_LOOP_FRAME_MS] * (len(composited) - 1) + [RADAR_LOOP_FRAME_MS * 2]
+    buf = io.BytesIO()
+    composited[0].save(
+        buf, format="GIF", save_all=True, append_images=composited[1:],
+        duration=durations, loop=0, optimize=True,
+    )
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/gif;base64,{encoded}"
+
+
 def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     earth_radius_km = 6371
     p1, p2 = radians(lat1), radians(lat2)
@@ -197,13 +250,33 @@ def _fetch_radar_bytes_raw(layer: str, cache_bust: int) -> bytes:
     return resp.content
 
 
+# Last few real radar frames, oldest first, so a short loop can show
+# where the storm's actually been moving — not just a single static
+# snapshot (session request: "cache the last three pulls... play them
+# in order", later widened to 5: "use this to actually gauge storm
+# direction instead of guessing"). Each real fetch is REFRESH_SECONDS
+# (~6 min) apart, so 5 frames covers roughly the last 24-30 minutes of
+# real motion — the same raw frames storm_motion() below measures
+# actual bearing/speed from, not just what the loop animates. Keyed by
+# kind ("rain"/"snow", inherently bounded) the same way _history
+# already is.
+FRAME_HISTORY_SIZE = 5
+_frame_history: dict[str, list[tuple[int, bytes]]] = {"rain": [], "snow": []}
+
+
 def _fetch_radar_bytes(layer: str) -> bytes | None:
+    kind = "snow" if layer == SNOW_LAYER else "rain"
     cache_bust = int(time.time() // REFRESH_SECONDS)
     try:
         result = _fetch_radar_bytes_raw(layer, cache_bust)
     except Exception:
         return _last_good_bytes.get(layer)
     _last_good_bytes[layer] = result
+
+    history = _frame_history[kind]
+    if not history or history[-1][0] != cache_bust:
+        history.append((cache_bust, result))
+        del history[: -FRAME_HISTORY_SIZE]
     return result
 
 
@@ -341,6 +414,93 @@ def _max_mm_h_in_blob(img: Image.Image, alpha_mask: np.ndarray, cells: list[tupl
                     continue
                 max_mm_h = max(max_mm_h, _classify_mm_h(img.getpixel((px, py))[:3]))
     return max_mm_h
+
+
+def _blob_centroid(alpha_mask: np.ndarray, cells: list[tuple[int, int]], cx: int, cy: int) -> tuple[float, float]:
+    """Mean lat/lon over this blob's own occupied pixels — a far
+    steadier position to track across frames than the nearest edge
+    pixel (see _nearest_point_in_blob), which shifts around as a
+    storm's leading edge changes shape frame to frame even when its
+    bulk hasn't actually moved much. Used by storm_motion below, where
+    that steadiness is the whole point."""
+    xs, ys = [], []
+    for gy, gx in cells:
+        py0, px0 = gy * _CLUSTER_CELL_PX, gx * _CLUSTER_CELL_PX
+        for py in range(py0, min(py0 + _CLUSTER_CELL_PX, IMAGE_HEIGHT), _SAMPLE_STRIDE):
+            for px in range(px0, min(px0 + _CLUSTER_CELL_PX, IMAGE_WIDTH), _SAMPLE_STRIDE):
+                if alpha_mask[py, px]:
+                    xs.append(px)
+                    ys.append(py)
+    mean_px, mean_py = sum(xs) / len(xs), sum(ys) / len(ys)
+    lat = WEATHER_LAT - (mean_py - cy) * _DEG_PER_PX
+    lon = WEATHER_LON + (mean_px - cx) * _DEG_PER_PX
+    return lat, lon
+
+
+def _track_blob_for_motion(img: Image.Image) -> tuple[float, float] | None:
+    """This one frame's own centroid (see _blob_centroid) for whichever
+    blob is "the storm" to track for motion purposes — the largest
+    significant-sized blob if one exists (same MIN_SIGNIFICANT_CELLS
+    bar the badges use), else the largest blob of any real size. No
+    frame-to-frame object identity/correspondence is attempted (there's
+    no cell-tracking algorithm here, just this one heuristic) — for a
+    single dominant system near the location this tracks the same real
+    storm each frame; for genuinely scattered, unrelated showers it can
+    occasionally jump between them, same honest approximation this
+    whole module already is (see its own module docstring)."""
+    cx, cy = IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2
+    arr = np.array(img)
+    alpha_mask = arr[:, :, 3] > ALPHA_THRESHOLD
+    real_blobs = [b for b in _cluster_blobs(alpha_mask) if len(b) >= MIN_REAL_CELLS]
+    if not real_blobs:
+        return None
+    significant = [b for b in real_blobs if len(b) >= MIN_SIGNIFICANT_CELLS]
+    largest = max(significant or real_blobs, key=len)
+    return _blob_centroid(alpha_mask, largest, cx, cy)
+
+
+def storm_motion(kind: str) -> dict | None:
+    """{"bearing_deg", "speed_kmh", "sample_count"} measured directly
+    from the real cached radar frames (see _frame_history,
+    FRAME_HISTORY_SIZE) — the dominant tracked blob's own centroid in
+    the oldest cached frame vs. the newest, which is a genuine measured
+    displacement over real elapsed time rather than a guess. Session
+    request: "use this [the cached frames] to actually gauge storm
+    direction instead of guessing."
+
+    None if fewer than 2 cached frames have a trackable blob at all
+    (early in a fresh deploy/restart, or right after switching kind,
+    before enough real pulls have accumulated), the two usable samples
+    are less than MIN_TREND_GAP_MINUTES apart (guards the same "not
+    actually a new sample" case _record_and_trend already guards
+    against), or the measured displacement is under
+    STATIONARY_THRESHOLD_KM (not moving meaningfully enough to trust a
+    bearing from it)."""
+    points = []
+    for cache_bust, raw in _frame_history[kind]:
+        try:
+            img = Image.open(io.BytesIO(raw)).convert("RGBA")
+        except Exception:
+            continue
+        centroid = _track_blob_for_motion(img)
+        if centroid is not None:
+            points.append((cache_bust, centroid[0], centroid[1]))
+    if len(points) < 2:
+        return None
+
+    old_bust, old_lat, old_lon = points[0]
+    new_bust, new_lat, new_lon = points[-1]
+    gap_minutes = (new_bust - old_bust) * REFRESH_SECONDS / 60
+    if gap_minutes < MIN_TREND_GAP_MINUTES:
+        return None
+    moved_km = _distance_km(old_lat, old_lon, new_lat, new_lon)
+    if moved_km < STATIONARY_THRESHOLD_KM:
+        return None
+    return {
+        "bearing_deg": _bearing_deg(old_lat, old_lon, new_lat, new_lon),
+        "speed_kmh": moved_km / (gap_minutes / 60),
+        "sample_count": len(points),
+    }
 
 
 def _scan_nearby(img: Image.Image) -> dict:
@@ -492,41 +652,54 @@ def _closest_approach_km(
 
 
 def _heading_toward_me(kind: str, now: datetime, position: tuple[float, float] | None) -> dict | None:
-    """{"eta_minutes", "direction", "direction_word"} once at least two
-    real position samples (spaced MIN_TREND_GAP_MINUTES apart, same
-    convention as _record_and_trend) show this blob's own direction of
-    travel would bring it within DIRECT_HIT_RADIUS_KM of
-    WEATHER_LAT/WEATHER_LON if it keeps moving the way it has been —
-    None otherwise (not enough samples yet, not moving meaningfully, or
-    genuinely headed somewhere else). eta_minutes is how long until it
-    reaches the closest point on that path to here, at its currently
-    tracked speed — not necessarily a literal overhead pass, just
-    within DIRECT_HIT_RADIUS_KM of it. Called once per real radar
-    refresh from _decode_and_scan, same "one point per real sample"
-    discipline as _record_and_trend."""
+    """{"eta_minutes", "direction", "direction_word"} once a real
+    measured bearing of travel (see storm_motion, preferred) — or, in
+    its cold-start window, the older per-rerun position-history proxy
+    below — shows this blob's own direction of travel would bring it
+    within DIRECT_HIT_RADIUS_KM of WEATHER_LAT/WEATHER_LON if it keeps
+    moving the way it has been. None otherwise (not enough samples yet,
+    not moving meaningfully, or genuinely headed somewhere else).
+    eta_minutes is how long until it reaches the closest point on that
+    path to here, at its currently tracked speed — not necessarily a
+    literal overhead pass, just within DIRECT_HIT_RADIUS_KM of it.
+
+    position is this frame's current closest-approach point (from
+    _scan_nearby's "nearest_any") — used as the storm's current
+    location for the along-track/ETA math and for the "direction"
+    compass label (bearing FROM here TO the storm), which is a
+    different question from bearing_deg_ below (the storm's OWN
+    direction of travel)."""
     history = _any_history[kind]
     if position is not None:
         history.append((now, position[0], position[1]))
     cutoff = now.timestamp() - HISTORY_WINDOW_MINUTES * 60
     history[:] = [(t, lat, lon) for t, lat, lon in history if t.timestamp() >= cutoff]
 
-    if len(history) < 2:
-        return None
-    old_t, old_lat, old_lon = history[0]
-    new_t, new_lat, new_lon = history[-1]
-    gap_minutes = (new_t - old_t).total_seconds() / 60
-    if gap_minutes < MIN_TREND_GAP_MINUTES:
+    if position is None:
         return None
 
-    moved_km = _distance_km(old_lat, old_lon, new_lat, new_lon)
-    if moved_km < STATIONARY_THRESHOLD_KM:
-        return None  # not moving meaningfully enough to trust a bearing from it
-    bearing_deg_ = _bearing_deg(old_lat, old_lon, new_lat, new_lon)
+    motion = storm_motion(kind)
+    if motion is not None:
+        bearing_deg_, speed_kmh = motion["bearing_deg"], motion["speed_kmh"]
+    else:
+        if len(history) < 2:
+            return None
+        old_t, old_lat, old_lon = history[0]
+        new_t, new_lat, new_lon = history[-1]
+        gap_minutes = (new_t - old_t).total_seconds() / 60
+        if gap_minutes < MIN_TREND_GAP_MINUTES:
+            return None
+        moved_km = _distance_km(old_lat, old_lon, new_lat, new_lon)
+        if moved_km < STATIONARY_THRESHOLD_KM:
+            return None  # not moving meaningfully enough to trust a bearing from it
+        bearing_deg_ = _bearing_deg(old_lat, old_lon, new_lat, new_lon)
+        speed_kmh = moved_km / (gap_minutes / 60)
+
+    new_lat, new_lon = position
     approach = _closest_approach_km(new_lat, new_lon, bearing_deg_, WEATHER_LAT, WEATHER_LON)
     if approach is None or approach > DIRECT_HIT_RADIUS_KM:
         return None
 
-    speed_kmh = moved_km / (gap_minutes / 60)
     rel_east = (WEATHER_LON - new_lon) * 111.0 * cos(radians(new_lat))
     rel_north = (WEATHER_LAT - new_lat) * 111.0
     along_track_km = rel_east * sin(radians(bearing_deg_)) + rel_north * cos(radians(bearing_deg_))

@@ -110,12 +110,20 @@ def render() -> None:
     overlay_html = _tracking_overlay_html(ec_radar.tracking_overlay(kind))
     city_markers_html = _city_markers_html(ec_radar.nearby_city_markers())
 
+    # A short looping GIF of the last few real radar pulls once enough
+    # have been captured (session request: cache and play the last
+    # three so storm motion is actually visible, not just a single
+    # snapshot) — falls back to the plain static frame right after a
+    # fresh deploy/restart, before 2+ real frames exist yet to loop.
+    loop_uri = ec_radar.radar_loop_data_uri(kind)
+    image_src = loop_uri if loop_uri is not None else ec_radar.radar_image_url(kind)
+
     st.markdown(
         f"""<div class="tile weather-radar-tile weather-radar-tile-large">
             <div class="tile-label compact">LIVE RADAR · {kind.upper()} · CORBEIL</div>
             <div class="badge {badge_class}">{summary}</div>
             <div class="weather-radar-frame weather-radar-frame-large">
-                <img class="weather-radar-image" src="{ec_radar.radar_image_url(kind)}" />
+                <img class="weather-radar-image" src="{image_src}" />
                 {city_markers_html}
                 <div class="weather-radar-marker"></div>
                 {overlay_html}</div>
