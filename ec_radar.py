@@ -857,6 +857,26 @@ def project_rain_arrival(kind: str, img: Image.Image) -> dict | None:
     px, py = _latlon_to_pixel(lat, lon)
     mm_h = _classify_mm_h(img.getpixel((px, py))[:3]) if 0 <= px < IMAGE_WIDTH and 0 <= py < IMAGE_HEIGHT else 0.0
 
+    # first_hit_minutes above counts forward from THIS FRAME's own real
+    # valid moment (see _fetch_time_dimension), not from right now — EC
+    # only refreshes its composite every REFRESH_SECONDS, so the
+    # "latest" frame is already anywhere from 0 to ~6+ real minutes old
+    # by the time it's actually the one being looked at (confirmed
+    # live: measured 2.6 minutes stale at one check, 7.5 at another).
+    # Silently treating "minutes from when this frame was taken" as
+    # "minutes from now" was a real bug — confirmed live as a genuine
+    # contributor to a reported ETA reading ~15 minutes later than
+    # Apple Weather's own nowcast for the same storm. distance_km/lat/
+    # lon/mm_h above are correctly left alone (they describe the
+    # frame's own geometry, not a time-from-now), but eta_minutes needs
+    # this correction to actually mean "from now."
+    layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
+    dims = _fetch_time_dimension(layer)
+    staleness_minutes = 0.0
+    if dims is not None:
+        staleness_minutes = max(0.0, (datetime.utcnow() - dims[0]).total_seconds() / 60)
+    eta_minutes = max(0, round(first_hit_minutes - staleness_minutes))
+
     # distance_km/direction describe the SAME specific patch of
     # precipitation eta_minutes was computed from — deliberately NOT
     # "whichever blob happens to be nearest right now" (see
@@ -868,7 +888,7 @@ def project_rain_arrival(kind: str, img: Image.Image) -> dict | None:
     # sense — because the 8km cell and the actual incoming echo along
     # the storm's real motion line weren't the same thing at all.
     return {
-        "eta_minutes": first_hit_minutes,
+        "eta_minutes": eta_minutes,
         "duration_minutes": duration_minutes,
         "mm_h": mm_h,
         "distance_km": distance_km,
