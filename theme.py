@@ -53,8 +53,10 @@ html, body, [class*="css"] {
     line-height: 1.5;
     color: #E5E5EA;
     background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 12px;
+    border-radius: 16px;
     padding: 0.9rem 1.4rem;
     margin-bottom: 0.8rem;
 }
@@ -108,19 +110,23 @@ html, body, [class*="css"] {
    beneath them, which was backwards given they're time-sensitive
    conditions worth noticing. Color/background are set inline per
    render now (UV scales orange->vibrant red with magnitude, rain
-   scales pale->deep blue with proximity), not fixed here. */
+   scales pale->deep blue with proximity), not fixed here.
+
+   Softened from a 2px solid outline + wide glow (read as a neon sign
+   sitting on top of an already-filled chip — each render already sets
+   its own tinted `background` inline) to a plain filled pill with a
+   faint hairline and a tight, low, mostly-for-depth shadow instead of
+   a color-matched glow — the vibrant fill/text color alone is what
+   should read as "this needs attention" from across the room, the
+   way Apple's own tinted status chips (Health, Fitness, Weather) work,
+   not an outline effect layered on top of it. */
 .weather-extra {
     font-size: 1.8rem;
     font-weight: 800;
-    padding: 0.45rem 1.1rem;
-    border-radius: 14px;
-    border: 2px solid currentColor;
-    /* currentColor picks up whatever color each badge already sets
-       inline (app.py's per-badge _lerp_hex result) — one rule gets a
-       glow that automatically matches rain/UV/AQI's own hue, rather
-       than needing a separate shadow color computed and passed in
-       alongside each badge's border/background. */
-    box-shadow: 0 0 16px -2px currentColor;
+    padding: 0.5rem 1.2rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.28);
 }
 
 .weather-icon svg {
@@ -210,11 +216,27 @@ html, body, [class*="css"] {
    a set of ad hoc boxes. The shadow is static (a fixed value, not a
    keyframe) since this app reruns its whole script every second for the
    clock tick and an animated shadow here would fight that the same way
-   the old background elements did — depth without motion. */
+   the old background elements did — depth without motion.
+
+   backdrop-filter (real frosted-glass blur + saturation boost of
+   whatever's actually behind the card — scenery.py's own time-of-day
+   sky gradient) is the one genuinely defining trait of Apple's own
+   translucent materials (Control Center, widgets, sheets) that
+   nothing here had at all before; a flat semi-transparent color reads
+   as "dark and see-through" but not as glass. Backed off the fill's
+   own opacity (0.86 -> 0.72) specifically so there's real background
+   left for the blur to actually show — at 0.86 it was nearly opaque
+   already and a blur behind it would have been invisible. */
 .tile, .market-pill, .news-feed-list, .score-card {
-    background: rgba(12,12,16,0.86);
+    background: rgba(12,12,16,0.72);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
     border: 1px solid rgba(255,255,255,0.09);
-    border-radius: 16px;
+    /* Bumped from 16px — a slightly more generous, contemporary
+       "squircle" curve reads closer to current Apple card surfaces
+       (widgets, Health/Fitness cards) than the tighter, more
+       rectangular radius this started at. */
+    border-radius: 20px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
 }
 
@@ -579,7 +601,7 @@ html, body, [class*="css"] {
     gap: 0.9rem;
     padding: 0.7rem 1.5rem;
     margin-bottom: 0.9rem;
-    border-radius: 12px;
+    border-radius: 16px;
     background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
     box-shadow: 0 2px 16px rgba(179,20,20,0.3);
 }
@@ -617,8 +639,10 @@ html, body, [class*="css"] {
     gap: 0.9rem;
     padding: 0.5rem 1.3rem;
     margin-bottom: 0.5rem;
-    border-radius: 12px;
+    border-radius: 16px;
     background: rgba(255,159,10,0.16);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
     border: 1px solid rgba(255,159,10,0.4);
 }
 .weather-statement-dot {
@@ -737,8 +761,10 @@ html, body, [class*="css"] {
     gap: 0.9rem;
     padding: 0.7rem 1.5rem;
     margin-bottom: 0.9rem;
-    border-radius: 12px;
+    border-radius: 16px;
     background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
     border: 1px solid rgba(255,255,255,0.12);
 }
 .regime-dot {
