@@ -1236,52 +1236,12 @@ html, body, [class*="css"] {
     box-shadow: 0 0 8px 2px rgba(100,210,255,0.7);
 }
 
-/* Live tracking line + marker for the nearest detected echo (see
-   pages_radar._tracking_overlay_html / ec_radar.tracking_overlay) —
-   drawn straight from the threat to the fixed location marker above,
-   turning the map into an actual visual tracker instead of a picture
-   with a separate text badge underneath it. */
-.weather-radar-track {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-}
-.weather-radar-track-line {
-    stroke-width: 0.6;
-    fill: none;
-}
-.weather-radar-track-line-idle {
-    stroke: rgba(255,255,255,0.45);
-    stroke-dasharray: 2,1.5;
-}
-.weather-radar-track-line-approaching {
-    stroke: #FF453A;
-    stroke-dasharray: 2,1.5;
-    animation: weather-radar-track-flow 1s linear infinite;
-}
-/* Dashes visibly crawl along the line toward the location marker —
-   a static dashed line reads as "connected," a flowing one reads as
-   "moving toward you," which is the actual point being shown. */
-@keyframes weather-radar-track-flow {
-    to { stroke-dashoffset: -3.5; }
-}
-.weather-radar-storm-marker {
-    position: absolute;
-    width: 8px;
-    height: 8px;
-    margin: -4px 0 0 -4px;
-    border-radius: 50%;
-}
-.weather-radar-storm-marker-idle {
-    background: rgba(255,255,255,0.7);
-    box-shadow: 0 0 6px 1px rgba(255,255,255,0.4);
-}
-.weather-radar-storm-marker-approaching {
-    background: #FF453A;
-    box-shadow: 0 0 8px 2px rgba(255,69,58,0.75);
-}
+/* Label for the nearest detected echo, at its own position on the map
+   (see pages_radar._tracking_overlay_html / ec_radar.tracking_overlay)
+   — used to also draw a glowing dot marker and a connecting line to
+   the fixed location marker above; both were removed on session
+   feedback that they implied more geometric precision than the
+   underlying radar data can really promise. */
 .weather-radar-storm-label {
     position: absolute;
     transform: translate(10px, -50%);

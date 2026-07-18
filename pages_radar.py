@@ -45,26 +45,21 @@ def _city_markers_html(cities: list[dict]) -> str:
 
 
 def _tracking_overlay_html(overlay: dict | None) -> str:
-    """A line drawn straight from the tracked echo to the user's own
-    marker, plus a label at the echo's position — turns the map from
-    "here's a picture, and separately here's a text badge" into an
-    actual visual tracker. Percentage-based (0-100), same coordinate
-    space the fixed location marker already uses, so it scales
-    correctly with the frame regardless of its rendered size. Dashed
-    and animated while there's an active approaching/arrived event (see
-    ec_radar.tracking_overlay) — a cell that's merely nearby but not
-    closing in gets a plain static line, not the same urgency treatment."""
+    """A plain text label at the tracked echo's own position, showing
+    where on the map it actually is. Percentage-based (0-100), same
+    coordinate space the fixed location marker already uses, so it
+    scales correctly with the frame regardless of its rendered size.
+    Used to also draw a glowing dot marker plus a connecting line
+    straight to the user's own marker — session feedback: both read as
+    implying more geometric precision than the underlying radar data
+    can really promise, misleading even once the tracking logic itself
+    was accurate — so this is now just the label on its own."""
     if overlay is None:
         return ""
     x, y = overlay["x_pct"], overlay["y_pct"]
-    modifier = "approaching" if overlay["active"] else "idle"
     minutes_text = f" · {_format_minutes(overlay['minutes'])}" if overlay["minutes"] is not None else ""
     label_text = f"{overlay['distance_km']:.0f} km {overlay['direction']}{minutes_text}"
-    return f"""<svg class="weather-radar-track" viewBox="0 0 100 100" preserveAspectRatio="none">
-            <line x1="{x:.1f}" y1="{y:.1f}" x2="50" y2="50" class="weather-radar-track-line weather-radar-track-line-{modifier}" />
-        </svg>
-        <div class="weather-radar-storm-marker weather-radar-storm-marker-{modifier}" style="left:{x:.1f}%; top:{y:.1f}%;"></div>
-        <div class="weather-radar-storm-label" style="left:{x:.1f}%; top:{y:.1f}%;">{label_text}</div>"""
+    return f'<div class="weather-radar-storm-label" style="left:{x:.1f}%; top:{y:.1f}%;">{label_text}</div>'
 
 
 def render() -> None:
