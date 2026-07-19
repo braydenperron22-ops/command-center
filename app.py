@@ -650,46 +650,37 @@ if weather:
             f'background:{wildfire_bg}; border-color:{wildfire_color};">'
             f'Wildfire · {wildfire["distance_km"]:.0f} km</span>'
         )
+    EVENING_BADGE_HOUR = 18  # 6pm — see the garbage/payday badges just below
+
     # Garbage/recycling day — used to be its own always-visible tile on
-    # the Household page; moved here and gated to "today or tomorrow"
-    # (see waste_schedule.next_pickup) so it reads like every other hero
-    # badge, something worth a glance right now, not a permanent daily
-    # fixture. Tomorrow is included, not just today, since bins actually
-    # go out the night before pickup — a same-day-only badge would miss
-    # the one moment this is most actionable.
+    # the Household page; moved here and gated to "today, or tomorrow
+    # once it's evening" (see waste_schedule.next_pickup) so it reads
+    # like every other hero badge, something worth a glance right now,
+    # not a permanent daily fixture. "Tomorrow" only starts showing at
+    # EVENING_BADGE_HOUR — session feedback: seeing "Garbage tomorrow"
+    # at 10am is a full day early and just noise, but by evening it's
+    # the actionable "bins go out tonight" moment. "Today" still shows
+    # any time, since that one's always immediately actionable.
     pickup = waste_schedule.next_pickup(now.date())
-    if pickup["days_until"] <= 1:
+    if pickup["days_until"] == 0 or (pickup["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR):
         when = "today" if pickup["days_until"] == 0 else "tomorrow"
         extras.append(
             f'<span class="weather-extra" style="color:#A2845E; '
             f'background:{_badge_bg("#A2845E", 0.22)}; border-color:#A2845E;">'
             f'{pickup["kind"]} {when}</span>'
         )
-    # Payday — same spot and same "today or tomorrow" gating as the
+    # Payday — same spot and same today/evening-tomorrow gating as the
     # garbage badge right above, not a permanent fixture. Green (the
     # app's existing "good" tone, matching market-up/badge-good) rather
     # than a color already claimed by another badge.
     payday = payday_schedule.next_payday(now.date())
-    if payday["days_until"] <= 1:
+    if payday["days_until"] == 0 or (payday["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR):
         payday_when = "today" if payday["days_until"] == 0 else "tomorrow"
         extras.append(
             f'<span class="weather-extra" style="color:#32D74B; '
             f'background:{_badge_bg("#32D74B", 0.22)}; border-color:#32D74B;">'
             f'Payday {payday_when}</span>'
         )
-    # Recovery status — same pill styling/row as everything else above
-    # rather than a separate standalone element, at the user's request
-    # ("fully in line with the other pills"). Computed fresh here since
-    # this whole block only runs `if weather:` — see pages_recovery for
-    # why that's an acceptable tradeoff now that this is the only
-    # recovery UI left (no more dedicated rotation page).
-    try:
-        _recovery_badge = pages_recovery.status_badge_html(now)
-    except Exception:
-        _recovery_badge = None
-    if _recovery_badge:
-        extras.append(_recovery_badge)
-
     extras_html = f'<div class="weather-extras">{"".join(extras)}</div>' if extras else ""
 
     weather_block = f"""<div class="hero-weather">
@@ -715,6 +706,22 @@ st.markdown(
     </div>""",
     unsafe_allow_html=True,
 )
+
+# Page-independent (see pages_recovery.status_badge_html) — deliberately
+# NOT folded into the `extras` list above: that whole list only ever
+# renders `if weather:`, and a real live incident (Open-Meteo failing
+# to respond to this app's host for 20+ minutes straight) confirmed
+# live that coupling the two meant recovery status vanished right along
+# with weather for that entire stretch, at the exact moment reliability
+# matters most. Still wrapped in the same .weather-extras row styling
+# so it lines up with the other pills whenever weather IS showing, but
+# rendered unconditionally so it survives weather being down.
+try:
+    _recovery_badge = pages_recovery.status_badge_html(now)
+except Exception:
+    _recovery_badge = None
+if _recovery_badge:
+    st.markdown(f'<div class="weather-extras">{_recovery_badge}</div>', unsafe_allow_html=True)
 
 # Page-independent, same reasoning as the leave headline above — the
 # morning routine doesn't wait for whichever of the 10 rotating pages

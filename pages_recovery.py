@@ -1,10 +1,16 @@
 """Temporary: wisdom teeth recovery status. Used to be its own rotating
 page (a full HTML/CSS/JS timer embedded via components.html) plus this
 badge; the dedicated page was dropped in favor of just this badge shown
-on every page at all times (session request: "less invasive," and
-"fully in line with the other pills" — see its call site in app.py,
-folded into the same `extras` list as AQI/Wildfire/Payday rather than a
-separate element).
+on every page at all times (session request: "less invasive").
+
+Rendered page-independently in app.py, deliberately NOT folded into the
+same weather-gated `extras` list as AQI/Wildfire/Payday (it briefly was,
+at the user's request to visually match the other pills) — a real
+Open-Meteo outage confirmed live that coupling the two meant recovery
+status disappeared right along with weather for 20+ minutes, exactly
+when reliability matters most. Still styled with the same
+`.weather-extras`/`.weather-extra` classes so it lines up with the
+other pills whenever weather IS showing.
 
 Once recovery's done, delete this file and the `status_badge_html` call
 in app.py.
