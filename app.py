@@ -689,6 +689,25 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# Page-independent (see pages_recovery.status_badge_html) — session
+# request: recovery status needs to be visible no matter which of the
+# rotating pages is up, not just during its own 10-minute slot.
+# Deliberately its own try/except outside the `if weather:` block above
+# rather than folded into that block's own `extras` list — weather_block
+# only gets built when the live weather fetch actually succeeds (see the
+# fallback discussion around _last_good_weather), and this badge has
+# nothing to do with weather, so it shouldn't disappear just because
+# that fetch had a bad rerun.
+try:
+    _recovery_badge = pages_recovery.status_badge_html(now)
+except Exception:
+    _recovery_badge = None
+if _recovery_badge:
+    st.markdown(
+        f'<div style="text-align:center; margin-top:-0.4rem; margin-bottom:0.8rem;">{_recovery_badge}</div>',
+        unsafe_allow_html=True,
+    )
+
 # Page-independent, same reasoning as the leave headline above — the
 # morning routine doesn't wait for whichever of the 10 rotating pages
 # happens to be up. Below the hero row rather than competing with the
