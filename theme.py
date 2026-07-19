@@ -100,7 +100,9 @@ html, body, [class*="css"] {
 
 .weather-extras {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
+    align-items: flex-start;
     gap: 0.8rem;
     margin-top: 0.6rem;
 }
@@ -127,6 +129,18 @@ html, body, [class*="css"] {
     border-radius: 999px;
     border: 1px solid rgba(255,255,255,0.1);
     box-shadow: 0 4px 14px rgba(0,0,0,0.28);
+    /* A pill's own text should never wrap internally — on a morning
+       with several badges active at once (record low + AQI + garbage
+       + the always-on recovery badge, a real combination confirmed
+       live, not hypothetical), the row used to run out of width and
+       each flex item would shrink and wrap its own text to 2 lines
+       instead. That made every pill's height match whichever one
+       wrapped, tallest first — including single-line ones like "AQI 2"
+       — so a still-round 999px radius made them balloon into ugly
+       oversized blobs instead of the slim pills they're meant to be.
+       Pairs with .weather-extras' flex-wrap: wrap below, which now
+       lets the whole ROW wrap onto a second line instead. */
+    white-space: nowrap;
 }
 
 .weather-icon svg {
