@@ -1,35 +1,23 @@
-"""Temporary page: wisdom teeth recovery timer. Self-contained HTML/CSS/JS
-(see recovery_timer.html) rendered via components.html rather than
-st.markdown — it runs its own setInterval clock tick every second, which
-needs a real isolated document rather than sharing the dashboard's DOM
-(this app's own 5s autorefresh would otherwise tear it down and reset
-the interval constantly).
+"""Temporary: wisdom teeth recovery status. Used to be its own rotating
+page (a full HTML/CSS/JS timer embedded via components.html) plus this
+badge; the dedicated page was dropped in favor of just this badge shown
+on every page at all times (session request: "less invasive," and
+"fully in line with the other pills" — see its call site in app.py,
+folded into the same `extras` list as AQI/Wildfire/Payday rather than a
+separate element).
 
-Added at the user's request while actually recovering — stays in the
-rotation (see PAGES/PAGE_DURATION_OVERRIDES in config.py) until they ask
-for it to come back out, at which point delete this file, recovery_timer.html,
-and the "recovery" entries in config.py/app.py/theme.py.
+Once recovery's done, delete this file and the `status_badge_html` call
+in app.py.
 """
 
 from datetime import datetime
-from pathlib import Path
 
-import streamlit as st
-import streamlit.components.v1 as components
-
-_HTML_PATH = Path(__file__).with_name("recovery_timer.html")
-
-# Must match recovery_timer.html's own `start` — that file is the single
-# source of truth for the full day-by-day detail (pain/swelling levels,
-# diet, "what to expect," the surgeon watch-list); this is only enough
-# duplicated here to label the always-visible badge below, since a
-# global badge (see app.py's page-independent hero row) can't reach
-# into that file's own embedded JS.
+# (hours since start, short stage title) — a condensed version of a
+# fuller day-by-day recovery schedule (pain/swelling levels, diet,
+# "what to expect," a surgeon watch-list), trimmed down to just enough
+# to label this badge once the fuller page-based view was dropped.
 _START = datetime(2026, 7, 17, 12, 0, 0)
 
-# (hours since start, short stage title) — mirrors recovery_timer.html's
-# own `stages` array (title field only). Keep in sync if that file's
-# schedule ever changes.
 _STAGE_TITLES = [
     (0, "Anesthesia Wearing Off"),
     (3, "Feeling Returning"),
@@ -49,15 +37,10 @@ _STAGE_TITLES = [
 ]
 
 
-def render() -> None:
-    st.markdown('<div class="page-title page-title-recovery">Recovery</div>', unsafe_allow_html=True)
-    components.html(_HTML_PATH.read_text(), height=980, scrolling=False)
-
-
 def _current_stage_title(hours_elapsed: float) -> str:
     title = _STAGE_TITLES[0][1]
     for hours, stage_title in _STAGE_TITLES:
-        if hours_elapsed > hours or hours_elapsed == hours:
+        if hours_elapsed >= hours:
             title = stage_title
         else:
             break
@@ -65,14 +48,9 @@ def _current_stage_title(hours_elapsed: float) -> str:
 
 
 def status_badge_html(now: datetime) -> str | None:
-    """A small pill for app.py's page-independent hero row (same
-    always-visible spot as the AQI/Wildfire/Payday badges) — the full
-    render() page above only shows during its own rotation slot, but
-    the whole point of a recovery tracker is glancing at it no matter
-    which page happens to be up, so this is a second, minute-precision
-    view of the same schedule that doesn't need its own live-ticking
-    iframe. None before surgery's start time (nothing to show yet).
-    """
+    """A `.weather-extra`-styled pill for app.py's hero-row `extras` list
+    (same row as AQI/Wildfire/Payday). None before surgery's start time
+    (nothing to show yet)."""
     hours_elapsed = (now - _START).total_seconds() / 3600
     if hours_elapsed < 0:
         return None

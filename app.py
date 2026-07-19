@@ -76,12 +76,12 @@ FRED_API_KEY = st.secrets.get("FRED_API_KEY")
 def _scheduled_page(epoch_seconds: float) -> tuple[str, float, float]:
     """Which page is up right now, plus how far into its own window
     (seconds) and how long that window is. Most pages share the uniform
-    PAGE_ROTATION_SECONDS, but PAGE_DURATION_OVERRIDES (config.py) can
-    give a specific page more than one slot's worth of time — currently
-    just "recovery" — without disturbing the plain modulo math the
-    uniform pages still rely on elsewhere (pages_home's own US/Canada
-    rotation, pages_scores' league rotation) since those aren't derived
-    from this cumulative schedule at all.
+    PAGE_ROTATION_SECONDS, but PAGE_DURATION_OVERRIDES (config.py, empty
+    by default) can give a specific page more than one slot's worth of
+    time without disturbing the plain modulo math the uniform pages
+    still rely on elsewhere (pages_home's own US/Canada rotation,
+    pages_scores' league rotation) since those aren't derived from this
+    cumulative schedule at all.
     """
     durations = [PAGE_DURATION_OVERRIDES.get(p, PAGE_ROTATION_SECONDS) for p in PAGES]
     position = epoch_seconds % sum(durations)
@@ -107,7 +107,6 @@ _PAGE_LABELS = {
     "home": "Home", "conflicts": "Conflicts", "news": "News", "markets": "Markets",
     "internals": "Internals", "today": "Today", "household": "Household",
     "weather": "Weather", "radar": "Radar", "sports": "Sports", "scores": "Scores",
-    "recovery": "Recovery",
 }
 
 # Invisible on the kiosk monitor — theme.py hides .mobile-nav entirely
@@ -156,12 +155,12 @@ if _requested_page not in PAGES:
     st.session_state["_rotation_bar_tick"] = st.session_state.get("_rotation_bar_tick", 0) + 1
     _bar_variant = "a" if st.session_state["_rotation_bar_tick"] % 2 == 0 else "b"
     # animation-duration set inline (longhand) alongside animation-delay
-    # so a page with a PAGE_DURATION_OVERRIDES entry (currently just
-    # "recovery") fills over its own real window instead of the CSS
-    # class's plain 300s — inline longhand wins over the shorthand's
-    # duration component without touching animation-name/timing-
-    # function/iteration-count, which still need to come from the class
-    # for the a/b restart trick above to work.
+    # so a page with a PAGE_DURATION_OVERRIDES entry fills over its own
+    # real window instead of the CSS class's plain 300s — inline
+    # longhand wins over the shorthand's duration component without
+    # touching animation-name/timing-function/iteration-count, which
+    # still need to come from the class for the a/b restart trick above
+    # to work.
     st.markdown(
         f'<div class="rotation-timer-track">'
         f'<div class="rotation-timer-fill-{_bar_variant}" '
@@ -663,6 +662,19 @@ if weather:
             f'background:rgba(50,215,75,0.22); border-color:#32D74B;">'
             f'Payday {payday_when}</span>'
         )
+    # Recovery status — same pill styling/row as everything else above
+    # rather than a separate standalone element, at the user's request
+    # ("fully in line with the other pills"). Computed fresh here since
+    # this whole block only runs `if weather:` — see pages_recovery for
+    # why that's an acceptable tradeoff now that this is the only
+    # recovery UI left (no more dedicated rotation page).
+    try:
+        _recovery_badge = pages_recovery.status_badge_html(now)
+    except Exception:
+        _recovery_badge = None
+    if _recovery_badge:
+        extras.append(_recovery_badge)
+
     extras_html = f'<div class="weather-extras">{"".join(extras)}</div>' if extras else ""
 
     weather_block = f"""<div class="hero-weather">
@@ -688,25 +700,6 @@ st.markdown(
     </div>""",
     unsafe_allow_html=True,
 )
-
-# Page-independent (see pages_recovery.status_badge_html) — session
-# request: recovery status needs to be visible no matter which of the
-# rotating pages is up, not just during its own 10-minute slot.
-# Deliberately its own try/except outside the `if weather:` block above
-# rather than folded into that block's own `extras` list — weather_block
-# only gets built when the live weather fetch actually succeeds (see the
-# fallback discussion around _last_good_weather), and this badge has
-# nothing to do with weather, so it shouldn't disappear just because
-# that fetch had a bad rerun.
-try:
-    _recovery_badge = pages_recovery.status_badge_html(now)
-except Exception:
-    _recovery_badge = None
-if _recovery_badge:
-    st.markdown(
-        f'<div style="text-align:center; margin-top:-0.4rem; margin-bottom:0.8rem;">{_recovery_badge}</div>',
-        unsafe_allow_html=True,
-    )
 
 # Page-independent, same reasoning as the leave headline above — the
 # morning routine doesn't wait for whichever of the 10 rotating pages
@@ -792,8 +785,6 @@ with st.container(key="page_body"):
         _safe_render(pages_sports.render)
     elif page == "scores":
         _safe_render(pages_scores.render, _rotation_epoch)
-    elif page == "recovery":
-        _safe_render(pages_recovery.render)
     else:
         # Every other branch above has a fallback (a real page render,
         # or _safe_render's own error tile) — this is the one path with
