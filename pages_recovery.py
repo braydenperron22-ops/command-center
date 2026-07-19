@@ -59,8 +59,16 @@ def status_badge_html(now: datetime) -> str | None:
     if minutes == 60:
         hours, minutes = hours + 1, 0
     title = _current_stage_title(hours_elapsed)
+    # Tint layered over the app's own frosted-panel color (not the bare
+    # tint alone) — same fix as app.py's _badge_bg, applied here too
+    # since text/background sharing a hue at low alpha could wash out
+    # against a light scenery moment. Duplicated rather than imported
+    # since app.py already imports this module (importing back would be
+    # circular).
+    tint = "rgba(201,168,118,0.22)"
+    badge_bg = f"linear-gradient({tint}, {tint}), rgba(12,12,16,0.72)"
     return (
         f'<span class="weather-extra" style="color:#c9a876; '
-        f'background:rgba(201,168,118,0.22); border-color:#c9a876;">'
+        f'background:{badge_bg}; border-color:#c9a876;">'
         f"{hours}h {minutes:02d}m · {title}</span>"
     )

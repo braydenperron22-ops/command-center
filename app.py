@@ -422,9 +422,24 @@ def _format_countdown(remaining_seconds: float) -> str:
     return f"{minutes} min"
 
 
-def _rgba(hex_color: str, alpha: float) -> str:
+def _badge_bg(hex_color: str, alpha: float) -> str:
+    """A badge's tint layered over the app's own frosted-panel color
+    (see .tile in theme.py) rather than the bare tint alone. These
+    badges set `color` to the same hue as this background tint (the
+    text needs to read as "this is the AQI/UV/etc signal," not just
+    "here's some text") — but the tint used to composite directly over
+    whatever's actually behind the badge, which is the time-of-day
+    scenery gradient (scenery.py), swinging from near-black at night to
+    a much lighter sky by day. On a light-sky render, same-hue text and
+    background could end up close enough in lightness to be hard to
+    read — confirmed live as an actual readability complaint, not just
+    a theoretical one. A guaranteed dark base underneath keeps the
+    effective background reliably dark regardless of scenery, so the
+    text-vs-background contrast this was always meant to have doesn't
+    depend on whatever's rendered behind it."""
     r, g, b = _hex_to_rgb(hex_color)
-    return f"rgba({r},{g},{b},{alpha:.2f})"
+    tint = f"rgba({r},{g},{b},{alpha:.2f})"
+    return f"linear-gradient({tint}, {tint}), rgba(12,12,16,0.72)"
 
 
 def _precip_timing_phrase(status: dict | None) -> str | None:
@@ -510,7 +525,7 @@ if weather:
             1.0,
         )
         severe_color = _lerp_hex("#FF6961", "#BF5AF2", severe_intensity)
-        severe_bg = _rgba(severe_color, 0.28 + severe_intensity * 0.15)
+        severe_bg = _badge_bg(severe_color, 0.28 + severe_intensity * 0.15)
         extras.append(
             f'<span class="weather-extra" style="color:{severe_color}; '
             f'background:{severe_bg}; border-color:{severe_color};">{text}</span>'
@@ -537,7 +552,7 @@ if weather:
             )
         extras.append(
             f'<span class="weather-extra" style="color:#64D2FF; '
-            f'background:rgba(100,210,255,0.22); border-color:#64D2FF;">{text}</span>'
+            f'background:{_badge_bg("#64D2FF", 0.22)}; border-color:#64D2FF;">{text}</span>'
         )
     # No EC-forecast fallback here on purpose (there used to be one,
     # using weather["rain_at"]) — EC's hourly forecast timing can be
@@ -549,7 +564,7 @@ if weather:
         uv = weather["uv_index"]
         intensity = min((uv - UV_HIGH_THRESHOLD) / (UV_EXTREME - UV_HIGH_THRESHOLD), 1.0)
         uv_color = _lerp_hex("#FFB340", "#FF3B30", intensity)
-        uv_bg = _rgba(uv_color, 0.22 + intensity * 0.25)
+        uv_bg = _badge_bg(uv_color, 0.22 + intensity * 0.25)
         extras.append(
             f'<span class="weather-extra" style="color:{uv_color}; '
             f'background:{uv_bg}; border-color:{uv_color};">UV {uv:.0f}</span>'
@@ -565,7 +580,7 @@ if weather:
         feels_diff = feels_like - weather["temp_c"]
         if abs(feels_diff) >= FEELS_LIKE_DIVERGENCE_THRESHOLD_C:
             feels_color = "#FF9F0A" if feels_diff > 0 else "#64D2FF"
-            feels_bg = _rgba(feels_color, 0.22)
+            feels_bg = _badge_bg(feels_color, 0.22)
             extras.append(
                 f'<span class="weather-extra" style="color:{feels_color}; '
                 f'background:{feels_bg}; border-color:{feels_color};">Feels like {feels_like:.0f}°C</span>'
@@ -587,7 +602,7 @@ if weather:
         )
         record_label = "Record" if exceeded else "Near record"
         record_color = "#FF9F0A" if record["kind"] == "high" else "#64D2FF"
-        record_bg = _rgba(record_color, 0.22)
+        record_bg = _badge_bg(record_color, 0.22)
         extras.append(
             f'<span class="weather-extra" style="color:{record_color}; '
             f'background:{record_bg}; border-color:{record_color};">'
@@ -605,7 +620,7 @@ if weather:
     if aqi is not None and aqi > AQI_SHOW_THRESHOLD:
         intensity = min((aqi - AQI_SHOW_THRESHOLD) / (AQI_EXTREME - AQI_SHOW_THRESHOLD), 1.0)
         aqi_color = _lerp_hex("#FFD60A", "#8B008B", intensity)
-        aqi_bg = _rgba(aqi_color, 0.22 + intensity * 0.25)
+        aqi_bg = _badge_bg(aqi_color, 0.22 + intensity * 0.25)
         trend_arrow = {"rising": " ↑", "falling": " ↓", "steady": " →"}.get(air_quality.get("trend"), "")
         # 1-10 level instead of the raw 0-500 AQI number (see
         # air_quality_client.level — shared with morning_briefing.py's
@@ -629,7 +644,7 @@ if weather:
     if wildfire is not None:
         intensity = 1 - min(wildfire["distance_km"] / wildfire_client.SHOW_RADIUS_KM, 1.0)
         wildfire_color = _lerp_hex("#FFB340", "#FF3B30", intensity)
-        wildfire_bg = _rgba(wildfire_color, 0.22 + intensity * 0.25)
+        wildfire_bg = _badge_bg(wildfire_color, 0.22 + intensity * 0.25)
         extras.append(
             f'<span class="weather-extra" style="color:{wildfire_color}; '
             f'background:{wildfire_bg}; border-color:{wildfire_color};">'
@@ -647,7 +662,7 @@ if weather:
         when = "today" if pickup["days_until"] == 0 else "tomorrow"
         extras.append(
             f'<span class="weather-extra" style="color:#A2845E; '
-            f'background:rgba(162,132,94,0.22); border-color:#A2845E;">'
+            f'background:{_badge_bg("#A2845E", 0.22)}; border-color:#A2845E;">'
             f'{pickup["kind"]} {when}</span>'
         )
     # Payday — same spot and same "today or tomorrow" gating as the
@@ -659,7 +674,7 @@ if weather:
         payday_when = "today" if payday["days_until"] == 0 else "tomorrow"
         extras.append(
             f'<span class="weather-extra" style="color:#32D74B; '
-            f'background:rgba(50,215,75,0.22); border-color:#32D74B;">'
+            f'background:{_badge_bg("#32D74B", 0.22)}; border-color:#32D74B;">'
             f'Payday {payday_when}</span>'
         )
     # Recovery status — same pill styling/row as everything else above
