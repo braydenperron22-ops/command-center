@@ -124,16 +124,27 @@ def render() -> None:
     motion_label = ec_radar.storm_motion_label(kind)
     motion_html = f'<div class="tile-prev">{motion_label}</div>' if motion_label else ""
 
+    # One flat line, no embedded newlines/indentation — same bug class
+    # already documented in pages_weather.py/pages_today.py: a
+    # multi-line indented f-string reads fine to the markdown parser
+    # AS LONG AS every line has content, but motion_html is "" whenever
+    # there's no measured storm motion (confirmed live: any quiet/clear
+    # day with nothing on radar), which leaves a blank line in the
+    # middle of what CommonMark treats as one continuous raw-HTML
+    # block. A blank line ends that block, and everything after gets
+    # reparsed as a NEW block — indented 12 spaces, which CommonMark
+    # reads as an indented code block, rendering the whole radar frame
+    # as literal escaped text instead of the actual map.
     st.markdown(
-        f"""<div class="tile weather-radar-tile weather-radar-tile-large">
-            <div class="tile-label compact">LIVE RADAR · {kind.upper()} · CORBEIL</div>
-            <div class="badge {badge_class}">{summary}</div>
-            {motion_html}
-            <div class="weather-radar-frame weather-radar-frame-large">
-                <img class="weather-radar-image" src="{image_src}" />
-                {city_markers_html}
-                <div class="weather-radar-marker"></div>
-                {overlay_html}</div>
-        </div>""",
+        f'<div class="tile weather-radar-tile weather-radar-tile-large">'
+        f'<div class="tile-label compact">LIVE RADAR · {kind.upper()} · CORBEIL</div>'
+        f'<div class="badge {badge_class}">{summary}</div>'
+        f'{motion_html}'
+        f'<div class="weather-radar-frame weather-radar-frame-large">'
+        f'<img class="weather-radar-image" src="{image_src}" />'
+        f'{city_markers_html}'
+        f'<div class="weather-radar-marker"></div>'
+        f'{overlay_html}</div>'
+        f'</div>',
         unsafe_allow_html=True,
     )
