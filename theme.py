@@ -1003,6 +1003,10 @@ html, body, [class*="css"] {
     background: #30D5C8;
     box-shadow: 0 0 8px 1px rgba(48,213,200,0.5);
 }
+.page-title-portfolio::before {
+    background: #A78BFA;
+    box-shadow: 0 0 8px 1px rgba(167,139,250,0.5);
+}
 
 /* Team + opponent logos (sports_client.py — MLB's static logo CDN and
    NHL's, both free, no key, keyed by team id/abbrev with no API call
@@ -1596,6 +1600,7 @@ html, body, [class*="css"] {
 .mobile-nav-item-radar { color: #FF375F !important; }
 .mobile-nav-item-sports { color: #5E5CE6 !important; }
 .mobile-nav-item-scores { color: #30D5C8 !important; }
+.mobile-nav-item-portfolio { color: #A78BFA !important; }
 
 /* Phone breakpoint. Everything above this point is untouched at any
    width above it (including the kiosk monitor, always far wider) —

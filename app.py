@@ -21,6 +21,7 @@ import pages_household
 import pages_internals
 import pages_markets
 import pages_news
+import pages_portfolio
 import pages_radar
 import pages_recovery
 import pages_scores
@@ -106,6 +107,7 @@ _PAGE_LABELS = {
     "home": "Home", "conflicts": "Conflicts", "news": "News", "markets": "Markets",
     "internals": "Internals", "today": "Today", "household": "Household",
     "weather": "Weather", "radar": "Radar", "sports": "Sports", "scores": "Scores",
+    "portfolio": "Portfolio",
 }
 
 # Invisible on the kiosk monitor — theme.py hides .mobile-nav entirely
@@ -656,6 +658,8 @@ with st.container(key="page_body"):
         _safe_render(pages_sports.render)
     elif page == "scores":
         _safe_render(pages_scores.render, _rotation_epoch)
+    elif page == "portfolio":
+        _safe_render(pages_portfolio.render)
     else:
         # Every other branch above has a fallback (a real page render,
         # or _safe_render's own error tile) — this is the one path with
