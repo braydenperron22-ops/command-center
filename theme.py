@@ -1260,10 +1260,7 @@ html, body, [class*="css"] {
     height: 100%;
     display: block;
 }
-/* Blue for "this is you" — deliberately not red, which is reserved for
-   the tracked-storm marker below (tracking_overlay_html). Two red dots
-   on the same map would make it ambiguous which one is your location
-   and which one is the thing approaching it. */
+/* Blue dot for "this is you", fixed at the map's own center. */
 .weather-radar-marker {
     position: absolute;
     top: 50%;
@@ -1274,24 +1271,6 @@ html, body, [class*="css"] {
     border-radius: 50%;
     background: #64D2FF;
     box-shadow: 0 0 8px 2px rgba(100,210,255,0.7);
-}
-
-/* Label for the nearest detected echo, at its own position on the map
-   (see pages_radar._tracking_overlay_html / ec_radar.tracking_overlay)
-   — used to also draw a glowing dot marker and a connecting line to
-   the fixed location marker above; both were removed on session
-   feedback that they implied more geometric precision than the
-   underlying radar data can really promise. */
-.weather-radar-storm-label {
-    position: absolute;
-    transform: translate(10px, -50%);
-    font-size: 0.7rem;
-    font-weight: 700;
-    color: #FFFFFF;
-    background: rgba(0,0,0,0.65);
-    padding: 0.15rem 0.45rem;
-    border-radius: 4px;
-    white-space: nowrap;
 }
 
 /* Real nearby towns (see config.RADAR_NEARBY_CITIES / ec_radar.

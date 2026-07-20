@@ -11,7 +11,6 @@ from streamlit_autorefresh import st_autorefresh
 
 import air_quality_client
 import commute_reminder
-import ec_radar
 import govee_lighting
 import market_yf_client
 import morning_briefing
@@ -219,64 +218,20 @@ else:
 if air_quality and (air_quality.get("us_aqi") or 0) >= AQI_EXTREME:
     category = "smoke"
 
-# Same kind resolution the hero badge and the radar-derived alerts
-# below all use — EC's snow radar layer isn't itself gated by
-# temperature and can show the same reflectivity echo as the rain
-# layer regardless of season, so only ever checking the kind that
-# actually matches today's real weather avoids a nonsense "heavy snow"
-# alert firing in July. Resolved here (rather than down where it's
-# first used) so severe_weather_active below can use it too.
-_alert_precip_kind = "snow" if category == "snow" else "rain"
-
 # True during EC's own most dangerous hazard tier (tornado/hurricane/
-# tsunami, from its official alert feed) OR a real ongoing stretch of
-# our own radar-confirmed heavy precipitation (see
-# ec_radar.severe_weather_stint_active) — checking EC's feed alone
-# isn't enough: confirmed live it had nothing active at all for a real,
-# radar-confirmed heavy-rain night, so relying on it by itself would
-# miss the actual event entirely. This is the "genuine emergency" tier
-# — drives the screen going fully bright (not just dimmed less, see
-# night_dim below) rather than the light, which no longer reacts to
-# weather at all (session feedback: waking the bedroom light overnight
-# was the wrong call). Each half guarded separately so a radar hiccup
-# can't also take out the (already reliable) EC-alert half.
+# tsunami, from its official alert feed) — drives the screen going
+# fully bright (not just dimmed less, see night_dim below) rather than
+# the light, which no longer reacts to weather at all (session
+# feedback: waking the bedroom light overnight was the wrong call).
+# Used to also fold in a radar-confirmed heavy-precipitation stint
+# (ec_radar.severe_weather_stint_active) — removed along with the rest
+# of the radar-based lookahead/severity forecasting at the user's own
+# request, judged too inconsistent to trust; EC's own official alert
+# feed alone is the reliable half that's left.
 try:
-    extreme_weather = weather_alerts_bar.current_severity() == "extreme"
+    severe_weather_active = weather_alerts_bar.current_severity() == "extreme"
 except Exception:
-    extreme_weather = False
-try:
-    severe_weather_active = extreme_weather or ec_radar.severe_weather_stint_active(_alert_precip_kind)
-except Exception:
-    severe_weather_active = extreme_weather
-
-# A softer pair of signals for ordinary (non-severe) rain — session
-# request: the screen should still dim overnight during a rain storm,
-# just not all the way to the "genuinely dim enough to sleep next to"
-# floor. Both feed the screen's own quiet_hours/weather_wake_recent
-# logic below; neither reaches the bedroom light anymore (see
-# govee_lighting.sync_lights, which no longer takes weather signals at
-# all). rain_active covers both approaching and already-arrived
-# precipitation (any kind detected at all, see ec_radar.precip_status);
-# rain_incoming is specifically the not-arrived-yet subset of that.
-try:
-    _wake_precip_status = ec_radar.precip_status(_alert_precip_kind)
-except Exception:
-    _wake_precip_status = None
-rain_active = _wake_precip_status is not None
-rain_incoming = _wake_precip_status is not None and _wake_precip_status["state"] == "approaching"
-
-# Longer-range companion to the above (see ec_radar.long_range_watch's
-# own module comment) — session request, following a real live case
-# where a system still 220-290km out was manually tracked and found to
-# be on a genuinely converging path arriving that evening, well beyond
-# precip_status's own near-term reach. Computed page-independently
-# here (not folded into the weather-gated extras below) for the same
-# reason the recovery badge is: it has nothing to do with the Open-
-# Meteo weather fetch and shouldn't disappear when that fails.
-try:
-    _long_range_watch = ec_radar.long_range_watch(_alert_precip_kind)
-except Exception:
-    _long_range_watch = None
+    severe_weather_active = False
 
 # Session request: staying fully bright (or even just less-dim) for an
 # entire severe stint or rain approach — which can run for hours — was
@@ -296,7 +251,7 @@ quiet_hours = phase == "night" and (now.hour >= QUIET_HOURS_START_HOUR or now.ho
 # can't turn into "bright all night" the way the previous whole-stint
 # override did.
 WEATHER_WAKE_WINDOW_SECONDS = 90
-weather_worth_waking_for = severe_weather_active or rain_incoming
+weather_worth_waking_for = severe_weather_active
 if weather_worth_waking_for and not st.session_state.get("weather_was_worth_waking_for", False):
     st.session_state["weather_wake_started_at"] = time.time()
 st.session_state["weather_was_worth_waking_for"] = weather_worth_waking_for
@@ -336,7 +291,6 @@ try:
     # with a black sky behind them. Ramps with the same fade progress
     # already tracked above rather than snapping dim on/off at the phase
     # boundary.
-    RAIN_NIGHT_DIM_CAP = 0.5  # night_dim ceiling during ordinary rain — dimmer than day, well short of the full sleep-dim floor
     if phase == "night" and bg_fade_from == "night":
         night_dim = 1.0
     elif phase == "night":
@@ -348,18 +302,17 @@ try:
 
     # Past quiet hours, weather only brightens the screen briefly around
     # when something new starts (weather_wake_recent) — otherwise it
-    # stays on the full sleep-dim floor no matter how long a stint or
-    # approach has been running, which is the whole fix for "this kept
-    # me awake." Before quiet hours (still evening, presumably awake
-    # anyway), the previous whole-duration behavior still applies:
-    # severe weather overrides dimming entirely, ordinary rain only
-    # softens it to RAIN_NIGHT_DIM_CAP.
+    # stays on the full sleep-dim floor no matter how long a stint has
+    # been running, which is the whole fix for "this kept me awake."
+    # Before quiet hours (still evening, presumably awake anyway), the
+    # previous whole-duration behavior still applies: severe weather
+    # overrides dimming entirely. Used to also soften dimming for
+    # ordinary (non-severe) rain — removed along with the rest of the
+    # radar-based precip detection this depended on.
     if quiet_hours and not weather_wake_recent:
         night_dim = 1.0
     elif severe_weather_active:
         night_dim = 0.0
-    elif rain_active:
-        night_dim = min(night_dim, RAIN_NIGHT_DIM_CAP)
 
     if night_dim > 0:
         # This runs 24/7 in a bedroom — night needs to be genuinely dim
@@ -419,22 +372,6 @@ def _lerp_hex(a: str, b: str, t: float) -> str:
     return f"#{r:02x}{g:02x}{bl:02x}"
 
 
-def _format_countdown(remaining_seconds: float) -> str:
-    # Minute granularity with worded units ("1h 26m"/"45 min"), not a
-    # colon-separated clock face ticking every second — that read as a
-    # live stopwatch, so at 1s autorefresh it either looked like it was
-    # constantly refreshing (seconds precision) or stuck/broken (a colon
-    # format that only moves once a minute). Words don't carry that
-    # "should be actively ticking" expectation, and this also means most
-    # reruns produce byte-identical HTML here instead of changing every
-    # single tick (same fix as pages_today's leave countdown).
-    total_minutes = max(0, int(remaining_seconds) // 60)
-    hours, minutes = divmod(total_minutes, 60)
-    if hours > 0:
-        return f"{hours}h {minutes}m"
-    return f"{minutes} min"
-
-
 def _badge_bg(hex_color: str, alpha: float) -> str:
     """A badge's tint layered over the app's own frosted-panel color
     (see .tile in theme.py) rather than the bare tint alone. These
@@ -455,26 +392,6 @@ def _badge_bg(hex_color: str, alpha: float) -> str:
     return f"linear-gradient({tint}, {tint}), rgba(12,12,16,0.72)"
 
 
-def _precip_timing_phrase(status: dict | None) -> str | None:
-    """"in 45 min" / "approaching" / "clears in 20 min" / "here now" —
-    None if there's no confirmed timing yet at all. Shared by both the
-    routine and severe precip badges below so a "Heavy rain" badge
-    doesn't drop the ETA a plain "Rain" badge would still show — severe
-    intensity and timing are two different questions, and knowing one
-    shouldn't cost you the other."""
-    if status is None:
-        return None
-    if status["state"] == "arrived":
-        return (
-            f"clears in {_format_countdown(status['minutes'] * 60)}"
-            if status["minutes"] is not None else "here now"
-        )
-    return (
-        f"in {_format_countdown(status['minutes'] * 60)}"
-        if status["minutes"] is not None else "approaching"
-    )
-
-
 UV_EXTREME = 11  # UV index at which the badge reaches full vibrant red
 
 weather_block = ""
@@ -487,92 +404,11 @@ if weather:
     if high is not None and low is not None:
         hilo_html = f' · <span class="weather-hilo">H:{high:.0f}° L:{low:.0f}°</span>'
 
+    # Rain/snow arrival + severity badges (radar-based lookahead
+    # forecasting) removed at the user's own request, judged too
+    # inconsistent to trust — see ec_radar.py's own module docstring.
+    # The Radar page still shows the live map for manual reading.
     extras = []
-    # One badge, two states — "Rain in ___" while it's inbound, "Clears
-    # in ___" once it's here — instead of the two separate, overlapping
-    # badges this used to be (an EC forecast-percentage one and a
-    # radar-tracking one, which could both be on screen at once). The
-    # live radar signal (ec_radar.precip_status) wins whenever it has
-    # one — it's real detected precipitation, tracked frame to frame,
-    # not a probability — with EC's forecast-percentage countdown as
-    # the fallback for when radar hasn't caught anything yet (still
-    # further out than radar's own 25km "nearby" cutoff, or further out
-    # in time than its 6-min cadence has caught up to).
-    is_snow = category == "snow"
-    precip_label = "Snow" if is_snow else "Rain"
-    precip_kind = "snow" if is_snow else "rain"
-    # Checked independent of (and before) the routine approaching/
-    # arrived badge below — that classification needs multiple radar
-    # samples spaced minutes apart before it'll call something
-    # "approaching" (see ec_radar._record_and_trend), but genuinely
-    # heavy precipitation (ec_radar.SIGNIFICANT_MM_H) is worth flagging
-    # the moment it's detected, not once a trend has had time to
-    # establish. Same red as a breaking-news/bad-tile accent, and
-    # persists for as long as the condition actually holds
-    # (severe_weather_alert's own toast is just a one-time ping when
-    # it first starts).
-    severe = ec_radar.severe_precip_status(precip_kind)
-    status = ec_radar.precip_status(precip_kind)
-    if severe is not None:
-        # Same timing phrase the routine badge below uses — severity
-        # and ETA are two different questions (see
-        # _precip_timing_phrase), so "Heavy rain" shouldn't drop the
-        # "in 15 min"/"clears in 20 min" part a plain "Rain" badge
-        # would still show. None (no confirmed timing yet at all) falls
-        # back to the intensity-only text this badge always showed.
-        timing = _precip_timing_phrase(status)
-        text = (
-            f"Heavy {precip_label.lower()} {timing} · {severe['mm_h']:.0f} mm/h"
-            if timing else f"Heavy {precip_label.lower()} · {severe['mm_h']:.0f} mm/h"
-        )
-        # Same "scales with real magnitude" treatment as UV/AQI/wildfire
-        # above — this badge used to render every severe reading in the
-        # exact same fixed red whether it was 24 mm/h (just over the
-        # threshold) or 100+ mm/h (genuinely torrential), flattening a
-        # real difference into one color. End color (violet) is EC's
-        # own radar-legend color at this same intensity (see
-        # ec_radar.SEVERE_BADGE_MAX_MM_H) — this badge and the actual
-        # map now agree on what "worse" looks like.
-        severe_intensity = min(
-            (severe["mm_h"] - ec_radar.SIGNIFICANT_MM_H) / (ec_radar.SEVERE_BADGE_MAX_MM_H - ec_radar.SIGNIFICANT_MM_H),
-            1.0,
-        )
-        severe_color = _lerp_hex("#FF6961", "#BF5AF2", severe_intensity)
-        severe_bg = _badge_bg(severe_color, 0.28 + severe_intensity * 0.15)
-        extras.append(
-            f'<span class="weather-extra" style="color:{severe_color}; '
-            f'background:{severe_bg}; border-color:{severe_color};">{text}</span>'
-        )
-    elif status is not None:
-        if status["state"] == "arrived":
-            text = (
-                f"Clears in {_format_countdown(status['minutes'] * 60)}"
-                if status["minutes"] is not None else f"{precip_label} now"
-            )
-        else:
-            # Guarded the same way the "arrived" branch above already
-            # is, even though nothing currently reaching this branch
-            # constructs a None here — this whole hero row sits at
-            # module top level with no enclosing try/except (unlike
-            # every page render, which goes through _safe_render), so
-            # a crash here takes down the entire app on every rerun,
-            # not just one page. Cheap insurance against a catastrophic
-            # failure mode is worth it even without a concrete
-            # reproduction.
-            text = (
-                f"{precip_label} in {_format_countdown(status['minutes'] * 60)}"
-                if status["minutes"] is not None else f"{precip_label} approaching"
-            )
-        extras.append(
-            f'<span class="weather-extra" style="color:#64D2FF; '
-            f'background:{_badge_bg("#64D2FF", 0.22)}; border-color:#64D2FF;">{text}</span>'
-        )
-    # No EC-forecast fallback here on purpose (there used to be one,
-    # using weather["rain_at"]) — EC's hourly forecast timing can be
-    # genuinely unreliable, and radar (ec_radar.precip_status, above)
-    # is real detected precipitation, not a prediction. Nothing shows
-    # here at all until radar itself has something confident to say,
-    # rather than falling back to a number that might be hours off.
     if weather["uv_index"] is not None and weather["uv_index"] > UV_HIGH_THRESHOLD:
         uv = weather["uv_index"]
         intensity = min((uv - UV_HIGH_THRESHOLD) / (UV_EXTREME - UV_HIGH_THRESHOLD), 1.0)
@@ -736,30 +572,6 @@ except Exception:
 if _recovery_badge:
     st.markdown(f'<div class="weather-extras">{_recovery_badge}</div>', unsafe_allow_html=True)
 
-# Long-range rain/snow watch (see ec_radar.long_range_watch) — same
-# page-independent placement/reasoning as the recovery badge above.
-# Reuses the near-term precip badge's own blue rather than inventing a
-# new color for what's still fundamentally the same category of
-# information (rain timing); "possible" plus the "~" on the time is
-# what actually communicates this is a longer-range, lower-confidence
-# companion to the "in 45 min"-style badge, not a new color coding a
-# reader would have to learn.
-if _long_range_watch:
-    _lr_eta_local = (
-        _long_range_watch["eta_time"]
-        .replace(tzinfo=ZoneInfo("UTC"))
-        .astimezone(ZoneInfo(TIMEZONE))
-        .replace(tzinfo=None)
-    )
-    _lr_label = "Snow" if _alert_precip_kind == "snow" else "Rain"
-    _lr_time_str = _lr_eta_local.strftime("%I:%M %p").lstrip("0")
-    st.markdown(
-        f'<div class="weather-extras"><span class="weather-extra" style="color:#64D2FF; '
-        f'background:{_badge_bg("#64D2FF", 0.22)}; border-color:#64D2FF;">'
-        f"{_lr_label} possible ~{_lr_time_str}</span></div>",
-        unsafe_allow_html=True,
-    )
-
 # Page-independent, same reasoning as the leave headline above — the
 # morning routine doesn't wait for whichever of the 10 rotating pages
 # happens to be up. Below the hero row rather than competing with the
@@ -871,31 +683,10 @@ try:
 except Exception:
     pass
 
-# Same bottom-bar queue, same isolation reasoning — a genuinely heavy
-# (not just present) precipitation cell newly detected nearby, edge-
-# triggered so it fires once per event rather than every rerun while
-# it persists (see ec_radar.severe_weather_alert). Falls through to
-# news.render_alert_bar below (kind isn't "commute"), reusing its
-# existing red/urgent treatment since this alert always sets
-# important=True.
-try:
-    severe_alert = ec_radar.severe_weather_alert(_alert_precip_kind)
-    if severe_alert:
-        new_alerts.append(severe_alert)
-except Exception:
-    pass
-
-# Same idea, earlier trigger — the moment radar first has ANYTHING to
-# track nearby, regardless of confirmed direction or intensity (see
-# ec_radar.tracking_started_alert). Lower-key styling than the severe
-# alert above: important=False, so news.render_alert_bar gives it the
-# muted black treatment instead of red.
-try:
-    tracking_alert = ec_radar.tracking_started_alert(_alert_precip_kind)
-    if tracking_alert:
-        new_alerts.append(tracking_alert)
-except Exception:
-    pass
+# Radar-based severe/tracking-started toast alerts (ec_radar.
+# severe_weather_alert / tracking_started_alert) removed along with the
+# rest of the radar lookahead-forecasting layer at the user's own
+# request — see ec_radar.py's own module docstring.
 
 # News alerts: strictly-filtered items queue up and take over the bottom
 # bar (normally the release calendar) for TOAST_SECONDS each, breaking-news
@@ -905,11 +696,11 @@ except Exception:
 # A feed outage that recovers can surface dozens of headlines in one
 # batch (everything that was never marked "seen" while it was down) —
 # capped to the most recent MAX_BURST_ALERTS so that doesn't turn into
-# hours of backlog playing through this bar one at a time. commute_alert/
-# severe_alert/tracking_alert above are each appended AFTER new_alerts
-# is first populated from news.get_new_alerts(), so they always sit at
-# the tail end of the list — this trim (which keeps the most recent
-# items) can never drop any of the three even during a real news burst.
+# hours of backlog playing through this bar one at a time. commute_alert
+# above is appended AFTER new_alerts is first populated from
+# news.get_new_alerts(), so it always sits at the tail end of the list —
+# this trim (which keeps the most recent items) can never drop it even
+# during a real news burst.
 #
 # Defined here (not just inside the try) so the Govee block below always
 # has a real value to check even if this try body fails before reaching
@@ -976,8 +767,8 @@ try:
     aqi_for_lights = air_quality.get("us_aqi") if air_quality else None
     # Session feedback: waking the bedroom light for weather overnight
     # was the wrong call — sync_lights no longer reacts to weather at
-    # all (severe_weather_active/rain_incoming still drive the screen's
-    # own separate night_dim override above, just not the light).
+    # all (severe_weather_active still drives the screen's own separate
+    # night_dim override above, just not the light).
     govee_lighting.sync_lights(
         phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
         aqi_for_lights, category,

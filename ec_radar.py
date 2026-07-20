@@ -1,14 +1,15 @@
-"""Live weather radar imagery and a simple approach/recede tracker built
-on top of it — the same raw signal (real-time precipitation
-reflectivity, not a forecast model) that minute-by-minute nowcasting
-apps like Apple Weather/Dark Sky are actually built on top of. Their
-edge is a proprietary storm-tracking algorithm layered over that
-signal; this isn't that, but it's a reasonable approximation of the
-same idea: sample the nearest detected echo's distance every time the
-radar refreshes (~6 min), and if that distance has been shrinking, it's
-approaching — extrapolate the closing speed into an ETA, and probe
-further out along the same bearing for where the echo ends to estimate
-when it'll clear, too.
+"""Live weather radar imagery from Environment Canada — a looping GIF of
+the last several real frames, nearby city reference markers, and a
+plain "Moving NE at 32 km/h" readout of the dominant echo's own
+currently-measured drift. No arrival prediction: this app used to also
+project the storm's own measured motion forward to guess when/if it
+would reach the user's exact location, at increasing range (a near-term
+shape-and-motion projection, then a separate longer-range straight-line
+extrapolation on top of that) — removed at the user's own request after
+judging the whole lookahead-forecasting layer too inconsistent to trust,
+in favor of just the raw radar map, readable manually. Everything below
+describes where precipitation currently IS and how it's currently
+moving, not predictions of where it's going to be.
 
 `radar_image_url` builds the image URL for the Radar page's <img> tag —
 the browser fetches that one directly, not our own backend, so it
@@ -61,56 +62,24 @@ BBOX_MARGIN_DEGREES_LON = BBOX_MARGIN_DEGREES_LAT * IMAGE_ASPECT_RATIO
 _DEG_PER_PX = (2 * BBOX_MARGIN_DEGREES_LAT) / IMAGE_HEIGHT
 REFRESH_SECONDS = 6 * 60  # matches the radar composite's own update cadence
 
-# How far out counts as "nearby" for the hero-row badge. Widened to
-# 150km earlier this session to track a genuinely large system sitting
-# with its closest edge 130km+ out — but confirmed live that a wide
-# radius on a big, sprawling multi-cell complex pulls in intensity
-# readings from cells tens of km away as the tracked system's own
-# "peak," which reads as confusing/inconsistent moment to moment even
-# though each individual reading is technically accurate for
-# *somewhere* in range. Session judgment call: back to a tighter 25km —
-# only track/report on precipitation close enough to be genuinely
-# relevant to the user's own exact spot, at the cost of not starting to
-# track a system until it's closer in. The wide radar image itself
-# (IMAGE_WIDTH/BBOX_MARGIN_DEGREES_LAT, the actual visible map) is
-# unrelated to this and stays as wide as it already is — this only
-# controls the detection/tracking radius the badges reason about.
-NEARBY_RADIUS_KM = 25
-# How far past the near edge to probe for where the echo ends, to
-# estimate a clearing time — well within the image's own ~166km
-# half-span in every direction (the tighter of the two axes), so a real
-# far edge is almost always still inside the frame if one exists.
-FAR_EDGE_MAX_KM = 100
-FAR_EDGE_STEP_KM = 2
 # WMS renders true-transparent background as alpha 0; real echo pixels
 # (even the faintest trace-precipitation color) render meaningfully
 # above that. A small margin above 0 filters out compression artifacts
 # at tile edges without needing to hand-check every legend color.
 ALPHA_THRESHOLD = 20
-# Must actually reach NEARBY_RADIUS_KM in pixel terms along the
-# TIGHTER axis for km-per-pixel, which is horizontal/longitude here
-# (~0.36 km/px at this latitude — longitude lines are closer together
-# away from the equator), not vertical/latitude (~0.52 km/px, farther-
-# reaching per pixel) — confirmed live earlier this session that sizing
-# off the wrong axis silently misses real echoes. 25km needs ~70px on
-# the horizontal axis; 90 leaves a comfortable margin.
-_SEARCH_PX = 90
 _SAMPLE_STRIDE = 3
 
-# How much history to keep for the approach/recede trend, and how far
-# apart two samples need to be before trusting a speed estimate from
-# them — the radar itself only refreshes every REFRESH_SECONDS, so two
-# samples closer together than that are the same frame twice, not a
+# How far apart two samples need to be before trusting a speed estimate
+# from them — the radar itself only refreshes every REFRESH_SECONDS, so
+# two samples closer together than that are the same frame twice, not a
 # real trend point.
-HISTORY_WINDOW_MINUTES = 30
 MIN_TREND_GAP_MINUTES = 5
 # A distance change smaller than this over the tracked window is
 # treated as noise (radar echo edges flicker slightly frame to frame
-# even for a genuinely stationary cell), not real approach/recede.
+# even for a genuinely stationary cell), not real movement.
 STATIONARY_THRESHOLD_KM = 1.5
 
 _last_good_bytes: dict[str, bytes] = {}
-_history: dict[str, list[tuple[datetime, float]]] = {"rain": [], "snow": []}
 
 
 def _bbox() -> str:
@@ -178,10 +147,9 @@ def radar_loop_data_uri(kind: str = "rain") -> str | None:
 
     All frames share the exact same bbox (same WMS request shape every
     time, just a different moment), so anything already positioned
-    against the image by percentage — the city markers, the tracking
-    line — stays correctly placed regardless of which frame the loop
-    happens to be showing; nothing else needs to change to support
-    this."""
+    against the image by percentage — the city markers — stays
+    correctly placed regardless of which frame the loop happens to be
+    showing; nothing else needs to change to support this."""
     layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
     _fetch_radar_bytes(layer)  # ensures this rerun's frame is recorded before reading history
     history = _frame_history[kind]
@@ -244,16 +212,6 @@ def _bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     x = sin(dl) * cos(p2)
     y = cos(p1) * sin(p2) - sin(p1) * cos(p2) * cos(dl)
     return (degrees(atan2(x, y)) + 360) % 360
-
-
-def _destination(lat: float, lon: float, bearing_deg_: float, distance_km: float) -> tuple[float, float]:
-    earth_radius_km = 6371
-    delta = distance_km / earth_radius_km
-    theta = radians(bearing_deg_)
-    p1, l1 = radians(lat), radians(lon)
-    p2 = asin(sin(p1) * cos(delta) + cos(p1) * sin(delta) * cos(theta))
-    l2 = l1 + atan2(sin(theta) * sin(delta) * cos(p1), cos(delta) - sin(p1) * sin(p2))
-    return degrees(p2), degrees(l2)
 
 
 def _latlon_to_pixel(lat: float, lon: float) -> tuple[int, int]:
@@ -355,17 +313,15 @@ def _fetch_radar_bytes_at(layer: str, frame_time: datetime) -> bytes | None:
 # TIME dimension: "use this to actually gauge storm direction instead
 # of guessing" / "pull previous radar images directly from the source
 # without having to build the cache manually", then to 10: "get an
-# hour's worth of movement to make our forecasting more accurate").
-# Each real frame is REFRESH_SECONDS (~6 min) apart, so 10 frames
-# covers roughly the last 54-60 minutes of real motion — the same raw
-# frames storm_motion() below measures actual bearing/speed from, not
-# just what the loop animates. Keyed by the frame's own real EC
-# timestamp (not a locally-computed bucket) so live-fetched and
-# backfilled frames share one consistent, ground-truth timeline —
-# storm_motion's elapsed-time math is then a real measured duration,
-# not an assumption that our own clock lines up with EC's composite
-# schedule. Keyed by kind ("rain"/"snow", inherently bounded) the same
-# way _history already is.
+# hour's worth of movement"). Each real frame is REFRESH_SECONDS (~6
+# min) apart, so 10 frames covers roughly the last 54-60 minutes of
+# real motion — the same raw frames storm_motion() below measures
+# actual bearing/speed from, not just what the loop animates. Keyed by
+# the frame's own real EC timestamp (not a locally-computed bucket) so
+# live-fetched and backfilled frames share one consistent, ground-truth
+# timeline — storm_motion's elapsed-time math is then a real measured
+# duration, not an assumption that our own clock lines up with EC's
+# composite schedule.
 FRAME_HISTORY_SIZE = 10
 _frame_history: dict[str, list[tuple[datetime, bytes]]] = {"rain": [], "snow": []}
 # How many NEW historical frames _ensure_frame_history will fetch in a
@@ -463,64 +419,7 @@ def _fetch_radar_bytes(layer: str) -> bytes | None:
     dims = _fetch_time_dimension(layer)
     _record_frame(kind, result, dims)
     _ensure_frame_history(kind, layer, dims)
-    _ensure_long_range_history(kind, layer, dims)
     return result
-
-
-def _pixel_has_echo(img: Image.Image, px: int, py: int) -> bool | None:
-    """True/False, or None if (px, py) falls outside the image entirely
-    — distinct from False (checked and empty), since "we can't see that
-    far" and "we looked and there's nothing there" need different
-    handling by the far-edge search below."""
-    if px < 0 or px >= IMAGE_WIDTH or py < 0 or py >= IMAGE_HEIGHT:
-        return None
-    return img.getpixel((px, py))[3] > ALPHA_THRESHOLD
-
-
-# Sampled directly from EC's own RADAR_1KM_RRAI GetLegendGraphic
-# (confirmed live via a real GetLegendGraphic request — light blue
-# 0.1mm/h up through green/yellow/orange/red/magenta to dark purple at
-# 200mm/h; RADAR_1KM_RSNO uses the identical color scale, confirmed
-# too) — lets a detected echo be classified by actual intensity, not
-# just "is there an echo at all."
-_INTENSITY_SWATCHES = [
-    (200.0, (48, 0, 73)),
-    (125.0, (93, 0, 140)),
-    (100.0, (150, 49, 201)),
-    (64.0, (254, 2, 146)),
-    (50.0, (254, 13, 0)),
-    (32.0, (254, 112, 0)),
-    (24.0, (254, 169, 0)),
-    (16.0, (254, 226, 0)),
-    (12.0, (106, 165, 0)),
-    (8.0, (0, 135, 0)),
-    (4.0, (0, 191, 0)),
-    (2.0, (0, 248, 89)),
-    (1.0, (0, 152, 254)),
-    (0.1, (76, 178, 254)),
-]
-# EC's own scale steps from "moderate" (16) to this tick — used as the
-# bar for "worth flagging as genuinely heavy," not just "there's rain
-# or snow somewhere nearby."
-SIGNIFICANT_MM_H = 24.0
-# Ceiling for the hero badge's own severe-rain color gradient (see
-# app.py) — a real EC scale tick (see _INTENSITY_SWATCHES' own 100.0
-# entry, a distinct purple), chosen so the badge saturating fully at
-# this intensity means the same thing "fully saturated" would mean on
-# the radar map itself, not an arbitrary separate number.
-SEVERE_BADGE_MAX_MM_H = 100.0
-
-
-def _classify_mm_h(rgb: tuple[int, int, int]) -> float:
-    """Nearest-color match (by Euclidean RGB distance) against EC's own
-    legend swatches — an approximate precipitation rate in mm/h for a
-    single pixel's color."""
-    best_value, best_dist = 0.1, None
-    for value, swatch in _INTENSITY_SWATCHES:
-        dist = sum((a - b) ** 2 for a, b in zip(rgb, swatch))
-        if best_dist is None or dist < best_dist:
-            best_value, best_dist = value, dist
-    return best_value
 
 
 # A storm system needs real areal extent to count as the thing being
@@ -571,51 +470,17 @@ def _cluster_blobs(alpha_mask: np.ndarray) -> list[list[tuple[int, int]]]:
 
 # A blob this small (in cells) is almost certainly a rendering/
 # compression artifact rather than a real, distinct shower — filters
-# out single-pixel noise from the "any size" trajectory check below
-# without imposing the full MIN_SIGNIFICANT_CELLS size bar on it.
+# out single-pixel noise from the motion-tracking union below without
+# imposing the full MIN_SIGNIFICANT_CELLS size bar on it.
 MIN_REAL_CELLS = 3
-
-
-def _nearest_point_in_blob(alpha_mask: np.ndarray, cells: list[tuple[int, int]], cx: int, cy: int) -> tuple | None:
-    """(lat, lon, distance_km) of the closest in-range echo pixel
-    belonging to this one blob, or None if every pixel in it (after
-    NEARBY_RADIUS_KM filtering) turns out to be out of range."""
-    nearest = None
-    for gy, gx in cells:
-        py0, px0 = gy * _CLUSTER_CELL_PX, gx * _CLUSTER_CELL_PX
-        for py in range(py0, min(py0 + _CLUSTER_CELL_PX, IMAGE_HEIGHT), _SAMPLE_STRIDE):
-            for px in range(px0, min(px0 + _CLUSTER_CELL_PX, IMAGE_WIDTH), _SAMPLE_STRIDE):
-                if not alpha_mask[py, px]:
-                    continue
-                lat = WEATHER_LAT - (py - cy) * _DEG_PER_PX
-                lon = WEATHER_LON + (px - cx) * _DEG_PER_PX
-                dist = _distance_km(WEATHER_LAT, WEATHER_LON, lat, lon)
-                if dist > NEARBY_RADIUS_KM:
-                    continue
-                if nearest is None or dist < nearest[2]:
-                    nearest = (lat, lon, dist)
-    return nearest
-
-
-def _max_mm_h_in_blob(img: Image.Image, alpha_mask: np.ndarray, cells: list[tuple[int, int]]) -> float:
-    max_mm_h = 0.0
-    for gy, gx in cells:
-        py0, px0 = gy * _CLUSTER_CELL_PX, gx * _CLUSTER_CELL_PX
-        for py in range(py0, min(py0 + _CLUSTER_CELL_PX, IMAGE_HEIGHT), _SAMPLE_STRIDE):
-            for px in range(px0, min(px0 + _CLUSTER_CELL_PX, IMAGE_WIDTH), _SAMPLE_STRIDE):
-                if not alpha_mask[py, px]:
-                    continue
-                max_mm_h = max(max_mm_h, _classify_mm_h(img.getpixel((px, py))[:3]))
-    return max_mm_h
 
 
 def _blob_centroid(alpha_mask: np.ndarray, cells: list[tuple[int, int]], cx: int, cy: int) -> tuple[float, float]:
     """Mean lat/lon over this blob's own occupied pixels — a far
-    steadier position to track across frames than the nearest edge
-    pixel (see _nearest_point_in_blob), which shifts around as a
-    storm's leading edge changes shape frame to frame even when its
-    bulk hasn't actually moved much. Used by storm_motion below, where
-    that steadiness is the whole point."""
+    steadier position to track across frames than any single edge
+    pixel, which shifts around as a storm's leading edge changes shape
+    frame to frame even when its bulk hasn't actually moved much. Used
+    by storm_motion below, where that steadiness is the whole point."""
     xs, ys = [], []
     for gy, gx in cells:
         py0, px0 = gy * _CLUSTER_CELL_PX, gx * _CLUSTER_CELL_PX
@@ -633,21 +498,21 @@ def _blob_centroid(alpha_mask: np.ndarray, cells: list[tuple[int, int]], cx: int
 def _track_blob_for_motion(img: Image.Image) -> tuple[float, float] | None:
     """This one frame's centroid (see _blob_centroid) of the UNION of
     every significant-sized blob (same MIN_SIGNIFICANT_CELLS bar the
-    badges use), or every real-sized blob if none are significant —
-    the whole nearby precipitation mass treated as one bulk system,
-    not any single internal cell picked out of it.
+    badges used to use), or every real-sized blob if none are
+    significant — the whole nearby precipitation mass treated as one
+    bulk system, not any single internal cell picked out of it.
 
     Confirmed live this distinction matters a lot for a large, sprawling
-    multi-cell complex (exactly tonight's storm): picking just the
-    LARGEST individual blob each frame measured bearing/speed off
-    whichever cell happened to be biggest at that instant — different
-    cells within the same complex at different times — producing a
-    physically implausible ~230 km/h "speed" from jumping between them.
-    The union's centroid instead tracks the bulk motion of the whole
-    mass, which stayed smooth and physically reasonable (~65 km/h) on
-    the same real data. For a single isolated storm cell this reduces
-    to that one blob's own centroid anyway, so it doesn't change
-    anything in the simpler case."""
+    multi-cell complex: picking just the LARGEST individual blob each
+    frame measured bearing/speed off whichever cell happened to be
+    biggest at that instant — different cells within the same complex
+    at different times — producing a physically implausible ~230 km/h
+    "speed" from jumping between them. The union's centroid instead
+    tracks the bulk motion of the whole mass, which stayed smooth and
+    physically reasonable (~65 km/h) on the same real data. For a
+    single isolated storm cell this reduces to that one blob's own
+    centroid anyway, so it doesn't change anything in the simpler
+    case."""
     cx, cy = IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2
     arr = np.array(img)
     alpha_mask = arr[:, :, 3] > ALPHA_THRESHOLD
@@ -676,28 +541,23 @@ def storm_motion(kind: str) -> dict | None:
     real elapsed time between their own EC-reported valid times (not an
     assumed uniform cadence), a genuine measured displacement rather
     than a guess. Session request: "use this [the cached frames] to
-    actually gauge storm direction instead of guessing."
+    actually gauge storm direction instead of guessing." Purely
+    descriptive of already-observed movement — see storm_motion_label,
+    the only consumer — not a prediction of where the storm is headed.
 
     max_angular_error_deg checks every IN-BETWEEN consecutive frame
     pair too (not just the oldest-vs-newest endpoints that bearing_deg
     itself comes from) and reports the single largest disagreement
     between any one segment's own bearing and the overall bearing — 0
     for a storm tracking in a dead straight line, large for one that's
-    curving, splitting, or being tracked erratically. Segments too
-    short to trust a bearing from (under STATIONARY_THRESHOLD_KM,
-    same bar the overall measurement itself uses) are skipped rather
-    than counted as a disagreement. Feeds confidence scoring in
-    project_rain_arrival — this function itself stays focused on
-    describing the motion, not judging it.
+    curving, splitting, or being tracked erratically.
 
     None if fewer than 2 cached frames have a trackable blob at all
     (early in a fresh deploy/restart or right after switching kind,
     before _ensure_frame_history's backfill has completed), the two
-    usable samples are less than MIN_TREND_GAP_MINUTES apart (guards
-    the same "not actually a new sample" case _record_and_trend already
-    guards against), or the measured displacement is under
-    STATIONARY_THRESHOLD_KM (not moving meaningfully enough to trust a
-    bearing from it)."""
+    usable samples are less than MIN_TREND_GAP_MINUTES apart, or the
+    measured displacement is under STATIONARY_THRESHOLD_KM (not moving
+    meaningfully enough to trust a bearing from it)."""
     points = []
     for frame_time, raw in _frame_history[kind]:
         try:
@@ -739,1088 +599,27 @@ def storm_motion(kind: str) -> dict | None:
 
 def storm_motion_label(kind: str = "rain") -> str | None:
     """A plain "Moving NE at 32 km/h" readout of the dominant tracked
-    system's real measured motion (see storm_motion) — shown
-    independent of whether it's confirmed to be a direct hit on
-    WEATHER_LAT/WEATHER_LON (see project_rain_arrival), so a storm
-    that's genuinely just passing by to one side still reads as real,
-    grounded information instead of no information at all. None
-    whenever storm_motion itself has nothing to report yet."""
+    system's real measured motion (see storm_motion) — purely
+    descriptive of already-observed movement, not a prediction of
+    whether or when it'll reach the user's own location; reading the
+    radar map itself alongside this is how that call gets made now.
+    None whenever storm_motion itself has nothing to report yet."""
     motion = storm_motion(kind)
     if motion is None:
         return None
     return f"Moving {compass_abbr(motion['bearing_deg'])} at {motion['speed_kmh']:.0f} km/h"
 
 
-# --- Long-range rain watch ---------------------------------------------
-# project_rain_arrival above is deliberately near-term: it walks
-# backward from WEATHER_LAT/WEATHER_LON against the CURRENT frame's own
-# real shape, which only means anything within roughly how far the
-# storm's measured speed can carry it inside PROJECTION_MAX_MINUTES (3
-# hours) — appropriate for "is it about to rain," not "should I expect
-# rain later today." Session request, following a real live case: a
-# system still ~220-290km out (well beyond that reach) was manually
-# tracked frame-by-frame and found to be on a genuinely converging path
-# — a useful signal the near-term system was never designed to catch,
-# since backward-projecting 3 hours at ~35 km/h only reaches ~105km,
-# nowhere near a system that far out.
-#
-# Deliberately separate from _frame_history/storm_motion/
-# project_rain_arrival above rather than just widening their own
-# constants — PROJECTION_MAX_MINUTES' 3-hour cap and its confidence
-# decay are correctly tuned for near-term nowcasting against a single
-# frame's real shape; stretching that same machinery to 6+ hours would
-# both wreck that tuning AND stop being physically appropriate anyway
-# (a storm's shape 200+ km and 6+ hours out isn't well predicted by
-# translating its CURRENT shape that far — straight-line centroid
-# extrapolation, what this section does instead, is the standard
-# technique at this range).
-LONG_RANGE_LOOKBACK_HOURS = 3
-LONG_RANGE_SAMPLE_COUNT = 8  # roughly one sample every ~25 min across the lookback window
-LONG_RANGE_MAX_LOOKAHEAD_HOURS = 10
-# How close a projected line has to pass to count as "this could reach
-# you" — wider than PROJECTION_BEAM_HALF_WIDTH_KM's 12km on purpose:
-# this is a straight-line extrapolation over 100+ km carrying real
-# bearing uncertainty (confirmed live: individual segments can swing
-# 30-40 degrees from the overall trend), not a corridor search against
-# the storm's own actual current shape.
-LONG_RANGE_MISS_THRESHOLD_KM = 70.0
-# At least this many independent recent segments have to each project
-# a close approach before this says anything at all — one line alone
-# is exactly the kind of single noisy segment that produced an
-# implausible 127 km/h reading in the real case that motivated this;
-# requiring agreement across several is what makes the difference
-# between a real converging trend and one bad frame pair.
-LONG_RANGE_MIN_AGREEING_LINES = 2
-# Deliberately smaller than MAX_BACKFILL_FETCHES_PER_CALL (2) — this
-# backfill also only ever starts once _ensure_frame_history's own
-# history is already full (see below), so it never runs on the exact
-# cold-start rerun that's most fetch-sensitive, but keeping its own
-# per-call cap tight still bounds the worst case on every later rerun
-# to 1 extra fetch, not 2 stacked on top of the near-term system's own.
-LONG_RANGE_MAX_BACKFILL_FETCHES_PER_CALL = 1
-
-_long_range_frames: dict[str, list[tuple[datetime, bytes]]] = {"rain": [], "snow": []}
-_long_range_backfill_attempted_at: dict[str, float] = {"rain": 0.0, "snow": 0.0}
-
-
-def _ensure_long_range_history(kind: str, layer: str, dims: tuple[datetime, datetime] | None) -> None:
-    """Same incremental, throttled, cold-start-safe backfill pattern as
-    _ensure_frame_history (see its own docstring for why this matters:
-    even one extra network-shaped call on the cold-start path was
-    enough to stall the app's whole autorefresh cycle once) — sampling
-    LONG_RANGE_SAMPLE_COUNT points spread across
-    LONG_RANGE_LOOKBACK_HOURS instead of a dense recent window.
-    Deliberately staggered BEHIND _ensure_frame_history: only starts
-    once that function's own history is already full, so the two
-    backfills never stack their fetch bursts on the same, most
-    fragile, cold-start rerun — the near-term system (which drives the
-    existing rain badges) finishes first, and this lower-priority one
-    fills in gradually afterward."""
-    history = _long_range_frames[kind]
-    if len(history) >= LONG_RANGE_SAMPLE_COUNT:
-        return
-    if len(_frame_history[kind]) < FRAME_HISTORY_SIZE:
-        return
-    now_ts = time.time()
-    if now_ts - _long_range_backfill_attempted_at[kind] < BACKFILL_RETRY_SECONDS:
-        return
-    _long_range_backfill_attempted_at[kind] = now_ts
-
-    if dims is None:
-        return
-    default_time, start_time = dims
-    earliest = max(start_time, default_time - timedelta(hours=LONG_RANGE_LOOKBACK_HOURS))
-    span_minutes = (default_time - earliest).total_seconds() / 60
-    if span_minutes <= 0:
-        return
-    step_minutes = span_minutes / (LONG_RANGE_SAMPLE_COUNT - 1)
-
-    have = {t for t, _ in history}
-    fetched_count = 0
-    for i in range(LONG_RANGE_SAMPLE_COUNT):
-        if fetched_count >= LONG_RANGE_MAX_BACKFILL_FETCHES_PER_CALL:
-            break
-        target = default_time - timedelta(minutes=step_minutes * i)
-        # Snap to EC's real 6-minute grid — an off-grid request just
-        # comes back empty (confirmed live), wasting the attempt.
-        aligned_minute = (target.minute // 6) * 6
-        frame_time = target.replace(minute=aligned_minute, second=0, microsecond=0)
-        if frame_time in have or frame_time < earliest:
-            continue
-        raw = _fetch_radar_bytes_at(layer, frame_time)
-        if raw is not None:
-            history.append((frame_time, raw))
-            have.add(frame_time)
-            fetched_count += 1
-    history.sort(key=lambda item: item[0])
-    del history[: -LONG_RANGE_SAMPLE_COUNT]
-
-
-def _closest_approach_along_bearing(
-    lat: float, lon: float, bearing_deg_: float, max_km: float, step_km: float = 5.0
-) -> tuple[float, float]:
-    """(closest_distance_km, distance_along_line_km) walking forward
-    from (lat, lon) along bearing_deg_ — how near this line gets to
-    WEATHER_LAT/WEATHER_LON, and how far along the line that nearest
-    point is. distance_along_line_km stays 0 (the starting point
-    itself) if the line only ever moves AWAY, which is exactly the
-    signal a caller needs to exclude it — same iterative
-    _destination()/_distance_km() stepping style as _far_edge_km and
-    _echo_near_backprojected_point above, rather than closed-form
-    vector math, for consistency with the rest of this module."""
-    best_dist = _distance_km(lat, lon, WEATHER_LAT, WEATHER_LON)
-    best_at_km = 0.0
-    d = step_km
-    while d <= max_km:
-        plat, plon = _destination(lat, lon, bearing_deg_, d)
-        dist = _distance_km(plat, plon, WEATHER_LAT, WEATHER_LON)
-        if dist < best_dist:
-            best_dist = dist
-            best_at_km = d
-        d += step_km
-    return best_dist, best_at_km
-
-
-def long_range_watch(kind: str = "rain") -> dict | None:
-    """{"eta_time" (naive UTC datetime), "closest_km", "distance_km"
-    (current, of the most recent tracked position), "bearing_deg",
-    "speed_kmh", "agreeing_lines", "total_lines"} — a longer-range,
-    explicitly lower-confidence companion to project_rain_arrival (see
-    the module comment above this section for why that function's own
-    3-hour/single-frame-shape design can't answer this).
-
-    Tracks the same union-of-significant-blobs centroid
-    storm_motion/_track_blob_for_motion use, but across
-    _long_range_frames' own multi-hour, coarser sample set instead of
-    _frame_history's dense recent hour. Builds one straight-line
-    extrapolation per consecutive sample pair (implausible ones —
-    faster than MAX_PLAUSIBLE_SPEED_KMH, or barely-moved segments below
-    STATIONARY_THRESHOLD_KM — dropped, the same plausibility bar
-    _motion_confidence applies elsewhere), and only reports a result if
-    at least LONG_RANGE_MIN_AGREEING_LINES independent recent lines
-    each project passing within LONG_RANGE_MISS_THRESHOLD_KM inside
-    LONG_RANGE_MAX_LOOKAHEAD_HOURS — one line alone is exactly the kind
-    of single noisy segment that produced an implausible 127 km/h
-    reading in the real case that motivated this feature. None if
-    there's not enough history yet, or nothing currently qualifies."""
-    points = []
-    for t, raw in _long_range_frames[kind]:
-        try:
-            img = Image.open(io.BytesIO(raw)).convert("RGBA")
-        except Exception:
-            continue
-        centroid = _track_blob_for_motion(img)
-        if centroid is not None:
-            points.append((t, centroid[0], centroid[1]))
-    if len(points) < LONG_RANGE_MIN_AGREEING_LINES + 1:
-        return None
-
-    lines = []
-    for i in range(len(points) - 1):
-        t0, lat0, lon0 = points[i]
-        t1, lat1, lon1 = points[i + 1]
-        gap_minutes = (t1 - t0).total_seconds() / 60
-        if gap_minutes < MIN_TREND_GAP_MINUTES:
-            continue
-        moved_km = _distance_km(lat0, lon0, lat1, lon1)
-        if moved_km < STATIONARY_THRESHOLD_KM:
-            continue
-        speed_kmh = moved_km / (gap_minutes / 60)
-        if speed_kmh > MAX_PLAUSIBLE_SPEED_KMH:
-            continue
-        bearing = _bearing_deg(lat0, lon0, lat1, lon1)
-        lines.append({"t": t1, "lat": lat1, "lon": lon1, "speed_kmh": speed_kmh, "bearing_deg": bearing})
-
-    hits = []
-    max_search_km = LONG_RANGE_MAX_LOOKAHEAD_HOURS * MAX_PLAUSIBLE_SPEED_KMH
-    for ln in lines:
-        closest_km, at_km = _closest_approach_along_bearing(ln["lat"], ln["lon"], ln["bearing_deg"], max_search_km)
-        if at_km <= 0 or closest_km > LONG_RANGE_MISS_THRESHOLD_KM:
-            continue
-        eta_hours = at_km / ln["speed_kmh"]
-        if eta_hours > LONG_RANGE_MAX_LOOKAHEAD_HOURS:
-            continue
-        hits.append({**ln, "closest_km": closest_km, "eta_hours": eta_hours})
-
-    if len(hits) < LONG_RANGE_MIN_AGREEING_LINES:
-        return None
-
-    hits.sort(key=lambda h: h["t"])
-    best = hits[-1]  # most recent qualifying line — most up to date
-    last_t, last_lat, last_lon = points[-1]
-    return {
-        "eta_time": best["t"] + timedelta(hours=best["eta_hours"]),
-        "closest_km": best["closest_km"],
-        "distance_km": _distance_km(last_lat, last_lon, WEATHER_LAT, WEATHER_LON),
-        "bearing_deg": best["bearing_deg"],
-        "speed_kmh": best["speed_kmh"],
-        "agreeing_lines": len(hits),
-        "total_lines": len(lines),
-    }
-
-
-def _scan_nearby(img: Image.Image) -> dict:
-    """{"nearest", "max_mm_h", "nearest_any", "max_mm_h_any"} within
-    NEARBY_RADIUS_KM.
-
-    "nearest"/"max_mm_h": the nearest point (and its blob's own peak
-    intensity) belonging to whichever cluster of connected
-    precipitation actually has real areal extent (see
-    MIN_SIGNIFICANT_CELLS) — not just whichever single pixel happens to
-    be geometrically closest (see _cluster_blobs' comment for why that
-    distinction turned out to matter for real). None/0.0 if nothing
-    qualifies.
-
-    "nearest_any"/"max_mm_h_any": the nearest point (and ITS OWN blob's
-    peak intensity, not the significant blob's) belonging to ANY real
-    blob (MIN_REAL_CELLS, a much lower bar — just enough to exclude
-    single-pixel rendering noise), regardless of overall size. This
-    exists so a small blob that doesn't clear the significance bar can
-    still be checked for (a) whether its own direction of travel is a
-    genuine direct hit on WEATHER_LAT/WEATHER_LON (see
-    project_rain_arrival), and (b) whether IT is severe in its own right
-    — a small, fast, intense cell on a direct course is exactly the
-    kind of thing that shouldn't be under-reported just for lacking
-    the significant blob's areal extent."""
-    cx, cy = IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2
-    arr = np.array(img)
-    alpha_mask = arr[:, :, 3] > ALPHA_THRESHOLD
-    all_blobs = _cluster_blobs(alpha_mask)
-
-    real_blobs = [b for b in all_blobs if len(b) >= MIN_REAL_CELLS]
-    any_blob, nearest_any = None, None
-    for cells in real_blobs:
-        point = _nearest_point_in_blob(alpha_mask, cells, cx, cy)
-        if point is not None and (nearest_any is None or point[2] < nearest_any[2]):
-            nearest_any = point
-            any_blob = cells
-    max_mm_h_any = _max_mm_h_in_blob(img, alpha_mask, any_blob) if any_blob is not None else 0.0
-
-    significant_blobs = [b for b in real_blobs if len(b) >= MIN_SIGNIFICANT_CELLS]
-    best_blob, best_nearest = None, None
-    for cells in significant_blobs:
-        point = _nearest_point_in_blob(alpha_mask, cells, cx, cy)
-        if point is not None and (best_nearest is None or point[2] < best_nearest[2]):
-            best_nearest = point
-            best_blob = cells
-
-    # The significant blob and the nearest-any blob are frequently the
-    # same one (whenever the closest real precipitation is itself
-    # significant) — skip re-scanning intensity in that case rather
-    # than doing the same work twice.
-    if best_blob is any_blob:
-        max_mm_h = max_mm_h_any
-    else:
-        max_mm_h = _max_mm_h_in_blob(img, alpha_mask, best_blob) if best_blob is not None else 0.0
-
-    return {
-        "nearest": best_nearest, "max_mm_h": max_mm_h,
-        "nearest_any": nearest_any, "max_mm_h_any": max_mm_h_any,
-    }
-
-
-def _far_edge_km(img: Image.Image, bearing_deg_: float, start_km: float) -> float | None:
-    """Walking outward from WEATHER_LAT/WEATHER_LON along bearing_deg_,
-    starting just past the near edge (start_km), the distance at which
-    the echo stops — an approximation of the storm's depth along its
-    line of approach, used to estimate when it'll clear rather than
-    just when it'll arrive. None if the echo still hasn't ended by
-    FAR_EDGE_MAX_KM, or by the time the search runs off the edge of the
-    image — either way, "we don't actually know" is more honest than
-    guessing a number."""
-    d = start_km + FAR_EDGE_STEP_KM
-    while d <= FAR_EDGE_MAX_KM:
-        lat, lon = _destination(WEATHER_LAT, WEATHER_LON, bearing_deg_, d)
-        px, py = _latlon_to_pixel(lat, lon)
-        has_echo = _pixel_has_echo(img, px, py)
-        if has_echo is None:  # ran off the edge of the image before finding the end
-            return None
-        if not has_echo:
-            return d
-        d += FAR_EDGE_STEP_KM
-    return None
-
-
-def _record_and_trend(kind: str, now: datetime, nearest_km: float | None) -> dict:
-    """Appends the latest reading to this kind's history (only while
-    something's actually detected — a gap just ages out naturally
-    rather than needing an explicit reset) and returns the trend
-    computed from the oldest and newest samples still in the window."""
-    history = _history[kind]
-    if nearest_km is not None:
-        history.append((now, nearest_km))
-    cutoff = now.timestamp() - HISTORY_WINDOW_MINUTES * 60
-    history[:] = [(t, km) for t, km in history if t.timestamp() >= cutoff]
-
-    if len(history) < 2:
-        return {"speed_kmh": None, "trend": "detecting"}
-
-    old_t, old_km = history[0]
-    new_t, new_km = history[-1]
-    gap_minutes = (new_t - old_t).total_seconds() / 60
-    if gap_minutes < MIN_TREND_GAP_MINUTES:
-        return {"speed_kmh": None, "trend": "detecting"}
-
-    change_km = old_km - new_km  # positive = got closer
-    if abs(change_km) < STATIONARY_THRESHOLD_KM:
-        return {"speed_kmh": None, "trend": "stationary"}
-    speed_kmh = abs(change_km) / (gap_minutes / 60)
-    return {"speed_kmh": speed_kmh, "trend": "approaching" if change_km > 0 else "receding"}
-
-
-# How far ahead, and how finely, to project the storm's own real
-# measured motion (see storm_motion) forward against its own current
-# shape — see project_rain_arrival. 3 hours comfortably covers any
-# realistic "when will this actually reach me" question at typical
-# storm speeds; 2-minute steps are already finer than the radar's own
-# ~6-minute real refresh cadence, so there's no real precision left on
-# the table by stepping any finer than that.
-PROJECTION_MAX_MINUTES = 180
-PROJECTION_STEP_MINUTES = 2
-
-
-# Confidence scoring — session request: "only show things you're
-# confident about." Each factor below is an independent 0-1 multiplier
-# reflecting one specific reason a projection might not be trustworthy;
-# multiplying them together (rather than averaging) means any ONE
-# genuinely bad factor can sink the whole score, which is the right
-# behavior — a projection built on a fast-but-implausible speed reading
-# from a sparse, curving track shouldn't average out to "medium
-# confidence," it should read as genuinely unreliable.
-MIN_CONFIDENCE = 0.5
-
-# Real storms essentially never sustain speeds anywhere near this in
-# this region — a measurement above it is far more likely a tracking
-# artifact (e.g. the centroid jumping between different cells within a
-# large complex, confirmed live earlier this session as a real failure
-# mode) than an actual storm. Soft falloff rather than a hard cutoff:
-# scales down proportionally past the ceiling instead of a cliff, since
-# a genuinely fast squall line isn't strictly impossible.
-MAX_PLAUSIBLE_SPEED_KMH = 120.0
-# Beyond this angular disagreement between any two tracked segments,
-# the storm's own path is treated as having essentially no consistency
-# left to trust a straight-line projection from (a real 45-degree swing
-# between two consecutive real segments means it's curving, splitting,
-# or being mistracked, not holding a steady course).
-MAX_TRUSTED_ANGULAR_ERROR_DEG = 45.0
-# How far into the future a projection can reach before confidence
-# decays to zero — nowcasting skill drops off well before
-# PROJECTION_MAX_MINUTES' full 3-hour search window; a hit found 5
-# minutes out in the CURRENT frame is a real observation, one found
-# 170 minutes out is mostly an assumption that nothing about the storm
-# changes for the next three hours. Calibrated generously (150, not a
-# tighter ~60-90) because this multiplies against several OTHER
-# factors below — confirmed live that a tighter horizon combined with
-# ordinary, unremarkable staleness sank even a clean, fully-sampled,
-# dead-straight 32-minute prediction under MIN_CONFIDENCE, which is far
-# too aggressive for what's meant to be a routine, useful lead time.
-CONFIDENCE_HORIZON_MINUTES = 150.0
-# How stale a frame can be before ITS OWN content (not the ETA, which
-# eta_minutes above already numerically corrects for) is treated as
-# untrustworthy. Deliberately much larger than REFRESH_SECONDS (6 min)
-# — a frame at the normal maximum staleness, right before the next
-# refresh, is completely ordinary operation, not a red flag, and
-# confirmed live that using REFRESH_SECONDS itself here was a real bug:
-# it decayed to EXACTLY zero confidence at 6 minutes stale, meaning
-# every single frame failed right before its own routine refresh. Real
-# degradation — backfill stalling, several missed refresh cycles in a
-# row — is what this should actually catch.
-STALENESS_CONFIDENCE_HORIZON_MINUTES = 20.0
-
-
-# How many real tracked points already count as a fully-trusted sample
-# depth — deliberately its own constant, NOT tied to FRAME_HISTORY_SIZE
-# (how much raw cache capacity exists). A track built from this many
-# consistent real points already spans a comfortable ~24 minutes at the
-# radar's own 6-min cadence, real evidence in its own right — bumping
-# the cache bigger (more history to measure a longer-baseline
-# bearing/speed from) shouldn't silently make ordinary tracks read as
-# less confident just because the denominator changed under it.
-MIN_SAMPLES_FOR_FULL_CONFIDENCE = 5
-
-
-def _motion_confidence(motion: dict) -> float:
-    """0-1 confidence in a storm_motion reading itself, from three
-    independent factors: how many real cached frames it's built from
-    (sample_count, out of MIN_SAMPLES_FOR_FULL_CONFIDENCE), how much
-    any one tracked segment's own bearing disagreed with the overall
-    measured bearing (max_angular_error_deg), and how physically
-    plausible the measured speed is (MAX_PLAUSIBLE_SPEED_KMH). Doesn't
-    know about lead time or frame staleness — those are
-    project_rain_arrival's own concerns, folded in separately."""
-    sample_factor = min(1.0, motion["sample_count"] / MIN_SAMPLES_FOR_FULL_CONFIDENCE)
-    consistency_factor = max(0.0, 1.0 - motion["max_angular_error_deg"] / MAX_TRUSTED_ANGULAR_ERROR_DEG)
-    speed_kmh = motion["speed_kmh"]
-    plausibility_factor = 1.0 if speed_kmh <= MAX_PLAUSIBLE_SPEED_KMH else MAX_PLAUSIBLE_SPEED_KMH / speed_kmh
-    return sample_factor * consistency_factor * plausibility_factor
-
-
-# How wide a corridor to search perpendicular to the storm's own
-# measured bearing at each backward-projected distance, and how finely
-# — a single razor-thin ray along the exact bearing turned out to be
-# far too brittle: confirmed live a real tracked storm's own bearing
-# routinely disagrees with itself by 10-20+ degrees between individual
-# frame pairs (see storm_motion's max_angular_error_deg), and at real
-# search distances (tens of km) an error that size walks the exact
-# backward ray several km away from where the storm's actual echo
-# sits — missing it outright even while the storm is genuinely still
-# heading roughly this way. This was the reason the badge stopped
-# showing an ETA at all and only ever reported "here now" once the
-# storm had already arrived, which brought none of the lead-time value
-# the whole feature was built for. A corridor (not a point) absorbs
-# that realistic wobble; PROJECTION_BEAM_HALF_WIDTH_KM roughly matches
-# the old point+radius system's own DIRECT_HIT_RADIUS_KM tolerance.
-PROJECTION_BEAM_HALF_WIDTH_KM = 12.0
-PROJECTION_BEAM_STEP_KM = 3.0
-
-_OFF_FRAME = object()
-
-
-def _echo_near_backprojected_point(
-    alpha_mask: np.ndarray, bearing_deg_: float, distance_km: float
-) -> tuple[float, float] | None | object:
-    """(lat, lon) of the first echo pixel found in a corridor centered
-    on — and perpendicular to — the point distance_km directly behind
-    (the reverse of) bearing_deg_ from the user's own exact
-    coordinates (see PROJECTION_BEAM_HALF_WIDTH_KM for the corridor's
-    width). None if no point in the corridor has echo; the module-level
-    _OFF_FRAME sentinel if the corridor's own CENTER point falls
-    outside the fetched frame entirely (can't tell either way — a
-    corridor that only partly leaves the frame still searches whatever
-    part of it remains in-bounds, rather than aborting on that basis
-    alone)."""
-    reverse_bearing = (bearing_deg_ + 180) % 360
-    center_lat, center_lon = _destination(WEATHER_LAT, WEATHER_LON, reverse_bearing, distance_km)
-    center_px, center_py = _latlon_to_pixel(center_lat, center_lon)
-    if center_px < 0 or center_px >= IMAGE_WIDTH or center_py < 0 or center_py >= IMAGE_HEIGHT:
-        return _OFF_FRAME
-    perpendicular_bearing = (reverse_bearing + 90) % 360
-    offset_km = -PROJECTION_BEAM_HALF_WIDTH_KM
-    while offset_km <= PROJECTION_BEAM_HALF_WIDTH_KM:
-        lat, lon = _destination(center_lat, center_lon, perpendicular_bearing, offset_km)
-        px, py = _latlon_to_pixel(lat, lon)
-        if 0 <= px < IMAGE_WIDTH and 0 <= py < IMAGE_HEIGHT and alpha_mask[py, px]:
-            return lat, lon
-        offset_km += PROJECTION_BEAM_STEP_KM
-    return None
-
-
-def project_rain_arrival(kind: str, img: Image.Image) -> dict | None:
-    """{"eta_minutes", "duration_minutes", "mm_h"} predicting when the
-    storm's own actual shape — not just its tracked center point with a
-    fixed tolerance radius — will genuinely sweep across the user's
-    exact coordinates, using its real measured direction and speed (see
-    storm_motion). Session request: "if storm is moving east, look
-    directly to the exact other side of the compass to west and form a
-    direct invisible line that sees what part of the rain will actually
-    come in contact with my dot" — this is exactly that, done as simple
-    linear advection (the standard basic nowcasting technique): walking
-    backward from the user's own location along the reverse of the
-    storm's own bearing, at the storm's own measured speed, and
-    checking the CURRENT frame's real echo mask near each point along
-    that line (a corridor, not a single razor-thin ray — see
-    PROJECTION_BEAM_HALF_WIDTH_KM/_echo_near_backprojected_point for
-    why a bare line turned out to be too brittle against real bearing
-    wobble). Whether the current frame's actual shape, translated
-    forward this way, genuinely reaches the exact coordinates is a
-    direct answer to "will this hit me," not a coarse point-plus-radius
-    approximation of it — replaces the old
-    _closest_approach_km/DIRECT_HIT_RADIUS_KM approach, which only ever
-    checked the tracked centroid's own path against a flat 15km
-    tolerance, not the storm's real footprint.
-
-    eta_minutes is the first future moment echo is found there;
-    duration_minutes is how much longer after that the echo keeps
-    covering the point before clearing (None if it doesn't clear within
-    PROJECTION_MAX_MINUTES); mm_h is the actual classified intensity of
-    the echo found at the moment of arrival — a genuine prediction of
-    how hard it'll be raining right at the location when it gets there,
-    not the tracked system's peak intensity somewhere else in the
-    frame.
-
-    None if there's no confirmed motion yet (storm_motion's own
-    cold-start window, or a genuinely near-stationary system), the
-    projected path runs off the edge of the fetched frame before ever
-    confirming an answer either way (the storm's too far out, or
-    moving too slowly, for this frame's extent to say anything useful
-    within PROJECTION_MAX_MINUTES), or the combined confidence in this
-    specific answer falls under MIN_CONFIDENCE (see _motion_confidence
-    and the lead-time/staleness factors below) — a technically-computed
-    but shaky prediction is deliberately withheld rather than shown.
-    "confidence" (0-1) is included in the result for whatever survives
-    that bar, for future callers that might want to distinguish "fairly
-    confident" from "just barely over the line" rather than only a
-    plain yes/no."""
-    motion = storm_motion(kind)
-    if motion is None:
-        return None
-    bearing_deg_, speed_kmh = motion["bearing_deg"], motion["speed_kmh"]
-
-    arr = np.array(img)
-    alpha_mask = arr[:, :, 3] > ALPHA_THRESHOLD
-
-    minutes = 0
-    first_hit_minutes = None
-    first_hit_point = None
-    while minutes <= PROJECTION_MAX_MINUTES:
-        hit = _echo_near_backprojected_point(alpha_mask, bearing_deg_, speed_kmh * (minutes / 60))
-        if hit is _OFF_FRAME:
-            return None
-        if hit is not None:
-            first_hit_minutes = minutes
-            first_hit_point = hit
-            break
-        minutes += PROJECTION_STEP_MINUTES
-    if first_hit_minutes is None:
-        return None
-
-    duration_minutes = None
-    minutes = first_hit_minutes + PROJECTION_STEP_MINUTES
-    while minutes <= PROJECTION_MAX_MINUTES:
-        hit = _echo_near_backprojected_point(alpha_mask, bearing_deg_, speed_kmh * (minutes / 60))
-        if hit is _OFF_FRAME or hit is None:
-            duration_minutes = minutes - first_hit_minutes
-            break
-        minutes += PROJECTION_STEP_MINUTES
-
-    # lat/lon/distance_km/mm_h below describe the ACTUAL echo pixel the
-    # corridor search found, not the idealized point straight along the
-    # storm's own bearing — those can differ by up to
-    # PROJECTION_BEAM_HALF_WIDTH_KM now that the search has real width,
-    # and using the genuine match keeps distance/direction/intensity
-    # honest about what was actually found, not what the math assumed
-    # would be there.
-    lat, lon = first_hit_point
-    distance_km = _distance_km(WEATHER_LAT, WEATHER_LON, lat, lon)
-    px, py = _latlon_to_pixel(lat, lon)
-    mm_h = _classify_mm_h(img.getpixel((px, py))[:3]) if 0 <= px < IMAGE_WIDTH and 0 <= py < IMAGE_HEIGHT else 0.0
-    reverse_bearing = _bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)
-
-    # first_hit_minutes above counts forward from THIS FRAME's own real
-    # valid moment (see _fetch_time_dimension), not from right now — EC
-    # only refreshes its composite every REFRESH_SECONDS, so the
-    # "latest" frame is already anywhere from 0 to ~6+ real minutes old
-    # by the time it's actually the one being looked at (confirmed
-    # live: measured 2.6 minutes stale at one check, 7.5 at another).
-    # Silently treating "minutes from when this frame was taken" as
-    # "minutes from now" was a real bug — confirmed live as a genuine
-    # contributor to a reported ETA reading ~15 minutes later than
-    # Apple Weather's own nowcast for the same storm. distance_km/lat/
-    # lon/mm_h above are correctly left alone (they describe the
-    # frame's own geometry, not a time-from-now), but eta_minutes needs
-    # this correction to actually mean "from now."
-    #
-    # Reads the frame's own timestamp straight from _frame_history
-    # (already populated by the time this runs, see _fetch_radar_bytes)
-    # rather than an independent _fetch_time_dimension call — confirmed
-    # live that an extra network-shaped call here, even one that should
-    # cache-hit, was enough to stall the whole app's autorefresh cycle
-    # on a cold start (every genuine cache-miss fetch app-wide is
-    # globally serialized through fetch_throttle, one at a time).
-    # _frame_history already has this for free.
-    history = _frame_history[kind]
-    staleness_minutes = 0.0
-    if history:
-        staleness_minutes = max(0.0, (datetime.utcnow() - history[-1][0]).total_seconds() / 60)
-    eta_minutes = max(0, round(first_hit_minutes - staleness_minutes))
-
-    # Session request: "only show things you're confident about."
-    # _motion_confidence covers the motion reading itself (sample
-    # depth, path consistency, speed plausibility); the two factors
-    # below are specific to THIS projection — how far into the future
-    # it reaches (CONFIDENCE_HORIZON_MINUTES) and how stale the frame
-    # it's built from already is. Multiplied together, not averaged, so
-    # any single genuinely bad factor sinks the whole score rather than
-    # getting diluted by otherwise-fine ones. Below MIN_CONFIDENCE, this
-    # returns None rather than a technically-computed but shaky answer
-    # — the same "don't say something we can't back up" standard
-    # already applied everywhere else in this module.
-    lead_time_factor = max(0.0, 1.0 - eta_minutes / CONFIDENCE_HORIZON_MINUTES)
-    staleness_factor = max(0.0, 1.0 - staleness_minutes / STALENESS_CONFIDENCE_HORIZON_MINUTES)
-    confidence = _motion_confidence(motion) * lead_time_factor * staleness_factor
-    if confidence < MIN_CONFIDENCE:
-        return None
-
-    # distance_km/direction describe the SAME specific patch of
-    # precipitation eta_minutes was computed from — deliberately NOT
-    # "whichever blob happens to be nearest right now" (see
-    # _scan_nearby's "nearest"/"nearest_any"), which can be a
-    # completely different, physically unrelated echo. Confirmed live
-    # this distinction was a real, confusing bug: a badge combining the
-    # nearest blob's own "8 km NW" with this function's ETA read as
-    # "8km away at 66 km/h arrives in over an hour," which made no
-    # sense — because the 8km cell and the actual incoming echo along
-    # the storm's real motion line weren't the same thing at all.
-    return {
-        "eta_minutes": eta_minutes,
-        "duration_minutes": duration_minutes,
-        "mm_h": mm_h,
-        "distance_km": distance_km,
-        "lat": lat,
-        "lon": lon,
-        "direction": compass_abbr(reverse_bearing),
-        "direction_word": compass_word(reverse_bearing),
-        "confidence": confidence,
-    }
-
-
-# How far (in pixels) around the image's exact center — where
-# WEATHER_LAT/WEATHER_LON always sits, by construction of _bbox — to
-# check for real detected precipitation before calling it "arrived."
-# Small on purpose: this needs to mean "genuinely raining at my exact
-# coordinates," not "a storm is broadly nearby." A few pixels of
-# tolerance (~1-1.5km) absorbs normal radar rendering/georeferencing
-# jitter without inflating into a real buffer distance. Confirmed live
-# this distinction is exactly what was wrong before: the previous
-# distance-radius check (ARRIVED_RADIUS_KM, a generous 5km) called a
-# storm still ~3km south "here now" while the pixel directly at the
-# coordinates was still fully clear — contradicting both Apple
-# Weather's "rain in 15" and EC's own station observation ("Cloudy")
-# for the same moment.
-_LOCATION_CHECK_PX = 3
-
-
-def _echo_at_location(img: Image.Image) -> bool:
-    """Is there real detected precipitation AT the user's own exact
-    coordinates right now, not just somewhere nearby — see
-    _LOCATION_CHECK_PX."""
-    cx, cy = IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2
-    for dx in range(-_LOCATION_CHECK_PX, _LOCATION_CHECK_PX + 1):
-        for dy in range(-_LOCATION_CHECK_PX, _LOCATION_CHECK_PX + 1):
-            if _pixel_has_echo(img, cx + dx, cy + dy):
-                return True
-    return False
-
-
-def _mm_h_at_location(img: Image.Image) -> float:
-    """The actual measured intensity (mm/h) within the same small
-    neighborhood _echo_at_location checks — what's really happening AT
-    the user's exact coordinates, as opposed to anywhere else within
-    the broader tracked system (see severe_precip_status for why that
-    distinction turned out to matter for real)."""
-    cx, cy = IMAGE_WIDTH // 2, IMAGE_HEIGHT // 2
-    max_mm_h = 0.0
-    for dx in range(-_LOCATION_CHECK_PX, _LOCATION_CHECK_PX + 1):
-        for dy in range(-_LOCATION_CHECK_PX, _LOCATION_CHECK_PX + 1):
-            px, py = cx + dx, cy + dy
-            if 0 <= px < IMAGE_WIDTH and 0 <= py < IMAGE_HEIGHT:
-                pixel = img.getpixel((px, py))
-                if pixel[3] > ALPHA_THRESHOLD:
-                    max_mm_h = max(max_mm_h, _classify_mm_h(pixel[:3]))
-    return max_mm_h
-
-# precip_status is called independently from the hero badge, the
-# morning briefing, and the Radar page itself — which in turn calls
-# tracking_overlay, which used to call precip_status AGAIN internally.
-# That meant a single rerun could decode + pixel-scan the same radar
-# frame up to 4 times over, and worse, called _record_and_trend that
-# many times too, each with its own datetime.now() — its own docstring
-# says "one point per real API call (~every 6 min)" but it was actually
-# recording one point per CALLER per rerun. Keyed by kind (only ever
-# "rain"/"snow", so inherently bounded) the same way _history already
-# is, this caches the decode+scan+trend-record once per real
-# REFRESH_SECONDS window regardless of how many callers ask for it.
-_echo_cache: dict[str, tuple[int, dict]] = {}
-
-
-def _decode_and_scan(kind: str) -> dict:
-    """{"img", "nearest", "trend", "max_mm_h", "nearest_any",
-    "max_mm_h_any", "arrival"} for the current radar frame — see
-    project_rain_arrival for that field's shape (a dict once the
-    storm's real shape and measured motion together confirm it'll
-    genuinely reach the exact location, else None)."""
-    layer = SNOW_LAYER if kind == "snow" else RAIN_LAYER
-    cache_bust = int(time.time() // REFRESH_SECONDS)
-    cached = _echo_cache.get(kind)
-    if cached is not None and cached[0] == cache_bust:
-        return cached[1]
-
-    raw = _fetch_radar_bytes(layer)
-    now = datetime.now()
-    img = nearest = nearest_any = arrival = None
-    max_mm_h = max_mm_h_any = 0.0
-    if raw:
-        try:
-            img = Image.open(io.BytesIO(raw)).convert("RGBA")
-            scan = _scan_nearby(img)
-            nearest, max_mm_h = scan["nearest"], scan["max_mm_h"]
-            nearest_any, max_mm_h_any = scan["nearest_any"], scan["max_mm_h_any"]
-            arrival = project_rain_arrival(kind, img)
-        except Exception:
-            img = nearest = nearest_any = arrival = None
-            max_mm_h = max_mm_h_any = 0.0
-    trend = _record_and_trend(kind, now, nearest[2] if nearest else None)
-    result = {
-        "img": img, "nearest": nearest, "trend": trend, "max_mm_h": max_mm_h,
-        "nearest_any": nearest_any, "max_mm_h_any": max_mm_h_any, "arrival": arrival,
-    }
-    _echo_cache[kind] = (cache_bust, result)
-    return result
-
-
-def precip_status(kind: str = "rain") -> dict | None:
-    """The one signal behind the hero badge and the Radar page's own
-    badge — collapsed to two states on purpose (see session request:
-    "rain in ___" while it's inbound, "clears in ___" once it's here),
-    rather than the previous separate distance/eta/end-time fields a
-    caller had to assemble into text itself.
-
-    {"state": "approaching", "minutes": int} — nothing detected at the
-    user's own exact coordinates yet (see _echo_at_location), but
-    projecting the storm's own real shape forward along its own
-    measured motion (see storm_motion, project_rain_arrival) confirms
-    it'll genuinely reach WEATHER_LAT/WEATHER_LON; minutes is that
-    projection's own ETA. Being nearby with its raw distance nominally
-    shrinking is NOT enough on its own — confirmed live that's a real
-    false positive (a storm sitting east of the user while genuinely
-    moving further east reads as "getting closer" in nearest-edge terms
-    for a while even though it's pulling away, not closing in) — so a
-    genuine shape-and-motion-confirmed projection is required.
-
-    {"state": "arrived", "minutes": int|None} — real detected
-    precipitation AT the user's own exact coordinates right now (see
-    _echo_at_location; confirmed live this needed to be a direct pixel
-    check, not "the nearest echo edge is within some buffer distance,"
-    which called it "arrived" while the exact coordinates were still
-    clear and both Apple Weather and EC's own station observation
-    agreed it hadn't started yet); minutes is when it's expected to
-    clear, from the same tracked speed used for the ETA above, probing
-    outward for the echo's far edge — None if that can't be pinned down
-    yet (echo runs off the image edge, or a speed estimate isn't
-    available yet).
-
-    Both states also carry "direction"/"direction_word" (e.g. "NW" /
-    "northwest") — the bearing from Corbeil to the nearest tracked echo,
-    so where the storm currently *is*, a different question from which
-    way it's moving (see project_rain_arrival for that). Least
-    meaningful right at "arrived", where the echo's close enough that
-    pixel-level jitter can swing the bearing around a bit.
-
-    None — nothing detected within NEARBY_RADIUS_KM, nothing arrived at
-    the exact coordinates, or the shape-and-motion projection hasn't
-    confirmed a genuine hit (not enough motion samples yet, genuinely
-    stationary, genuinely headed somewhere else, or the projected path
-    runs off the edge of the fetched frame before confirming either
-    way): "only say something when it's happening or genuinely on
-    course to" is the point of this over a flat nearby-or-not signal.
-    Applies the same way regardless of blob size — a small cell
-    genuinely headed straight here matters just as much as a large one,
-    and neither gets reported just for being nearby without a confirmed
-    course.
-    """
-    state = _decode_and_scan(kind)
-    img, nearest, trend = state["img"], state["nearest"], state["trend"]
-    reference = nearest or state["nearest_any"]
-
-    # "Arrived" needs a real nearby blob to anchor its own
-    # direction/far-edge-distance to (see NEARBY_RADIUS_KM) — but
-    # "approaching" below doesn't: project_rain_arrival scans the raw
-    # echo mask directly along the storm's own measured bearing,
-    # unbounded by that same nearby-blob radius, so a storm still
-    # outside NEARBY_RADIUS_KM can still be genuinely confirmed
-    # approaching. Requiring `reference` for that too was a real bug —
-    # it silently returned None for a storm the projection had already
-    # confirmed was on a direct course, just because nothing happened
-    # to be within the tighter nearby-scan radius yet.
-    if reference is not None and img is not None and _echo_at_location(img):
-        ref_lat, ref_lon, ref_distance_km = reference
-        bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, ref_lat, ref_lon)
-        direction = {"direction": compass_abbr(bearing_deg_), "direction_word": compass_word(bearing_deg_)}
-        minutes = None
-        if trend["speed_kmh"]:
-            far_km = _far_edge_km(img, bearing_deg_, ref_distance_km)
-            if far_km is not None:
-                minutes = round((far_km / trend["speed_kmh"]) * 60)
-        return {"state": "arrived", "minutes": minutes, **direction}
-
-    arrival = state["arrival"]
-    if arrival is None:
-        return None
-    # Direction here deliberately comes from the projection's own found
-    # echo (see project_rain_arrival), NOT `direction` above (the
-    # nearest currently-tracked blob) — those can be two different
-    # physical patches of precipitation, and combining one's distance/
-    # direction with the other's ETA read as nonsensical (confirmed
-    # live: "8 km NW" alongside a 62-minute ETA at 66 km/h).
-    return {
-        "state": "approaching", "minutes": arrival["eta_minutes"],
-        "direction": arrival["direction"], "direction_word": arrival["direction_word"],
-    }
-
-
-def severe_precip_status(kind: str = "rain") -> dict | None:
-    """{"mm_h", "direction", "direction_word"} once precipitation
-    genuinely severe enough to matter (SIGNIFICANT_MM_H, EC's own scale
-    step from "moderate" into "heavy") is either confirmed to be
-    happening right now — at the user's exact coordinates (see
-    _echo_at_location) — or, before it's actually arrived there,
-    tracked as the peak intensity anywhere within the approaching
-    system. None most of the time — ordinary rain/snow sits well under
-    this.
-
-    Once real precipitation is confirmed AT the exact location, mm_h is
-    the intensity actually measured there (see _mm_h_at_location) — NOT
-    the tracked system's own peak elsewhere in the frame, which is
-    frequently a completely different, far more (or less) intense cell
-    many km away within the same broad storm. Confirmed live this was a
-    real, visible discrepancy: the badge read "100 mm/h" (the system's
-    own peak) while the pixel exactly at the location classified at
-    just 1 mm/h — matching Apple Weather/Open-Meteo's own "light
-    drizzle" for the same moment, not this badge's "heavy rain."
-
-    Before arrival, only reports a number once the storm's own real
-    shape, projected forward along its own measured motion (see
-    storm_motion, project_rain_arrival), confirms it'll genuinely reach
-    WEATHER_LAT/WEATHER_LON — NOT just "nearby and intense somewhere in
-    the frame," which a storm that's merely passing by, or actively
-    moving away, can be just as easily. Confirmed live this was a real
-    bug: a cell sitting 14km east while the tracked system's own motion
-    was measured moving further east (i.e. away, not toward) was still
-    firing this as "severe" purely for being close and strong, with no
-    check on where it was actually headed. mm_h in that case is the
-    projection's own predicted intensity AT the moment of arrival — a
-    genuine forecast of how hard it'll be raining right at the location
-    when it gets there, not just the tracked system's peak somewhere
-    else in the frame that may never actually reach the exact spot.
-    Direction is still the bearing to whichever tracked blob is
-    closest, a separate question from which way it's moving."""
-    state = _decode_and_scan(kind)
-    img = state["img"]
-    reference = state["nearest"] or state["nearest_any"]
-    direction = None
-    if reference is not None:
-        bearing_deg_ = _bearing_deg(WEATHER_LAT, WEATHER_LON, reference[0], reference[1])
-        direction = {"direction": compass_abbr(bearing_deg_), "direction_word": compass_word(bearing_deg_)}
-
-    if img is not None and _echo_at_location(img):
-        if direction is None:
-            return None  # echo at the exact pixel but no real-sized blob to anchor a direction to — too uncertain to report
-        mm_h_here = _mm_h_at_location(img)
-        if mm_h_here < SIGNIFICANT_MM_H:
-            return None
-        return {"mm_h": mm_h_here, **direction}
-
-    # Session complaint, confirmed live and correct: an intense cell
-    # sitting nearby (within NEARBY_RADIUS_KM) is NOT the same thing as
-    # one actually on course to reach WEATHER_LAT/WEATHER_LON — a real
-    # storm sitting east of the user while it moves further east is
-    # genuinely severe and genuinely nearby, but it's moving away, not
-    # in. Requiring project_rain_arrival to confirm a genuine hit before
-    # reporting anything here, not just "nearby and intense," is what
-    # actually distinguishes "on pace to hit this exact spot" from a
-    # storm merely grazing past or departing — and its own predicted
-    # mm_h at the moment of arrival is a more precise answer to "how bad
-    # will it be here" than the system's peak intensity anywhere else.
-    arrival = state["arrival"]
-    if arrival is None or arrival["mm_h"] < SIGNIFICANT_MM_H:
-        return None
-    # Direction from the projection's own found echo here too (see
-    # precip_status's identical reasoning) — the nearest currently-
-    # tracked blob and the actual patch of rain confirmed heading this
-    # way are not necessarily the same physical echo.
-    return {
-        "mm_h": arrival["mm_h"],
-        "direction": arrival["direction"], "direction_word": arrival["direction_word"],
-    }
-
-
-# Tracks whether each kind was already flagged as severe as of the last
-# check — module-level (not st.session_state) so the "only alert once
-# per event" edge-detection below is shared process-wide the same way
-# _history already is, not reset by a session reconnect.
-_severe_flagged: dict[str, bool] = {"rain": False, "snow": False}
-
-
-def severe_weather_alert(kind: str = "rain") -> dict | None:
-    """A one-time toast-ready alert dict (see app.py's news_queue) the
-    moment genuinely heavy precipitation is newly detected nearby —
-    fires once per event (edge-triggered off _severe_flagged), not
-    every rerun while it persists, and resets once conditions drop
-    back under SIGNIFICANT_MM_H so a later, genuinely new event can
-    fire again.
-
-    Takes a single `kind`, caller-chosen, rather than checking both
-    rain and snow internally — confirmed live that EC's snow layer
-    (RADAR_1KM_RSNO) isn't itself gated by temperature and can show the
-    exact same reflectivity echo as the rain layer regardless of
-    season, so checking both unconditionally could fire a "heavy snow"
-    alert in the middle of July. Callers should pass whichever kind
-    actually matches the current weather category (see app.py's own
-    `precip_kind`, computed from the real forecast) the same way
-    precip_status already expects."""
-    status = severe_precip_status(kind)
-    was_flagged = _severe_flagged[kind]
-    _severe_flagged[kind] = status is not None
-    if status is not None and not was_flagged:
-        label = "Snow" if kind == "snow" else "Rain"
-        return {
-            "kind": "weather",
-            "headline": f"Heavy {label.lower()} moving in from the {status['direction_word']} "
-            f"— {status['mm_h']:.0f} mm/h",
-            "category": "Severe Weather",
-            "important": True,
-        }
-    return None
-
-
-# How long a "stint" of severe weather stays considered active after
-# the last genuinely severe reading, for callers that want a settled
-# yes/no over the whole event rather than reacting to every individual
-# radar refresh — real intensity flickers back and forth across
-# SIGNIFICANT_MM_H reading to reading (confirmed live during the same
-# real storm: 32 -> 50 -> 100 -> 32 mm/h across consecutive real 6-min
-# refreshes), so treating each dip below the threshold as "the stint is
-# over" would flap a caller's own response (e.g. a light, or a screen's
-# night-dim override) on and off every few minutes throughout what's
-# really one ongoing event.
-STINT_GRACE_MINUTES = 45
-_stint_last_severe_at: dict[str, datetime | None] = {"rain": None, "snow": None}
-
-
-def severe_weather_stint_active(kind: str) -> bool:
-    """True while a "stint" of genuinely severe precipitation (see
-    severe_precip_status) is either happening right now or happened
-    within the last STINT_GRACE_MINUTES. Call once per rerun per kind
-    (same "call it and let it update its own state" convention as
-    severe_weather_alert) — a brief dip back under SIGNIFICANT_MM_H
-    doesn't instantly end what's really one ongoing severe stretch, but
-    STINT_GRACE_MINUTES of genuine quiet does."""
-    now = datetime.now()
-    if severe_precip_status(kind) is not None:
-        _stint_last_severe_at[kind] = now
-        return True
-    last = _stint_last_severe_at[kind]
-    return last is not None and (now - last).total_seconds() <= STINT_GRACE_MINUTES * 60
-
-
-# Tracks whether each kind had anything detected nearby as of the last
-# check — a separate, earlier-firing flag from _severe_flagged above
-# (this one triggers on mere detection, not on crossing an intensity
-# threshold), same module-level/edge-triggered reasoning.
-_tracking_flagged: dict[str, bool] = {"rain": False, "snow": False}
-
-
-def tracking_started_alert(kind: str = "rain") -> dict | None:
-    """A one-time toast-ready alert dict the moment radar first picks
-    up ANYTHING within NEARBY_RADIUS_KM — regardless of confirmed
-    direction or intensity (see severe_weather_alert for the intensity-
-    gated version of this same idea, and for why this takes a single
-    caller-chosen `kind` rather than checking both internally). This is
-    deliberately the earliest possible signal: precip_status itself
-    won't call something "approaching" until a real closing trend has
-    had time to establish, but this fires the moment there's anything
-    to track at all. Edge-triggered off _tracking_flagged the same way
-    severe_weather_alert is off _severe_flagged — fires once per event,
-    resets once nothing's detected so a later, genuinely new detection
-    can fire again.
-
-    Headline leads with real measured motion (see storm_motion) when
-    it's already available: "Large {kind} signature on radar moving
-    {speed} km/h from the {direction}" — the direction it's coming
-    FROM (the reverse of its own bearing of travel), matching how
-    severe_weather_alert already phrases "moving in from the ___".
-    Falls back to the older distance-only phrasing when motion isn't
-    established yet, which is common right at this earliest possible
-    trigger — storm_motion needs at least 2 real cached frames, and
-    this fires the instant there's anything to track at all, often
-    before that history exists yet."""
-    state = _decode_and_scan(kind)
-    currently_tracking = state["nearest"] is not None
-    was_tracking = _tracking_flagged[kind]
-    _tracking_flagged[kind] = currently_tracking
-    if currently_tracking and not was_tracking:
-        label = "Snow" if kind == "snow" else "Rain"
-        motion = storm_motion(kind)
-        if motion is not None:
-            origin_bearing = (motion["bearing_deg"] + 180) % 360
-            headline = (
-                f"Large {label.lower()} signature on radar moving "
-                f"{motion['speed_kmh']:.0f} km/h from the {compass_word(origin_bearing)}"
-            )
-        else:
-            distance_km = state["nearest"][2]
-            headline = f"{label} now on the radar, {distance_km:.0f} km out"
-        return {
-            "kind": "weather",
-            "headline": headline,
-            "category": "Weather Tracking",
-            "important": False,
-        }
-    return None
-
-
-def tracking_overlay(kind: str = "rain") -> dict | None:
-    """Where the nearest detected echo actually sits on the frame — as a
-    0-100 position (matching how the fixed location marker is already
-    positioned with top/left percentages), so the Radar page can draw a
-    real line from the threat to the user's own marker instead of
-    leaving the tracking data as a separate text-only badge underneath
-    the map. None if nothing's within NEARBY_RADIUS_KM right now.
-
-    Shares its decode+scan with precip_status via _decode_and_scan (see
-    its comment above) — calling precip_status(kind) below reuses that
-    same cached state rather than repeating the work.
-
-    Falls back to "nearest_any" (any real blob, not just a
-    significant-sized one) the same way precip_status does — confirmed
-    live this mattered: without it, a small blob confirmed heading
-    straight at WEATHER_LAT/WEATHER_LON would show up in the text badge
-    but draw no line/marker at all on the map itself, since this
-    function returned None outright whenever no significant blob
-    existed.
-
-    While genuinely "approaching" (see precip_status,
-    project_rain_arrival), the marker is placed at the PROJECTION's own
-    found echo, not the nearest currently-tracked blob — confirmed live
-    those can be two different physical patches of precipitation, and
-    showing the nearest blob's own distance ("8 km NW") next to the
-    projection's ETA ("62 min") read as nonsensical together, since an
-    8km cell at real storm speeds arrives in minutes, not over an hour.
-    The marker and label now always describe the same one thing. This
-    path doesn't need a real nearby blob at all (see precip_status's own
-    identical reasoning) — project_rain_arrival can confirm a genuine
-    hit for a storm still outside NEARBY_RADIUS_KM, so requiring one
-    here too was a real bug: it silently hid the marker for a storm
-    already confirmed approaching in the text badge."""
-    state = _decode_and_scan(kind)
-    status = precip_status(kind)
-    arrival = state["arrival"]
-
-    if status is not None and status["state"] == "approaching" and arrival is not None:
-        px, py = _latlon_to_pixel(arrival["lat"], arrival["lon"])
-        return {
-            "x_pct": max(0.0, min(100.0, px / IMAGE_WIDTH * 100)),
-            "y_pct": max(0.0, min(100.0, py / IMAGE_HEIGHT * 100)),
-            "distance_km": arrival["distance_km"],
-            "active": True,
-            "minutes": arrival["eta_minutes"],
-            "direction": arrival["direction"],
-        }
-
-    nearest = state["nearest"] or state["nearest_any"]
-    if nearest is None:
-        return None
-    lat, lon, distance_km = nearest
-    px, py = _latlon_to_pixel(lat, lon)
-    return {
-        "x_pct": max(0.0, min(100.0, px / IMAGE_WIDTH * 100)),
-        "y_pct": max(0.0, min(100.0, py / IMAGE_HEIGHT * 100)),
-        "distance_km": distance_km,
-        "active": status is not None,
-        "minutes": status["minutes"] if status else None,
-        "direction": status["direction"] if status else compass_abbr(_bearing_deg(WEATHER_LAT, WEATHER_LON, lat, lon)),
-    }
-
-
 def nearby_city_markers() -> list[dict]:
     """Neutral reference points for real nearby towns (see config.
-    RADAR_NEARBY_CITIES), same 0-100 coordinate space tracking_overlay
-    already uses — so it's obvious where the rain actually is relative
-    to real places, not just relative to Corbeil's own marker. Purely
-    local pixel math, no fetch — any city that happens to fall outside
-    the image's own bbox is silently dropped rather than shown clipped
-    at the edge, so RADAR_NEARBY_CITIES doesn't need to stay hand-tuned
-    to BBOX_MARGIN_DEGREES_LAT/LON."""
+    RADAR_NEARBY_CITIES), as 0-100 percentage positions matching how
+    the fixed location marker is already positioned — so it's obvious
+    where precipitation on the map actually is relative to real places,
+    not just relative to Corbeil's own marker. Purely local pixel math,
+    no fetch — any city that happens to fall outside the image's own
+    bbox is silently dropped rather than shown clipped at the edge, so
+    RADAR_NEARBY_CITIES doesn't need to stay hand-tuned to
+    BBOX_MARGIN_DEGREES_LAT/LON."""
     markers = []
     for city in RADAR_NEARBY_CITIES:
         px, py = _latlon_to_pixel(city["lat"], city["lon"])

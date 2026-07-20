@@ -30,14 +30,12 @@ import calendar_client
 import commute_client
 import commute_reminder
 import ec_alerts
-import ec_radar
 import fuel_price_client
 import market_yf_client
 import payday_schedule
 import waste_schedule
 import wildfire_client
 from config import AQI_SHOW_THRESHOLD, COMMUTE_DESTINATION, TIMEZONE, WEATHER_LAT, WEATHER_LON
-from scenery import condition_category
 
 MORNING_WINDOW_START_HOUR = 5
 MORNING_WINDOW_END_HOUR = 10
@@ -279,94 +277,10 @@ COLD_LINES = [
     "{temp}°C this morning, winter's fully committed today",
 ]
 
-# About half of these weave in {direction} (e.g. "northwest") — the
-# bearing from Corbeil to the nearest echo, which ec_radar.precip_status
-# now surfaces (see its docstring: this is where the storm currently
-# IS, not which way it's moving). The other half deliberately skip it —
-# every single line naming a direction would just trade one repetitive
-# pattern for another.
-RADAR_RAIN_LINES = [
-    "radar's picking up rain heading your way, could hit in about {eta} min",
-    "rain's closing in on the radar, roughly {eta} minutes out",
-    "heads up, rain looks to be moving in from the {direction}, ETA around {eta} minutes",
-    "radar's showing rain on approach, about {eta} minutes off",
-    "rain's tracking toward you from the {direction}, roughly {eta} minutes away",
-    "there's rain on the radar closing in, {eta} minutes or so",
-    "incoming rain out of the {direction}, radar puts it around {eta} minutes out",
-    "radar's caught rain moving in — {eta} minutes, give or take",
-    "worth knowing: rain's approaching from the {direction}, about {eta} minutes away",
-    "rain's on its way in per the radar, {eta} minutes out",
-    "radar shows a cell heading in from the {direction}, rain in roughly {eta} minutes",
-    "{eta} minutes and change before that rain out of the {direction} gets here",
-    "rain's tracking in, radar puts the ETA around {eta} minutes",
-    "picking up rain on the radar, {eta} minutes before it lands",
-    "rain's on the move toward you, {eta} minutes out",
-    "radar's flagged incoming rain, roughly {eta} minutes away",
-    "{eta} minutes out — rain's genuinely headed this way",
-    "a real cell on the radar, rain in about {eta} minutes",
-    "rain's approaching per the live radar, {eta} minutes or so",
-    "radar shows rain closing the distance, {eta} minutes left",
-]
-RADAR_SNOW_LINES = [
-    "radar's picking up snow heading your way, could hit in about {eta} min",
-    "snow's closing in on the radar, roughly {eta} minutes out",
-    "heads up, snow looks to be moving in from the {direction}, ETA around {eta} minutes",
-    "radar's showing snow on approach, about {eta} minutes off",
-    "snow's tracking toward you from the {direction}, roughly {eta} minutes away",
-    "there's snow on the radar closing in, {eta} minutes or so",
-    "incoming snow out of the {direction}, radar puts it around {eta} minutes out",
-    "radar's caught snow moving in — {eta} minutes, give or take",
-    "worth knowing: snow's approaching from the {direction}, about {eta} minutes away",
-    "snow's on its way in per the radar, {eta} minutes out",
-    "radar shows a system heading in from the {direction}, snow in roughly {eta} minutes",
-    "{eta} minutes and change before that snow out of the {direction} gets here",
-    "snow's tracking in, radar puts the ETA around {eta} minutes",
-    "picking up snow on the radar, {eta} minutes before it lands",
-    "snow's on the move toward you, {eta} minutes out",
-    "radar's flagged incoming snow, roughly {eta} minutes away",
-    "{eta} minutes out — snow's genuinely headed this way",
-    "a real system on the radar, snow in about {eta} minutes",
-    "snow's approaching per the live radar, {eta} minutes or so",
-    "radar shows snow closing the distance, {eta} minutes left",
-]
-ARRIVED_RAIN_LINES = [
-    "rain's here now, radar's got it clearing in about {eta} min",
-    "it's raining now, should clear up in roughly {eta} minutes",
-    "rain's arrived — radar has it moving out in about {eta} minutes",
-    "it's coming down now, expect it to clear in {eta} minutes or so",
-    "rain's here, but it shouldn't stick around — clearing in about {eta} min",
-    "wet out there right now, radar says {eta} minutes until it clears",
-    "rain's moved in — {eta} minutes till it's through",
-    "it's actively raining, radar's tracking it clearing in {eta} min",
-    "rain's on top of you now, {eta} minutes before it lets up",
-    "yep, it's raining — should ease off in about {eta} minutes",
-    "it's raining right now, radar has it clearing in {eta} min",
-    "rain's here — {eta} minutes until the radar shows it gone",
-    "actively wet out there, {eta} minutes left on this one",
-    "rain's overhead now, should pass in about {eta} minutes",
-    "it's come in — radar's tracking {eta} minutes until it clears",
-    "rain's landed, {eta} minutes or so before it moves on",
-    "currently raining, {eta} minutes left per the radar",
-]
-ARRIVED_SNOW_LINES = [
-    "snow's here now, radar's got it clearing in about {eta} min",
-    "it's snowing now, should clear up in roughly {eta} minutes",
-    "snow's arrived — radar has it moving out in about {eta} minutes",
-    "it's coming down now, expect it to clear in {eta} minutes or so",
-    "snow's here, but it shouldn't stick around — clearing in about {eta} min",
-    "snowing out there right now, radar says {eta} minutes until it clears",
-    "snow's moved in — {eta} minutes till it's through",
-    "it's actively snowing, radar's tracking it clearing in {eta} min",
-    "snow's on top of you now, {eta} minutes before it lets up",
-    "yep, it's snowing — should ease off in about {eta} minutes",
-    "it's snowing right now, radar has it clearing in {eta} min",
-    "snow's here — {eta} minutes until the radar shows it gone",
-    "actively snowing out there, {eta} minutes left on this one",
-    "snow's overhead now, should pass in about {eta} minutes",
-    "it's come in — radar's tracking {eta} minutes until it clears",
-    "snow's landed, {eta} minutes or so before it moves on",
-    "currently snowing, {eta} minutes left per the radar",
-]
+# Radar-based arrival/clearing line lists (RADAR_RAIN_LINES,
+# RADAR_SNOW_LINES, ARRIVED_RAIN_LINES, ARRIVED_SNOW_LINES) removed
+# along with ec_radar.precip_status itself at the user's own request —
+# the EC forecast-percentage lines below are what's left.
 FORECAST_RAIN_LINES = [
     "rain's in the forecast today, {chance}% chance around {time} — grab an umbrella on your way out",
     "looks like rain later, {chance}% chance near {time}",
@@ -878,16 +792,7 @@ def _weather_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
     return 3, _pick(lines, now, "weather").format(**fmt)
 
 
-def _precip_clause(now: datetime, weather: dict, category: str) -> tuple[int, str] | None:
-    status = ec_radar.precip_status("snow" if category == "snow" else "rain")
-    if status is not None and status["minutes"] is not None:
-        is_snow = category == "snow"
-        if status["state"] == "arrived":
-            lines = ARRIVED_SNOW_LINES if is_snow else ARRIVED_RAIN_LINES
-        else:
-            lines = RADAR_SNOW_LINES if is_snow else RADAR_RAIN_LINES
-        return 8, _pick(lines, now, "precip").format(eta=status["minutes"], direction=status["direction_word"])
-
+def _precip_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
     rain_at = weather.get("rain_at")
     chance = weather.get("precip_chance")
     if rain_at is not None and chance is not None:
@@ -1035,12 +940,11 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     if not weather:
         return
 
-    category = condition_category(weather["weather_code"])
     clauses = []
     for fn, args in (
         (_alert_clause, (now,)),
         (_weather_clause, (now, weather)),
-        (_precip_clause, (now, weather, category)),
+        (_precip_clause, (now, weather)),
         (_air_clause, (now, air_quality)),
         (_commute_clause, (now,)),
         (_agenda_clause, (now,)),
