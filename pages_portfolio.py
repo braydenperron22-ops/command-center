@@ -18,14 +18,24 @@ import streamlit as st
 import portfolio_client
 
 
+# Kiosk viewed from across a room — bigger than this app's default
+# market-metric sizing (1.3rem/0.85rem), which was tuned for Markets'
+# dense 7-column grid, not a single full-width page like this one.
+_METRIC_LABEL_STYLE = "font-size:1.05rem;"
+_METRIC_VALUE_STYLE = "font-size:1.7rem; font-weight:600;"
+
+
 def _period_metric(label: str, pct: float | None) -> str:
     if pct is None:
-        return f'<div class="market-metric"><span class="market-metric-label">{label}</span><span class="market-metric-value">—</span></div>'
+        return (
+            f'<div class="market-metric"><span class="market-metric-label" style="{_METRIC_LABEL_STYLE}">{label}</span>'
+            f'<span class="market-metric-value" style="{_METRIC_VALUE_STYLE}">—</span></div>'
+        )
     direction_class = "market-up" if pct >= 0 else "market-down"
     sign = "+" if pct >= 0 else ""
     return (
-        f'<div class="market-metric"><span class="market-metric-label">{label}</span>'
-        f'<span class="market-metric-value {direction_class}">{sign}{pct:.2f}%</span></div>'
+        f'<div class="market-metric"><span class="market-metric-label" style="{_METRIC_LABEL_STYLE}">{label}</span>'
+        f'<span class="market-metric-value {direction_class}" style="{_METRIC_VALUE_STYLE}">{sign}{pct:.2f}%</span></div>'
     )
 
 
@@ -60,22 +70,29 @@ def render() -> None:
     if day_change_pct is not None:
         direction_class = "market-up" if day_change_pct >= 0 else "market-down"
         sign = "+" if day_change_pct >= 0 else ""
-        change_html = f'<span class="tile-value {direction_class}" style="font-size:1rem; margin-left:0.6rem;">{sign}{day_change_pct:.2f}%</span>'
+        change_html = f'<span class="tile-value {direction_class}" style="font-size:1.4rem; margin-left:0.6rem;">{sign}{day_change_pct:.2f}%</span>'
 
+    # Accounts already sorted descending by amount (portfolio_client) —
+    # top 4 by balance, not just the first 4 fetched.
+    top_accounts = portfolio["accounts"][:4]
     rows = "".join(
-        f'<div class="market-metric"><span class="market-metric-label">{a["name"]}</span>'
-        f'<span class="market-metric-value">${a["amount"]:,.2f}</span></div>'
-        for a in portfolio["accounts"]
+        f'<div class="market-metric"><span class="market-metric-label" style="{_METRIC_LABEL_STYLE}">{a["name"]}</span>'
+        f'<span class="market-metric-value" style="{_METRIC_VALUE_STYLE}">${a["amount"]:,.2f}</span></div>'
+        for a in top_accounts
     )
     # One flat line, no embedded newlines/indentation — same bug class
     # fixed in pages_radar.py this session: an interpolated piece being
     # "" whenever there's nothing to show (no accounts, no change_html)
     # would leave a blank line mid-HTML on a multi-line f-string and get
     # the whole tile rendered as literal text instead of parsed.
+    #
+    # Plain .tile-value (2.6rem), not the market-hero-value override
+    # (1.9rem) that Markets uses to fit 7 columns side by side — this
+    # page has no neighboring tiles to squeeze against.
     st.markdown(
         f'<div class="tile">'
         f'<div class="tile-label">TOTAL VALUE</div>'
-        f'<div class="tile-value market-hero-value">${total_cad:,.2f}{change_html}</div>'
+        f'<div class="tile-value">${total_cad:,.2f}{change_html}</div>'
         f'<div class="tile-prev">{subtitle}</div>'
         f'{rows}'
         f'</div>',
