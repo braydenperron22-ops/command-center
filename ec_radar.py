@@ -463,6 +463,7 @@ def _fetch_radar_bytes(layer: str) -> bytes | None:
     dims = _fetch_time_dimension(layer)
     _record_frame(kind, result, dims)
     _ensure_frame_history(kind, layer, dims)
+    _ensure_long_range_history(kind, layer, dims)
     return result
 
 
@@ -748,6 +749,214 @@ def storm_motion_label(kind: str = "rain") -> str | None:
     if motion is None:
         return None
     return f"Moving {compass_abbr(motion['bearing_deg'])} at {motion['speed_kmh']:.0f} km/h"
+
+
+# --- Long-range rain watch ---------------------------------------------
+# project_rain_arrival above is deliberately near-term: it walks
+# backward from WEATHER_LAT/WEATHER_LON against the CURRENT frame's own
+# real shape, which only means anything within roughly how far the
+# storm's measured speed can carry it inside PROJECTION_MAX_MINUTES (3
+# hours) — appropriate for "is it about to rain," not "should I expect
+# rain later today." Session request, following a real live case: a
+# system still ~220-290km out (well beyond that reach) was manually
+# tracked frame-by-frame and found to be on a genuinely converging path
+# — a useful signal the near-term system was never designed to catch,
+# since backward-projecting 3 hours at ~35 km/h only reaches ~105km,
+# nowhere near a system that far out.
+#
+# Deliberately separate from _frame_history/storm_motion/
+# project_rain_arrival above rather than just widening their own
+# constants — PROJECTION_MAX_MINUTES' 3-hour cap and its confidence
+# decay are correctly tuned for near-term nowcasting against a single
+# frame's real shape; stretching that same machinery to 6+ hours would
+# both wreck that tuning AND stop being physically appropriate anyway
+# (a storm's shape 200+ km and 6+ hours out isn't well predicted by
+# translating its CURRENT shape that far — straight-line centroid
+# extrapolation, what this section does instead, is the standard
+# technique at this range).
+LONG_RANGE_LOOKBACK_HOURS = 3
+LONG_RANGE_SAMPLE_COUNT = 8  # roughly one sample every ~25 min across the lookback window
+LONG_RANGE_MAX_LOOKAHEAD_HOURS = 10
+# How close a projected line has to pass to count as "this could reach
+# you" — wider than PROJECTION_BEAM_HALF_WIDTH_KM's 12km on purpose:
+# this is a straight-line extrapolation over 100+ km carrying real
+# bearing uncertainty (confirmed live: individual segments can swing
+# 30-40 degrees from the overall trend), not a corridor search against
+# the storm's own actual current shape.
+LONG_RANGE_MISS_THRESHOLD_KM = 70.0
+# At least this many independent recent segments have to each project
+# a close approach before this says anything at all — one line alone
+# is exactly the kind of single noisy segment that produced an
+# implausible 127 km/h reading in the real case that motivated this;
+# requiring agreement across several is what makes the difference
+# between a real converging trend and one bad frame pair.
+LONG_RANGE_MIN_AGREEING_LINES = 2
+# Deliberately smaller than MAX_BACKFILL_FETCHES_PER_CALL (2) — this
+# backfill also only ever starts once _ensure_frame_history's own
+# history is already full (see below), so it never runs on the exact
+# cold-start rerun that's most fetch-sensitive, but keeping its own
+# per-call cap tight still bounds the worst case on every later rerun
+# to 1 extra fetch, not 2 stacked on top of the near-term system's own.
+LONG_RANGE_MAX_BACKFILL_FETCHES_PER_CALL = 1
+
+_long_range_frames: dict[str, list[tuple[datetime, bytes]]] = {"rain": [], "snow": []}
+_long_range_backfill_attempted_at: dict[str, float] = {"rain": 0.0, "snow": 0.0}
+
+
+def _ensure_long_range_history(kind: str, layer: str, dims: tuple[datetime, datetime] | None) -> None:
+    """Same incremental, throttled, cold-start-safe backfill pattern as
+    _ensure_frame_history (see its own docstring for why this matters:
+    even one extra network-shaped call on the cold-start path was
+    enough to stall the app's whole autorefresh cycle once) — sampling
+    LONG_RANGE_SAMPLE_COUNT points spread across
+    LONG_RANGE_LOOKBACK_HOURS instead of a dense recent window.
+    Deliberately staggered BEHIND _ensure_frame_history: only starts
+    once that function's own history is already full, so the two
+    backfills never stack their fetch bursts on the same, most
+    fragile, cold-start rerun — the near-term system (which drives the
+    existing rain badges) finishes first, and this lower-priority one
+    fills in gradually afterward."""
+    history = _long_range_frames[kind]
+    if len(history) >= LONG_RANGE_SAMPLE_COUNT:
+        return
+    if len(_frame_history[kind]) < FRAME_HISTORY_SIZE:
+        return
+    now_ts = time.time()
+    if now_ts - _long_range_backfill_attempted_at[kind] < BACKFILL_RETRY_SECONDS:
+        return
+    _long_range_backfill_attempted_at[kind] = now_ts
+
+    if dims is None:
+        return
+    default_time, start_time = dims
+    earliest = max(start_time, default_time - timedelta(hours=LONG_RANGE_LOOKBACK_HOURS))
+    span_minutes = (default_time - earliest).total_seconds() / 60
+    if span_minutes <= 0:
+        return
+    step_minutes = span_minutes / (LONG_RANGE_SAMPLE_COUNT - 1)
+
+    have = {t for t, _ in history}
+    fetched_count = 0
+    for i in range(LONG_RANGE_SAMPLE_COUNT):
+        if fetched_count >= LONG_RANGE_MAX_BACKFILL_FETCHES_PER_CALL:
+            break
+        target = default_time - timedelta(minutes=step_minutes * i)
+        # Snap to EC's real 6-minute grid — an off-grid request just
+        # comes back empty (confirmed live), wasting the attempt.
+        aligned_minute = (target.minute // 6) * 6
+        frame_time = target.replace(minute=aligned_minute, second=0, microsecond=0)
+        if frame_time in have or frame_time < earliest:
+            continue
+        raw = _fetch_radar_bytes_at(layer, frame_time)
+        if raw is not None:
+            history.append((frame_time, raw))
+            have.add(frame_time)
+            fetched_count += 1
+    history.sort(key=lambda item: item[0])
+    del history[: -LONG_RANGE_SAMPLE_COUNT]
+
+
+def _closest_approach_along_bearing(
+    lat: float, lon: float, bearing_deg_: float, max_km: float, step_km: float = 5.0
+) -> tuple[float, float]:
+    """(closest_distance_km, distance_along_line_km) walking forward
+    from (lat, lon) along bearing_deg_ — how near this line gets to
+    WEATHER_LAT/WEATHER_LON, and how far along the line that nearest
+    point is. distance_along_line_km stays 0 (the starting point
+    itself) if the line only ever moves AWAY, which is exactly the
+    signal a caller needs to exclude it — same iterative
+    _destination()/_distance_km() stepping style as _far_edge_km and
+    _echo_near_backprojected_point above, rather than closed-form
+    vector math, for consistency with the rest of this module."""
+    best_dist = _distance_km(lat, lon, WEATHER_LAT, WEATHER_LON)
+    best_at_km = 0.0
+    d = step_km
+    while d <= max_km:
+        plat, plon = _destination(lat, lon, bearing_deg_, d)
+        dist = _distance_km(plat, plon, WEATHER_LAT, WEATHER_LON)
+        if dist < best_dist:
+            best_dist = dist
+            best_at_km = d
+        d += step_km
+    return best_dist, best_at_km
+
+
+def long_range_watch(kind: str = "rain") -> dict | None:
+    """{"eta_time" (naive UTC datetime), "closest_km", "distance_km"
+    (current, of the most recent tracked position), "bearing_deg",
+    "speed_kmh", "agreeing_lines", "total_lines"} — a longer-range,
+    explicitly lower-confidence companion to project_rain_arrival (see
+    the module comment above this section for why that function's own
+    3-hour/single-frame-shape design can't answer this).
+
+    Tracks the same union-of-significant-blobs centroid
+    storm_motion/_track_blob_for_motion use, but across
+    _long_range_frames' own multi-hour, coarser sample set instead of
+    _frame_history's dense recent hour. Builds one straight-line
+    extrapolation per consecutive sample pair (implausible ones —
+    faster than MAX_PLAUSIBLE_SPEED_KMH, or barely-moved segments below
+    STATIONARY_THRESHOLD_KM — dropped, the same plausibility bar
+    _motion_confidence applies elsewhere), and only reports a result if
+    at least LONG_RANGE_MIN_AGREEING_LINES independent recent lines
+    each project passing within LONG_RANGE_MISS_THRESHOLD_KM inside
+    LONG_RANGE_MAX_LOOKAHEAD_HOURS — one line alone is exactly the kind
+    of single noisy segment that produced an implausible 127 km/h
+    reading in the real case that motivated this feature. None if
+    there's not enough history yet, or nothing currently qualifies."""
+    points = []
+    for t, raw in _long_range_frames[kind]:
+        try:
+            img = Image.open(io.BytesIO(raw)).convert("RGBA")
+        except Exception:
+            continue
+        centroid = _track_blob_for_motion(img)
+        if centroid is not None:
+            points.append((t, centroid[0], centroid[1]))
+    if len(points) < LONG_RANGE_MIN_AGREEING_LINES + 1:
+        return None
+
+    lines = []
+    for i in range(len(points) - 1):
+        t0, lat0, lon0 = points[i]
+        t1, lat1, lon1 = points[i + 1]
+        gap_minutes = (t1 - t0).total_seconds() / 60
+        if gap_minutes < MIN_TREND_GAP_MINUTES:
+            continue
+        moved_km = _distance_km(lat0, lon0, lat1, lon1)
+        if moved_km < STATIONARY_THRESHOLD_KM:
+            continue
+        speed_kmh = moved_km / (gap_minutes / 60)
+        if speed_kmh > MAX_PLAUSIBLE_SPEED_KMH:
+            continue
+        bearing = _bearing_deg(lat0, lon0, lat1, lon1)
+        lines.append({"t": t1, "lat": lat1, "lon": lon1, "speed_kmh": speed_kmh, "bearing_deg": bearing})
+
+    hits = []
+    max_search_km = LONG_RANGE_MAX_LOOKAHEAD_HOURS * MAX_PLAUSIBLE_SPEED_KMH
+    for ln in lines:
+        closest_km, at_km = _closest_approach_along_bearing(ln["lat"], ln["lon"], ln["bearing_deg"], max_search_km)
+        if at_km <= 0 or closest_km > LONG_RANGE_MISS_THRESHOLD_KM:
+            continue
+        eta_hours = at_km / ln["speed_kmh"]
+        if eta_hours > LONG_RANGE_MAX_LOOKAHEAD_HOURS:
+            continue
+        hits.append({**ln, "closest_km": closest_km, "eta_hours": eta_hours})
+
+    if len(hits) < LONG_RANGE_MIN_AGREEING_LINES:
+        return None
+
+    hits.sort(key=lambda h: h["t"])
+    best = hits[-1]  # most recent qualifying line — most up to date
+    last_t, last_lat, last_lon = points[-1]
+    return {
+        "eta_time": best["t"] + timedelta(hours=best["eta_hours"]),
+        "closest_km": best["closest_km"],
+        "distance_km": _distance_km(last_lat, last_lon, WEATHER_LAT, WEATHER_LON),
+        "bearing_deg": best["bearing_deg"],
+        "speed_kmh": best["speed_kmh"],
+        "agreeing_lines": len(hits),
+        "total_lines": len(lines),
+    }
 
 
 def _scan_nearby(img: Image.Image) -> dict:

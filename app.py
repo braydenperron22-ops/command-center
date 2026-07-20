@@ -265,6 +265,19 @@ except Exception:
 rain_active = _wake_precip_status is not None
 rain_incoming = _wake_precip_status is not None and _wake_precip_status["state"] == "approaching"
 
+# Longer-range companion to the above (see ec_radar.long_range_watch's
+# own module comment) — session request, following a real live case
+# where a system still 220-290km out was manually tracked and found to
+# be on a genuinely converging path arriving that evening, well beyond
+# precip_status's own near-term reach. Computed page-independently
+# here (not folded into the weather-gated extras below) for the same
+# reason the recovery badge is: it has nothing to do with the Open-
+# Meteo weather fetch and shouldn't disappear when that fails.
+try:
+    _long_range_watch = ec_radar.long_range_watch(_alert_precip_kind)
+except Exception:
+    _long_range_watch = None
+
 # Session request: staying fully bright (or even just less-dim) for an
 # entire severe stint or rain approach — which can run for hours — was
 # itself keeping the room awake; the actual point was only ever to
@@ -722,6 +735,30 @@ except Exception:
     _recovery_badge = None
 if _recovery_badge:
     st.markdown(f'<div class="weather-extras">{_recovery_badge}</div>', unsafe_allow_html=True)
+
+# Long-range rain/snow watch (see ec_radar.long_range_watch) — same
+# page-independent placement/reasoning as the recovery badge above.
+# Reuses the near-term precip badge's own blue rather than inventing a
+# new color for what's still fundamentally the same category of
+# information (rain timing); "possible" plus the "~" on the time is
+# what actually communicates this is a longer-range, lower-confidence
+# companion to the "in 45 min"-style badge, not a new color coding a
+# reader would have to learn.
+if _long_range_watch:
+    _lr_eta_local = (
+        _long_range_watch["eta_time"]
+        .replace(tzinfo=ZoneInfo("UTC"))
+        .astimezone(ZoneInfo(TIMEZONE))
+        .replace(tzinfo=None)
+    )
+    _lr_label = "Snow" if _alert_precip_kind == "snow" else "Rain"
+    _lr_time_str = _lr_eta_local.strftime("%I:%M %p").lstrip("0")
+    st.markdown(
+        f'<div class="weather-extras"><span class="weather-extra" style="color:#64D2FF; '
+        f'background:{_badge_bg("#64D2FF", 0.22)}; border-color:#64D2FF;">'
+        f"{_lr_label} possible ~{_lr_time_str}</span></div>",
+        unsafe_allow_html=True,
+    )
 
 # Page-independent, same reasoning as the leave headline above — the
 # morning routine doesn't wait for whichever of the 10 rotating pages
