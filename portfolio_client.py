@@ -22,6 +22,13 @@ from snaptrade_client import SnapTrade
 
 _last_good_portfolio: dict | None = None
 _last_good_changes: dict | None = None
+# Set whenever fetch_portfolio's underlying call fails, so the page can
+# show what actually went wrong instead of one generic "not configured
+# or unreachable" message covering both "secrets are missing" and "a
+# real API call failed" — those need different fixes, and conflating
+# them was exactly what made a real live outage hard to diagnose
+# without direct access to this app's own server logs.
+_last_error: str | None = None
 
 
 def _client() -> SnapTrade | None:
@@ -32,13 +39,34 @@ def _client() -> SnapTrade | None:
     return SnapTrade(consumer_key=consumer_key, client_id=client_id)
 
 
+def last_error() -> str | None:
+    """The most recent real fetch failure's own message, or None if
+    the last attempt succeeded (or nothing's been tried yet)."""
+    return _last_error
+
+
+class _NotConfigured(Exception):
+    """Raised (not just a bare None return) specifically for missing
+    secrets, so fetch_portfolio can tell "nothing's configured yet"
+    apart from a real API failure without needing two separate return
+    channels through a cached function."""
+
+
 @st.cache_data(ttl=15 * 60, show_spinner=False)
 def _fetch_portfolio_raw() -> dict | None:
     client = _client()
     user_id = st.secrets.get("SNAPTRADE_USER_ID")
     user_secret = st.secrets.get("SNAPTRADE_USER_SECRET")
     if client is None or not user_id or not user_secret:
-        return None
+        missing = [
+            n for n, v in (
+                ("SNAPTRADE_CLIENT_ID", st.secrets.get("SNAPTRADE_CLIENT_ID")),
+                ("SNAPTRADE_CONSUMER_KEY", st.secrets.get("SNAPTRADE_CONSUMER_KEY")),
+                ("SNAPTRADE_USER_ID", user_id),
+                ("SNAPTRADE_USER_SECRET", user_secret),
+            ) if not v
+        ]
+        raise _NotConfigured(f"missing secret(s): {', '.join(missing)}")
 
     resp = client.account_information.list_user_accounts(user_id=user_id, user_secret=user_secret)
 
@@ -78,11 +106,23 @@ def _fetch_portfolio_raw() -> dict | None:
 
 
 def fetch_portfolio() -> dict | None:
-    global _last_good_portfolio
+    global _last_good_portfolio, _last_error
     try:
         result = _fetch_portfolio_raw()
-    except Exception:
+    except _NotConfigured as e:
+        _last_error = str(e)
         return _last_good_portfolio
+    except Exception as e:
+        # Deliberately the exception's own str(), not just its class
+        # name — SnapTrade's ApiException includes the actual HTTP
+        # status/reason (e.g. "401 Unauthorized"), which is the one
+        # piece of information that actually tells us what to fix,
+        # versus a generic "SnapTrade not configured or unreachable"
+        # message that reads identically whether the problem is a
+        # missing secret or an expired one.
+        _last_error = f"{type(e).__name__}: {e}"
+        return _last_good_portfolio
+    _last_error = None
     if result is not None:
         _last_good_portfolio = result
     return result if result is not None else _last_good_portfolio

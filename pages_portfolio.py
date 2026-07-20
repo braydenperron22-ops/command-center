@@ -11,6 +11,8 @@ included) already use to connect to it — see portfolio_client.py for
 the actual fetch/consolidation/period-change logic.
 """
 
+import html
+
 import streamlit as st
 
 import portfolio_client
@@ -32,8 +34,17 @@ def render() -> None:
 
     portfolio = portfolio_client.fetch_portfolio()
     if portfolio is None:
+        # Shows the actual failure (see portfolio_client.last_error) —
+        # confirmed live this integration is genuinely fiddly to set up
+        # correctly (four separate secrets, a real external API), and a
+        # single generic "not configured or unreachable" message made a
+        # real live outage impossible to diagnose without direct access
+        # to this app's own server logs, which nobody but the deployed
+        # process itself ever sees.
+        error = portfolio_client.last_error()
+        detail = html.escape(error) if error else "not configured yet"
         st.markdown(
-            '<div class="tile"><div class="tile-prev">SnapTrade not configured or unreachable right now.</div></div>',
+            f'<div class="tile"><div class="tile-prev">SnapTrade: {detail}</div></div>',
             unsafe_allow_html=True,
         )
         return
