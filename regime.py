@@ -50,7 +50,7 @@ def classify(
 ) -> dict | None:
     """`readings` is app.py's existing {(country, key): reading} dict —
     only ("us", ...) entries are used. `confidence`/`credit`/`breadth`
-    are market_internals.confidence_index() / price_ratio("HYG","LQD") /
+    are market_internals.fear_greed_index() / price_ratio("HYG","LQD") /
     price_ratio("RSP","SPY") — each already has "value"/"prior_value".
     None if the four macro indicators this needs aren't all available
     yet (e.g. FRED hasn't loaded on a fresh start)."""

@@ -3,6 +3,5 @@ __pycache__/
 .venv/
 .DS_Store
 .streamlit/secrets.toml
-vixeq_history.json
 todo.json
 commute_history.json

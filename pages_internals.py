@@ -1,28 +1,29 @@
-"""Market Internals: risk-appetite and credit gauges — a VIX-based
-confidence composite, equal-weight-vs-index volatility, and two classic
-credit/breadth ratios (HYG/LQD, RSP/SPY). See market_internals.py for
-the exact formulas and data sourcing, including why VIXEQ/VIX is the
-one metric here with a slowly-accumulating rather than immediate trend.
+"""Market Internals: the real live Fear & Greed Index (see
+market_internals.py — pulled straight from feargreedmeter.com's own
+computed state, CNN's own site blocks non-browser requests outright),
+plus two supporting credit/breadth ratios and the Shiller CAPE ratio.
 
-The Confidence Index is the headline of this page — bigger type, its
-own row — with the three ratios as a compact supporting strip below,
-not equal-weight peers. No sparklines: they were the single biggest
-reason this page didn't fit its space, and weren't earning their room
-next to badges/captions that already state the direction in words.
+Session request: "wipe it" — the previous version's hand-tuned VIX
+exponential-decay "Confidence Index" and its VIXEQ/VIX tile (which
+needed weeks of locally-accumulated history that almost certainly
+reset on every redeploy) are both gone. The gauge is the headline —
+bigger type, its own row, real historical context underneath — with
+the three supporting tiles below it, not equal-weight peers.
 """
 
 import streamlit as st
 
 import market_internals as mi
 
-CONFIDENCE_EXPLANATION = (
-    "Two VIX-based decay curves — one on today's VIX, one on its 30-day average, "
-    "each capped 0-99 — averaged together. Low VIX pushes this toward 99 "
-    "(complacent); high VIX pushes it toward 0 (fearful)."
+GAUGE_EXPLANATION_EXTERNAL = (
+    "Real-time Fear &amp; Greed Index from feargreedmeter.com, tracking the same seven-factor "
+    "methodology CNN's own index uses."
 )
-VIXEQ_EXPLANATION_EXPANDING = "Expanding — a differentiated, stock-specific market: individual names moving on their own news, not in lockstep."
-VIXEQ_EXPLANATION_COMPRESSING = "Compressing toward the index — rising correlation, stocks moving together. Often shows up during broad macro stress."
-VIXEQ_EXPLANATION_FLAT = "Stable relationship between constituent-level and index-level volatility."
+GAUGE_EXPLANATION_COMPUTED = (
+    "feargreedmeter.com is unreachable right now, so this is a fallback: four of CNN's own seven "
+    "Fear &amp; Greed components — Momentum, Volatility, Junk Bond Demand, and Safe Haven Demand — "
+    "each scored by how far it's deviated from its own 1-year norm, averaged equally."
+)
 HYG_LQD_EXPLANATION_UP = "Risk-On — high-yield credit outperforming investment-grade."
 HYG_LQD_EXPLANATION_DOWN = "Risk-Off — flight to quality in credit markets. Often leads equity weakness."
 HYG_LQD_EXPLANATION_FLAT = "Credit risk appetite holding steady."
@@ -31,93 +32,74 @@ RSP_SPY_EXPLANATION_DOWN = "Narrowing — gains concentrated in a handful of meg
 RSP_SPY_EXPLANATION_FLAT = "Market breadth holding steady."
 
 
-def _metric_row(label: str, value: str) -> str:
-    return (
-        f'<div class="market-metric"><span class="market-metric-label">{label}</span>'
-        f'<span class="market-metric-value">{value}</span></div>'
-    )
-
-
-def _confidence_band(value: float) -> tuple[str, str]:
+def _gauge_band(value: float) -> tuple[str, str]:
+    """CNN's own five bands, and their own intuitive fear=red/greed=green
+    coloring — unlike the old page's asymmetric treatment (which colored
+    high confidence "neutral" rather than "good"), both ends of a
+    genuinely balanced fear<->greed scale get their obvious color."""
     if value >= 75:
-        return "Extreme Complacency", "neutral"
+        return "Extreme Greed", "good"
     if value >= 55:
-        return "Confident", "good"
+        return "Greed", "good"
     if value >= 45:
         return "Neutral", "neutral"
     if value >= 25:
-        return "Cautious", "bad"
-    return "Fearful", "bad"
+        return "Fear", "bad"
+    return "Extreme Fear", "bad"
 
 
-def _render_confidence_hero() -> None:
-    data = mi.confidence_index()
+def _render_gauge_hero() -> None:
+    data = mi.fear_greed_index()
     if not data:
         st.markdown(
-            '<div class="tile"><div class="tile-label">MARKET CONFIDENCE INDEX</div>'
+            '<div class="tile"><div class="tile-label">FEAR &amp; GREED INDEX</div>'
             '<div class="tile-prev">data unavailable</div></div>',
             unsafe_allow_html=True,
         )
         return
 
     value = data["value"]
-    band_label, tone = _confidence_band(value)
-    arrow, _ = mi.trend(value, data["prior_value"], higher_is_good=True)
+    band_label, tone = _gauge_band(value)
+    yesterday = data.get("yesterday")
+    arrow, _ = mi.trend(value, yesterday if yesterday is not None else data["prior_value"], higher_is_good=True)
     accent_class = f"tile-accent-{tone}"
     badge_class = f"badge-{tone}"
+    caption = GAUGE_EXPLANATION_EXTERNAL if data.get("source") == "external" else GAUGE_EXPLANATION_COMPUTED
 
     st.markdown(
         f"""<div class="tile {accent_class} confidence-hero">
-            <div class="tile-label">MARKET CONFIDENCE INDEX</div>
+            <div class="tile-label">FEAR &amp; GREED INDEX</div>
             <div class="confidence-value">{value:.0f}</div>
             <div class="badge {badge_class}">{band_label} · {arrow}</div>
-            <div class="confidence-metrics">
-                {_metric_row("VIX", f"{data['current_vix']:.2f}")}
-                {_metric_row("VIX 30-Day Average", f"{data['vix_30dma']:.2f}")}
-            </div>
-            <div class="severity-caption">{CONFIDENCE_EXPLANATION}</div>
+            <div class="severity-caption">{caption}</div>
         </div>""",
         unsafe_allow_html=True,
     )
 
 
-def _render_vixeq_tile() -> None:
-    data = mi.vixeq_vix_ratio()
-    if not data:
+def _render_cape_tile() -> None:
+    data = mi.shiller_cape()
+    if not data or data.get("value") is None:
         st.markdown(
-            '<div class="tile"><div class="tile-label">VIXEQ / VIX</div>'
+            '<div class="tile"><div class="tile-label">SHILLER CAPE</div>'
             '<div class="tile-prev">data unavailable</div></div>',
             unsafe_allow_html=True,
         )
         return
 
-    if data["history_days"] < 3:
-        st.markdown(
-            f"""<div class="tile internals-ratio-tile">
-                <div class="tile-label">VIXEQ / VIX</div>
-                <div class="tile-value">{data['value']:.2f}</div>
-                <div class="tile-prev">Constituent vs. index volatility</div>
-                <div class="severity-caption">Yahoo only exposes a live snapshot for VIXEQ, not history —
-                trend builds from one real data point recorded daily as this runs.
-                {data['history_days']} day(s) collected so far.</div>
-            </div>""",
-            unsafe_allow_html=True,
-        )
-        return
-
-    arrow, tone = mi.trend(data["value"], data["prior_value"], higher_is_good=True)
-    caption = {
-        "good": VIXEQ_EXPLANATION_EXPANDING,
-        "bad": VIXEQ_EXPLANATION_COMPRESSING,
-        "neutral": VIXEQ_EXPLANATION_FLAT,
-    }[tone]
+    value = data["value"]
+    diff_pct = (value - mi.CAPE_HISTORICAL_AVERAGE) / mi.CAPE_HISTORICAL_AVERAGE * 100
+    tone = "bad" if diff_pct > 15 else "good" if diff_pct < -15 else "neutral"
+    direction = "above" if diff_pct >= 0 else "below"
 
     st.markdown(
         f"""<div class="tile tile-accent-{tone} internals-ratio-tile">
-            <div class="tile-label">VIXEQ / VIX</div>
-            <div class="tile-value">{data['value']:.2f}</div>
-            <div class="badge badge-{tone}">{arrow}</div>
-            <div class="severity-caption">{caption}</div>
+            <div class="tile-label">SHILLER CAPE</div>
+            <div class="tile-value">{value:.1f}</div>
+            <div class="badge badge-{tone}">{abs(diff_pct):.0f}% {direction} historical average</div>
+            <div class="severity-caption">Cyclically-adjusted P/E — S&amp;P 500 price over 10-year
+            average inflation-adjusted earnings. Compared against {mi.CAPE_HISTORICAL_AVERAGE},
+            the long-run average for the full series back to 1881.</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -150,12 +132,12 @@ def _render_ratio_tile(label: str, symbol_a: str, symbol_b: str, caption_up: str
 def render() -> None:
     st.markdown('<div class="page-title page-title-internals">Market Internals</div>', unsafe_allow_html=True)
 
-    _render_confidence_hero()
+    _render_gauge_hero()
     st.markdown('<div style="height: 0.4rem;"></div>', unsafe_allow_html=True)
 
     cols = st.columns(3)
     with cols[0]:
-        _render_vixeq_tile()
+        _render_cape_tile()
     with cols[1]:
         _render_ratio_tile(
             "HYG / LQD", "HYG", "LQD",

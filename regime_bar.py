@@ -13,7 +13,7 @@ import regime
 
 def render(readings: dict) -> None:
     try:
-        confidence = mi.confidence_index()
+        confidence = mi.fear_greed_index()
         credit = mi.price_ratio("HYG", "LQD")
         breadth = mi.price_ratio("RSP", "SPY")
     except Exception:

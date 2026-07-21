@@ -1,8 +1,11 @@
 """A short rolling log of commute-time readings, persisted to disk (not
 session state) so the trend survives a browser reload or Streamlit
-Cloud sleep/wake — same reasoning as market_internals.py's VIXEQ
-history file, just a much shorter retention window since "how has the
-commute changed in the last half hour" doesn't need months of data.
+Cloud sleep/wake. A 2-hour retention window means a redeploy wiping
+this file (Streamlit Cloud's filesystem isn't persistent across
+those) self-heals within the hour regardless — a genuinely different
+risk profile from a metric needing weeks of locally-accumulated
+history to mean anything at all, which market_internals.py's old
+VIXEQ tile learned the hard way before being removed.
 """
 
 import json

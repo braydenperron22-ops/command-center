@@ -428,17 +428,12 @@ html, body, [class*="css"] {
     padding-bottom: 0.7rem;
 }
 .confidence-value {
-    font-size: 4.2rem;
+    font-size: 6.4rem;
     font-weight: 700;
     letter-spacing: -0.02em;
     color: #F5F5F7;
     line-height: 1.1;
     margin: 0.1rem 0 0.35rem;
-}
-.confidence-metrics {
-    width: 100%;
-    max-width: 26rem;
-    margin-top: 0.4rem;
 }
 /* Market Internals' 3 supporting ratio tiles — deliberately more
    compact than the shared .tile padding, since they're secondary
@@ -447,14 +442,6 @@ html, body, [class*="css"] {
 .internals-ratio-tile {
     padding-top: 1.1rem;
     padding-bottom: 1rem;
-}
-/* Tighter than the default .market-metric row spacing — this page's
-   hero already has a lot competing for vertical room (value + badge +
-   3 rows + caption), and needs to fit comfortably even when a viewer
-   runs their browser above 100% zoom, not just exactly fill 1200px at
-   the nominal scale. */
-.confidence-metrics .market-metric {
-    padding: 0.35rem 0;
 }
 
 .tile-extra {
@@ -1877,7 +1864,7 @@ html, body, [class*="css"] {
     .weather-condition-label { font-size: 1.1rem; }
     .weather-extra { font-size: 1.05rem; padding: 0.35rem 0.8rem; }
     .weather-icon svg { width: 2.3rem; height: 2.3rem; }
-    .confidence-value { font-size: 2.8rem; }
+    .confidence-value { font-size: 4rem; }
     .leave-headline { font-size: 1.9rem; }
     .news-breaking-label { font-size: 1.15rem; }
     .tile-value { font-size: 2rem; }

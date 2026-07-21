@@ -106,17 +106,21 @@ def build_indicator_stat_items(readings: dict) -> list[dict]:
 
 
 def build_internals_stat_items() -> list[dict]:
-    """Market Internals' own three headline numbers (see
-    market_internals.py/pages_internals.py) — Confidence Index and the
-    HYG/LQD credit and RSP/SPY breadth ratios — visible from any page
-    instead of only the one rotation slot Internals gets. Neutral tone
-    throughout: unlike a plain % change, none of these three are a
-    simple "up good, down bad" — pages_internals.py itself only ever
-    interprets them with a whole explanatory sentence, not a color."""
+    """Market Internals' own headline numbers (see
+    market_internals.py/pages_internals.py) — the Fear & Greed gauge,
+    Shiller CAPE, and the HYG/LQD credit and RSP/SPY breadth ratios —
+    visible from any page instead of only the one rotation slot
+    Internals gets. Neutral tone throughout: unlike a plain % change,
+    none of these are a simple "up good, down bad" — pages_internals.py
+    itself only ever interprets them with a whole explanatory sentence,
+    not a color."""
     items = []
-    confidence = market_internals.confidence_index()
-    if confidence:
-        items.append({"text": f'Confidence Index {confidence["value"]:.0f}', "tone": "neutral"})
+    gauge = market_internals.fear_greed_index()
+    if gauge:
+        items.append({"text": f'Fear & Greed {gauge["value"]:.0f}', "tone": "neutral"})
+    cape = market_internals.shiller_cape()
+    if cape and cape.get("value") is not None:
+        items.append({"text": f'Shiller CAPE {cape["value"]:.1f}', "tone": "neutral"})
     hyg_lqd = market_internals.price_ratio("HYG", "LQD")
     if hyg_lqd:
         items.append({"text": f'HYG/LQD {hyg_lqd["value"]:.3f}', "tone": "neutral"})
