@@ -2526,33 +2526,36 @@ html, body, [class*="css"] {
     100% { transform: scale(1); box-shadow: none; }
 }
 
-.jumbo-linewrap { display: flex; justify-content: center; padding: 2px 26px 10px; }
+/* Session feedback: the linescore numbers were "clunky" and unreadable
+   "from a distance" (this is a kiosk meant to be read across a room,
+   not a phone screen) — sized up across the board, not just a tweak. */
+.jumbo-linewrap { display: flex; justify-content: center; padding: 4px 26px 12px; }
 .jumbo-linescore {
     border-collapse: separate;
     border-spacing: 0;
-    font-family: var(--mono);
-    font-size: 12px;
+    font-family: var(--num);
+    font-size: 20px;
     background: rgba(8,11,17,0.75);
     border: 1px solid var(--edge);
     border-radius: 10px;
     overflow: hidden;
 }
-.jumbo-linescore th, .jumbo-linescore td { padding: 5px 11px; text-align: center; min-width: 30px; }
+.jumbo-linescore th, .jumbo-linescore td { padding: 8px 14px; text-align: center; min-width: 38px; }
 .jumbo-linescore thead th {
-    font-size: 8.5px;
-    letter-spacing: 0.2em;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.16em;
     color: var(--mut-2);
     border-bottom: 1px solid var(--edge);
     background: rgba(6,9,14,0.9);
     font-weight: 700;
 }
-.jumbo-linescore td { color: var(--mut); border-bottom: 1px solid rgba(30,38,52,0.4); }
+.jumbo-linescore td { color: var(--bone); border-bottom: 1px solid rgba(30,38,52,0.4); font-weight: 700; }
 .jumbo-linescore tr:last-child td { border-bottom: none; }
-.jumbo-ls-team { text-align: left !important; font-weight: 700; color: var(--bone) !important; white-space: nowrap; }
-.jumbo-ls-team img { width: 18px; height: 18px; object-fit: contain; vertical-align: -4px; margin-right: 6px; }
+.jumbo-ls-team { text-align: left !important; font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--bone) !important; white-space: nowrap; }
+.jumbo-ls-team img { width: 22px; height: 22px; object-fit: contain; vertical-align: -5px; margin-right: 8px; }
 .jumbo-ls-tot { color: var(--led) !important; font-weight: 800; border-left: 1px solid var(--edge); }
 
-.jumbo-scoring { border-top: 1px solid var(--edge); padding: 9px 26px 12px; }
 .jumbo-sl {
     font-family: var(--mono);
     font-size: 8.5px;
@@ -2561,18 +2564,6 @@ html, body, [class*="css"] {
     text-transform: uppercase;
     margin-bottom: 7px;
 }
-.jumbo-play {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-family: var(--mono);
-    font-size: 11.5px;
-    color: var(--mut);
-    padding: 3px 0;
-    line-height: 1.5;
-}
-.jumbo-play-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jumbo-play-score { margin-left: auto; color: var(--led); font-weight: 800; flex: 0 0 auto; }
 
 /* ---- Around the leagues ---- */
 .jumbo-around-body { flex: 1; min-height: 0; overflow: hidden; }

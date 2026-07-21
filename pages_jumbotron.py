@@ -58,7 +58,6 @@ _AROUND_LEAGUES = ["mlb", "nhl", "nba", "nfl"]
 # margin at the tallest (leader-line-on-every-row) case.
 _AROUND_PAGE_SIZE = 7
 _AROUND_ROTATE_SECONDS = 12
-_SCORING_PLAYS_SHOWN = 4
 _FORM_GAMES_SHOWN = 8
 
 
@@ -163,25 +162,6 @@ def _linescore_html(sport: str, game_id: int, away: dict, home: dict) -> str:
         f'<table class="jumbo-linescore"><thead><tr><th></th>{head}</tr></thead>'
         f'<tbody>{row("away", away)}{row("home", home)}</tbody></table>'
     )
-
-
-def _scoring_html(sport: str, game_id: int) -> str:
-    fetch = sports_alerts._mlb_scoring_plays if sport == "mlb" else sports_alerts._nhl_scoring_plays
-    try:
-        plays = fetch(game_id)
-    except Exception:
-        return ""
-    if not plays:
-        return ""
-    # Not truncated here — .jumbo-play-text ellipsizes in CSS, which
-    # cuts to the actual rendered width instead of a character count
-    # that lands mid-word at whatever the panel happens to be.
-    rows = "".join(
-        f'<div class="jumbo-play"><span class="jumbo-play-text">{html.escape(p["description"])}</span>'
-        f'<span class="jumbo-play-score">{p["away_score"]}–{p["home_score"]}</span></div>'
-        for p in plays[-_SCORING_PLAYS_SHOWN:][::-1]
-    )
-    return f'<div class="jumbo-scoring"><div class="jumbo-sl">Scoring Summary</div>{rows}</div>'
 
 
 def _mlb_situation_html(game_id: int) -> str:
@@ -451,7 +431,7 @@ def _board_html(state: dict, now: datetime) -> str:
         start_text = game["start_time"].strftime("%-I:%M %p")
         situation = f'<div class="jumbo-situ"><span class="jumbo-situ-hot">FIRST PITCH {html.escape(start_text)}</span></div>' if sport == "mlb" else f'<div class="jumbo-situ"><span class="jumbo-situ-hot">PUCK DROP {html.escape(start_text)}</span></div>'
         situation += _pregame_extra_html(sport, game["game_id"])
-        linescore, scoring, wp_html = "", "", ""
+        linescore, wp_html = "", ""
         dim_away = dim_home = False
     else:
         away_score = game["opp_score"] if game["is_home"] else game["team_score"]
@@ -511,7 +491,6 @@ def _board_html(state: dict, now: datetime) -> str:
         else:
             situation = ""
         linescore = _linescore_html(sport, game["game_id"], away, home)
-        scoring = _scoring_html(sport, game["game_id"])
         wp_html = _win_probability_html(sport, match, away, home) if phase == "live" else ""
         # Only a finished game has a settled winner to dim the loser
         # against — during a live game the trailing side is still very
@@ -547,7 +526,7 @@ def _board_html(state: dict, now: datetime) -> str:
         f'<span class="jumbo-ph-right">{state_label}</span></div>'
         f'<div class="jumbo-board-body">'
         f'<div class="jumbo-matchup">{_side_html(away, dim_away)}{center}{_side_html(home, dim_home)}</div>'
-        f"{wp_html}{situation}{linescore_block}{scoring}{leaders_html}"
+        f"{wp_html}{situation}{linescore_block}{leaders_html}"
         f"</div></div>"
     )
 
