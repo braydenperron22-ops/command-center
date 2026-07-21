@@ -50,7 +50,11 @@ _RAIL = [
 # cycle them... if there's too many games... make a second page for
 # that league it can flip to."
 _AROUND_LEAGUES = ["mlb", "nhl", "nba", "nfl"]
-_AROUND_PAGE_SIZE = 8
+# Confirmed live: 8 rows fit fine pregame (2 lines each), but once
+# records + a leader line are showing on every row (live/final games)
+# an 8th row clips against the panel's fixed height. 7 leaves real
+# margin at the tallest (leader-line-on-every-row) case.
+_AROUND_PAGE_SIZE = 7
 _AROUND_ROTATE_SECONDS = 12
 _SCORING_PLAYS_SHOWN = 4
 _FORM_GAMES_SHOWN = 8
@@ -176,18 +180,35 @@ def _mlb_situation_html(game_id: int) -> str:
         "</g></svg>"
     )
 
+    # Session request: "are there animations for... there's a
+    # strikeout" — pulses whichever dot just lit up (balls/strikes/
+    # outs each compared to what was last rendered for this game,
+    # keyed by game_id in session_state). A new at-bat resetting these
+    # to a lower count never falsely pulses anything: there's no lit
+    # dot to pulse the instant a count drops, only when it climbs.
+    prev_counts = st.session_state.get(f"jumbotron_mlb_counts_{game_id}", {})
+    current_counts = {"b": detail.get("balls") or 0, "s": detail.get("strikes") or 0, "o": detail.get("outs") or 0}
+    st.session_state[f"jumbotron_mlb_counts_{game_id}"] = current_counts
+
     def dots(count, total, kind):
         count = count or 0
-        return "".join(
-            f'<i class="jumbo-dot jumbo-dot-{kind}{" on" if i < count else ""}"></i>' for i in range(total)
-        )
+        just_up = count > prev_counts.get(kind, 0)
+        out = []
+        for i in range(total):
+            classes = f"jumbo-dot jumbo-dot-{kind}"
+            if i < count:
+                classes += " on"
+                if just_up and i == count - 1:
+                    classes += " jumbo-dot-pulse"
+            out.append(f'<i class="{classes}"></i>')
+        return "".join(out)
 
     inning = f'{detail.get("inning_state") or ""} {detail.get("current_inning") or ""}'.strip()
     parts = [f'<span class="jumbo-situ-hot">{html.escape(inning)}</span>'] if inning else []
     parts.append(diamond)
-    parts.append(f'<span class="jumbo-dots">{dots(detail.get("balls"), 4, "b")}</span>')
-    parts.append(f'<span class="jumbo-dots">{dots(detail.get("strikes"), 3, "s")}</span>')
-    parts.append(f'<span class="jumbo-dots">{dots(detail.get("outs"), 3, "o")}</span>')
+    parts.append(f'<span class="jumbo-dots">{dots(current_counts["b"], 4, "b")}</span>')
+    parts.append(f'<span class="jumbo-dots">{dots(current_counts["s"], 3, "s")}</span>')
+    parts.append(f'<span class="jumbo-dots">{dots(current_counts["o"], 3, "o")}</span>')
     line = "".join(parts)
     who = []
     if detail.get("batter"):
@@ -234,12 +255,37 @@ def _board_html(state: dict, now: datetime) -> str:
     else:
         away_score = game["opp_score"] if game["is_home"] else game["team_score"]
         home_score = game["team_score"] if game["is_home"] else game["opp_score"]
+
+        # Session request: "are there animations for when the j score
+        # or the j's win" — the original static mockup had a full-
+        # screen confetti blast on every score, dropped when this page
+        # was first built (see sports_alerts.py's module docstring) as
+        # too fragile against Streamlit's rerun model. This is the
+        # Streamlit-safe version of that same idea: compare this game's
+        # score to what was last rendered (stored in session_state,
+        # keyed by game_id so two different games can't cross-
+        # contaminate each other's "did it just change" read), and flash
+        # the digit box for one rerun when it moves. A brighter gold
+        # flash when OUR side's score is the one that moved, a dimmer
+        # neutral one for the opponent's — reusing _sides()' own
+        # "is_us" tag rather than re-deriving which digitbox is ours.
+        score_key = f"jumbotron_last_score_{game['game_id']}"
+        prev_scores = st.session_state.get(score_key)
+        away_flash = home_flash = ""
+        if prev_scores is not None and phase == "live":
+            prev_away, prev_home = prev_scores
+            if away_score is not None and away_score != prev_away:
+                away_flash = " jumbo-digitbox-flash-us" if away["is_us"] else " jumbo-digitbox-flash-opp"
+            if home_score is not None and home_score != prev_home:
+                home_flash = " jumbo-digitbox-flash-us" if home["is_us"] else " jumbo-digitbox-flash-opp"
+        st.session_state[score_key] = (away_score, home_score)
+
         final_badge = '<div class="jumbo-final-badge">FINAL</div>' if phase == "postgame" else ""
         center = (
             f'<div class="jumbo-center"><div class="jumbo-score">'
-            f'<span class="jumbo-digitbox">{_digits_html(away_score)}</span>'
+            f'<span class="jumbo-digitbox{away_flash}">{_digits_html(away_score)}</span>'
             f'<span class="jumbo-dash">—</span>'
-            f'<span class="jumbo-digitbox">{_digits_html(home_score)}</span>'
+            f'<span class="jumbo-digitbox{home_flash}">{_digits_html(home_score)}</span>'
             f"</div>{final_badge}</div>"
         )
         if phase == "live":
@@ -256,6 +302,18 @@ def _board_html(state: dict, now: datetime) -> str:
         else:
             dim_away = dim_home = False
 
+    # One-time win celebration — session-guarded per game_id so it
+    # plays exactly once, the moment a win is first observed, rather
+    # than replaying every rerun for the whole ~15min postgame hold.
+    win_burst = ""
+    if phase == "postgame" and away_score is not None and home_score is not None:
+        our_score = away_score if away["is_us"] else home_score
+        their_score = home_score if away["is_us"] else away_score
+        win_key = f"jumbotron_win_shown_{game['game_id']}"
+        if our_score > their_score and not st.session_state.get(win_key):
+            win_burst = " jumbo-win-burst"
+            st.session_state[win_key] = True
+
     state_label = {
         "live": '<span class="jumbo-live">● LIVE</span>',
         "pregame": "UPCOMING",
@@ -265,7 +323,7 @@ def _board_html(state: dict, now: datetime) -> str:
     linescore_block = f'<div class="jumbo-linewrap">{linescore}</div>' if linescore else ""
 
     return (
-        f'<div class="jumbo-panel jumbo-board{live_class}">'
+        f'<div class="jumbo-panel jumbo-board{live_class}{win_burst}">'
         f'<div class="jumbo-ph"><span>{html.escape(league["label"])} · FEATURED</span>'
         f'<span class="jumbo-ph-right">{state_label}</span></div>'
         f'<div class="jumbo-board-body">'
@@ -330,6 +388,13 @@ def _rail_hero_html(entry: dict, now: datetime) -> str:
 
 
 def _mini_row_html(g: dict) -> str:
+    """Session request: bring back the records + standout-performer
+    line the regular rotation's Scores page already shows (see
+    scores_client._game_leader) — both were already sitting unused on
+    every game dict fetch_games returns, so this is purely additive,
+    no new fetching. The leader line only exists once state != "pre"
+    (see scores_client._normalize_game), same as ESPN's own leaders
+    payload being empty pregame."""
     state = g["state"]
     if state == "pre":
         status_text = g["start_time"].strftime("%-I:%M") if g.get("start_time") else ""
@@ -340,15 +405,24 @@ def _mini_row_html(g: dict) -> str:
     def team_row(side):
         score = "" if state == "pre" else (side.get("score") or "")
         logo = f'<img src="{html.escape(side["logo"])}" />' if side.get("logo") else ""
+        record = f'<span class="jumbo-mini-record">{html.escape(side["record"])}</span>' if side.get("record") else ""
         return (
             f'<div class="jumbo-mini-team">{logo}'
-            f'<span class="jumbo-mini-abbr">{html.escape(side.get("abbr") or "")}</span>'
+            f'<span class="jumbo-mini-abbr">{html.escape(side.get("abbr") or "")}</span>{record}'
             f'<span class="jumbo-mini-score">{html.escape(str(score))}</span></div>'
         )
 
+    leader = g.get("leader")
+    leader_html = (
+        f'<div class="jumbo-mini-leader">★ {html.escape(leader["name"])} '
+        f'<span class="jumbo-mini-leader-stat">{html.escape(leader["stat_line"])}</span></div>'
+        if leader
+        else ""
+    )
+
     return (
         f'<div class="{row_class}"><div class="jumbo-mini-teams">'
-        f'{team_row(g["away"])}{team_row(g["home"])}</div>'
+        f'{team_row(g["away"])}{team_row(g["home"])}{leader_html}</div>'
         f'<div class="jumbo-mini-status">{html.escape(status_text)}</div></div>'
     )
 
@@ -388,7 +462,28 @@ def _around_html(now_ts: float) -> str:
     index = int(now_ts // _AROUND_ROTATE_SECONDS) % len(pages)
     league_key, page_num, page_total, chunk = pages[index]
     label = league_key.upper() + (f" · {page_num + 1}/{page_total}" if page_total > 1 else "")
-    return f'<div class="jumbo-around-league">{label}</div>' + "".join(_mini_row_html(g) for g in chunk)
+    rows_html = "".join(_mini_row_html(g) for g in chunk)
+
+    # Session request: "add a cool animation to make it less robotic" —
+    # fires a fade/slide-in ONLY on a genuine page change, not on every
+    # 5s rerun (a static page re-rendering identical content every tick
+    # would otherwise look like it's constantly restarting). Alternating
+    # between two identically-defined keyframe classes on each real
+    # change is the same restart-forcing trick news.py's toast bars use
+    # (see its own STRETCH_END/SLIDE_END comment) — necessary because
+    # Streamlit patches this same markdown block in place across
+    # reruns, and re-applying the exact same class name is a no-op for
+    # an already-finished CSS animation.
+    identity = f"{league_key}:{page_num}"
+    changed = identity != st.session_state.get("jumbotron_around_identity")
+    st.session_state["jumbotron_around_identity"] = identity
+    fade_class = ""
+    if changed:
+        tick = st.session_state.get("jumbotron_around_fade_tick", 0) + 1
+        st.session_state["jumbotron_around_fade_tick"] = tick
+        fade_class = " jumbo-around-fade-a" if tick % 2 == 0 else " jumbo-around-fade-b"
+
+    return f'<div class="jumbo-around-page{fade_class}"><div class="jumbo-around-league">{label}</div>{rows_html}</div>'
 
 
 def render(now: datetime, state: dict, weather: dict | None) -> None:

@@ -2159,6 +2159,19 @@ html, body, [class*="css"] {
     0%, 100% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 0 rgba(255,69,58,0); }
     50% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 26px rgba(255,69,58,0.22); }
 }
+/* Win celebration (pages_jumbotron._board_html) — session request:
+   "the j's win." One-shot gold burst around the whole board the
+   moment a win is first observed (session-guarded per game_id so it
+   never replays during the ~15min postgame hold — see the Python
+   side), instead of the live board's own continuous pulse. */
+.jumbo-win-burst {
+    animation: jumbo-win-burst 1.8s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes jumbo-win-burst {
+    0% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 0 rgba(255,179,0,0); border-color: var(--edge); }
+    30% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 70px rgba(255,179,0,0.65); border-color: var(--led); }
+    100% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 0 rgba(255,179,0,0); border-color: var(--edge); }
+}
 /* Centers the board's contents in whatever height is left over. A
    pregame board is just a matchup and a countdown, a live one adds a
    linescore and scoring summary — without this the sparse version
@@ -2216,6 +2229,29 @@ html, body, [class*="css"] {
     height: 1px;
     background: rgba(0,0,0,0.5);
 }
+/* Score-change flash (pages_jumbotron._board_html) — session request:
+   "are there animations for when the j score" (the original static
+   mockup's full-screen confetti blast on a score, which was dropped as
+   too fragile against Streamlit's rerun model — see sports_alerts.py's
+   module docstring). This is the same idea kept server-rendered-safe:
+   one box-scale-and-glow pulse the instant a score changes, gold for
+   our own side, a dimmer neutral pulse for the opponent's — applied
+   only for the single rerun right after the change (Python side), so
+   it can't get stuck replaying every 5s tick. */
+.jumbo-digitbox-flash-us .jumbo-digit {
+    animation: jumbo-score-flash-us 1.1s ease-out;
+}
+.jumbo-digitbox-flash-opp .jumbo-digit {
+    animation: jumbo-score-flash-opp 1.1s ease-out;
+}
+@keyframes jumbo-score-flash-us {
+    0% { transform: scale(1.35); text-shadow: 0 0 46px var(--led), 0 0 14px var(--led); border-color: var(--led); }
+    100% { transform: scale(1); text-shadow: 0 0 22px var(--ledglow), 0 0 3px var(--ledglow); border-color: var(--edge); }
+}
+@keyframes jumbo-score-flash-opp {
+    0% { transform: scale(1.12); text-shadow: 0 0 20px rgba(126,136,152,0.7); }
+    100% { transform: scale(1); text-shadow: 0 0 22px var(--ledglow), 0 0 3px var(--ledglow); }
+}
 .jumbo-dash { color: var(--edge-hi); font-family: var(--num); font-size: 50px; }
 .jumbo-vs { font-family: var(--num); font-size: 26px; letter-spacing: 0.4em; color: var(--mut-2); padding-left: 0.4em; }
 .jumbo-countdown { font-family: var(--num); font-size: 96px; color: var(--bone); letter-spacing: 0.06em; line-height: 1; }
@@ -2251,6 +2287,15 @@ html, body, [class*="css"] {
 .jumbo-dot-b.on { background: var(--ok); border-color: var(--ok); }
 .jumbo-dot-s.on { background: var(--live); border-color: var(--live); }
 .jumbo-dot-o.on { background: var(--led); border-color: var(--led); }
+/* Session request: "are there animations for... there's a strikeout" —
+   the ball/strike/out dot that just lit up gets a brief pop instead of
+   just silently appearing (pages_jumbotron._mlb_situation_html decides
+   which dot, if any, qualifies each render). */
+.jumbo-dot-pulse { animation: jumbo-dot-pulse 0.6s ease-out; }
+@keyframes jumbo-dot-pulse {
+    0% { transform: scale(1.9); box-shadow: 0 0 12px var(--led); }
+    100% { transform: scale(1); box-shadow: none; }
+}
 
 .jumbo-linewrap { display: flex; justify-content: center; padding: 2px 26px 10px; }
 .jumbo-linescore {
@@ -2322,7 +2367,22 @@ html, body, [class*="css"] {
 .jumbo-mini-team { display: flex; align-items: center; gap: 10px; }
 .jumbo-mini-team img { width: 28px; height: 28px; object-fit: contain; flex: 0 0 auto; }
 .jumbo-mini-abbr { font-size: 17px; font-weight: 500; color: var(--mut); letter-spacing: 0.08em; }
+.jumbo-mini-record { font-size: 11px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.05em; }
 .jumbo-mini-score { margin-left: auto; font-family: var(--num); font-size: 26px; line-height: 1; color: var(--bone); }
+/* Session request: bring back the standout-performer line (see
+   scores_client._game_leader) that used to show on the regular
+   rotation's own Scores page. */
+.jumbo-mini-leader {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--led);
+    letter-spacing: 0.02em;
+    margin-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.jumbo-mini-leader-stat { color: var(--bone); font-weight: 700; }
 .jumbo-mini-status {
     font-family: var(--mono);
     font-size: 12px;
@@ -2334,6 +2394,23 @@ html, body, [class*="css"] {
     line-height: 1.6;
 }
 .jumbo-mini-live .jumbo-mini-status { color: var(--live); font-weight: 800; }
+
+/* Page-flip crossfade (pages_jumbotron._around_html) — session
+   request: "add a cool animation to make it less robotic." Two
+   identically-defined classes rather than one, alternated on each
+   genuine page change: Streamlit patches this markdown block in place
+   across reruns, and re-applying a class that's already finished
+   animating is a no-op, the same reason news.py's toast bars alternate
+   between two keyframe classes (see its own comment). Only applied for
+   the one rerun immediately after a real change (see the Python side),
+   so a page sitting still for 12s never re-triggers this every 5s tick. */
+.jumbo-around-fade-a, .jumbo-around-fade-b {
+    animation: jumbo-around-fade-in 0.5s cubic-bezier(.2,.8,.2,1) backwards;
+}
+@keyframes jumbo-around-fade-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
 
 /* Phone breakpoint. Everything above this point is untouched at any
    width above it (including the kiosk monitor, always far wider) —
