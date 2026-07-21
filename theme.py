@@ -191,6 +191,53 @@ html, body, [class*="css"] {
     color: #F5F5F7;
 }
 
+/* Portfolio page's Recent Activity rows — a colored category tag
+   (session feedback: plain text alone didn't make a dividend read any
+   differently from a withdrawal at a glance) grouped with the label so
+   .market-metric's own label/value space-between layout still only
+   ever sees 2 children. */
+.activity-row-left {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-width: 0;
+}
+.activity-tag {
+    flex-shrink: 0;
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    border: 1px solid currentColor;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.04);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.activity-row .market-metric-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* Session request: flag anything dated today so same-day activity in
+   the automated-investing accounts is answerable at a glance. Small
+   and separate from the category tag's own color on purpose — this is
+   a "when," not a "what," and stacking it onto the tag itself would
+   blur the two together. */
+.activity-today-dot {
+    flex-shrink: 0;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: #FF453A;
+    animation: activity-today-pulse 1.6s ease-in-out infinite;
+}
+@keyframes activity-today-pulse {
+    0%, 100% { box-shadow: 0 0 3px 1px rgba(255,69,58,0.5); opacity: 1; }
+    50% { box-shadow: 0 0 9px 4px rgba(255,69,58,0.9); opacity: 0.55; }
+}
+
 .country-name {
     font-size: 1.25rem;
     color: #8E8E93;

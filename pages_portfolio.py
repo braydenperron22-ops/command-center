@@ -13,10 +13,12 @@ the actual fetch/consolidation/period-change logic.
 
 import html
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 import portfolio_client
+from config import TIMEZONE
 
 
 # Kiosk viewed from across a room — bigger than this app's default
@@ -24,6 +26,21 @@ import portfolio_client
 # dense 7-column grid, not a single full-width page like this one.
 _METRIC_LABEL_STYLE = "font-size:1.05rem;"
 _METRIC_VALUE_STYLE = "font-size:1.7rem; font-weight:600;"
+
+# Session feedback: a plain sentence per row ("Invested $18.00 · RRSP ·
+# Jul 16") read as an undifferentiated wall of gray text — no way to
+# tell a dividend from a withdrawal without reading every word. Each
+# type gets its own colored tag instead, scannable at a glance; label
+# text stays short and consistent rather than reusing SnapTrade's own
+# freeform "description" sentences.
+_ACTIVITY_TAGS = {
+    "CONTRIBUTION": ("INVESTED", "#A78BFA"),  # this page's own accent — new money into the portfolio
+    "WITHDRAWAL": ("WITHDRAWAL", "#FF9F0A"),
+    "DIVIDEND": ("DIVIDEND", "#32D74B"),
+    "INTEREST": ("INTEREST", "#30D5C8"),
+    "BUY": ("BUY", "#5AC8FA"),
+    "SELL": ("SELL", "#64D2FF"),
+}
 
 
 def _period_metric(label: str, pct: float | None) -> str:
@@ -40,19 +57,38 @@ def _period_metric(label: str, pct: float | None) -> str:
     )
 
 
-def _activity_row(activity: dict) -> str:
+def _activity_row(activity: dict, today_local) -> str:
     activity_date = datetime.fromisoformat(activity["date"].replace("Z", "+00:00"))
-    date_label = f"{activity_date.strftime('%b')} {activity_date.day}"
+    activity_date_local = activity_date.astimezone(ZoneInfo(TIMEZONE))
+    date_label = f"{activity_date_local.strftime('%b')} {activity_date_local.day}"
     # Already a short display name (FHSA/TFSA/RRSP/EMERGENCY FUND — see
     # portfolio_client.ACCOUNT_DISPLAY_NAMES), nothing left to trim here.
     account = html.escape(activity["account"])
-    description = html.escape(activity["description"])
     amount = activity["amount"]
     direction_class = "market-up" if amount >= 0 else "market-down"
     sign = "+" if amount >= 0 else "-"
+
+    tag_label, tag_color = _ACTIVITY_TAGS.get(activity["type"], (activity["type"], "#ABB2C4"))
+    tag_html = f'<span class="activity-tag" style="color:{tag_color}; border-color:{tag_color};">{tag_label}</span>'
+    # Session request: a pulsing red dot on anything dated today — the
+    # automated-investing accounts do their own thing all day with no
+    # other heads-up, so "did something happen today" needs to be
+    # answerable at a glance rather than by reading every date. Compared
+    # in local time, not the API's own UTC trade_date, so a transaction
+    # late in the evening (well past UTC's own midnight rollover) still
+    # correctly reads as "today."
+    today_dot_html = '<span class="activity-today-dot"></span>' if activity_date_local.date() == today_local else ""
+    # The one piece of detail a bare category tag can't carry — which
+    # security a trade/dividend actually touched. Nothing extra for
+    # CONTRIBUTION/WITHDRAWAL/INTEREST: the tag plus the amount already
+    # says everything there is to say about those.
+    symbol = activity.get("symbol")
+    detail = f" · {html.escape(symbol)}" if symbol else ""
+
     return (
-        f'<div class="market-metric">'
-        f'<span class="market-metric-label">{description} · {account} · {date_label}</span>'
+        f'<div class="market-metric activity-row">'
+        f'<span class="activity-row-left">{today_dot_html}{tag_html}'
+        f'<span class="market-metric-label">{account}{detail} · {date_label}</span></span>'
         f'<span class="market-metric-value {direction_class}">{sign}${abs(amount):,.2f}</span>'
         f"</div>"
     )
@@ -157,7 +193,8 @@ def render() -> None:
         # competing with two other tiles for vertical space.
         activities = portfolio_client.fetch_activities(limit=14)
         if activities:
-            activity_rows = "".join(_activity_row(a) for a in activities)
+            today_local = datetime.now(ZoneInfo(TIMEZONE)).date()
+            activity_rows = "".join(_activity_row(a, today_local) for a in activities)
             st.markdown(
                 f'<div class="tile">'
                 f'<div class="tile-label">RECENT ACTIVITY</div>'

@@ -316,23 +316,20 @@ def _fetch_activities_raw() -> list[dict] | None:
             amount, trade_date = item.get("amount"), item.get("trade_date")
             if activity_type not in _ACTIVITY_TYPES or amount is None or not trade_date:
                 continue
-            # INTEREST's own "description" is just the literal word
-            # "INTEREST", and CONTRIBUTION's own "Deposit of $X" undersells
-            # what's actually happening in an Automated Investing account
-            # (session request: deposits should read as "Invested," not
-            # "Deposit," since the money doesn't just sit as cash) — every
-            # other kept type already has a real human-readable sentence
-            # (e.g. "Bought 0.28160 of XEQT.TO at $43.50").
-            if activity_type == "INTEREST":
-                description = "Interest"
-            elif activity_type == "CONTRIBUTION":
-                description = f"Invested ${amount:,.2f}"
-            else:
-                description = item.get("description")
+            # Raw type + ticker only — session feedback: the old plain
+            # sentence ("Invested $18.00 · RRSP · Jul 16") read as an
+            # undifferentiated wall of gray text on the kiosk, no way to
+            # tell a dividend from a withdrawal without reading every
+            # word. Presentation (the colored category tag, and how
+            # each type's own extra detail gets worded) lives in
+            # pages_portfolio.py — this layer just hands back facts.
+            symbol_info = item.get("symbol") or {}
+            symbol = symbol_info.get("symbol") or symbol_info.get("raw_symbol")
             activities.append(
                 {
                     "account": display_name,
-                    "description": description or activity_type.title(),
+                    "type": activity_type,
+                    "symbol": symbol,
                     "amount": amount,
                     "date": trade_date,
                 }
