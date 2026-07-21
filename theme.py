@@ -441,7 +441,43 @@ html, body, [class*="css"] {
    to fit reliably across zoom levels, not just at exactly 100%. */
 .internals-ratio-tile {
     padding-top: 1.1rem;
-    padding-bottom: 1rem;
+    padding-bottom: 1.1rem;
+}
+/* Verdict-first Internals typography — session feedback: the meaning
+   has to be readable from across the room, not fine print ("super tiny
+   little context bars that I cannot read unless I'm an inch away").
+   The verdict word is nearly value-sized and tone-colored; the context
+   line is a real sentence at readable size, replacing the old
+   severity-caption small print entirely on this page. */
+.internals-ratio-tile .tile-label {
+    height: auto;
+    font-size: 1.05rem;
+}
+.internals-ratio-tile .tile-value {
+    font-size: 3rem;
+}
+.internals-verdict {
+    font-size: 1.8rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    line-height: 1.15;
+    text-transform: uppercase;
+    margin-top: 0.25rem;
+}
+.confidence-hero .internals-verdict {
+    font-size: 2.3rem;
+}
+.internals-verdict-good { color: #32D74B; }
+.internals-verdict-bad { color: #FF6961; }
+.internals-verdict-neutral { color: #5AC8FA; }
+.internals-context {
+    font-size: 1.2rem;
+    color: #ECECF1;
+    line-height: 1.4;
+    margin-top: 0.55rem;
+}
+.confidence-hero .internals-context {
+    max-width: 46rem;
 }
 
 .tile-extra {
@@ -1718,12 +1754,59 @@ html, body, [class*="css"] {
     50% { text-shadow: 0 0 36px rgba(255,69,58,0.85), 0 0 60px rgba(255,69,58,0.35); }
 }
 
+/* Same page-independent headline treatment for the final hour before a
+   Jays/Habs game (sports_alerts.render_game_countdown) — deliberately
+   smaller and calmer than the leave headline (no pulse): a game
+   starting is anticipation, not a deadline, and if both ever render at
+   once the commute one must clearly be the urgent one. Team-colored,
+   matching each team's own alert bar (see .sports-alert-bar-*). */
+.game-countdown-headline {
+    text-align: center;
+    font-size: 1.9rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0 0 0.6rem;
+}
+.game-countdown-mlb {
+    color: #4AA8FF;
+    text-shadow: 0 0 22px rgba(74,168,255,0.4);
+}
+.game-countdown-nhl {
+    color: #FF5A5F;
+    text-shadow: 0 0 22px rgba(255,90,95,0.4);
+}
+
 /* Today page's agenda only — same news-feed-row shape the News page
    uses for its own (much longer, faster-scanned) list, but scaled up
    here since this list is short and meant to be read at a glance, not
    skimmed. */
 .agenda-feed-list.news-feed-list {
     padding: 0.5rem 1.5rem;
+}
+/* Today page's section label + commute tile, scaled up — session
+   feedback: "I can see the twenty seven minutes. I can't read anything
+   else there." The 27 was already big; the route, the delay/why line,
+   and the trend/ice warnings underneath were the unreadable part, so
+   everything around the number steps up with it. */
+.agenda-label {
+    font-size: 1.2rem;
+}
+.agenda-empty .tile-prev {
+    font-size: 1.3rem;
+}
+.commute-tile .tile-label.compact {
+    font-size: 1.2rem;
+}
+.commute-tile .tile-value {
+    font-size: 3.4rem;
+}
+.commute-tile .tile-prev {
+    font-size: 1.35rem;
+    margin-top: 0.35rem;
+}
+.commute-tile .severity-caption.compact {
+    font-size: 1.25rem;
+    margin-top: 0.5rem;
 }
 .agenda-feed-list .news-feed-row {
     padding: 1.2rem 0 1.2rem 1.1rem;
@@ -1865,7 +1948,15 @@ html, body, [class*="css"] {
     .weather-extra { font-size: 1.05rem; padding: 0.35rem 0.8rem; }
     .weather-icon svg { width: 2.3rem; height: 2.3rem; }
     .confidence-value { font-size: 4rem; }
+    .internals-verdict { font-size: 1.3rem; }
+    .confidence-hero .internals-verdict { font-size: 1.6rem; }
+    .internals-context { font-size: 1rem; }
+    .internals-ratio-tile .tile-value { font-size: 2.2rem; }
+    .commute-tile .tile-value { font-size: 2.4rem; }
+    .commute-tile .tile-prev { font-size: 1.05rem; }
+    .commute-tile .severity-caption.compact { font-size: 1rem; }
     .leave-headline { font-size: 1.9rem; }
+    .game-countdown-headline { font-size: 1.4rem; }
     .news-breaking-label { font-size: 1.15rem; }
     .tile-value { font-size: 2rem; }
     .market-hero-value { font-size: 1.5rem; }

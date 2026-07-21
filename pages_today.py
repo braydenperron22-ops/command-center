@@ -98,7 +98,7 @@ def _render_agenda(now: datetime) -> None:
     agenda_date = now.date() + timedelta(days=1) if showing_tomorrow else now.date()
     day_word = "tomorrow" if showing_tomorrow else "today"
 
-    st.markdown(f'<div class="tile-label compact">{day_word.upper()}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="tile-label compact agenda-label">{day_word.upper()}</div>', unsafe_allow_html=True)
 
     # Events are always in the future (or, before the switch, still in
     # progress) relative to `now` here on — no special-casing needed for
@@ -107,7 +107,7 @@ def _render_agenda(now: datetime) -> None:
     events = calendar_client.todays_events(calendars, agenda_date)
     if not events:
         st.markdown(
-            f'<div class="tile compact"><div class="tile-prev">Nothing on the calendar {day_word}.</div></div>',
+            f'<div class="tile compact agenda-empty"><div class="tile-prev">Nothing on the calendar {day_word}.</div></div>',
             unsafe_allow_html=True,
         )
         return
@@ -199,7 +199,7 @@ def _render_commute(now: datetime) -> None:
     # indented code block, and it renders that closing tag as literal
     # text instead of parsing it as HTML.
     st.markdown(
-        f"""<div class="tile compact">
+        f"""<div class="tile compact commute-tile">
             <div class="tile-label compact">{COMMUTE_ORIGIN['label'].upper()} → {destination['label'].upper()}</div>
             <div class="tile-value">{minutes} min</div>
             <div class="tile-prev">{data['distance_km']:.1f} km · <span class="{delay_class}">{delay_text}</span></div>
