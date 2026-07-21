@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 import requests
 import streamlit as st
 
+import data_health
 import fetch_throttle
 from config import TIMEZONE
 
@@ -113,6 +114,7 @@ def _fetch_mlb_games(now: datetime) -> list[dict] | None:
     except Exception:
         return _last_good_mlb_games
     _last_good_mlb_games = result
+    data_health.record_success("sports_schedule")
     return result
 
 
@@ -298,6 +300,7 @@ def _fetch_nhl_games() -> list[dict] | None:
     except Exception:
         return _last_good_nhl_games
     _last_good_nhl_games = result
+    data_health.record_success("sports_schedule")
     return result
 
 

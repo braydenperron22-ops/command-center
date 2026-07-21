@@ -11,6 +11,7 @@ from streamlit_autorefresh import st_autorefresh
 
 import air_quality_client
 import commute_reminder
+import data_health
 import govee_lighting
 import market_yf_client
 import morning_briefing
@@ -592,6 +593,26 @@ except Exception:
     _recovery_badge = None
 if _recovery_badge:
     st.markdown(f'<div class="weather-extras">{_recovery_badge}</div>', unsafe_allow_html=True)
+
+# Staleness watchdog (session request) — page-independent, same
+# reasoning and the same .weather-extra pill styling as the recovery
+# badge above. Silent unless a source that has genuinely succeeded at
+# least once this session has since gone quiet longer than its own
+# threshold (see data_health.py) — never flags a source that simply
+# hasn't reported in yet, e.g. right after a fresh redeploy.
+try:
+    _stale_sources = data_health.check()
+except Exception:
+    _stale_sources = []
+if _stale_sources:
+    _stale_tint = "rgba(255,105,97,0.22)"
+    _stale_bg = f"linear-gradient({_stale_tint}, {_stale_tint}), rgba(12,12,16,0.72)"
+    _stale_badges = "".join(
+        f'<span class="weather-extra" style="color:#FF6961; background:{_stale_bg}; border-color:#FF6961;">'
+        f'⚠ {s["label"]}: {s["hours_stale"]:.0f}h stale</span>'
+        for s in _stale_sources
+    )
+    st.markdown(f'<div class="weather-extras">{_stale_badges}</div>', unsafe_allow_html=True)
 
 # Page-independent, same reasoning as the leave headline above — the
 # morning routine doesn't wait for whichever of the 10 rotating pages

@@ -21,11 +21,14 @@ import functools
 import hashlib
 import re
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from xml.etree import ElementTree
 
 import requests
 import streamlit as st
 
+import data_health
 import fetch_throttle
 from config import TOP_ALERT_HOLD_SECONDS
 
@@ -467,22 +470,48 @@ def category_class(category: str) -> str:
     return "news-cat-" + category.lower().replace("/", "-").replace(" ", "-")
 
 
+def _parse_pub_date(raw: str) -> datetime | None:
+    """Handles both date formats seen across FEEDS — RFC 822
+    ("Thu, 16 Jul 2026 18:00:00 GMT", most feeds) and ISO 8601
+    ("2026-07-19T16:54:17Z", Yahoo Finance specifically)."""
+    if not raw:
+        return None
+    try:
+        return parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 @st.cache_data(ttl=3 * 60, show_spinner=False)
 def fetch_headlines() -> list[dict]:
     items = []
+    any_feed_succeeded = False
     for url, source in FEEDS:
         try:
             fetch_throttle.wait_turn()
             resp = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
             resp.raise_for_status()
             root = ElementTree.fromstring(resp.content)
+            any_feed_succeeded = True
             for item in root.iter("item"):
                 title = (item.findtext("title") or "").strip()
                 link = (item.findtext("link") or "").strip()
+                published = _parse_pub_date(item.findtext("pubDate") or "")
                 if title:
-                    items.append({"headline": title, "link": link, "source": source})
+                    items.append({"headline": title, "link": link, "source": source, "published": published})
         except Exception:
             continue  # one dead/slow feed shouldn't take down the others
+    # At least one of FEEDS came through — news is still genuinely
+    # flowing, even if some other feed is currently down (see
+    # data_health.py). Only runs on an actual cache miss (st.cache_data
+    # skips this whole body on a hit), so this tracks "when a real fetch
+    # last succeeded," on this function's own 3-minute cadence.
+    if any_feed_succeeded:
+        data_health.record_success("news")
     return items
 
 
@@ -528,6 +557,14 @@ def get_new_alerts() -> list[dict]:
             alerts.append({**item, "category": category, "important": is_important(item["headline"])})
 
     st.session_state["news_baseline_done"] = True
+    # Session request: when several headlines qualify as new in the
+    # same batch (e.g. a feed recovering from an outage and surfacing
+    # everything it missed at once), line them up in the toast queue in
+    # the order they were actually published — not FEEDS' own fixed
+    # iteration order, which has nothing to do with real chronology.
+    # Anything with an unparseable/missing pubDate sorts to the end
+    # rather than crashing the comparison or claiming a false "first."
+    alerts.sort(key=lambda a: a["published"] or datetime.min.replace(tzinfo=timezone.utc))
     return alerts
 
 

@@ -20,6 +20,8 @@ from datetime import date, timedelta
 import streamlit as st
 from snaptrade_client import SnapTrade
 
+import data_health
+
 # Wealthsimple's own account names, simplified for the kiosk — session
 # request. PERSONAL specifically renamed to what it's actually used
 # for. Only these four are ever shown by name (account breakdown rows
@@ -152,6 +154,7 @@ def fetch_portfolio() -> dict | None:
     _last_error = None
     if result is not None:
         _last_good_portfolio = result
+        data_health.record_success("portfolio")
     return result if result is not None else _last_good_portfolio
 
 

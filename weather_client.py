@@ -8,6 +8,7 @@ import streamlit as st
 from astral import LocationInfo
 from astral.sun import sun
 
+import data_health
 import ec_forecast
 import fetch_throttle
 from config import TIMEZONE, WEATHER_LAT, WEATHER_LON
@@ -144,6 +145,7 @@ def fetch_weather() -> dict | None:
         result = None
     if result is not None:
         _last_good_weather = result
+        data_health.record_success("weather")
         return result
     if _last_good_weather is not None:
         return _last_good_weather
@@ -154,6 +156,9 @@ def fetch_weather() -> dict | None:
     # its own cache_data TTL rather than resting on an EC-sourced
     # approximation once it exists.
     try:
-        return _fallback_from_ec()
+        result = _fallback_from_ec()
     except Exception:
         return None
+    if result is not None:
+        data_health.record_success("weather")
+    return result
