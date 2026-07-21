@@ -140,7 +140,10 @@ components.html(
         "  var h = Math.floor(total / 3600);",
         "  var m = Math.floor((total % 3600) / 60);",
         "  var sec = total % 60;",
-        "  return h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');",
+        # Session request: "once it drops below an hour drop the hour
+        # digit... instead of 0:43:55 make it just show 43:55."
+        "  if (h > 0) return h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');",
+        "  return m + ':' + String(sec).padStart(2, '0');",
         "}",
         "setInterval(function () {",
         "  var now = Date.now();",
