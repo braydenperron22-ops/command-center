@@ -121,6 +121,17 @@ def _standings_table(status: dict) -> str:
     return f'<div class="sports-standings">{rows}</div>' if rows else ""
 
 
+def _form_strip_html(status: dict) -> str:
+    """Last 10 completed games' outcomes as a compact W/L dot row (see
+    sports_client._recent_form) — "" if there isn't any form yet (a
+    season just started, or the fetch itself is between seasons)."""
+    form = status.get("recent_form")
+    if not form:
+        return ""
+    dots = "".join(f'<span class="form-dot form-dot-{"win" if r == "W" else "loss"}">{r}</span>' for r in form)
+    return f'<div class="form-strip"><span class="form-strip-label">Last {len(form)}</span>{dots}</div>'
+
+
 def _compact_tile_html(label: str, status: dict | None, kickoff_label: str, now: datetime) -> str:
     if status is None:
         return (
@@ -134,6 +145,7 @@ def _compact_tile_html(label: str, status: dict | None, kickoff_label: str, now:
         f'<div class="tile-label">{label} · {status["division_name"].upper()}</div>'
         f"</div>"
         f"{_game_html(status, kickoff_label, now)}"
+        f"{_form_strip_html(status)}"
         f"{_wildcard_html(status)}"
         f"{_standings_table(status)}"
         f"</div>"
@@ -224,6 +236,7 @@ def _render_live_tile(label: str, status: dict, sport: str) -> None:
         f"</div>"
         f"{_live_score_hero_html(status, game)}"
         f"{situation_html}"
+        f"{_form_strip_html(status)}"
         f"{_wildcard_html(status)}"
         f"{_standings_table(status)}"
         f"</div>",

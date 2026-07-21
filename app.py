@@ -29,6 +29,7 @@ import pages_sports
 import pages_today
 import pages_weather
 import payday_schedule
+import sports_alerts
 import theme
 import waste_schedule
 import weather_alerts_bar
@@ -687,6 +688,19 @@ try:
 except Exception:
     pass
 
+# Jays/Habs scoring-play alerts: drops into the same bottom-bar queue
+# as breaking news/commute (below) — session request: "every time
+# there's an update in a game have a blue headline come through with a
+# blue govee flash [...] same with the habs but make it red." Wrapped
+# separately from the queue's own try/except, same reasoning as the
+# commute block above — a bug here shouldn't take down real breaking-
+# news alerts, and this needs to run before that block so a fresh
+# scoring play is picked up in this same rerun.
+try:
+    new_alerts.extend(sports_alerts.get_new_alerts())
+except Exception:
+    pass
+
 # Radar-based severe/tracking-started toast alerts (ec_radar.
 # severe_weather_alert / tracking_started_alert) removed along with the
 # rest of the radar lookahead-forecasting layer at the user's own
@@ -740,6 +754,8 @@ try:
         _toast_variant = "a" if st.session_state["_toast_anim_tick"] % 2 == 0 else "b"
         if current_alert.get("kind") == "commute":
             commute_reminder.render_bar(current_alert, elapsed, _toast_variant)
+        elif current_alert.get("kind") == "sports":
+            sports_alerts.render_alert_bar(current_alert, elapsed, _toast_variant)
         else:
             news.render_alert_bar(current_alert, elapsed, _toast_variant)
     else:
@@ -768,6 +784,9 @@ try:
     breaking_elapsed = None
     if current_alert and current_alert.get("important") and elapsed is not None and elapsed < govee_lighting.FLASH_SECONDS:
         breaking_elapsed = elapsed
+    score_flash = None
+    if current_alert and current_alert.get("kind") == "sports" and elapsed is not None and elapsed < govee_lighting.FLASH_SECONDS:
+        score_flash = (elapsed, current_alert["flash_color"])
     aqi_for_lights = air_quality.get("us_aqi") if air_quality else None
     # Session feedback: waking the bedroom light for weather overnight
     # was the wrong call — sync_lights no longer reacts to weather at
@@ -775,7 +794,7 @@ try:
     # night_dim override above, just not the light).
     govee_lighting.sync_lights(
         phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
-        aqi_for_lights, category,
+        aqi_for_lights, category, score_flash,
     )
     govee_lighting.sync_plug(now, weather["first_light"] if weather else None, weather["last_light"] if weather else None)
 except Exception:

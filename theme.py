@@ -651,6 +651,47 @@ html, body, [class*="css"] {
     box-shadow: 0 -4px 24px rgba(179,142,20,0.35);
 }
 
+/* Jays/Habs scoring-play alerts (sports_alerts.py) — same bottom-strip
+   takeover/intro as the bars above, own team color instead: Jays blue,
+   Habs red (session request: "make it red i guess," same red the
+   breaking-news bar already uses since that's genuinely the Canadiens'
+   own color too). */
+.sports-alert-bar-mlb, .sports-alert-bar-nhl {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+    padding: 0.9rem 1.5rem;
+    border-top: 2px solid rgba(255,255,255,0.25);
+    overflow: hidden;
+}
+.sports-alert-bar-mlb {
+    background: linear-gradient(90deg, #0f2a7a 0%, #1a5ab3 50%, #0f2a7a 100%);
+    box-shadow: 0 -4px 24px rgba(26,90,179,0.4);
+}
+.sports-alert-bar-nhl {
+    background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
+    box-shadow: 0 -4px 24px rgba(179,20,20,0.35);
+}
+.sports-alert-score {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #FFFFFF;
+    flex-shrink: 0;
+}
+.sports-alert-score img {
+    width: 2rem;
+    height: 2rem;
+    object-fit: contain;
+}
+
 /* Persistent top banner: holds the latest red (important) headline for
    up to TOP_ALERT_HOLD_SECONDS, or until the next one replaces it. Sits
    in normal document flow above the hero row (not fixed/overlaid) — it's
@@ -1083,6 +1124,39 @@ html, body, [class*="css"] {
     margin-right: 0.4rem;
 }
 
+/* Recent-form strip — last 10 completed games' W/L, one glance instead
+   of reading the standings' win/loss totals. Same green/red language
+   badge-good/badge-bad already use elsewhere on this kiosk. */
+.form-strip {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.7rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+.form-strip-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #8E8E93;
+    margin-right: 0.4rem;
+}
+.form-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.3rem;
+    height: 1.3rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+.form-dot-win { background: rgba(50,215,75,0.18); color: #32D74B; }
+.form-dot-loss { background: rgba(255,69,58,0.18); color: #FF6961; }
+
 /* Sports page's per-team division standings — a plain aligned table,
    own team's row picked out rather than colored (rank order already
    says everything a color would), matching the "quiet color cue,
@@ -1159,6 +1233,12 @@ html, body, [class*="css"] {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+.score-card-record {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #8E8E93;
+    margin-left: 0.35rem;
+}
 .score-card-value {
     font-weight: 800;
     font-size: 1.3rem;
@@ -1169,6 +1249,20 @@ html, body, [class*="css"] {
 .score-card-winner .score-card-abbr,
 .score-card-winner .score-card-value {
     color: #32D74B;
+}
+/* That game's standout performer (see scores_client._game_leader) —
+   real box-score color, not just the bare score. Single line, clipped
+   rather than wrapped: a long stat line ("3-4, 2 HR, 2B, 3 RBI, 2 R")
+   shouldn't be able to stretch or break this grid's compact card. */
+.score-card-leader {
+    margin-top: 0.4rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    font-size: 0.78rem;
+    color: #ABB2C4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .score-card-status {
     margin-top: 0.5rem;
@@ -1794,10 +1888,13 @@ html, body, [class*="css"] {
         flex-wrap: wrap;
         padding: 0.6rem 1rem;
     }
-    .news-alert-bar, .news-alert-bar-market, .commute-alert-bar {
+    .news-alert-bar, .news-alert-bar-market, .commute-alert-bar,
+    .sports-alert-bar-mlb, .sports-alert-bar-nhl {
         padding: 0.7rem 1rem;
     }
     .news-alert-headline, .top-alert-headline { font-size: 0.95rem; }
+    .sports-alert-score { font-size: 1.15rem; }
+    .sports-alert-score img { width: 1.5rem; height: 1.5rem; }
 
     /* News/agenda rows: headline + meta side by side needs width
        neither has at this size — meta drops to its own line instead of

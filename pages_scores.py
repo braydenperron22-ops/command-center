@@ -11,6 +11,7 @@ rotation — passed in from app.py rather than computed fresh here, to
 avoid the exact race condition already fixed for that page.
 """
 
+import html
 import time
 
 import streamlit as st
@@ -47,11 +48,25 @@ def _score_side(team: dict, is_winner: bool) -> str:
     winner_class = " score-card-winner" if is_winner else ""
     score_html = f'<span class="score-card-value">{team["score"]}</span>' if team["score"] is not None else ""
     logo_html = f'<img class="score-card-logo" src="{team["logo"]}" />' if team.get("logo") else ""
+    record_html = f'<span class="score-card-record">{team["record"]}</span>' if team.get("record") else ""
     return (
         f'<div class="score-card-row{winner_class}">'
-        f'<div class="score-card-team">{logo_html}<span class="score-card-abbr">{team["abbr"]}</span></div>'
+        f'<div class="score-card-team">{logo_html}<span class="score-card-abbr">{team["abbr"]}</span>{record_html}</div>'
         f"{score_html}</div>"
     )
+
+
+def _leader_html(game: dict) -> str:
+    """That game's standout performer (see scores_client._game_leader)
+    — real box-score color instead of just the bare score, especially
+    useful for a final you missed live. "" pregame, or if the feed
+    didn't carry one for this particular game."""
+    leader = game.get("leader")
+    if not leader:
+        return ""
+    name = html.escape(leader["name"])
+    stat_line = html.escape(leader["stat_line"])
+    return f'<div class="score-card-leader">★ {name}: {stat_line}</div>'
 
 
 def _game_card(game: dict) -> str:
@@ -66,6 +81,7 @@ def _game_card(game: dict) -> str:
     status_class = " score-card-status-live" if game["state"] == "in" else ""
     return (
         f'<div class="score-card">{_score_side(away, away_wins)}{_score_side(home, home_wins)}'
+        f"{_leader_html(game)}"
         f'<div class="score-card-status{status_class}">{game["status_text"]}</div></div>'
     )
 

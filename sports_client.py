@@ -53,6 +53,13 @@ def _nhl_logo_url(abbrev: str) -> str:
     return _NHL_LOGO_URL.format(abbrev=abbrev)
 
 SEASON_WINDOW_DAYS = 10  # no games at all in this wide a window either side of now => offseason
+# MLB's own schedule endpoint needs an explicit date range (unlike
+# NHL's club-schedule-season/now, which already returns the whole
+# season regardless) — this is how far back that range reaches, wide
+# enough to comfortably contain RECENT_FORM_GAMES completed games even
+# across an All-Star break or a run of postponements, still within the
+# same single schedule fetch _pick_current_game already needed.
+MLB_FORM_LOOKBACK_DAYS = 30
 GAME_CACHE_TTL_SECONDS = 5 * 60  # frequent enough to catch a live score changing
 STANDINGS_CACHE_TTL_SECONDS = 30 * 60  # standings only move once a game finishes, not worth polling harder
 # A live game's own count/base-runners/period-clock genuinely can change
@@ -99,7 +106,7 @@ def _fetch_mlb_games_raw(start_date: str, end_date: str) -> list[dict]:
 
 def _fetch_mlb_games(now: datetime) -> list[dict] | None:
     global _last_good_mlb_games
-    start = (now - timedelta(days=SEASON_WINDOW_DAYS)).strftime("%Y-%m-%d")
+    start = (now - timedelta(days=MLB_FORM_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
     end = (now + timedelta(days=SEASON_WINDOW_DAYS)).strftime("%Y-%m-%d")
     try:
         result = _fetch_mlb_games_raw(start, end)
@@ -222,13 +229,29 @@ def _pick_current_game(games: list[dict], now: datetime) -> dict | None:
     return finals[0] if finals else None
 
 
+RECENT_FORM_GAMES = 10
+
+
+def _recent_form(games: list[dict], now: datetime) -> list[str]:
+    """Outcome ("W"/"L") of the last RECENT_FORM_GAMES completed games,
+    oldest first (reads left-to-right as a timeline, most recent on the
+    right) — from the same full-season schedule already fetched to
+    find the current game (see _pick_current_game), so this costs
+    nothing extra."""
+    finals = sorted(
+        (g for g in games if g["state"] == "final" and g["start_time"] <= now), key=lambda g: g["start_time"]
+    )
+    return ["W" if g["team_score"] > g["opp_score"] else "L" for g in finals[-RECENT_FORM_GAMES:]]
+
+
 def fetch_jays() -> dict | None:
     """{"game": {...}|None, "standings": [{"rank","team","wins","losses",
     "extra","is_team"}, ...], "division_name", "wildcard": {"games_back",
-    "rank"}|None, "team_logo"} — None entirely if the Jays haven't played
-    a regular/postseason game within SEASON_WINDOW_DAYS of now (the
-    actual offseason, not just a rest day). "game", when not None, also
-    carries its own "opponent_logo"."""
+    "rank"}|None, "team_logo", "recent_form": ["W"/"L", ...]} — None
+    entirely if the Jays haven't played a regular/postseason game
+    within SEASON_WINDOW_DAYS of now (the actual offseason, not just a
+    rest day). "game", when not None, also carries its own
+    "opponent_logo"."""
     now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
     raw_games = _fetch_mlb_games(now)
     if raw_games is None:
@@ -256,6 +279,7 @@ def fetch_jays() -> dict | None:
         "division_name": MLB_DIVISION_NAME,
         "wildcard": _fetch_mlb_wildcard(),
         "team_logo": _mlb_logo_url(MLB_TEAM_ID),
+        "recent_form": _recent_form(normalized, now),
     }
 
 
@@ -374,6 +398,7 @@ def fetch_habs() -> dict | None:
         "division_name": NHL_DIVISION_NAME,
         "wildcard": _fetch_nhl_wildcard(),
         "team_logo": _nhl_logo_url(NHL_TEAM_ABBR),
+        "recent_form": _recent_form(normalized, now),
     }
 
 

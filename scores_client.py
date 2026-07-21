@@ -47,6 +47,33 @@ def _fetch_scoreboard_raw(sport: str, league: str, date_str: str) -> list[dict]:
     return resp.json().get("events", [])
 
 
+def _team_record(competitor: dict) -> str | None:
+    """Overall W-L (e.g. "52-48") — a competitor's "records" list also
+    carries home/road splits, so this specifically picks the "total"
+    one rather than whichever happened to be listed first."""
+    records = competitor.get("records") or []
+    overall = next((r for r in records if r.get("type") == "total"), None)
+    return (overall or (records[0] if records else {})).get("summary")
+
+
+def _game_leader(competition: dict) -> dict | None:
+    """That game's standout performer — the top name in ESPN's own
+    first-listed stat category (its own per-sport "headline" stat:
+    Rating for MLB, passer rating for NFL, etc.) — real box-score color
+    once a game's actually started, not just the final score. None
+    before then (an empty "leaders" list pregame, same as an empty
+    score) or if the feed didn't carry one for this game at all."""
+    for category in competition.get("leaders") or []:
+        leaders = category.get("leaders") or []
+        if not leaders:
+            continue
+        athlete = leaders[0].get("athlete") or {}
+        name, stat_line = athlete.get("shortName"), leaders[0].get("displayValue")
+        if name and stat_line:
+            return {"name": name, "stat_line": stat_line}
+    return None
+
+
 def _normalize_game(event: dict) -> dict | None:
     competition = event.get("competitions", [{}])[0]
     competitors = competition.get("competitors", [])
@@ -68,13 +95,16 @@ def _normalize_game(event: dict) -> dict | None:
             "name": home["team"].get("shortDisplayName", home["team"].get("displayName", "")),
             "logo": home["team"].get("logo"),
             "score": home.get("score") if state != "pre" else None,
+            "record": _team_record(home),
         },
         "away": {
             "abbr": away["team"].get("abbreviation", ""),
             "name": away["team"].get("shortDisplayName", away["team"].get("displayName", "")),
             "logo": away["team"].get("logo"),
             "score": away.get("score") if state != "pre" else None,
+            "record": _team_record(away),
         },
+        "leader": _game_leader(competition) if state != "pre" else None,
     }
 
 

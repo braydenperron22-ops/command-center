@@ -244,6 +244,7 @@ def sync_lights(
     sunset: datetime | None,
     aqi: float | None = None,
     category: str | None = None,
+    score_flash: tuple[float, tuple[int, int, int]] | None = None,
 ) -> None:
     """Call once per rerun. Light follows the exact same sunset/sunrise
     pattern as the plug — off at night, no exceptions. Every override
@@ -279,7 +280,15 @@ def sync_lights(
     night/off — session feedback: waking the room for weather overnight
     was the wrong call, full stop. The screen still does its own,
     separate thing for weather overnight (see app.py's night_dim
-    override) — this module no longer reacts to weather at all."""
+    override) — this module no longer reacts to weather at all.
+
+    `score_flash` is (elapsed, color) for a fresh Jays/Habs scoring-play
+    alert (see sports_alerts.py) — session request: "a blue govee flash"
+    for the Jays, red for the Habs. Same brief alternating pulse as the
+    breaking-news flash, just the caller's own team color instead of
+    red, checked right after breaking news (which still wins if both
+    were somehow active at once — the more genuinely urgent of the
+    two)."""
     if not st.secrets.get("GOVEE_API_KEY"):
         return
     if phase == "night":
@@ -289,6 +298,12 @@ def sync_lights(
         return
     if breaking_alert_elapsed is not None:
         color = FLASH_RED if int(breaking_alert_elapsed) % 2 == 0 else FLASH_WHITE
+        _apply_color(color, min_gap=FLASH_CALL_GAP_SECONDS)
+        _apply_brightness_immediate(FLASH_BRIGHTNESS, min_gap=FLASH_CALL_GAP_SECONDS)
+        return
+    if score_flash is not None:
+        flash_elapsed, flash_color = score_flash
+        color = flash_color if int(flash_elapsed) % 2 == 0 else FLASH_WHITE
         _apply_color(color, min_gap=FLASH_CALL_GAP_SECONDS)
         _apply_brightness_immediate(FLASH_BRIGHTNESS, min_gap=FLASH_CALL_GAP_SECONDS)
         return
