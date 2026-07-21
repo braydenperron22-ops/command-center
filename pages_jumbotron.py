@@ -22,6 +22,7 @@ two linescore fetchers in sports_client.
 """
 
 import html
+import time
 from datetime import datetime
 
 import streamlit as st
@@ -36,10 +37,21 @@ _RAIL = [
     {"sport": "nhl", "label": "CANADIENS", "fetch_status": sports_client.fetch_habs, "kickoff": "TO PUCK DROP"},
     {"sport": "mlb", "label": "BLUE JAYS", "fetch_status": sports_client.fetch_jays, "kickoff": "TO FIRST PITCH"},
 ]
-# Around-the-leagues rail: enough of the slate to feel like a real
-# scoreboard without pushing the column past the fixed viewport.
+# Around-the-leagues rail: session feedback — a real MLB slate is
+# regularly 12-15 games, and capping to a handful was silently hiding
+# most of tonight's games. Nothing is dropped now: each league gets
+# every one of its games, split into AROUND_PAGE_SIZE-row pages, and
+# the whole set of pages (across every league that has a game today,
+# in league order) cycles on a wall-clock timer — the same
+# int(time.time() // interval) % n pattern pages_household.py's own
+# NEARBY rotation and the team-news rail used earlier this session.
+# One page shown at a time rather than every league stacked at once,
+# per session request: "when more than one league is active have it
+# cycle them... if there's too many games... make a second page for
+# that league it can flip to."
 _AROUND_LEAGUES = ["mlb", "nhl", "nba", "nfl"]
-_AROUND_MAX_PER_LEAGUE = 4
+_AROUND_PAGE_SIZE = 8
+_AROUND_ROTATE_SECONDS = 12
 _SCORING_PLAYS_SHOWN = 4
 _FORM_GAMES_SHOWN = 8
 
@@ -317,8 +329,44 @@ def _rail_hero_html(entry: dict, now: datetime) -> str:
     )
 
 
-def _around_html() -> str:
-    blocks = []
+def _mini_row_html(g: dict) -> str:
+    state = g["state"]
+    if state == "pre":
+        status_text = g["start_time"].strftime("%-I:%M") if g.get("start_time") else ""
+    else:
+        status_text = g.get("status_text") or ""
+    row_class = "jumbo-mini" + (" jumbo-mini-live" if state == "in" else " jumbo-mini-final" if state == "post" else "")
+
+    def team_row(side):
+        score = "" if state == "pre" else (side.get("score") or "")
+        logo = f'<img src="{html.escape(side["logo"])}" />' if side.get("logo") else ""
+        return (
+            f'<div class="jumbo-mini-team">{logo}'
+            f'<span class="jumbo-mini-abbr">{html.escape(side.get("abbr") or "")}</span>'
+            f'<span class="jumbo-mini-score">{html.escape(str(score))}</span></div>'
+        )
+
+    return (
+        f'<div class="{row_class}"><div class="jumbo-mini-teams">'
+        f'{team_row(g["away"])}{team_row(g["home"])}</div>'
+        f'<div class="jumbo-mini-status">{html.escape(status_text)}</div></div>'
+    )
+
+
+def _around_html(now_ts: float) -> str:
+    """Body HTML for the Around The Leagues panel. Every game for every
+    active league is kept — nothing capped or dropped — split into
+    fixed-size pages so the fixed-height panel never overflows, with
+    one page on screen at a time rotating on a wall-clock timer (same
+    int(time.time() // interval) % n pattern as pages_household.py's
+    NEARBY rotation and the team-news rail earlier this session). A
+    league light on games (or the only league with any game today)
+    just gets its one page shown continuously — nothing to rotate to
+    changes that. The current page's own league + "X/Y" page count is
+    the header (e.g. "MLB · 2/3"), so it's always clear there's more
+    coming around rather than looking like a static, capped list."""
+    pages: list[tuple[str, int, int, list[dict]]] = []
+    order = {"in": 0, "pre": 1, "post": 2}
     for key in _AROUND_LEAGUES:
         try:
             games = scores_client.fetch_games(key)
@@ -328,35 +376,19 @@ def _around_html() -> str:
             continue
         # Live first, then upcoming, then finals — the same ordering
         # priority the board itself uses.
-        order = {"in": 0, "pre": 1, "post": 2}
-        games = sorted(games, key=lambda g: order.get(g["state"], 3))[:_AROUND_MAX_PER_LEAGUE]
-        rows = []
-        for g in games:
-            state = g["state"]
-            if state == "pre":
-                status_text = g["start_time"].strftime("%-I:%M") if g.get("start_time") else ""
-            else:
-                status_text = g.get("status_text") or ""
-            row_class = "jumbo-mini" + (" jumbo-mini-live" if state == "in" else " jumbo-mini-final" if state == "post" else "")
+        games = sorted(games, key=lambda g: order.get(g["state"], 3))
+        chunks = [games[i : i + _AROUND_PAGE_SIZE] for i in range(0, len(games), _AROUND_PAGE_SIZE)]
+        total = len(chunks)
+        for i, chunk in enumerate(chunks):
+            pages.append((key, i, total, chunk))
 
-            def team_row(side):
-                score = "" if state == "pre" else (side.get("score") or "")
-                logo = f'<img src="{html.escape(side["logo"])}" />' if side.get("logo") else ""
-                return (
-                    f'<div class="jumbo-mini-team">{logo}'
-                    f'<span class="jumbo-mini-abbr">{html.escape(side.get("abbr") or "")}</span>'
-                    f'<span class="jumbo-mini-score">{html.escape(str(score))}</span></div>'
-                )
-
-            rows.append(
-                f'<div class="{row_class}"><div class="jumbo-mini-teams">'
-                f'{team_row(g["away"])}{team_row(g["home"])}</div>'
-                f'<div class="jumbo-mini-status">{html.escape(status_text)}</div></div>'
-            )
-        blocks.append(f'<div class="jumbo-around-league">{key.upper()}</div>' + "".join(rows))
-    if not blocks:
+    if not pages:
         return ""
-    return "".join(blocks)
+
+    index = int(now_ts // _AROUND_ROTATE_SECONDS) % len(pages)
+    league_key, page_num, page_total, chunk = pages[index]
+    label = league_key.upper() + (f" · {page_num + 1}/{page_total}" if page_total > 1 else "")
+    return f'<div class="jumbo-around-league">{label}</div>' + "".join(_mini_row_html(g) for g in chunk)
 
 
 def render(now: datetime, state: dict, weather: dict | None) -> None:
@@ -375,7 +407,7 @@ def render(now: datetime, state: dict, weather: dict | None) -> None:
         )
 
     rail = "".join(_rail_hero_html(entry, now) for entry in _RAIL)
-    around = _around_html()
+    around = _around_html(time.time())
     around_block = (
         f'<div class="jumbo-panel jumbo-around"><div class="jumbo-ph"><span>Around The Leagues</span></div>'
         f'<div class="jumbo-around-body">{around}</div></div>'
