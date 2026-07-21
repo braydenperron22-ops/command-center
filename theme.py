@@ -589,11 +589,6 @@ html, body, [class*="css"] {
     color: #48484A;
 }
 
-.ticker-item-soon {
-    color: #FFD60A;
-    font-weight: 600;
-}
-
 /* Live "stat" ticker items (ticker.build_market_stat_items etc.) —
    same green/up, red/down, plain/neutral language this app already
    uses everywhere else for a live value. */

@@ -621,8 +621,9 @@ def _safe_render(render_fn, *args) -> None:
         )
 
 
-# The release-calendar ticker at the bottom is global (useful regardless of
-# which page is showing), so macro readings are fetched unconditionally.
+# The bottom ticker's own live indicator-value items are global (useful
+# regardless of which page is showing), so macro readings are fetched
+# unconditionally — pages_home.py's own tiles reuse this same fetch.
 readings, new_flags = ({}, {})
 if FRED_API_KEY:
     try:
@@ -777,24 +778,13 @@ try:
         else:
             news.render_alert_bar(current_alert, elapsed, _toast_variant)
     else:
-        # Earnings dates (a small curated watchlist, see config.
-        # EARNINGS_TICKER_WATCHLIST) fold into the same scrolling strip
-        # as the macro release calendar rather than getting a section
-        # of their own — one more kind of item in something already on
-        # screen, not new real estate. Not gated on FRED_API_KEY like
-        # the release schedule below — earnings dates come from
-        # yfinance, a completely separate source.
-        schedule = []
-        if FRED_API_KEY and readings:
-            schedule.extend(ticker.build_schedule(readings, FRED_API_KEY))
-        schedule.extend(ticker.build_earnings_schedule())
-        schedule.sort(key=lambda it: it["date"])
-
-        # Live "stat" items (session request: "better utility... than
-        # just dates") lead the strip, ahead of the date-sorted release
-        # calendar — each isolated in its own try so a single source
-        # hiccuping (e.g. yfinance briefly unreachable) only drops that
-        # one item, not the whole ticker.
+        # A pure live-stat ticker (session request: "remove the dates
+        # for data... just not [as] informational and as good as the
+        # other options" — the release-date countdown machinery this
+        # used to have is gone entirely, see ticker.py's own module
+        # docstring). Each source isolated in its own try so a single
+        # one hiccuping (e.g. yfinance briefly unreachable) only drops
+        # that one item, not the whole ticker.
         stats = []
         try:
             stats.extend(ticker.build_market_stat_items())
@@ -810,10 +800,29 @@ try:
             stats.extend(ticker.build_sports_stat_items())
         except Exception:
             pass
+        try:
+            stats.extend(ticker.build_indicator_stat_items(readings))
+        except Exception:
+            pass
+        try:
+            stats.extend(ticker.build_internals_stat_items())
+        except Exception:
+            pass
+        try:
+            gas_stat = ticker.build_gas_stat_item()
+            if gas_stat:
+                stats.append(gas_stat)
+        except Exception:
+            pass
+        try:
+            aqi_stat = ticker.build_aqi_stat_item()
+            if aqi_stat:
+                stats.append(aqi_stat)
+        except Exception:
+            pass
 
-        all_items = stats + schedule
-        if all_items:
-            st.markdown(ticker.render_html(all_items, now), unsafe_allow_html=True)
+        if stats:
+            st.markdown(ticker.render_html(stats), unsafe_allow_html=True)
 except Exception:
     pass
 

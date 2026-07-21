@@ -1,7 +1,5 @@
 """FRED API access: fetch series history and classify readings vs trend."""
 
-from datetime import date
-
 import requests
 import streamlit as st
 
@@ -9,7 +7,6 @@ import fetch_throttle
 from indicators import build_reading
 
 FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
-FRED_RELEASE_DATES_URL = "https://api.stlouisfed.org/fred/release/dates"
 
 # This runs 24/7 unattended — a transient network hiccup or a FRED outage
 # must never crash a page (blank screen until the next rerun happens to
@@ -20,7 +17,6 @@ FRED_RELEASE_DATES_URL = "https://api.stlouisfed.org/fred/release/dates"
 # of nothing. Module-level rather than st.session_state since this
 # process serves one continuously-running display, not per-user sessions.
 _last_good_series: dict[str, list[dict]] = {}
-_last_good_release_date: dict[int, str | None] = {}
 
 
 @st.cache_data(ttl=60 * 60, show_spinner=False)
@@ -73,31 +69,3 @@ def fetch_latest_value(series_id: str, api_key: str) -> float | None:
     to be (e.g. T10Y2Y is already the 10Y-2Y spread, not a raw yield)."""
     observations = fetch_series(series_id, api_key)
     return float(observations[-1]["value"]) if observations else None
-
-
-@st.cache_data(ttl=12 * 60 * 60, show_spinner=False)
-def _fetch_next_release_date_raw(release_id: int, api_key: str) -> str | None:
-    params = {
-        "release_id": release_id,
-        "api_key": api_key,
-        "file_type": "json",
-        "realtime_start": date.today().isoformat(),
-        "include_release_dates_with_no_data": "true",
-        "sort_order": "asc",
-        "limit": 1,
-    }
-    fetch_throttle.wait_turn()
-    resp = requests.get(FRED_RELEASE_DATES_URL, params=params, timeout=10)
-    resp.raise_for_status()
-    dates = resp.json().get("release_dates", [])
-    return dates[0]["date"] if dates else None
-
-
-def fetch_next_release_date(release_id: int, api_key: str) -> str | None:
-    """The next confirmed date on FRED's official release calendar for this release."""
-    try:
-        result = _fetch_next_release_date_raw(release_id, api_key)
-    except (requests.RequestException, ValueError, KeyError):
-        return _last_good_release_date.get(release_id)
-    _last_good_release_date[release_id] = result
-    return result

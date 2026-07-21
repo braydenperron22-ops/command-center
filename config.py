@@ -97,18 +97,6 @@ HOT_COOL_THRESHOLD = 0.75
 # A reading this many standard deviations from trend gets a "significant move" flash
 SIGNIFICANT_Z = 2.5
 
-# Release is treated as "imminent" (countdown shown) inside this window
-COUNTDOWN_WINDOW_HOURS = 24
-
-# Earnings dates folded into the same bottom ticker as the macro release
-# calendar (see ticker.build_earnings_schedule) — deliberately just the
-# "mega-cap tech" names, not news.py's full ~90-ticker EARNINGS_COMPANIES
-# map (built for headline text-matching, not for populating a scrolling
-# ticker with 90 items nobody asked to track).
-EARNINGS_TICKER_WATCHLIST = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "NFLX", "AVGO", "BRK-B",
-]
-
 # Each indicator: FRED series id, display label, unit, frequency-aware
 # transform ("yoy" = compute YoY % change from an index; "level" = use
 # the raw series value as-is, e.g. already a rate/percent).
