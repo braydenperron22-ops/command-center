@@ -25,6 +25,17 @@ alerts (a Jays pitcher striking out 3+ straight batters, back-to-back
 homers — see _mlb_streak_events) and a page-independent "First pitch
 in Xm" countdown headline for the final hour before a game
 (render_game_countdown, mirroring commute_reminder's leave headline).
+
+Later expanded (session request: "expand the blue jays / habs toast
+alerts... pre game stuff like time till first pitch, warmups underway,
+first pitch next and more as well as more in game alerts") with four
+more toast types, all through the same get_new_alerts()/
+render_alert_bar() pipeline above: pregame countdown milestones
+(PREGAME_MILESTONES_MINUTES), an MLB-only "warmups underway" toast
+(sports_client's own detail_state field is what makes this
+distinguishable from any other still-upcoming game), a "first pitch!"/
+"puck drop!" toast the moment a game goes live, and in-game lead-change
+toasts alongside the existing scoring-play ones.
 """
 
 import html
@@ -70,6 +81,17 @@ COUNTDOWN_GRACE_MINUTES = 15
 # The minimum consecutive-strikeout run worth interrupting the screen
 # for — 2 in a row is routine, 3 is a pitcher genuinely dealing.
 K_STREAK_MIN = 3
+
+# Pregame toast milestones — session request: "expand the blue jays /
+# habs toast alerts... pre game stuff like time till first pitch,
+# warmups underway, first pitch next." Same due-milestone pattern as
+# commute_reminder.MILESTONES_MINUTES/_due_milestone: widest first,
+# each fires at most once per game, and opening the dashboard partway
+# through the window skips (without replaying) any bigger ones already
+# blown past. Narrower than commute's own list — this is a toast blip
+# alongside the persistent countdown headline (render_game_countdown),
+# not the only clock in town, so it doesn't need every 5-minute rung.
+PREGAME_MILESTONES_MINUTES = [60, 30, 15, 5]
 
 # Jumbotron takeover (see takeover_state / pages_jumbotron.py) — session
 # request: "one hour before any game habs or jays and during the game I
@@ -275,18 +297,56 @@ def _nhl_scoring_plays(game_id: int) -> list[dict]:
 _SCORING_PLAY_FETCHERS = {"mlb": _mlb_scoring_plays, "nhl": _nhl_scoring_plays}
 
 
-def get_new_alerts() -> list[dict]:
-    """New scoring plays (and Jays streak moments — see
-    _mlb_streak_events) since the last check, across whichever of the
-    Jays/Habs games is actually live right now — {"kind": "sports",
-    "sport", "team_label", "team_logo", "opponent_logo", "team_score",
-    "opp_score", "description", "flash_color"}. Baseline established
-    per game_id on its first sighting (same reasoning as news.
-    get_new_alerts): a game only just going live, or the dashboard
-    opening mid-game, shouldn't replay every scoring play that already
-    happened as if it just did. Call at most once per rerun — like
-    news.get_new_alerts, marking a play "seen" is a side effect."""
+def _due_pregame_milestone(minutes_until: float, shown: set) -> int | None:
+    """The largest not-yet-shown pregame milestone reached — same
+    skip-and-mark-passed-ones-shown logic as commute_reminder.
+    _due_milestone, so opening the dashboard partway through the
+    window fires the nearest real milestone rather than replaying every
+    bigger one already blown past."""
+    candidates = [m for m in PREGAME_MILESTONES_MINUTES if minutes_until <= m]
+    if not candidates:
+        return None
+    due = min(candidates)
+    if due in shown:
+        return None
+    for m in PREGAME_MILESTONES_MINUTES:
+        if m > due:
+            shown.add(m)
+    return due
+
+
+def get_new_alerts(now: datetime) -> list[dict]:
+    """New pregame milestones, scoring plays (and Jays streak moments —
+    see _mlb_streak_events), lead changes, and start/final moments
+    since the last check, across whichever of the Jays/Habs games is
+    relevant right now — {"kind": "sports", "sport", "team_label",
+    "team_logo", "opponent_logo", "team_score", "opp_score",
+    "description", "flash_color"} (team_score/opp_score are None for a
+    pregame alert — see render_alert_bar's own handling of that).
+    Baseline established per game_id on its first live sighting (same
+    reasoning as news.get_new_alerts): a game only just going live, or
+    the dashboard opening mid-game, shouldn't replay every scoring play
+    that already happened as if it just did. Call at most once per
+    rerun — like news.get_new_alerts, marking something "seen" is a
+    side effect.
+
+    Session request: "expand the blue jays / habs toast alerts...
+    pre game stuff like time till first pitch, warmups underway, first
+    pitch next and more as well as more in game alerts." Pregame
+    milestones/warmup and the live-start toast are separate, smaller
+    blips alongside render_game_countdown's own persistent headline —
+    that headline is the one clock in the corner of the screen; these
+    are the "ding, heads up" moments."""
     seen = st.session_state.setdefault("seen_scoring_plays", {})
+    # game_id -> set of pregame milestone minutes already fired.
+    pregame_shown = st.session_state.setdefault("sports_alert_pregame_milestones", {})
+    # game_id -> True once the "warmups underway" toast has fired (MLB only).
+    warmup_alerted = st.session_state.setdefault("sports_alert_warmup_alerted", {})
+    # game_id -> the last-known score leader ("us"/"opp"/"tied"), for
+    # detecting a genuine lead change rather than just any score move.
+    last_leader = st.session_state.setdefault("sports_alert_last_leader", {})
+    # game_id -> True once the "first pitch!"/"puck drop!" toast fired.
+    start_alerted = st.session_state.setdefault("sports_alert_start_alerted", {})
     # game_id -> True once the end-of-game alert has fired for it, so a
     # game sitting as _pick_current_game's own "today's game" pick for
     # the rest of the day (see sports_client._pick_current_game) doesn't
@@ -309,8 +369,81 @@ def get_new_alerts() -> list[dict]:
         # alert for something that happened before this session existed.
         baseline_key = f"sports_alert_baseline_{league['sport']}_{game_id}"
 
-        if game["state"] == "live":
+        if game["state"] == "upcoming":
+            minutes_until = (game["start_time"] - now).total_seconds() / 60
+            if minutes_until >= 0:
+                shown = pregame_shown.setdefault(game_id, set())
+                milestone = _due_pregame_milestone(minutes_until, shown)
+                if milestone is not None:
+                    shown.add(milestone)
+                    alerts.append(
+                        {
+                            "kind": "sports",
+                            "type": "pregame",
+                            "sport": league["sport"],
+                            "team_label": league["label"],
+                            "team_logo": status["team_logo"],
+                            "opponent_logo": game["opponent_logo"],
+                            "team_score": None,
+                            "opp_score": None,
+                            "description": f"{league['kickoff_label']} in {milestone} min",
+                            "flash_color": league["flash_color"],
+                        }
+                    )
+            # MLB-only — see sports_client._normalize_mlb_game's own
+            # docstring on "detail_state" for why NHL has no equivalent.
+            if (
+                league["sport"] == "mlb"
+                and game.get("detail_state") == "Warmup"
+                and not warmup_alerted.get(game_id)
+            ):
+                warmup_alerted[game_id] = True
+                opponent_word = "vs" if game["is_home"] else "@"
+                alerts.append(
+                    {
+                        "kind": "sports",
+                        "type": "pregame",
+                        "sport": league["sport"],
+                        "team_label": league["label"],
+                        "team_logo": status["team_logo"],
+                        "opponent_logo": game["opponent_logo"],
+                        "team_score": None,
+                        "opp_score": None,
+                        "description": f"Warmups underway {opponent_word} {game['opponent']}",
+                        "flash_color": league["flash_color"],
+                    }
+                )
+
+        elif game["state"] == "live":
             baseline_done = st.session_state.get(baseline_key, False)
+            # First live sighting: the "first pitch!"/"puck drop!" toast
+            # — only within COUNTDOWN_GRACE_MINUTES of the scheduled
+            # start, same staleness guard render_game_countdown uses, so
+            # a mid-game app restart doesn't fire this hours late.
+            if (
+                not baseline_done
+                and not start_alerted.get(game_id)
+                and (now - game["start_time"]).total_seconds() <= COUNTDOWN_GRACE_MINUTES * 60
+            ):
+                start_alerted[game_id] = True
+                opponent_word = "vs" if game["is_home"] else "@"
+                alerts.append(
+                    {
+                        "kind": "sports",
+                        "type": "start",
+                        "sport": league["sport"],
+                        "team_label": league["label"],
+                        "team_logo": status["team_logo"],
+                        "opponent_logo": game["opponent_logo"],
+                        "team_score": None,
+                        "opp_score": None,
+                        "description": f"{league['kickoff_label']}! {league['label'].title()} {opponent_word} {game['opponent']} is underway",
+                        "flash_color": league["flash_color"],
+                    }
+                )
+            elif not baseline_done:
+                start_alerted[game_id] = True
+
             plays = [(p, "score") for p in _SCORING_PLAY_FETCHERS[league["sport"]](game_id)]
             if league["sport"] == "mlb":
                 plays += [(p, "streak") for p in _mlb_streak_events(game_id, game["is_home"])]
@@ -340,6 +473,55 @@ def get_new_alerts() -> list[dict]:
                         "flash_color": league["flash_color"],
                     }
                 )
+                # More in-game alerts (session request): a genuine lead
+                # change is its own moment worth calling out, distinct
+                # from "here's the play that just happened" above — only
+                # judged off real scoring plays, not the streak entries
+                # (same play, a second synthetic alert for the same
+                # score with nothing new to compare).
+                if play_type == "score" and baseline_done:
+                    leader = "us" if team_score > opp_score else "opp" if opp_score > team_score else "tied"
+                    previous = last_leader.get(game_id)
+                    last_leader[game_id] = leader
+                    if previous is not None and leader != previous and leader != "tied":
+                        who = league["label"].title() if leader == "us" else game["opponent"]
+                        # Plural agreement — every tracked/opponent team
+                        # name here is plural ("Blue Jays", "Rays",
+                        # "Canadiens", ...), so "take"/"regain", not
+                        # "takes"/"regains".
+                        verb = "take" if previous == "tied" else "retake" if leader == "us" else "regain"
+                        alerts.append(
+                            {
+                                "kind": "sports",
+                                "type": "lead_change",
+                                "sport": league["sport"],
+                                "team_label": league["label"],
+                                "team_logo": status["team_logo"],
+                                "opponent_logo": game["opponent_logo"],
+                                "team_score": team_score,
+                                "opp_score": opp_score,
+                                "description": f"{who} {verb} the lead, {team_score}–{opp_score}",
+                                "flash_color": league["flash_color"],
+                            }
+                        )
+                    elif previous is not None and leader == "tied" and previous != "tied":
+                        alerts.append(
+                            {
+                                "kind": "sports",
+                                "type": "lead_change",
+                                "sport": league["sport"],
+                                "team_label": league["label"],
+                                "team_logo": status["team_logo"],
+                                "opponent_logo": game["opponent_logo"],
+                                "team_score": team_score,
+                                "opp_score": opp_score,
+                                "description": f"Tied up, {team_score}–{opp_score}",
+                                "flash_color": league["flash_color"],
+                            }
+                        )
+                elif play_type == "score":
+                    leader = "us" if team_score > opp_score else "opp" if opp_score > team_score else "tied"
+                    last_leader[game_id] = leader
             st.session_state[baseline_key] = True
 
         elif (
@@ -489,19 +671,27 @@ def render_alert_bar(alert: dict, elapsed: float, variant: str = "a") -> None:
     """Same stretch/slide toast intro as news.render_alert_bar (see its
     own comment + theme.py's toast-*-intro keyframes) — a per-team
     color bar (Jays blue / Habs red) carrying both team logos and the
-    score, plus the play/streak that just happened or the final result
-    (session request: "make an end of game alert"), instead of a plain
-    text headline."""
+    score, plus the play/streak/lead-change that just happened, the
+    final result (session request: "make an end of game alert"), or a
+    pregame moment (session request: "expand the blue jays / habs toast
+    alerts... pre game stuff") instead of a plain text headline. A
+    pregame or game-start alert has no real score yet (team_score/
+    opp_score are None) — shown as just the two logos, no score chip,
+    rather than a misleading "0–0"."""
     bar_class = "sports-alert-bar-mlb" if alert["sport"] == "mlb" else "sports-alert-bar-nhl"
     delay = f"animation-delay: -{elapsed:.2f}s;"
     description = html.escape(alert["description"])
-    suffix = {"final": "FINAL", "streak": "STREAK"}.get(alert.get("type"), "UPDATE")
+    suffix = {"final": "FINAL", "streak": "STREAK", "pregame": "PREGAME", "start": "LIVE", "lead_change": "LEAD CHANGE"}.get(
+        alert.get("type"), "UPDATE"
+    )
     label_text = f"{alert['team_label']} {suffix}"
+    has_score = alert.get("team_score") is not None and alert.get("opp_score") is not None
+    score_text = f"{alert['team_score']}–{alert['opp_score']}" if has_score else ""
     st.markdown(
         f'<div class="{bar_class}">'
         f'<span class="news-breaking-label toast-label-anim-{variant}" style="{delay}">{label_text}</span>'
         f'<span class="sports-alert-score toast-headline-anim-{variant}" style="{delay}">'
-        f'<img src="{alert["team_logo"]}" />{alert["team_score"]}–{alert["opp_score"]}'
+        f'<img src="{alert["team_logo"]}" />{score_text}'
         f'<img src="{alert["opponent_logo"]}" /></span>'
         f'<span class="news-alert-headline toast-headline-anim-{variant}" style="{delay}">{description}</span>'
         f"</div>",

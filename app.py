@@ -955,7 +955,7 @@ except Exception:
 # news alerts, and this needs to run before that block so a fresh
 # scoring play is picked up in this same rerun.
 try:
-    new_alerts.extend(sports_alerts.get_new_alerts())
+    new_alerts.extend(sports_alerts.get_new_alerts(now))
 except Exception:
     pass
 

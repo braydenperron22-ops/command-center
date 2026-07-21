@@ -219,6 +219,12 @@ def _normalize_mlb_game(g: dict) -> dict:
         "team_score": us.get("score"),
         "opp_score": opp.get("score"),
         "state": state,
+        # Raw detailedState, MLB-only (NHL's own game dict has no
+        # equivalent) — exposed so sports_alerts can fire a one-time
+        # "warmups underway" toast on the Preview->Warmup transition,
+        # which "state" alone can't distinguish from any other still-
+        # upcoming game.
+        "detail_state": g["status"].get("detailedState"),
         "start_time": _to_local(g["gameDate"]),
     }
 
