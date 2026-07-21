@@ -568,6 +568,14 @@ try:
 except Exception:
     pass
 
+# Same treatment for the final hour before a Jays/Habs game — session
+# request: "First Pitch In, counting down from an hour, similar to the
+# get ready to go timers" (see sports_alerts.render_game_countdown).
+try:
+    sports_alerts.render_game_countdown(now)
+except Exception:
+    pass
+
 st.markdown(
     f"""<div class="hero-row">
         <div class="hero-time">
@@ -751,24 +759,46 @@ except Exception:
 # style, before control returns to the calendar ticker. This happens
 # regardless of which page is active.
 #
+# Session request: when several alerts land at once, priority order is
+# "leave in at the top, then Habs, then Jays" — commute first, then NHL
+# sports alerts, then MLB, then everything else (news). The sort is
+# stable, so scoring plays within one game and chronologically-sorted
+# news batches each keep their own internal order.
+#
 # A feed outage that recovers can surface dozens of headlines in one
 # batch (everything that was never marked "seen" while it was down) —
-# capped to the most recent MAX_BURST_ALERTS so that doesn't turn into
-# hours of backlog playing through this bar one at a time. commute_alert
-# above is appended AFTER new_alerts is first populated from
-# news.get_new_alerts(), so it always sits at the tail end of the list —
-# this trim (which keeps the most recent items) can never drop it even
-# during a real news burst.
+# capped to MAX_BURST_ALERTS so that doesn't turn into hours of backlog
+# playing through this bar one at a time. The trim only ever cuts from
+# the lowest-priority end (the news tail, oldest first, since news
+# arrives sorted oldest->newest) — a commute or sports alert can never
+# be squeezed out by a news burst, which the old tail-keeping trim
+# quietly stopped guaranteeing for commute the day sports alerts
+# started appending after it.
 #
-# Defined here (not just inside the try) so the Govee block below always
-# has a real value to check even if this try body fails before reaching
-# the assignment further down — it has its own try/except too, but there's
-# no reason to make it depend on this block's internals for a safe default.
+# current_alert/elapsed defined here (not just inside the try) so the
+# Govee block below always has a real value to check even if this try
+# body fails before reaching the assignment further down — it has its
+# own try/except too, but there's no reason to make it depend on this
+# block's internals for a safe default.
+def _alert_priority(alert: dict) -> int:
+    if alert.get("kind") == "commute":
+        return 0
+    if alert.get("kind") == "sports":
+        priority = sports_alerts.COUNTDOWN_PRIORITY
+        sport = alert.get("sport")
+        return 1 + (priority.index(sport) if sport in priority else len(priority))
+    return 10
+
+
 current_alert, elapsed = None, None
 try:
     news_queue = st.session_state.setdefault("news_queue", [])
+    new_alerts.sort(key=_alert_priority)
     if len(new_alerts) > MAX_BURST_ALERTS:
-        new_alerts = new_alerts[-MAX_BURST_ALERTS:]
+        overflow = len(new_alerts) - MAX_BURST_ALERTS
+        news_only = [a for a in new_alerts if _alert_priority(a) == 10]
+        keep_news = news_only[overflow:] if overflow < len(news_only) else []
+        new_alerts = [a for a in new_alerts if _alert_priority(a) < 10] + keep_news
     news_queue.extend(new_alerts)
 
     now_ts = time.time()
