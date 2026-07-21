@@ -15,14 +15,31 @@ field.") — used verbatim rather than re-synthesized, both simpler and
 more trustworthy than a paraphrase. NHL's own feed has no equivalent
 ready-made sentence, so one is built here from the scorer/assists/
 strength fields it does carry.
+
+Session request: "add blue jays/habs news headlines that appear in the
+feed with the same rules as game updates" — general team news (trades,
+injuries, roster moves), not just live scoring plays, pulled from
+Google News (same RSS-search approach as conflict_news.py, no key
+needed) and filtered through news.is_clickbait so teaser junk doesn't
+slip in. These feed into this exact same get_new_alerts()/
+render_alert_bar() pipeline with `"type": "news"` instead of
+`"score"`/`"final"` — same kind="sports", same flash_color, so they
+pick up the identical blue/red Govee flash a live scoring play gets
+(app.py's score_flash check only looks at kind, not type), just
+without a score/opponent logo to show.
 """
 
+import hashlib
 import html
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from xml.etree import ElementTree
 
 import requests
 import streamlit as st
 
 import fetch_throttle
+import news
 import sports_client
 
 MLB_LIVE_FEED_URL = "https://statsapi.mlb.com/api/v1.1/game/{game_id}/feed/live"
@@ -42,9 +59,32 @@ MAX_SEEN_PLAYS = 200
 FLASH_BLUE = (0, 70, 255)  # Blue Jays' own game — a clean, unmistakable blue on a light bulb
 FLASH_RED = (255, 0, 0)  # Canadiens' own game — same red govee_lighting's breaking-news flash already uses
 
+TEAM_NEWS_RSS_URL = "https://news.google.com/rss/search"
+# Team news doesn't need scoring-play-level freshness — a trade or injury
+# story is still "new" an hour later, so this polls far less aggressively
+# than LIVE_FEED_CACHE_TTL_SECONDS.
+TEAM_NEWS_CACHE_TTL_SECONDS = 10 * 60
+# Same "ordered dict as a bounded set" pattern as MAX_SEEN_PLAYS above.
+MAX_SEEN_TEAM_NEWS = 200
+
+# "logo" calls sports_client's own team-id-keyed URL builders directly
+# rather than pulling "team_logo" off fetch_jays()/fetch_habs()'s status
+# dict — that status is None entirely in the off-season (see fetch_jays'
+# own docstring), and a trade/roster story is exactly the kind of team
+# news that keeps happening then, so the news alert's logo can't depend
+# on a live game/season existing the way the scoring-play alerts above
+# already do.
 _LEAGUES = [
-    {"sport": "mlb", "label": "BLUE JAYS", "fetch_status": sports_client.fetch_jays, "flash_color": FLASH_BLUE},
-    {"sport": "nhl", "label": "CANADIENS", "fetch_status": sports_client.fetch_habs, "flash_color": FLASH_RED},
+    {
+        "sport": "mlb", "label": "BLUE JAYS", "fetch_status": sports_client.fetch_jays,
+        "flash_color": FLASH_BLUE, "news_query": '"Toronto Blue Jays"',
+        "logo": sports_client._mlb_logo_url(sports_client.MLB_TEAM_ID),
+    },
+    {
+        "sport": "nhl", "label": "CANADIENS", "fetch_status": sports_client.fetch_habs,
+        "flash_color": FLASH_RED, "news_query": '"Montreal Canadiens"',
+        "logo": sports_client._nhl_logo_url(sports_client.NHL_TEAM_ABBR),
+    },
 ]
 
 
@@ -137,16 +177,49 @@ def _nhl_scoring_plays(game_id: int) -> list[dict]:
 _SCORING_PLAY_FETCHERS = {"mlb": _mlb_scoring_plays, "nhl": _nhl_scoring_plays}
 
 
+def _parse_pub_date(raw: str) -> datetime | None:
+    try:
+        return parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+@st.cache_data(ttl=TEAM_NEWS_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_team_news_raw(query: str) -> list[dict]:
+    """Same Google News RSS search approach as conflict_news.py — no key
+    needed, and a quoted team-name search already surfaces real trade/
+    injury/roster stories without a dedicated MLB/NHL news API. Filtered
+    through news.is_clickbait so teaser junk doesn't slip in, same as
+    conflict_news.py's own use of that shared check."""
+    params = {"q": query, "hl": "en-US", "gl": "US", "ceid": "US:en"}
+    try:
+        fetch_throttle.wait_turn()
+        resp = requests.get(TEAM_NEWS_RSS_URL, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        resp.raise_for_status()
+        root = ElementTree.fromstring(resp.content)
+    except (requests.RequestException, ElementTree.ParseError):
+        return []
+    items = []
+    for item in root.findall(".//item"):
+        title = (item.findtext("title") or "").strip()
+        if title and not news.is_clickbait(title):
+            items.append({"headline": title, "published": _parse_pub_date(item.findtext("pubDate") or "")})
+    return items
+
+
 def get_new_alerts() -> list[dict]:
     """New scoring plays since the last check, across whichever of the
     Jays/Habs games is actually live right now — {"kind": "sports",
     "sport", "team_label", "team_logo", "opponent_logo", "team_score",
-    "opp_score", "description", "flash_color"}. Baseline established
-    per game_id on its first sighting (same reasoning as news.
-    get_new_alerts): a game only just going live, or the dashboard
-    opening mid-game, shouldn't replay every scoring play that already
-    happened as if it just did. Call at most once per rerun — like
-    news.get_new_alerts, marking a play "seen" is a side effect."""
+    "opp_score", "description", "flash_color"} — plus new Jays/Habs team
+    news headlines (same dict shape, "type": "news", no opponent_logo/
+    scores). Baseline established per game_id on its first sighting
+    (same reasoning as news.get_new_alerts): a game only just going
+    live, or the dashboard opening mid-game, shouldn't replay every
+    scoring play that already happened as if it just did — team news
+    gets its own equivalent baseline below, for the same reason. Call at
+    most once per rerun — like news.get_new_alerts, marking a play/
+    headline "seen" is a side effect."""
     seen = st.session_state.setdefault("seen_scoring_plays", {})
     # game_id -> True once the end-of-game alert has fired for it, so a
     # game sitting as _pick_current_game's own "today's game" pick for
@@ -226,6 +299,42 @@ def get_new_alerts() -> list[dict]:
                 }
             )
 
+    # Team news: same seen-hash/baseline pattern as news.get_new_alerts,
+    # kept in its own session-state keys so a headline's "seen" status
+    # here is independent of the general News page's own tracking (a
+    # Jays trade story could easily qualify for both feeds).
+    seen_news = st.session_state.setdefault("seen_team_news", {})
+    news_baseline_done = st.session_state.get("team_news_baseline_done", False)
+    news_alerts = []
+    for league in _LEAGUES:
+        for item in _fetch_team_news_raw(league["news_query"]):
+            h = hashlib.sha1(item["headline"].encode()).hexdigest()
+            if h in seen_news:
+                continue
+            seen_news[h] = True
+            if len(seen_news) > MAX_SEEN_TEAM_NEWS:
+                seen_news.pop(next(iter(seen_news)))
+            if not news_baseline_done:
+                continue
+            news_alerts.append(
+                {
+                    "kind": "sports",
+                    "type": "news",
+                    "sport": league["sport"],
+                    "team_label": league["label"],
+                    "team_logo": league["logo"],
+                    "description": item["headline"],
+                    "flash_color": league["flash_color"],
+                    "published": item["published"],
+                }
+            )
+    st.session_state["team_news_baseline_done"] = True
+    # Same reasoning as news.get_new_alerts: a batch spanning both teams
+    # (or a feed recovering from an outage) should queue in real
+    # publish-time order, not fixed _LEAGUES iteration order.
+    news_alerts.sort(key=lambda a: a["published"] or datetime.min.replace(tzinfo=timezone.utc))
+    alerts.extend(news_alerts)
+
     return alerts
 
 
@@ -247,12 +356,28 @@ def render_alert_bar(alert: dict, elapsed: float, variant: str = "a") -> None:
     own comment + theme.py's toast-*-intro keyframes) — a per-team
     color bar (Jays blue / Habs red) carrying both team logos and the
     score, plus either the play that just happened (a live scoring
-    update) or the final result (session request: "make an end of game
-    alert"), instead of a plain text headline."""
+    update), the final result (session request: "make an end of game
+    alert"), or a general team news headline (session request: "add
+    blue jays/habs news headlines... with the same rules as game
+    updates" — same color bar and single team logo, no opponent/score
+    since a trade or injury story doesn't have either), instead of a
+    plain text headline."""
     bar_class = "sports-alert-bar-mlb" if alert["sport"] == "mlb" else "sports-alert-bar-nhl"
     delay = f"animation-delay: -{elapsed:.2f}s;"
-    label_text = f"{alert['team_label']} {'FINAL' if alert.get('type') == 'final' else 'UPDATE'}"
     description = html.escape(alert["description"])
+    if alert.get("type") == "news":
+        label_text = f"{alert['team_label']} NEWS"
+        st.markdown(
+            f'<div class="{bar_class}">'
+            f'<span class="news-breaking-label toast-label-anim-{variant}" style="{delay}">{label_text}</span>'
+            f'<span class="sports-alert-score toast-headline-anim-{variant}" style="{delay}">'
+            f'<img src="{alert["team_logo"]}" /></span>'
+            f'<span class="news-alert-headline toast-headline-anim-{variant}" style="{delay}">{description}</span>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        return
+    label_text = f"{alert['team_label']} {'FINAL' if alert.get('type') == 'final' else 'UPDATE'}"
     st.markdown(
         f'<div class="{bar_class}">'
         f'<span class="news-breaking-label toast-label-anim-{variant}" style="{delay}">{label_text}</span>'
