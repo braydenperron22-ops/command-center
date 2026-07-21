@@ -1136,6 +1136,89 @@ html, body, [class*="css"] {
     font-weight: 700;
 }
 
+/* Sports page's live scoreboard — session request: "during a game the
+   sports page turns into a full comprehensive scoreboard." A live
+   team's tile stretches full width (see pages_sports.py's live_entries
+   split) for a big score with both logos plus situational detail,
+   rather than staying boxed into the normal 2-column half. */
+.live-scoreboard-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+}
+.live-scoreboard-badge {
+    color: #FF6961;
+    font-weight: 800;
+    font-size: 0.85rem;
+    letter-spacing: 0.04em;
+}
+/* The headline element of a live tile — session feedback: "a big score
+   with both team logos" in place of the small inning-by-inning table
+   this used to lead with, same "readable from across the room"
+   priority as this kiosk's other hero numbers. */
+.live-score-hero {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    margin: 1rem 0 0.6rem;
+}
+.live-score-hero img {
+    width: 4.5rem;
+    height: 4.5rem;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+.live-score-hero-value {
+    font-size: 3.4rem;
+    font-weight: 800;
+    color: #F5F5F7;
+    line-height: 1;
+}
+.live-score-hero-sep {
+    margin: 0 0.5rem;
+    color: #8E8E93;
+}
+/* Situation panel — current count/outs/baserunners (MLB) or
+   period-clock (NHL), directly below the score hero. */
+.game-situation {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1.4rem;
+    margin-top: 0.8rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    font-size: 0.95rem;
+    color: #ABB2C4;
+}
+.game-situation strong {
+    color: #F5F5F7;
+}
+/* 2nd top-center, 3rd/1st bottom corners — same orientation as a
+   broadcast center-field camera, the view anyone already knows. */
+.base-diamond {
+    display: inline-grid;
+    grid-template-columns: repeat(3, 0.7rem);
+    grid-template-rows: repeat(2, 0.7rem);
+    gap: 0.15rem;
+    vertical-align: middle;
+}
+.base-diamond span {
+    width: 0.65rem;
+    height: 0.65rem;
+    border: 1.5px solid #8E8E93;
+    transform: rotate(45deg);
+}
+.base-diamond span.base-on {
+    background: #FFD60A;
+    border-color: #FFD60A;
+}
+.base-second { grid-column: 2; grid-row: 1; }
+.base-third { grid-column: 1; grid-row: 2; }
+.base-first { grid-column: 3; grid-row: 2; }
+
 /* Weather page's 7 day columns — icon + high/low is the headline (same
    glance-from-across-the-room priority as everything else here), the
    short condition text a secondary caption underneath. */

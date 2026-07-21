@@ -5,6 +5,15 @@ page can show just one team, or fall back to a quiet placeholder when
 both leagues happen to be between seasons (their offseasons briefly
 overlap in February) — no manual upkeep needed as real seasons start
 and end.
+
+While a game is actually live, that team's tile takes over as a full
+comprehensive scoreboard (session request: "during a game the sports
+page turns into a full comprehensive scoreboard") — a big score with
+both team logos, then situational detail underneath (count/outs/
+baserunners for MLB, period clock for NHL) from sports_client's own
+fetch_mlb_live_detail/fetch_nhl_live_detail. Standings are still shown
+below that, just no longer competing for space with the compact score
+line the rest of the time.
 """
 
 import html
@@ -112,6 +121,116 @@ def _standings_table(status: dict) -> str:
     return f'<div class="sports-standings">{rows}</div>' if rows else ""
 
 
+def _compact_tile_html(label: str, status: dict | None, kickoff_label: str, now: datetime) -> str:
+    if status is None:
+        return (
+            f'<div class="tile"><div class="tile-label">{label}</div>'
+            f'<div class="tile-prev">Out of season.</div></div>'
+        )
+    return (
+        f'<div class="tile">'
+        f'<div class="sports-team-header">'
+        f'<img class="sports-team-logo" src="{status["team_logo"]}" />'
+        f'<div class="tile-label">{label} · {status["division_name"].upper()}</div>'
+        f"</div>"
+        f"{_game_html(status, kickoff_label, now)}"
+        f"{_wildcard_html(status)}"
+        f"{_standings_table(status)}"
+        f"</div>"
+    )
+
+
+def _live_score_hero_html(status: dict, game: dict) -> str:
+    """Big score, both team logos either side — session feedback: lead
+    with this instead of the small inning/period line score table that
+    used to sit here, matching the same "readable from across the room"
+    priority the rest of this kiosk already gives its headline numbers."""
+    team_score = game["team_score"] if game["team_score"] is not None else 0
+    opp_score = game["opp_score"] if game["opp_score"] is not None else 0
+    return (
+        f'<div class="live-score-hero">'
+        f'<img src="{status["team_logo"]}" />'
+        f'<div class="live-score-hero-value">{team_score}<span class="live-score-hero-sep">-</span>{opp_score}</div>'
+        f'<img src="{game["opponent_logo"]}" />'
+        f"</div>"
+    )
+
+
+def _mlb_situation_html(detail: dict) -> str:
+    outs, balls, strikes = detail.get("outs"), detail.get("balls"), detail.get("strikes")
+    inning_state, current = detail.get("inning_state") or "", detail.get("current_inning")
+    inning_text = f"{inning_state} {current}".strip()
+    bases = detail.get("bases") or {}
+    diamond = (
+        '<span class="base-diamond">'
+        f'<span class="base-second{" base-on" if bases.get("second") else ""}"></span>'
+        f'<span class="base-third{" base-on" if bases.get("third") else ""}"></span>'
+        f'<span class="base-first{" base-on" if bases.get("first") else ""}"></span>'
+        "</span>"
+    )
+    parts = [diamond]
+    if inning_text:
+        parts.insert(0, f"<span><strong>{html.escape(inning_text)}</strong></span>")
+    if outs is not None:
+        parts.append(f'<span>{outs} out{"s" if outs != 1 else ""}</span>')
+    if balls is not None and strikes is not None:
+        parts.append(f"<span>{balls}-{strikes} count</span>")
+    if detail.get("batter"):
+        parts.append(f'<span>At bat: <strong>{html.escape(detail["batter"])}</strong></span>')
+    if detail.get("pitcher"):
+        parts.append(f'<span>Pitching: <strong>{html.escape(detail["pitcher"])}</strong></span>')
+    return f'<div class="game-situation">{"".join(parts)}</div>'
+
+
+def _nhl_situation_html(detail: dict) -> str:
+    period_label, clock = detail.get("period_label"), detail.get("clock")
+    parts = []
+    if detail.get("in_intermission"):
+        text = f"Intermission — end of {period_label}" if period_label else "Intermission"
+        parts.append(f"<span><strong>{html.escape(text)}</strong></span>")
+    else:
+        if period_label:
+            parts.append(f"<span><strong>{html.escape(period_label)} period</strong></span>")
+        if clock:
+            parts.append(f"<span>{html.escape(clock)} remaining</span>")
+    return f'<div class="game-situation">{"".join(parts)}</div>' if parts else ""
+
+
+def _situation_html(sport: str, detail: dict) -> str:
+    return _mlb_situation_html(detail) if sport == "mlb" else _nhl_situation_html(detail)
+
+
+def _render_live_tile(label: str, status: dict, sport: str) -> None:
+    game = status["game"]
+    detail_fetcher = sports_client.fetch_mlb_live_detail if sport == "mlb" else sports_client.fetch_nhl_live_detail
+    detail = detail_fetcher(game["game_id"])
+    opponent = html.escape(game["opponent"])
+    opponent_word = "vs" if game["is_home"] else "@"
+    # The score itself comes from the compact game dict either way, so
+    # the hero renders even on a live-detail fetch failure — only the
+    # situation panel underneath it (count/period-clock etc.) goes
+    # missing rather than the whole tile falling back to something
+    # smaller.
+    situation_html = _situation_html(sport, detail) if detail is not None else ""
+
+    st.markdown(
+        f'<div class="tile">'
+        f'<div class="live-scoreboard-header">'
+        f'<div class="sports-team-header">'
+        f'<img class="sports-team-logo" src="{status["team_logo"]}" />'
+        f'<div class="tile-label">{label} · {opponent_word} {opponent}</div>'
+        f"</div>"
+        f'<div class="live-scoreboard-badge">LIVE</div>'
+        f"</div>"
+        f"{_live_score_hero_html(status, game)}"
+        f"{situation_html}"
+        f"{_wildcard_html(status)}"
+        f"{_standings_table(status)}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render() -> None:
     st.markdown('<div class="page-title page-title-sports">Sports</div>', unsafe_allow_html=True)
 
@@ -126,32 +245,35 @@ def render() -> None:
         return
 
     now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
+    entries = [
+        {"label": "BLUE JAYS", "status": jays, "kickoff_label": "First pitch", "sport": "mlb"},
+        {"label": "CANADIENS", "status": habs, "kickoff_label": "Puck drop", "sport": "nhl"},
+    ]
+    live = [e for e in entries if e["status"] and e["status"]["game"] and e["status"]["game"]["state"] == "live"]
 
-    # Always two columns, even with only one team in season — a single
-    # team otherwise stretches to the full page width and reads sparse.
-    # The out-of-season slot gets its own quiet placeholder instead of
-    # just disappearing, so the layout doesn't reflow every few months.
-    for col, label, status, kickoff_label in zip(
-        st.columns(2), ("BLUE JAYS", "CANADIENS"), (jays, habs), ("First pitch", "Puck drop")
-    ):
-        with col:
-            if status is None:
+    if not live:
+        # Neither team is live — the original 2-column compact layout.
+        # An out-of-season team keeps its own quiet placeholder slot
+        # instead of the grid reflowing to a single stretched column.
+        for col, entry in zip(st.columns(2), entries):
+            with col:
                 st.markdown(
-                    f"""<div class="tile">
-                        <div class="tile-label">{label}</div>
-                        <div class="tile-prev">Out of season.</div>
-                    </div>""",
+                    _compact_tile_html(entry["label"], entry["status"], entry["kickoff_label"], now),
                     unsafe_allow_html=True,
                 )
-                continue
-            st.markdown(
-                f"""<div class="tile">
-                    <div class="sports-team-header">
-                        <img class="sports-team-logo" src="{status['team_logo']}" />
-                        <div class="tile-label">{label} · {status['division_name'].upper()}</div>
-                    </div>
-                    {_game_html(status, kickoff_label, now)}
-                    {_wildcard_html(status)}
-                    {_standings_table(status)}</div>""",
-                unsafe_allow_html=True,
-            )
+        return
+
+    # A live game takes over as a full-width comprehensive scoreboard —
+    # standings/wildcard alone aren't what matters most while a game is
+    # actually being played. Any other team renders underneath as its
+    # own full-width compact tile (clearly secondary beneath the live
+    # spotlight, rather than splitting a now-pointless 2-column grid).
+    for entry in live:
+        _render_live_tile(entry["label"], entry["status"], entry["sport"])
+    for entry in entries:
+        if entry in live:
+            continue
+        st.markdown(
+            _compact_tile_html(entry["label"], entry["status"], entry["kickoff_label"], now),
+            unsafe_allow_html=True,
+        )

@@ -20,6 +20,21 @@ from datetime import date, timedelta
 import streamlit as st
 from snaptrade_client import SnapTrade
 
+# Wealthsimple's own account names, simplified for the kiosk — session
+# request. PERSONAL specifically renamed to what it's actually used
+# for. Only these four are ever shown by name (account breakdown rows
+# + activity feed) — MSB is a cash/spending sub-account, not an
+# investment one, and TOTAL VALUE's own total still includes it (that
+# number is real net worth, not just "these 4 accounts"), it's just not
+# one of the four tracked/renamed accounts, per explicit session
+# request to only show the top 4.
+ACCOUNT_DISPLAY_NAMES = {
+    "Wealthsimple Trade FHSA": "FHSA",
+    "Wealthsimple Trade TFSA": "TFSA",
+    "Wealthsimple Trade RRSP": "RRSP",
+    "Wealthsimple Trade PERSONAL": "EMERGENCY FUND",
+}
+
 _last_good_portfolio: dict | None = None
 _last_good_changes: dict | None = None
 # Set whenever fetch_portfolio's underlying call fails, so the page can
@@ -101,7 +116,19 @@ def _fetch_portfolio_raw() -> dict | None:
         else:
             other_currency_totals[currency] = other_currency_totals.get(currency, 0.0) + amount
 
-    accounts = sorted(grouped.values(), key=lambda a: a["amount"], reverse=True)
+    # Only the four renamed/tracked accounts (see ACCOUNT_DISPLAY_NAMES)
+    # are surfaced by name — total_cad above already summed every real
+    # account, MSB included, so it stays an accurate total even though
+    # MSB itself never appears in this list.
+    accounts = sorted(
+        (
+            {"name": ACCOUNT_DISPLAY_NAMES[a["name"]], "amount": a["amount"], "currency": a["currency"]}
+            for a in grouped.values()
+            if a["name"] in ACCOUNT_DISPLAY_NAMES
+        ),
+        key=lambda a: a["amount"],
+        reverse=True,
+    )
     return {"total_cad": total_cad, "other_currency_totals": other_currency_totals, "accounts": accounts}
 
 
@@ -245,6 +272,88 @@ def _period_change_pct(
     if live_total is not None and included == len(series_by_account):
         end_total = live_total
     return (end_total - start_total) / start_total * 100
+
+
+# Real, human-meaningful events only — get_account_activities also
+# returns PORTFOLIO_INVESTMENT/WRITE_OFF/FEE rows from Automated
+# Investing's own internal rebalancing, confirmed live these carry no
+# real description (the API's own "description" field is literally
+# just the type name, e.g. "PORTFOLIO_INVESTMENT") and are usually
+# penny-sized — noise, not something the user did or would care to see.
+_ACTIVITY_TYPES = {"CONTRIBUTION", "WITHDRAWAL", "BUY", "SELL", "DIVIDEND", "INTEREST"}
+_ACTIVITY_LIMIT_PER_ACCOUNT = 20
+
+_last_good_activities: list[dict] | None = None
+
+
+@st.cache_data(ttl=15 * 60, show_spinner=False)
+def _fetch_activities_raw() -> list[dict] | None:
+    client = _client()
+    user_id = st.secrets.get("SNAPTRADE_USER_ID")
+    user_secret = st.secrets.get("SNAPTRADE_USER_SECRET")
+    if client is None or not user_id or not user_secret:
+        return None
+
+    accounts = client.account_information.list_user_accounts(user_id=user_id, user_secret=user_secret).body
+    activities = []
+    for acct in accounts:
+        # Same four tracked accounts as fetch_portfolio's own breakdown
+        # (see ACCOUNT_DISPLAY_NAMES) — MSB's own activity is real but
+        # isn't one of "my top 4 accounts," per explicit session request.
+        display_name = ACCOUNT_DISPLAY_NAMES.get(acct.get("name"))
+        if display_name is None:
+            continue
+        try:
+            resp = client.account_information.get_account_activities(
+                account_id=acct["id"], user_id=user_id, user_secret=user_secret, limit=_ACTIVITY_LIMIT_PER_ACCOUNT
+            )
+        except Exception:
+            continue
+        body = resp.body
+        items = body.get("data", body) if isinstance(body, dict) else body
+        for item in items or []:
+            activity_type = item.get("type")
+            amount, trade_date = item.get("amount"), item.get("trade_date")
+            if activity_type not in _ACTIVITY_TYPES or amount is None or not trade_date:
+                continue
+            # INTEREST's own "description" is just the literal word
+            # "INTEREST", and CONTRIBUTION's own "Deposit of $X" undersells
+            # what's actually happening in an Automated Investing account
+            # (session request: deposits should read as "Invested," not
+            # "Deposit," since the money doesn't just sit as cash) — every
+            # other kept type already has a real human-readable sentence
+            # (e.g. "Bought 0.28160 of XEQT.TO at $43.50").
+            if activity_type == "INTEREST":
+                description = "Interest"
+            elif activity_type == "CONTRIBUTION":
+                description = f"Invested ${amount:,.2f}"
+            else:
+                description = item.get("description")
+            activities.append(
+                {
+                    "account": display_name,
+                    "description": description or activity_type.title(),
+                    "amount": amount,
+                    "date": trade_date,
+                }
+            )
+    return activities
+
+
+def fetch_activities(limit: int = 8) -> list[dict] | None:
+    """Most recent human-meaningful activity across every account,
+    newest first — falls back to the last successful fetch the same
+    way fetch_portfolio/fetch_changes do."""
+    global _last_good_activities
+    try:
+        activities = _fetch_activities_raw()
+    except Exception:
+        return _last_good_activities
+    if activities is None:
+        return _last_good_activities
+    activities.sort(key=lambda a: a["date"], reverse=True)
+    _last_good_activities = activities
+    return activities[:limit]
 
 
 def fetch_changes() -> dict | None:

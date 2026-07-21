@@ -55,6 +55,13 @@ def _nhl_logo_url(abbrev: str) -> str:
 SEASON_WINDOW_DAYS = 10  # no games at all in this wide a window either side of now => offseason
 GAME_CACHE_TTL_SECONDS = 5 * 60  # frequent enough to catch a live score changing
 STANDINGS_CACHE_TTL_SECONDS = 30 * 60  # standings only move once a game finishes, not worth polling harder
+# A live game's own count/base-runners/period-clock genuinely can change
+# every few seconds — polled far tighter than the 5-minute schedule
+# cache above, which only needs to catch state flipping to/from "live".
+LIVE_DETAIL_CACHE_TTL_SECONDS = 30
+
+MLB_LINESCORE_URL = "https://statsapi.mlb.com/api/v1/game/{game_id}/linescore"
+NHL_BOXSCORE_URL = "https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore"
 
 _last_good_mlb_games: list[dict] | None = None
 _last_good_mlb_standings: list[dict] | None = None
@@ -161,6 +168,7 @@ def _normalize_mlb_game(g: dict) -> dict:
         g["status"]["abstractGameState"], "upcoming"
     )
     return {
+        "game_id": g["gamePk"],
         "opponent": opp["team"]["name"],
         "opponent_logo": _mlb_logo_url(opp["team"]["id"]),
         "is_home": is_home,
@@ -179,6 +187,7 @@ def _normalize_nhl_game(g: dict) -> dict:
     )
     opponent = f"{opp['placeName']['default']} {opp['commonName']['default']}"
     return {
+        "game_id": g["id"],
         "opponent": opponent,
         "opponent_logo": _nhl_logo_url(opp["abbrev"]),
         "is_home": is_home,
@@ -365,4 +374,80 @@ def fetch_habs() -> dict | None:
         "division_name": NHL_DIVISION_NAME,
         "wildcard": _fetch_nhl_wildcard(),
         "team_logo": _nhl_logo_url(NHL_TEAM_ABBR),
+    }
+
+
+# --- Live in-game detail (session request: "during a game the sports
+# page turns into a full comprehensive scoreboard") -------------------
+# Both leagues' own free live-game endpoints, separate from the
+# schedule/standings ones above — only ever fetched for a game already
+# known to be "live" (see _pick_current_game), so this cost is never
+# paid for an upcoming/final game.
+
+
+@st.cache_data(ttl=LIVE_DETAIL_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_mlb_linescore_raw(game_id: int) -> dict:
+    fetch_throttle.wait_turn()
+    resp = requests.get(MLB_LINESCORE_URL.format(game_id=game_id), timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fetch_mlb_live_detail(game_id: int) -> dict | None:
+    """{"inning_state" ("Top"/"Bottom"/"Middle"/"End"), "current_inning",
+    "balls", "strikes", "outs", "batter", "pitcher", "bases":
+    {"first","second","third": bool}} — the live situation only (the
+    score itself already comes from the compact game dict everywhere
+    this is used). None on any fetch failure (no last-good fallback: a
+    stale pitch count/base state would be actively misleading rather
+    than just old, unlike a season schedule that barely changes)."""
+    try:
+        data = _fetch_mlb_linescore_raw(game_id)
+    except Exception:
+        return None
+
+    offense = data.get("offense", {})
+    defense = data.get("defense", {})
+    return {
+        "inning_state": data.get("inningState"),
+        "current_inning": data.get("currentInning"),
+        "balls": data.get("balls"),
+        "strikes": data.get("strikes"),
+        "outs": data.get("outs"),
+        "batter": (offense.get("batter") or {}).get("fullName"),
+        "pitcher": (defense.get("pitcher") or {}).get("fullName"),
+        "bases": {"first": "first" in offense, "second": "second" in offense, "third": "third" in offense},
+    }
+
+
+def _nhl_period_label(period_descriptor: dict) -> str:
+    period_type = period_descriptor.get("periodType")
+    if period_type in ("OT", "SO"):
+        return period_type
+    return {1: "1st", 2: "2nd", 3: "3rd"}.get(period_descriptor.get("number"), f"{period_descriptor.get('number')}th")
+
+
+@st.cache_data(ttl=LIVE_DETAIL_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_nhl_boxscore_raw(game_id: int) -> dict:
+    fetch_throttle.wait_turn()
+    resp = requests.get(NHL_BOXSCORE_URL.format(game_id=game_id), timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fetch_nhl_live_detail(game_id: int) -> dict | None:
+    """{"period_label", "clock", "in_intermission"} — the live situation
+    only (the score itself already comes from the compact game dict
+    everywhere this is used). None on any fetch failure, same reasoning
+    as fetch_mlb_live_detail."""
+    try:
+        box = _fetch_nhl_boxscore_raw(game_id)
+    except Exception:
+        return None
+
+    clock = box.get("clock", {})
+    return {
+        "period_label": _nhl_period_label(box.get("periodDescriptor", {})),
+        "clock": clock.get("timeRemaining"),
+        "in_intermission": clock.get("inIntermission", False),
     }
