@@ -2251,29 +2251,18 @@ html, body, [class*="css"] {
 .jumbo-center { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .jumbo-score { display: flex; align-items: center; gap: 12px; }
 .jumbo-digitbox { display: flex; gap: 6px; }
+/* Plain numerals, not the amber LED-panel look this used to have —
+   session feedback: "why are the scoreboard numbers like a yellow
+   emoji? I don't really fuck with that. Can we just make it regular
+   numbers." */
 .jumbo-digit {
     font-family: var(--num);
     font-size: 104px;
     line-height: 0.92;
     width: 0.62em;
     text-align: center;
-    color: var(--led);
-    background: linear-gradient(180deg, #151B27, #0B0F17);
-    border: 1px solid var(--edge);
-    border-radius: 12px;
-    padding: 10px 0 4px;
-    text-shadow: 0 0 22px var(--ledglow), 0 0 3px var(--ledglow);
-    position: relative;
-    overflow: hidden;
-    box-shadow: inset 0 2px 0 rgba(255,255,255,0.04), inset 0 -16px 22px rgba(0,0,0,0.5);
-}
-/* The seam across a real split-flap/LED digit panel. */
-.jumbo-digit::after {
-    content: "";
-    position: absolute;
-    left: 0; right: 0; top: 50%;
-    height: 1px;
-    background: rgba(0,0,0,0.5);
+    color: var(--bone);
+    font-weight: 700;
 }
 /* Score-change flash (pages_jumbotron._board_html) — session request:
    "are there animations for when the j score" (the original static
@@ -2291,12 +2280,12 @@ html, body, [class*="css"] {
     animation: jumbo-score-flash-opp 1.1s ease-out;
 }
 @keyframes jumbo-score-flash-us {
-    0% { transform: scale(1.35); text-shadow: 0 0 46px var(--led), 0 0 14px var(--led); border-color: var(--led); }
-    100% { transform: scale(1); text-shadow: 0 0 22px var(--ledglow), 0 0 3px var(--ledglow); border-color: var(--edge); }
+    0% { transform: scale(1.35); text-shadow: 0 0 30px rgba(255,255,255,0.85); }
+    100% { transform: scale(1); text-shadow: none; }
 }
 @keyframes jumbo-score-flash-opp {
-    0% { transform: scale(1.12); text-shadow: 0 0 20px rgba(126,136,152,0.7); }
-    100% { transform: scale(1); text-shadow: 0 0 22px var(--ledglow), 0 0 3px var(--ledglow); }
+    0% { transform: scale(1.12); text-shadow: 0 0 20px rgba(255,255,255,0.5); }
+    100% { transform: scale(1); text-shadow: none; }
 }
 .jumbo-dash { color: var(--edge-hi); font-family: var(--num); font-size: 50px; }
 .jumbo-vs { font-family: var(--num); font-size: 26px; letter-spacing: 0.4em; color: var(--mut-2); padding-left: 0.4em; }

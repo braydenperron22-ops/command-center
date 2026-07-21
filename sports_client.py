@@ -195,9 +195,22 @@ def _normalize_mlb_game(g: dict) -> dict:
     away, home = g["teams"]["away"], g["teams"]["home"]
     is_home = home["team"]["id"] == MLB_TEAM_ID
     us, opp = (home, away) if is_home else (away, home)
-    state = {"Preview": "upcoming", "Live": "live", "Final": "final"}.get(
-        g["status"]["abstractGameState"], "upcoming"
-    )
+    # MLB's own abstractGameState buckets "Warmup" under "Live" (confirmed
+    # live: players on the field, broadcast underway, but first pitch
+    # hasn't happened — status was {"abstractGameState": "Live",
+    # "detailedState": "Warmup"} a genuine 21 minutes before start_time).
+    # Treated as still upcoming so the jumbotron doesn't flip to a 0-0
+    # "live" scoreboard while there's real pregame time left (session
+    # report: "there's still quite some time till the game starts, and
+    # it's put us into live mode... which is confusing"). NHL's own
+    # equivalent pregame state ("PRE") is already mapped to "upcoming"
+    # below — this is an MLB-only quirk.
+    if g["status"].get("detailedState") == "Warmup":
+        state = "upcoming"
+    else:
+        state = {"Preview": "upcoming", "Live": "live", "Final": "final"}.get(
+            g["status"]["abstractGameState"], "upcoming"
+        )
     return {
         "game_id": g["gamePk"],
         "opponent": opp["team"]["name"],
