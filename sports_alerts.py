@@ -28,6 +28,7 @@ in Xm" countdown headline for the final hour before a game
 """
 
 import html
+import time
 from datetime import datetime
 
 import requests
@@ -67,6 +68,17 @@ COUNTDOWN_GRACE_MINUTES = 15
 # The minimum consecutive-strikeout run worth interrupting the screen
 # for — 2 in a row is routine, 3 is a pitcher genuinely dealing.
 K_STREAK_MIN = 3
+
+# Jumbotron takeover (see takeover_state / pages_jumbotron.py) — session
+# request: "one hour before any game habs or jays and during the game I
+# want it to go to that exactly so the game can be enjoyed with this
+# system, before reverting back to the other system." The takeover
+# window opens this far ahead of first pitch/puck drop...
+TAKEOVER_LEAD_MINUTES = 60
+# ...and holds this long after a game goes final, so the result, final
+# linescore and scoring summary are actually readable before the kiosk
+# releases back to its normal rotation.
+TAKEOVER_POSTGAME_MINUTES = 15
 
 # Session request: when several alerts/headlines are active at once,
 # the order is "leave in at the top, then Habs, then Jays" — this is
@@ -355,6 +367,107 @@ def get_new_alerts() -> list[dict]:
             )
 
     return alerts
+
+
+def _takeover_priority(league: dict) -> int:
+    sport = league["sport"]
+    return COUNTDOWN_PRIORITY.index(sport) if sport in COUNTDOWN_PRIORITY else len(COUNTDOWN_PRIORITY)
+
+
+def takeover_state(now: datetime) -> dict | None:
+    """Which game, if any, should take the entire screen over right now
+    — {"phase": "pregame"|"live"|"postgame", "league", "status", "game",
+    "minutes_until"} — or None to let the kiosk rotate normally.
+
+    Session request: the kiosk runs as usual, then hands the whole
+    screen to the jumbotron (pages_jumbotron.py) from
+    TAKEOVER_LEAD_MINUTES before first pitch/puck drop through the end
+    of the game, reverting on its own once TAKEOVER_POSTGAME_MINUTES
+    have passed since it went final.
+
+    Live beats pregame beats postgame, and within a phase Habs beat
+    Jays — the same priority order everything else in this module uses
+    (see COUNTDOWN_PRIORITY).
+
+    The postgame hold only applies to a game this session actually
+    watched (tracked in `jumbotron_seen_games`). sports_client's own
+    _pick_current_game keeps returning today's game for the rest of the
+    day once it's final, so without that gate a kiosk started in the
+    evening would take the screen over for a game that finished hours
+    earlier — and a fresh restart mid-postgame simply falls back to the
+    normal rotation, which is the safe direction to fail.
+    """
+    candidates = []
+    for league in _LEAGUES:
+        status = league["fetch_status"]()
+        game = status["game"] if status else None
+        if game:
+            candidates.append((league, status, game))
+    if not candidates:
+        return None
+
+    seen = st.session_state.setdefault("jumbotron_seen_games", {})
+    final_at = st.session_state.setdefault("jumbotron_final_at", {})
+
+    live = sorted(
+        (c for c in candidates if c[2]["state"] == "live"),
+        key=lambda c: _takeover_priority(c[0]),
+    )
+    if live:
+        league, status, game = live[0]
+        seen[game["game_id"]] = True
+        return {"phase": "live", "league": league, "status": status, "game": game, "minutes_until": None}
+
+    pregame = []
+    for league, status, game in candidates:
+        if game["state"] != "upcoming" or game.get("start_time") is None:
+            continue
+        minutes_until = (game["start_time"] - now).total_seconds() / 60
+        # The same grace period render_game_countdown uses: a game whose
+        # scheduled start has passed but that hasn't flipped to "live"
+        # yet (delays, ceremonies, a lagging feed) is the LAST moment to
+        # drop the takeover.
+        if -COUNTDOWN_GRACE_MINUTES <= minutes_until <= TAKEOVER_LEAD_MINUTES:
+            pregame.append((league, status, game, minutes_until))
+    if pregame:
+        pregame.sort(key=lambda c: _takeover_priority(c[0]))
+        league, status, game, minutes_until = pregame[0]
+        seen[game["game_id"]] = True
+        return {"phase": "pregame", "league": league, "status": status, "game": game, "minutes_until": minutes_until}
+
+    postgame = []
+    for league, status, game in candidates:
+        if game["state"] != "final" or game["game_id"] not in seen:
+            continue
+        # Stamped on first sighting rather than read from the feed —
+        # neither league's compact game dict carries an "ended at", and
+        # what this actually needs to measure is "how long has this been
+        # on screen since it ended," which is a wall-clock question.
+        stamped = final_at.setdefault(game["game_id"], time.time())
+        if time.time() - stamped <= TAKEOVER_POSTGAME_MINUTES * 60:
+            postgame.append((league, status, game))
+    if postgame:
+        postgame.sort(key=lambda c: _takeover_priority(c[0]))
+        league, status, game = postgame[0]
+        return {"phase": "postgame", "league": league, "status": status, "game": game, "minutes_until": None}
+
+    return None
+
+
+def takeover_preview_state() -> dict | None:
+    """The same shape takeover_state returns, for whichever game is
+    nearest, ignoring the timing windows entirely — used only by the
+    manual `?page=jumbotron` override so the board can be looked at on
+    a day with no game currently in its window. None if neither team
+    has a game at all (both leagues in the offseason)."""
+    for league in _LEAGUES:
+        status = league["fetch_status"]()
+        game = status["game"] if status else None
+        if not game:
+            continue
+        phase = {"live": "live", "final": "postgame"}.get(game["state"], "pregame")
+        return {"phase": phase, "league": league, "status": status, "game": game, "minutes_until": None}
+    return None
 
 
 def any_game_live() -> bool:

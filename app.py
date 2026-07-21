@@ -20,6 +20,7 @@ import pages_conflicts
 import pages_home
 import pages_household
 import pages_internals
+import pages_jumbotron
 import pages_markets
 import pages_news
 import pages_portfolio
@@ -95,15 +96,56 @@ def _scheduled_page(epoch_seconds: float) -> tuple[str, float, float]:
 
 
 _rotation_epoch = time.time()
+
+# Pinned here rather than further down (where it used to sit, just under
+# the autorefresh call) because the jumbotron takeover below has to know
+# the local wall-clock time before page routing can be decided at all.
+# Hosted deployments (Streamlit Cloud) run on the server's own timezone
+# (typically UTC), not North Bay's — pin explicitly rather than trusting
+# datetime.now(), then drop tzinfo so it stays comparable with the naive
+# sunrise/sunset values Open-Meteo returns for the same zone.
+now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
+
+# Jumbotron takeover — session request: "I want the kiosk to run as
+# normal, but one hour before any game Habs or Jays, and during the
+# game, I want it to go to that exactly so the game can be enjoyed with
+# this system, before reverting back to the other system." The
+# jumbotron is deliberately NOT in PAGES (it never joins the rotation);
+# this is the only thing that ever selects it, and it releases on its
+# own once takeover_state stops returning a phase.
+try:
+    _takeover = sports_alerts.takeover_state(now)
+except Exception:
+    _takeover = None
+
 _requested_page = None
 try:
     _requested_page = st.query_params.get("page")
-    if _requested_page in PAGES:
+    if _requested_page == "jumbotron":
+        # Manual preview from a phone, for a day with no game in its
+        # window — falls back to whatever game is nearest so the board
+        # can actually be looked at outside a real takeover.
+        page = "jumbotron"
+        _takeover = _takeover or sports_alerts.takeover_preview_state()
+    elif _requested_page in PAGES:
         page = _requested_page
+    elif _takeover:
+        page = "jumbotron"
     else:
         page, _, _ = _scheduled_page(_rotation_epoch)
 except Exception:
     page = "today"
+
+# The jumbotron owns the entire screen: no hero row, no morning
+# briefing, no rotation countdown, no pre-game headline (the board has
+# its own, much bigger countdown). The leave-for-work headline still
+# renders — a game is never a reason to miss a shift — and so do the
+# toast queue, ticker and Govee sync.
+_jumbotron_active = page == "jumbotron" and _takeover is not None
+if not _jumbotron_active and page == "jumbotron":
+    # Nothing to show (no game at all, e.g. both leagues in the
+    # offseason) — fall back rather than rendering an empty board.
+    page, _, _ = _scheduled_page(_rotation_epoch)
 
 _PAGE_LABELS = {
     "home": "Home", "conflicts": "Conflicts", "news": "News", "markets": "Markets",
@@ -153,7 +195,7 @@ st.markdown(
 # animation-name always forces a real restart even on the same node,
 # which makes the freshly computed delay actually take effect each
 # time, while the browser still tweens smoothly in between reruns.
-if _requested_page not in PAGES:
+if _requested_page not in PAGES and not _jumbotron_active:
     _, _rotation_elapsed, _rotation_page_seconds = _scheduled_page(_rotation_epoch)
     st.session_state["_rotation_bar_tick"] = st.session_state.get("_rotation_bar_tick", 0) + 1
     _bar_variant = "a" if st.session_state["_rotation_bar_tick"] % 2 == 0 else "b"
@@ -187,12 +229,6 @@ if _requested_page not in PAGES:
 # a clearly better trade than the app crash-looping and burning through
 # every external API's rate limit on each cold restart.
 st_autorefresh(interval=5000, key="clock_tick")
-
-# Hosted deployments (Streamlit Cloud) run on the server's own timezone
-# (typically UTC), not North Bay's — pin explicitly rather than trusting
-# datetime.now(), then drop tzinfo so it stays comparable with the naive
-# sunrise/sunset values Open-Meteo returns for the same zone.
-now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
 
 try:
     weather = fetch_weather()
@@ -571,20 +607,26 @@ except Exception:
 # Same treatment for the final hour before a Jays/Habs game — session
 # request: "First Pitch In, counting down from an hour, similar to the
 # get ready to go timers" (see sports_alerts.render_game_countdown).
-try:
-    sports_alerts.render_game_countdown(now)
-except Exception:
-    pass
+# Skipped during a takeover: the jumbotron's own board carries a far
+# bigger countdown for the exact same game, and two would just compete.
+if not _jumbotron_active:
+    try:
+        sports_alerts.render_game_countdown(now)
+    except Exception:
+        pass
 
-st.markdown(
-    f"""<div class="hero-row">
-        <div class="hero-time">
-            <div class="clock">{now.strftime('%I:%M %p').lstrip('0')}</div>
-            <div class="date-sub">{now.strftime('%A, %B %d')}</div>
-        </div>{weather_block}
-    </div>""",
-    unsafe_allow_html=True,
-)
+# The jumbotron brings its own marquee (clock, date, weather), so the
+# standard hero row would just be a duplicate stacked above it.
+if not _jumbotron_active:
+    st.markdown(
+        f"""<div class="hero-row">
+            <div class="hero-time">
+                <div class="clock">{now.strftime('%I:%M %p').lstrip('0')}</div>
+                <div class="date-sub">{now.strftime('%A, %B %d')}</div>
+            </div>{weather_block}
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
 # Page-independent (see pages_recovery.status_badge_html) — deliberately
 # NOT folded into the `extras` list above: that whole list only ever
@@ -599,7 +641,7 @@ try:
     _recovery_badge = pages_recovery.status_badge_html(now)
 except Exception:
     _recovery_badge = None
-if _recovery_badge:
+if _recovery_badge and not _jumbotron_active:
     st.markdown(f'<div class="weather-extras">{_recovery_badge}</div>', unsafe_allow_html=True)
 
 # Staleness watchdog (session request) — page-independent, same
@@ -612,7 +654,7 @@ try:
     _stale_sources = data_health.check()
 except Exception:
     _stale_sources = []
-if _stale_sources:
+if _stale_sources and not _jumbotron_active:
     _stale_tint = "rgba(255,105,97,0.22)"
     _stale_bg = f"linear-gradient({_stale_tint}, {_stale_tint}), rgba(12,12,16,0.72)"
     _stale_badges = "".join(
@@ -625,11 +667,15 @@ if _stale_sources:
 # Page-independent, same reasoning as the leave headline above — the
 # morning routine doesn't wait for whichever of the 10 rotating pages
 # happens to be up. Below the hero row rather than competing with the
-# leave headline for the same prime spot above the clock.
-try:
-    morning_briefing.render(now, weather, air_quality)
-except Exception:
-    pass
+# leave headline for the same prime spot above the clock. Suppressed
+# during a takeover along with the rest of the standard chrome — a
+# morning-routine summary has no business on a live scoreboard, and
+# takeovers only ever happen at game time anyway.
+if not _jumbotron_active:
+    try:
+        morning_briefing.render(now, weather, air_quality)
+    except Exception:
+        pass
 
 def _safe_render(render_fn, *args) -> None:
     """Runs a page's render function, catching anything unexpected rather
@@ -703,6 +749,8 @@ with st.container(key="page_body"):
         _safe_render(pages_weather.render)
     elif page == "radar":
         _safe_render(pages_radar.render)
+    elif page == "jumbotron":
+        _safe_render(pages_jumbotron.render, now, _takeover, weather)
     elif page == "sports":
         _safe_render(pages_sports.render)
     elif page == "scores":

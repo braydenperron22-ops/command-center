@@ -2,6 +2,14 @@
 
 CSS = """
 <style>
+/* Jumbotron faces only (pages_jumbotron.py) — the rest of the kiosk
+   deliberately stays on the system font stack below. @import has to be
+   the first thing in the sheet to be valid CSS at all, which is why
+   it sits above even the Streamlit chrome rules. Every jumbo-* rule
+   names real fallbacks, so a blocked/slow font request costs the
+   arena look, not the layout. */
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Oswald:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600;700;800&display=swap');
+
 #MainMenu, header, footer { visibility: hidden; }
 
 /* Kills Streamlit's own "stale element" dimming — every element
@@ -1907,6 +1915,401 @@ html, body, [class*="css"] {
 .mobile-nav-item-scores { color: #30D5C8 !important; }
 .mobile-nav-item-portfolio { color: #A78BFA !important; }
 
+/* ============ JUMBOTRON (pages_jumbotron.py) ============
+   A self-contained arena-scoreboard skin that only ever renders while
+   sports_alerts.takeover_state() has the screen (T-60min through ~15min
+   past final). Every rule here is namespaced .jumbo* so none of it can
+   leak into the normal kiosk pages, which keep the Apple-glass look.
+   LED amber on near-black, glass bento panels, Bebas Neue numerals. */
+.jumbo {
+    --led: #FFB300;
+    --ledglow: rgba(255,179,0,0.5);
+    --arena: #05070C;
+    --glass: rgba(16,22,32,0.66);
+    --edge: #1E2634;
+    --edge-hi: #2E3B54;
+    --bone: #F4F1E8;
+    --mut: #7E8898;
+    --mut-2: #525C6E;
+    --live: #FF453A;
+    --ok: #32D583;
+    --disp: 'Oswald', 'Arial Narrow', sans-serif;
+    --num: 'Bebas Neue', 'Oswald', Impact, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+    font-family: var(--disp);
+    color: var(--bone);
+    display: flex;
+    flex-direction: column;
+    /* Fills the viewport minus the kiosk's own top padding and the
+       fixed ticker strip at the bottom — this page owns the whole
+       screen, unlike the normal pages that stack under the hero row. */
+    height: calc(100vh - 7rem);
+    min-height: 0;
+    gap: 10px;
+}
+/* The normal kiosk caps content at 1450px and centers it vertically —
+   right for tiles, wrong for a full-bleed scoreboard. Scoped via :has()
+   so it only applies on the takeover page; if a browser ever lacks
+   :has() support the jumbotron simply renders at the normal width
+   instead of breaking. */
+.block-container:has(.jumbo) {
+    max-width: 100% !important;
+    padding-top: 0.7rem !important;
+    padding-left: 1.1rem !important;
+    padding-right: 1.1rem !important;
+    justify-content: flex-start !important;
+}
+
+.jumbo-marquee {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 8px 16px;
+    flex: 0 0 auto;
+    background: linear-gradient(180deg, rgba(14,19,28,0.94), rgba(8,11,16,0.94));
+    border: 1px solid var(--edge);
+    border-radius: 12px;
+    position: relative;
+}
+/* Jays blue on the left half, Habs red on the right — the arena's own
+   two-team identity, stated once at the top instead of repeated. */
+.jumbo-marquee::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: -1px;
+    height: 2px;
+    background: linear-gradient(90deg, #3E7CC9 0 50%, #D8323F 50% 100%);
+    opacity: 0.85;
+    border-radius: 0 0 12px 12px;
+}
+.jumbo-brand {
+    font-family: var(--num);
+    font-size: 30px;
+    letter-spacing: 0.12em;
+    color: var(--led);
+    text-shadow: 0 0 16px var(--ledglow);
+    line-height: 0.92;
+}
+.jumbo-brand span {
+    display: block;
+    color: var(--mut);
+    font-family: var(--disp);
+    font-weight: 300;
+    letter-spacing: 0.4em;
+    font-size: 9px;
+}
+.jumbo-clock {
+    font-family: var(--num);
+    font-size: 36px;
+    letter-spacing: 0.05em;
+    line-height: 1;
+}
+.jumbo-clock em { font-style: normal; font-size: 16px; color: var(--mut); margin-left: 5px; }
+.jumbo-dateline {
+    font-size: 11px;
+    font-weight: 300;
+    color: var(--mut);
+    letter-spacing: 0.2em;
+}
+.jumbo-spacer { flex: 1; }
+.jumbo-wx {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    border: 1px solid var(--edge);
+    border-radius: 10px;
+    padding: 5px 14px;
+    background: var(--glass);
+}
+.jumbo-wx-temp { font-family: var(--num); font-size: 26px; line-height: 1; }
+.jumbo-wx-loc { font-size: 9px; font-weight: 300; color: var(--mut); letter-spacing: 0.24em; }
+
+.jumbo-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 300px 1fr 260px;
+    gap: 12px;
+    min-height: 0;
+}
+.jumbo-panel {
+    border: 1px solid var(--edge);
+    border-radius: 14px;
+    background: var(--glass);
+    box-shadow: 0 10px 32px rgba(0,0,0,0.4);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+.jumbo-ph {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    padding: 10px 15px;
+    border-bottom: 1px solid var(--edge);
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.32em;
+    color: var(--led);
+    text-transform: uppercase;
+}
+.jumbo-ph-right { margin-left: auto; letter-spacing: 0.12em; color: var(--mut-2); }
+.jumbo-live { color: var(--live); font-weight: 800; animation: jumbo-blink 1.4s infinite; }
+@keyframes jumbo-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+/* ---- My Teams rail ---- */
+.jumbo-rail-body { flex: 1; min-height: 0; overflow: hidden; }
+.jumbo-hero {
+    padding: 13px 15px 14px;
+    border-bottom: 1px solid rgba(30,38,52,0.55);
+    position: relative;
+}
+.jumbo-hero:last-child { border-bottom: none; }
+.jumbo-hero::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 10%; bottom: 10%;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--tc, var(--edge-hi));
+}
+.jumbo-hero-nhl { --tc: #D8323F; }
+.jumbo-hero-mlb { --tc: #3E7CC9; }
+.jumbo-hero-head { display: flex; align-items: center; gap: 12px; }
+.jumbo-hero-head img { width: 44px; height: 44px; object-fit: contain; flex: 0 0 auto; }
+.jumbo-hero-id { min-width: 0; }
+.jumbo-hero-name { font-weight: 600; font-size: 18px; letter-spacing: 0.04em; line-height: 1.1; }
+.jumbo-hero-div {
+    font-size: 10px;
+    font-weight: 300;
+    color: var(--mut);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-top: 3px;
+}
+.jumbo-hero-rec { margin-left: auto; text-align: right; }
+.jumbo-hero-rec-v { font-family: var(--num); font-size: 24px; line-height: 1; }
+.jumbo-hero-rec-l { font-size: 8px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.3em; }
+.jumbo-form { display: flex; gap: 5px; align-items: center; margin-top: 9px; }
+.jumbo-form-label { font-size: 8.5px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.24em; margin-right: 2px; }
+.jumbo-form i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.jumbo-form-w { background: var(--ok); box-shadow: 0 0 6px rgba(50,213,131,0.5); }
+.jumbo-form-l { background: rgba(255,69,58,0.35); border: 1px solid rgba(255,69,58,0.5); }
+.jumbo-gameline {
+    margin-top: 10px;
+    border: 1px solid var(--edge);
+    border-radius: 9px;
+    background: rgba(8,11,17,0.7);
+    padding: 8px 11px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--mut);
+    line-height: 1.7;
+}
+.jumbo-gameline b { color: var(--bone); font-weight: 600; }
+.jumbo-gl-score { color: var(--led); font-weight: 800; font-size: 14px; }
+.jumbo-gl-cd { font-family: var(--num); color: var(--bone); font-size: 17px; letter-spacing: 0.08em; margin-left: 8px; }
+.jumbo-w { color: var(--ok); }
+.jumbo-l { color: var(--live); }
+.jumbo-offseason { border-style: dashed; color: var(--mut-2); letter-spacing: 0.28em; font-size: 9.5px; }
+.jumbo-hero-live .jumbo-gameline { border-color: rgba(255,69,58,0.45); box-shadow: 0 0 16px rgba(255,69,58,0.1); }
+.jumbo-livechip {
+    position: absolute;
+    top: 12px; right: 15px;
+    font-family: var(--mono);
+    font-size: 8.5px;
+    font-weight: 800;
+    color: var(--live);
+    letter-spacing: 0.26em;
+    animation: jumbo-blink 1.4s infinite;
+}
+
+/* ---- Featured board ---- */
+.jumbo-board { position: relative; }
+.jumbo-board-live {
+    border-color: rgba(255,69,58,0.5);
+    animation: jumbo-boardpulse 2.6s ease-in-out infinite;
+}
+@keyframes jumbo-boardpulse {
+    0%, 100% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 0 rgba(255,69,58,0); }
+    50% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 26px rgba(255,69,58,0.22); }
+}
+/* Centers the board's contents in whatever height is left over. A
+   pregame board is just a matchup and a countdown, a live one adds a
+   linescore and scoring summary — without this the sparse version
+   clings to the top of a very tall panel with a void beneath it. */
+.jumbo-board-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+}
+.jumbo-matchup {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 8px;
+    padding: 18px 26px 6px;
+}
+.jumbo-side { display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center; }
+.jumbo-side-dim { opacity: 0.55; }
+.jumbo-logobox { width: 132px; height: 132px; display: flex; align-items: center; justify-content: center; }
+.jumbo-logobox img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 5px 18px rgba(0,0,0,0.75));
+}
+.jumbo-tname { font-weight: 600; font-size: 26px; letter-spacing: 0.05em; }
+.jumbo-trec { font-size: 13px; font-weight: 300; color: var(--mut); letter-spacing: 0.14em; }
+.jumbo-center { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.jumbo-score { display: flex; align-items: center; gap: 12px; }
+.jumbo-digitbox { display: flex; gap: 6px; }
+.jumbo-digit {
+    font-family: var(--num);
+    font-size: 104px;
+    line-height: 0.92;
+    width: 0.62em;
+    text-align: center;
+    color: var(--led);
+    background: linear-gradient(180deg, #151B27, #0B0F17);
+    border: 1px solid var(--edge);
+    border-radius: 12px;
+    padding: 10px 0 4px;
+    text-shadow: 0 0 22px var(--ledglow), 0 0 3px var(--ledglow);
+    position: relative;
+    overflow: hidden;
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.04), inset 0 -16px 22px rgba(0,0,0,0.5);
+}
+/* The seam across a real split-flap/LED digit panel. */
+.jumbo-digit::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    height: 1px;
+    background: rgba(0,0,0,0.5);
+}
+.jumbo-dash { color: var(--edge-hi); font-family: var(--num); font-size: 50px; }
+.jumbo-vs { font-family: var(--num); font-size: 26px; letter-spacing: 0.4em; color: var(--mut-2); padding-left: 0.4em; }
+.jumbo-countdown { font-family: var(--num); font-size: 96px; color: var(--bone); letter-spacing: 0.06em; line-height: 1; }
+.jumbo-cd-label { font-size: 10px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.4em; }
+.jumbo-final-badge {
+    font-family: var(--num);
+    font-size: 16px;
+    letter-spacing: 0.4em;
+    color: #0A0D12;
+    background: var(--led);
+    padding: 4px 14px 3px 18px;
+    border-radius: 6px;
+    margin-top: 8px;
+    box-shadow: 0 0 18px rgba(255,179,0,0.4);
+}
+.jumbo-situ {
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.05em;
+    padding: 4px 26px 8px;
+    line-height: 1.9;
+}
+.jumbo-situ-hot { color: var(--led); font-weight: 700; margin-right: 10px; }
+.jumbo-situ-who { font-size: 12px; color: var(--mut); margin-top: 2px; }
+.jumbo-dim { color: var(--mut-2); }
+.jumbo-clockbig { font-family: var(--num); font-size: 30px; color: var(--bone); letter-spacing: 0.06em; }
+.jumbo-diamond { width: 34px; height: 34px; display: inline-block; vertical-align: -10px; margin: 0 10px; }
+.jumbo-diamond rect { fill: #1A2230; stroke: var(--edge-hi); stroke-width: 1.5; }
+.jumbo-diamond rect.on { fill: var(--led); stroke: var(--led); }
+.jumbo-dots { display: inline-flex; gap: 4px; margin-left: 8px; vertical-align: 1px; }
+.jumbo-dot { width: 9px; height: 9px; border-radius: 50%; background: #1A2230; border: 1px solid var(--edge-hi); display: inline-block; }
+.jumbo-dot-b.on { background: var(--ok); border-color: var(--ok); }
+.jumbo-dot-s.on { background: var(--live); border-color: var(--live); }
+.jumbo-dot-o.on { background: var(--led); border-color: var(--led); }
+
+.jumbo-linewrap { display: flex; justify-content: center; padding: 2px 26px 10px; }
+.jumbo-linescore {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-family: var(--mono);
+    font-size: 12px;
+    background: rgba(8,11,17,0.75);
+    border: 1px solid var(--edge);
+    border-radius: 10px;
+    overflow: hidden;
+}
+.jumbo-linescore th, .jumbo-linescore td { padding: 5px 11px; text-align: center; min-width: 30px; }
+.jumbo-linescore thead th {
+    font-size: 8.5px;
+    letter-spacing: 0.2em;
+    color: var(--mut-2);
+    border-bottom: 1px solid var(--edge);
+    background: rgba(6,9,14,0.9);
+    font-weight: 700;
+}
+.jumbo-linescore td { color: var(--mut); border-bottom: 1px solid rgba(30,38,52,0.4); }
+.jumbo-linescore tr:last-child td { border-bottom: none; }
+.jumbo-ls-team { text-align: left !important; font-weight: 700; color: var(--bone) !important; white-space: nowrap; }
+.jumbo-ls-team img { width: 18px; height: 18px; object-fit: contain; vertical-align: -4px; margin-right: 6px; }
+.jumbo-ls-tot { color: var(--led) !important; font-weight: 800; border-left: 1px solid var(--edge); }
+
+.jumbo-scoring { border-top: 1px solid var(--edge); padding: 9px 26px 12px; }
+.jumbo-sl {
+    font-family: var(--mono);
+    font-size: 8.5px;
+    letter-spacing: 0.32em;
+    color: var(--led);
+    text-transform: uppercase;
+    margin-bottom: 7px;
+}
+.jumbo-play {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--mut);
+    padding: 3px 0;
+    line-height: 1.5;
+}
+.jumbo-play-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jumbo-play-score { margin-left: auto; color: var(--led); font-weight: 800; flex: 0 0 auto; }
+
+/* ---- Around the leagues ---- */
+.jumbo-around-body { flex: 1; min-height: 0; overflow: hidden; }
+.jumbo-around-league {
+    font-family: var(--mono);
+    font-size: 8.5px;
+    letter-spacing: 0.32em;
+    color: var(--led);
+    padding: 9px 14px 4px;
+}
+.jumbo-mini {
+    display: flex;
+    align-items: center;
+    padding: 6px 14px;
+    gap: 10px;
+    border-bottom: 1px solid rgba(30,38,52,0.4);
+}
+.jumbo-mini-final { opacity: 0.42; }
+.jumbo-mini-live { background: rgba(255,69,58,0.05); border-left: 2px solid var(--live); }
+.jumbo-mini-teams { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.jumbo-mini-team { display: flex; align-items: center; gap: 8px; }
+.jumbo-mini-team img { width: 20px; height: 20px; object-fit: contain; flex: 0 0 auto; }
+.jumbo-mini-abbr { font-size: 12px; font-weight: 500; color: var(--mut); letter-spacing: 0.08em; }
+.jumbo-mini-score { margin-left: auto; font-family: var(--num); font-size: 18px; line-height: 1; color: var(--bone); }
+.jumbo-mini-status {
+    font-family: var(--mono);
+    font-size: 8px;
+    color: var(--mut-2);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    text-align: right;
+    flex: 0 0 auto;
+    line-height: 1.6;
+}
+.jumbo-mini-live .jumbo-mini-status { color: var(--live); font-weight: 800; }
+
 /* Phone breakpoint. Everything above this point is untouched at any
    width above it (including the kiosk monitor, always far wider) —
    nothing in this block redefines a rule, it only adds overrides that
@@ -2006,6 +2409,16 @@ html, body, [class*="css"] {
        near-fully-opaque here rather than globally, since it's only
        ever been a problem once scrolling entered the picture. */
     .ticker-bar { background: rgba(8,8,11,0.98); }
+
+    /* The jumbotron's 3-column bento is built for a 1080p wall, not a
+       phone — stack it and let the page scroll like the other mobile
+       views do, rather than crushing three panels into 375px. */
+    .jumbo { height: auto; }
+    .jumbo-grid { grid-template-columns: 1fr; }
+    .jumbo-digit { font-size: 46px; }
+    .jumbo-countdown { font-size: 44px; }
+    .jumbo-logobox { width: 62px; height: 62px; }
+    .jumbo-dateline, .jumbo-wx { display: none; }
 }
 </style>
 """
