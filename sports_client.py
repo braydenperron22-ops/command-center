@@ -556,11 +556,17 @@ def _fetch_mlb_linescore_raw(game_id: int) -> dict:
 def fetch_mlb_live_detail(game_id: int) -> dict | None:
     """{"inning_state" ("Top"/"Bottom"/"Middle"/"End"), "current_inning",
     "balls", "strikes", "outs", "batter", "pitcher", "bases":
-    {"first","second","third": bool}} — the live situation only (the
-    score itself already comes from the compact game dict everywhere
-    this is used). None on any fetch failure (no last-good fallback: a
-    stale pitch count/base state would be actively misleading rather
-    than just old, unlike a season schedule that barely changes)."""
+    {"first","second","third": bool}, "away_score", "home_score"} — the
+    live situation, plus the score itself (session report: "the big
+    score takes forever to update" — the compact game dict everywhere
+    else this used to come from is only refreshed every
+    GAME_CACHE_TTL_SECONDS (5 min, fine for a schedule, far too slow
+    for a live score); this linescore endpoint is already polled every
+    LIVE_DETAIL_CACHE_TTL_SECONDS (30s) for the situation fields below,
+    and carries the real live score too). None on any fetch failure (no
+    last-good fallback: a stale pitch count/base state — or score —
+    would be actively misleading rather than just old, unlike a season
+    schedule that barely changes)."""
     try:
         data = _fetch_mlb_linescore_raw(game_id)
     except Exception:
@@ -568,6 +574,7 @@ def fetch_mlb_live_detail(game_id: int) -> dict | None:
 
     offense = data.get("offense", {})
     defense = data.get("defense", {})
+    teams = data.get("teams", {})
     return {
         "inning_state": data.get("inningState"),
         "current_inning": data.get("currentInning"),
@@ -577,6 +584,8 @@ def fetch_mlb_live_detail(game_id: int) -> dict | None:
         "batter": (offense.get("batter") or {}).get("fullName"),
         "pitcher": (defense.get("pitcher") or {}).get("fullName"),
         "bases": {"first": "first" in offense, "second": "second" in offense, "third": "third" in offense},
+        "away_score": (teams.get("away") or {}).get("runs"),
+        "home_score": (teams.get("home") or {}).get("runs"),
     }
 
 
@@ -602,17 +611,32 @@ def _fetch_mlb_player_season_stat_raw(player_id: int, group: str) -> dict:
     return splits[0].get("stat", {}) if splits else {}
 
 
+# MLB's own headshot CDN, keyed by player id — no API call, same idea
+# as _mlb_logo_url (confirmed live this returns a real photo for a
+# real player id, 404s harmlessly otherwise — callers already handle a
+# broken image with onerror).
+_MLB_HEADSHOT_URL = (
+    "https://img.mlbstatic.com/mlb-photos/image/upload/"
+    "w_213,d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/{player_id}/headshot/67/current"
+)
+
+
+def _mlb_headshot_url(player_id: int) -> str:
+    return _MLB_HEADSHOT_URL.format(player_id=player_id)
+
+
 def fetch_mlb_live_matchup(game_id: int) -> dict | None:
-    """{"batter": {"name", "ops"}, "pitcher": {"name", "era"}} for
-    whoever's actually at the plate/on the mound right now — session
-    request: "during the game can you make the top performers tab show
-    current pitcher and batter and their stats use OPS for batter and
-    ERA for pitchers." Reuses the same cached linescore
-    fetch_mlb_live_detail already pulls this rerun (no extra request
-    for the matchup itself), one small extra request each for the two
-    players' own season stat lines. None on any fetch failure or once
-    there's genuinely no one at the plate/mound to name (the linescore
-    payload omits offense/defense between innings)."""
+    """{"batter": {"name", "ops", "photo"}, "pitcher": {"name", "era",
+    "photo"}} for whoever's actually at the plate/on the mound right
+    now — session request: "during the game can you make the top
+    performers tab show current pitcher and batter and their stats use
+    OPS for batter and ERA for pitchers... ideally add the pitcher and
+    batter pics." Reuses the same cached linescore fetch_mlb_live_detail
+    already pulls this rerun (no extra request for the matchup itself),
+    one small extra request each for the two players' own season stat
+    lines. None on any fetch failure or once there's genuinely no one
+    at the plate/mound to name (the linescore payload omits offense/
+    defense between innings)."""
     try:
         data = _fetch_mlb_linescore_raw(game_id)
     except Exception:
@@ -624,8 +648,8 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     batter_stat = _fetch_mlb_player_season_stat_raw(batter["id"], "hitting")
     pitcher_stat = _fetch_mlb_player_season_stat_raw(pitcher["id"], "pitching")
     return {
-        "batter": {"name": batter["fullName"], "ops": batter_stat.get("ops")},
-        "pitcher": {"name": pitcher["fullName"], "era": pitcher_stat.get("era")},
+        "batter": {"name": batter["fullName"], "ops": batter_stat.get("ops"), "photo": _mlb_headshot_url(batter["id"])},
+        "pitcher": {"name": pitcher["fullName"], "era": pitcher_stat.get("era"), "photo": _mlb_headshot_url(pitcher["id"])},
     }
 
 
@@ -645,9 +669,10 @@ def _fetch_nhl_boxscore_raw(game_id: int) -> dict:
 
 
 def fetch_nhl_live_detail(game_id: int) -> dict | None:
-    """{"period_label", "clock", "in_intermission"} — the live situation
-    only (the score itself already comes from the compact game dict
-    everywhere this is used). None on any fetch failure, same reasoning
+    """{"period_label", "clock", "in_intermission", "away_score",
+    "home_score"} — the live situation, plus the score itself (same
+    "the big score takes forever to update" fix as fetch_mlb_live_detail
+    — see its own docstring). None on any fetch failure, same reasoning
     as fetch_mlb_live_detail."""
     try:
         box = _fetch_nhl_boxscore_raw(game_id)
@@ -659,6 +684,8 @@ def fetch_nhl_live_detail(game_id: int) -> dict | None:
         "period_label": _nhl_period_label(box.get("periodDescriptor", {})),
         "clock": clock.get("timeRemaining"),
         "in_intermission": clock.get("inIntermission", False),
+        "away_score": (box.get("awayTeam") or {}).get("score"),
+        "home_score": (box.get("homeTeam") or {}).get("score"),
     }
 
 

@@ -2462,34 +2462,50 @@ html, body, [class*="css"] {
 /* Current batter/pitcher, live-game replacement for the Top Performers
    card — session request: "during the game can you make the top
    performers tab show current pitcher and batter and their stats use
-   OPS for batter and ERA for pitchers." */
-.jumbo-live-matchup { display: flex; flex-direction: column; gap: 16px; padding: 4px 4px 6px; }
-.jumbo-live-matchup-row { display: flex; align-items: baseline; gap: 16px; }
+   OPS for batter and ERA for pitchers." Photo-up-top, stat-below-name
+   layout — session request: "add the pitcher and batter pics and put
+   the stats below them like youd see on a jumbotron in the ballpark." */
+.jumbo-live-matchup { display: flex; align-items: center; justify-content: center; gap: 30px; padding: 6px 4px 8px; }
+.jumbo-live-matchup-col { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 3px; flex: 1; min-width: 0; }
+.jumbo-live-matchup-photo {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    object-fit: cover;
+    object-position: top;
+    background: #141A25;
+    border: 2px solid var(--led);
+    margin-bottom: 6px;
+}
 .jumbo-live-matchup-tag {
     font-family: var(--mono);
     font-size: 12px;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.16em;
     color: var(--led);
     font-weight: 700;
     text-transform: uppercase;
-    width: 84px;
-    flex: 0 0 auto;
 }
 .jumbo-live-matchup-name {
-    flex: 1;
-    min-width: 0;
-    font-size: 21px;
+    font-size: 19px;
     font-weight: 600;
     color: var(--bone);
+    max-width: 100%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 .jumbo-live-matchup-stat {
     font-family: var(--num);
-    font-size: 28px;
+    font-size: 26px;
     font-weight: 700;
     color: var(--bone);
+}
+.jumbo-live-matchup-vs {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--mut-2);
+    letter-spacing: 0.1em;
     flex: 0 0 auto;
 }
 .jumbo-diamond { width: 34px; height: 34px; display: inline-block; vertical-align: -10px; margin: 0 10px; }

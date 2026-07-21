@@ -389,25 +389,40 @@ def _current_matchup_html(game_id: int) -> str:
     involved in the live at-bat while a game is live — session request:
     "during the game can you make the top performers tab show current
     pitcher and batter and their stats use OPS for batter and ERA for
-    pitchers." MLB only (no batter/pitcher concept in hockey — NHL
-    keeps the season-leaders rotation throughout). "" between innings,
-    when the live feed has no one currently at the plate/mound to name
-    (see sports_client.fetch_mlb_live_matchup's own docstring)."""
+    pitchers." Photo-up-top, stat-below-name layout — session request:
+    "add the pitcher and batter pics and put the stats below them like
+    youd see on a jumbotron in the ballpark." MLB only (no batter/
+    pitcher concept in hockey — NHL keeps the season-leaders rotation
+    throughout). "" between innings, when the live feed has no one
+    currently at the plate/mound to name (see sports_client.
+    fetch_mlb_live_matchup's own docstring)."""
     matchup = sports_client.fetch_mlb_live_matchup(game_id)
     if not matchup:
         return ""
     batter, pitcher = matchup["batter"], matchup["pitcher"]
     batter_stat = f'{batter["ops"]} OPS' if batter.get("ops") else "—"
     pitcher_stat = f'{pitcher["era"]} ERA' if pitcher.get("era") else "—"
+
+    def col(tag: str, player: dict, stat_text: str) -> str:
+        photo = (
+            f'<img class="jumbo-live-matchup-photo" src="{html.escape(player["photo"])}" onerror="this.style.display=\'none\'" />'
+            if player.get("photo")
+            else ""
+        )
+        return (
+            f'<div class="jumbo-live-matchup-col">{photo}'
+            f'<div class="jumbo-live-matchup-tag">{html.escape(tag)}</div>'
+            f'<div class="jumbo-live-matchup-name">{html.escape(player["name"])}</div>'
+            f'<div class="jumbo-live-matchup-stat">{html.escape(stat_text)}</div>'
+            f"</div>"
+        )
+
     return (
         f'<div class="jumbo-leaders"><div class="jumbo-sl">Current Matchup</div>'
         f'<div class="jumbo-live-matchup">'
-        f'<div class="jumbo-live-matchup-row"><span class="jumbo-live-matchup-tag">At Bat</span>'
-        f'<span class="jumbo-live-matchup-name">{html.escape(batter["name"])}</span>'
-        f'<span class="jumbo-live-matchup-stat">{html.escape(batter_stat)}</span></div>'
-        f'<div class="jumbo-live-matchup-row"><span class="jumbo-live-matchup-tag">Pitching</span>'
-        f'<span class="jumbo-live-matchup-name">{html.escape(pitcher["name"])}</span>'
-        f'<span class="jumbo-live-matchup-stat">{html.escape(pitcher_stat)}</span></div>'
+        f'{col("At Bat", batter, batter_stat)}'
+        f'<div class="jumbo-live-matchup-vs">VS</div>'
+        f'{col("Pitching", pitcher, pitcher_stat)}'
         f"</div></div>"
     )
 
@@ -441,6 +456,23 @@ def _board_html(state: dict, now: datetime) -> str:
     else:
         away_score = game["opp_score"] if game["is_home"] else game["team_score"]
         home_score = game["team_score"] if game["is_home"] else game["opp_score"]
+
+        # Session report: "the big score takes forever to update" —
+        # game["team_score"]/["opp_score"] come from the schedule
+        # endpoint, only refreshed every 5 minutes. The live-detail
+        # endpoints (fetch_mlb_live_detail/fetch_nhl_live_detail) poll
+        # every 30s for the inning/clock situation below and carry the
+        # real live score too — this call is the same cached one
+        # _mlb_situation_html/_nhl_situation_html make right after, so
+        # it's not an extra request, just used here first.
+        if phase == "live":
+            live_detail = (
+                sports_client.fetch_mlb_live_detail(game["game_id"])
+                if sport == "mlb"
+                else sports_client.fetch_nhl_live_detail(game["game_id"])
+            )
+            if live_detail and live_detail.get("away_score") is not None and live_detail.get("home_score") is not None:
+                away_score, home_score = live_detail["away_score"], live_detail["home_score"]
 
         # Session request: "are there animations for when the j score
         # or the j's win" — the original static mockup had a full-
