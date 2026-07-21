@@ -1,4 +1,13 @@
-"""Builds the bottom release-calendar ticker: next known/estimated release per indicator."""
+"""Builds the bottom ticker: release-calendar countdowns plus, since
+session feedback that the previous version needed "better utility"
+than just dates, live "stat" items reusing data already fetched
+elsewhere in this app — market index/commodity/FX % change (same
+instruments the Markets page itself shows), the portfolio's own 1-day
+total, and a live Jays/Habs score when either is actually playing.
+Two distinct item shapes flow through the same scrolling strip: a
+"release" item (a future date/countdown) and a "stat" item (a live
+value, no date) — see render_html for how each renders.
+"""
 
 from datetime import date, datetime, timedelta
 
@@ -6,12 +15,29 @@ import streamlit as st
 import yfinance as yf
 
 import fetch_throttle
+import market_yf_client
+import portfolio_client
+import sports_client
 from flags import flag_for
 import fred_client
-from config import COUNTDOWN_WINDOW_HOURS, EARNINGS_TICKER_WATCHLIST, INDICATORS
+from config import (
+    COUNTDOWN_WINDOW_HOURS,
+    EARNINGS_TICKER_WATCHLIST,
+    INDICATORS,
+    MARKET_INSTRUMENTS_ALWAYS,
+    MARKET_INSTRUMENTS_CLOSED,
+    MARKET_INSTRUMENTS_OPEN,
+    MARKET_INSTRUMENTS_WEEKEND,
+)
 
 MONTH_DAY = "%b %d"
 EARNINGS_CACHE_TTL_SECONDS = 24 * 60 * 60  # a real earnings date rarely moves day to day
+
+_STATUS_INSTRUMENTS = {
+    "open": MARKET_INSTRUMENTS_OPEN,
+    "closed": MARKET_INSTRUMENTS_CLOSED,
+    "weekend": MARKET_INSTRUMENTS_WEEKEND,
+}
 
 _last_good_earnings: dict[str, str] = {}  # ticker -> ISO date string
 
@@ -62,6 +88,7 @@ def build_earnings_schedule() -> list[dict]:
         if not iso_date or date.fromisoformat(iso_date) < today:
             continue
         items.append({
+            "type": "release",
             "country": "us",
             "label": f"{ticker} Earnings",
             "date": iso_date,
@@ -87,6 +114,7 @@ def build_schedule(readings: dict, api_key: str) -> list[dict]:
                 if not next_date:
                     continue
             items.append({
+                "type": "release",
                 "country": country,
                 "label": ind["label"],
                 "date": next_date,
@@ -97,11 +125,83 @@ def build_schedule(readings: dict, api_key: str) -> list[dict]:
     return items
 
 
+def build_market_stat_items() -> list[dict]:
+    """Live intraday % change for the same instruments the Markets page
+    itself shows (see config.MARKET_INSTRUMENTS_*, swapped by session
+    status exactly like that page's own STATUS_INSTRUMENTS) — the one
+    thing a ticker has classically always meant, and the one thing the
+    previous version of this ticker had none of: every item in it was a
+    forward-looking release date, nothing live."""
+    status = market_yf_client.market_status()
+    instruments = _STATUS_INSTRUMENTS[status] + MARKET_INSTRUMENTS_ALWAYS
+    items = []
+    for inst in instruments:
+        quote = market_yf_client.quote_for(inst["symbol"])
+        if not quote or quote["intraday"] is None:
+            continue
+        pct = quote["intraday"]
+        sign = "+" if pct >= 0 else ""
+        items.append(
+            {
+                "type": "stat",
+                "text": f'{inst["label"]} {sign}{pct:.2f}%',
+                "tone": "good" if pct >= 0 else "bad",
+            }
+        )
+    return items
+
+
+def build_portfolio_stat_item() -> dict | None:
+    """Today's portfolio total + 1-day change — the same numbers the
+    Portfolio page's own TOTAL VALUE tile shows, visible from every
+    page via the ticker instead of only while actually on that page.
+    None if the integration isn't configured/reachable (same as that
+    page's own empty state)."""
+    portfolio = portfolio_client.fetch_portfolio()
+    if not portfolio:
+        return None
+    pct = (portfolio_client.fetch_changes() or {}).get("1d")
+    total_text = f'Portfolio ${portfolio["total_cad"]:,.2f}'
+    if pct is None:
+        return {"type": "stat", "text": total_text, "tone": "neutral"}
+    sign = "+" if pct >= 0 else ""
+    return {
+        "type": "stat",
+        "text": f"{total_text} ({sign}{pct:.2f}%)",
+        "tone": "good" if pct >= 0 else "bad",
+    }
+
+
+def build_sports_stat_items() -> list[dict]:
+    """Live Jays/Habs score, only while either is actually playing —
+    [] otherwise. Same reasoning as the market/portfolio stats above:
+    ambient status visible from any page, not just when the Sports/
+    Scores page happens to be up on this kiosk's own rotation."""
+    items = []
+    for label, fetch_status in (("BLUE JAYS", sports_client.fetch_jays), ("CANADIENS", sports_client.fetch_habs)):
+        status = fetch_status()
+        game = status["game"] if status else None
+        if not game or game["state"] != "live":
+            continue
+        opponent_word = "vs" if game["is_home"] else "@"
+        text = f'{label} {game["team_score"]}-{game["opp_score"]} {opponent_word} {game["opponent"]} (LIVE)'
+        items.append({"type": "stat", "text": text, "tone": "neutral"})
+    return items
+
+
 def render_html(items: list[dict], now: datetime) -> str:
     if not items:
         return ""
     parts = []
     for it in items:
+        if it.get("type") == "stat":
+            # Live value, no date/countdown — tone (good/bad/neutral)
+            # colors it the same green/red/plain language the rest of
+            # this app already uses for a % change, so it reads
+            # consistently with e.g. the Markets page it's mirroring.
+            parts.append(f'<span class="ticker-item ticker-item-{it["tone"]}">{it["text"]}</span>')
+            continue
+
         release_date = date.fromisoformat(it["date"])
         # FRED/StatCan don't expose a release time, so assume the typical
         # 8:30 AM slot most US/Canada statistical releases use — good

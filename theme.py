@@ -594,6 +594,22 @@ html, body, [class*="css"] {
     font-weight: 600;
 }
 
+/* Live "stat" ticker items (ticker.build_market_stat_items etc.) —
+   same green/up, red/down, plain/neutral language this app already
+   uses everywhere else for a live value. */
+.ticker-item-good {
+    color: #32D74B;
+    font-weight: 600;
+}
+.ticker-item-bad {
+    color: #FF6961;
+    font-weight: 600;
+}
+.ticker-item-neutral {
+    color: #F5F5F7;
+    font-weight: 600;
+}
+
 @keyframes ticker-scroll {
     from { transform: translateX(0); }
     to { transform: translateX(-50%); }

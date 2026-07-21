@@ -789,8 +789,31 @@ try:
             schedule.extend(ticker.build_schedule(readings, FRED_API_KEY))
         schedule.extend(ticker.build_earnings_schedule())
         schedule.sort(key=lambda it: it["date"])
-        if schedule:
-            st.markdown(ticker.render_html(schedule, now), unsafe_allow_html=True)
+
+        # Live "stat" items (session request: "better utility... than
+        # just dates") lead the strip, ahead of the date-sorted release
+        # calendar — each isolated in its own try so a single source
+        # hiccuping (e.g. yfinance briefly unreachable) only drops that
+        # one item, not the whole ticker.
+        stats = []
+        try:
+            stats.extend(ticker.build_market_stat_items())
+        except Exception:
+            pass
+        try:
+            portfolio_stat = ticker.build_portfolio_stat_item()
+            if portfolio_stat:
+                stats.append(portfolio_stat)
+        except Exception:
+            pass
+        try:
+            stats.extend(ticker.build_sports_stat_items())
+        except Exception:
+            pass
+
+        all_items = stats + schedule
+        if all_items:
+            st.markdown(ticker.render_html(all_items, now), unsafe_allow_html=True)
 except Exception:
     pass
 
