@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 import portfolio_client
+import tiles
 from config import TIMEZONE
 
 
@@ -139,6 +140,18 @@ def render() -> None:
         for a in portfolio["accounts"]
     )
 
+    # 6 months — same window as the PERFORMANCE tile's own "6 Month"
+    # figure below, so this reads as the shape behind that number
+    # rather than an arbitrarily different lookback. Trend direction
+    # (not the 1-day change) decides the color, since a sparkline this
+    # short-range is about "which way has this actually been going,"
+    # same reasoning tiles.sparkline_svg's other callers already use.
+    value_history = portfolio_client.fetch_value_history(days=180)
+    sparkline_html = ""
+    if value_history:
+        trend_tone = "good" if value_history[-1] >= value_history[0] else "bad"
+        sparkline_html = tiles.sparkline_svg(value_history, trend_tone)
+
     # Totals (left) and activity (right) side by side — this kiosk's
     # own page never scrolls, so stacking all three tiles vertically
     # (session feedback) pushed Recent Activity below the visible
@@ -160,7 +173,9 @@ def render() -> None:
         st.markdown(
             f'<div class="tile">'
             f'<div class="tile-label">TOTAL VALUE</div>'
-            f'<div class="tile-value">${total_cad:,.2f}{change_html}</div>'
+            f'<div class="tile-value-row">'
+            f'<div class="tile-value">${total_cad:,.2f}{change_html}</div>{sparkline_html}'
+            f'</div>'
             f'<div class="tile-prev">{subtitle}</div>'
             f'{rows}'
             f'</div>',

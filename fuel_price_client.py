@@ -15,6 +15,7 @@ import requests
 import streamlit as st
 
 import fetch_throttle
+import statcan_client
 
 FUEL_PRICES_URL = "https://ontario.ca/v1/files/fuel-prices/fueltypesall.csv"
 CITY_COLUMN = "North Bay"
@@ -29,7 +30,23 @@ FUEL_TYPE = "Regular Unleaded Gasoline"
 # costs nothing extra — this is a static government CSV, not a
 # rate-limited API.
 CACHE_TTL_SECONDS = 2 * 60 * 60
-BASELINE_WEEKS = 12  # trailing window "normal" is judged against, so eco mode reacts to prices actually drifting rather than a fixed cents-per-litre number going stale over time
+
+# Session feedback: comparing today's price to a trailing 12-week
+# average just measures whether prices are drifting up or down lately —
+# gas that's "below its own recent average" during a slow multi-year
+# climb still reads as "cheap" right up until it isn't. Real (inflation-
+# adjusted) North Bay prices go back to 1990 in this same feed, so
+# instead this compares today's price, in real terms, against the
+# *median* real price over a long trailing window — a genuinely fixed
+# reference (doesn't chase whatever the last few weeks happened to do),
+# recomputed in nominal cents/litre every time using the latest CPI
+# print rather than a number that quietly goes stale as inflation
+# accumulates. 10 years is long enough to smooth past a single price
+# shock (2022's spike, say) without reaching back before Canada's
+# federal carbon-pricing backstop (2019) into an era that isn't really
+# comparable to today's regulatory/tax structure.
+FLOOR_LOOKBACK_YEARS = 10
+CPI_VECTOR_ID = 41690973  # StatCan All-Items CPI (Canada) — same series config.py's own CPI (YoY) indicator tracks
 
 _last_good_readings: list[dict] | None = None
 
@@ -73,29 +90,88 @@ def fetch_readings() -> list[dict]:
     return result or (_last_good_readings or [])
 
 
+def _cpi_value_at(cpi_obs: list[dict], target: date) -> float | None:
+    """Latest CPI observation on or before `target` — CPI is a monthly
+    series being matched against weekly gas readings, so most dates
+    fall between two prints; the most recent one actually published as
+    of that date is the correct real-world deflator, not a same-month
+    or nearest one. `cpi_obs` must be sorted oldest first."""
+    value = None
+    for obs in cpi_obs:
+        if obs["date"] <= target:
+            value = obs["value"]
+        else:
+            break
+    return value
+
+
+def _real_price_floor(readings: list[dict]) -> float | None:
+    """Median North Bay price over the trailing FLOOR_LOOKBACK_YEARS,
+    each historical reading re-expressed in today's dollars via
+    StatCan's CPI (see CPI_VECTOR_ID) — see the module docstring above
+    FLOOR_LOOKBACK_YEARS for why this replaced a trailing-weeks nominal
+    average. None if CPI data isn't reachable or there's too little
+    history to mean anything — silently wrong is worse than silent."""
+    latest_date = readings[-1]["date"]
+    cutoff = latest_date - timedelta(days=365 * FLOOR_LOOKBACK_YEARS)
+    pool = [r for r in readings if r["date"] >= cutoff]
+    if len(pool) < 52:  # under a year of weekly readings isn't a real long-run reference
+        return None
+
+    try:
+        raw_cpi = statcan_client.fetch_vector(CPI_VECTOR_ID, latest_n=(FLOOR_LOOKBACK_YEARS + 1) * 12)
+    except Exception:
+        return None
+    if not raw_cpi:
+        return None
+    cpi_obs = []
+    for o in raw_cpi:
+        try:
+            cpi_obs.append({"date": date.fromisoformat(str(o["date"])[:10]), "value": float(o["value"])})
+        except (ValueError, TypeError):
+            continue
+    cpi_obs.sort(key=lambda o: o["date"])
+    if not cpi_obs:
+        return None
+    cpi_today = cpi_obs[-1]["value"]
+    if not cpi_today:
+        return None
+
+    real_prices = []
+    for r in pool:
+        cpi_then = _cpi_value_at(cpi_obs, r["date"])
+        if not cpi_then:
+            continue
+        real_prices.append(r["price_cents_per_litre"] * (cpi_today / cpi_then))
+    if len(real_prices) < 52:
+        return None
+    real_prices.sort()
+    return real_prices[len(real_prices) // 2]
+
+
 def eco_mode_status() -> dict | None:
     """{"price", "baseline", "eco_recommended", "as_of", "next_update"}
-    — eco mode is recommended when the latest price is above the
-    trailing BASELINE_WEEKS average, i.e. gas is expensive relative to
-    what it's actually been running lately, not some fixed
-    cents-per-litre cutoff that would go stale as prices drift over
-    months. `next_update` is the latest reading's own date plus 7 days
-    — derived from the actual weekly cadence observed in the data
-    rather than assumed to always land on a specific weekday, so it
-    self-corrects if the survey's publish day ever shifts. None if
-    there isn't enough history yet to judge a baseline from."""
+    — eco mode is recommended when today's price, in real terms, is
+    above the median real North Bay price over the last
+    FLOOR_LOOKBACK_YEARS (see _real_price_floor) — a fixed, inflation-
+    adjusted reference rather than a trailing-weeks average that just
+    tracks whatever prices happened to do recently. `next_update` is
+    the latest reading's own date plus 7 days — derived from the actual
+    weekly cadence observed in the data rather than assumed to always
+    land on a specific weekday, so it self-corrects if the survey's
+    publish day ever shifts. None if there isn't enough price history
+    or CPI data to judge a real floor from."""
     readings = fetch_readings()
     if not readings:
         return None
     latest = readings[-1]
-    baseline_pool = readings[:-1][-BASELINE_WEEKS:]
-    if not baseline_pool:
+    floor = _real_price_floor(readings)
+    if floor is None:
         return None
-    baseline = sum(r["price_cents_per_litre"] for r in baseline_pool) / len(baseline_pool)
     return {
         "price": latest["price_cents_per_litre"],
-        "baseline": baseline,
-        "eco_recommended": latest["price_cents_per_litre"] > baseline,
+        "baseline": floor,
+        "eco_recommended": latest["price_cents_per_litre"] > floor,
         "as_of": latest["date"],
         "next_update": latest["date"] + timedelta(days=7),
     }

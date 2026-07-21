@@ -226,6 +226,33 @@ def _fetch_history_by_account() -> dict[str, list[tuple[str, float]]] | None:
     return {name: sorted(by_date.items()) for name, by_date in by_name.items()}
 
 
+def fetch_value_history(days: int = 180) -> list[float] | None:
+    """Daily total portfolio value (every real account, same scope as
+    fetch_portfolio's own total_cad) over the trailing `days` — for a
+    quick trend sparkline, not a precise figure, so a date before some
+    account's own history begins just sums whatever's actually
+    available for that date rather than being excluded outright (unlike
+    _period_change_pct's stricter all-or-nothing inclusion for a real %
+    number). None if there's not enough history to draw a real trend."""
+    try:
+        series_by_account = _fetch_history_by_account()
+    except Exception:
+        return None
+    if not series_by_account:
+        return None
+
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    totals: dict[str, float] = {}
+    for points in series_by_account.values():
+        for d, v in points:
+            if d < cutoff:
+                continue
+            totals[d] = totals.get(d, 0.0) + v
+    if len(totals) < 2:
+        return None
+    return [v for _, v in sorted(totals.items())]
+
+
 def _period_change_pct(
     series_by_account: dict[str, list[tuple[str, float]]], lookback_days: int | None, live_total: float | None
 ) -> float | None:

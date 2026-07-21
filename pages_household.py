@@ -15,22 +15,21 @@ import fuel_price_client
 import local_news_client
 import tiles
 
-# Same window eco mode's own baseline is judged against (see
-# fuel_price_client.BASELINE_WEEKS) plus a few extra weeks of lead-in,
-# so the sparkline actually shows the shape of the trend the price is
-# being compared to, not just a single flat average number standing in
-# for it. fetch_readings() already pulls this much real history for
-# eco_mode_status's own baseline calculation — it just wasn't being
-# shown anywhere until now.
-SPARKLINE_WEEKS = fuel_price_client.BASELINE_WEEKS + 4
+# Deliberately just a recent-trend window, decoupled from whatever
+# window eco mode's own floor is judged against (see
+# fuel_price_client.FLOOR_LOOKBACK_YEARS — 10 years of weekly points
+# would be unreadable noise compressed into a tile this small). This is
+# only ever "which way has it been moving lately," not the reference
+# the badge below is actually comparing against.
+SPARKLINE_WEEKS = 16
 
 
 def _render_fuel_price(now: datetime) -> None:
-    """North Bay gas price vs. its own recent trend (see
-    fuel_price_client.eco_mode_status) — built specifically to answer
-    "should I bother driving in eco mode today," not just to display a
-    number. Silent if the feed hasn't returned anything yet rather than
-    an empty tile."""
+    """North Bay gas price vs. its own inflation-adjusted long-run
+    median (see fuel_price_client.eco_mode_status) — built specifically
+    to answer "should I bother driving in eco mode today," not just to
+    display a number. Silent if the feed hasn't returned anything yet
+    rather than an empty tile."""
     status = fuel_price_client.eco_mode_status()
     if not status:
         return
@@ -52,7 +51,7 @@ def _render_fuel_price(now: datetime) -> None:
             <div class="tile-value-row">
                 <div class="tile-value">{status['price']:.1f}¢/L</div>{sparkline}
             </div>
-            <div class="tile-prev">vs {status['baseline']:.1f}¢ 12wk avg · as of {as_of} · {update_text}</div>
+            <div class="tile-prev">vs {status['baseline']:.1f}¢ 10yr real median · as of {as_of} · {update_text}</div>
             <div class="badge {badge_class}">{badge_text}</div>
         </div>""",
         unsafe_allow_html=True,
