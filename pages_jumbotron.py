@@ -24,12 +24,15 @@ two linescore fetchers in sports_client.
 import html
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 import scores_client
 import sports_alerts
 import sports_client
+from config import TIMEZONE
 
 # Both teams always appear in the My Teams rail, Habs first — the same
 # priority order the toast queue and countdown headlines use.
@@ -60,14 +63,24 @@ _SCORING_PLAYS_SHOWN = 4
 _FORM_GAMES_SHOWN = 8
 
 
-def _fmt_countdown(seconds: float) -> str:
-    """H:MM, no seconds — session feedback: the kiosk only reruns every
-    5s anyway, so a seconds digit just sat there looking like it was
-    ticking and then jumped by 5. Whole minutes update rarely enough
-    that the 5s rerun cadence never shows."""
-    total = max(0, int(seconds))
-    hours, minutes = divmod(total // 60, 60)
-    return f"{hours}:{minutes:02d}"
+def _fmt_countdown(target: datetime, now: datetime) -> str:
+    """H:MM:SS, ticking for real once a second — session request: bring
+    seconds back but "uncorrelated to the sync up of the whole system"
+    (a server-rendered digit only ever updates once per 5s rerun and
+    visibly jumps by 5, which is exactly why seconds got dropped
+    earlier this session). The string returned here is only ever the
+    FIRST frame's value; a data-target-ms attribute carries the real
+    target instant (this target's true UTC epoch ms, timezone-aware
+    conversion so a UTC-hosted server and a local browser still agree)
+    for the parent-document ticker script (see render()'s own
+    components.html injection, same technique as app.py's J-hotkey
+    listener) to recompute against the browser's own real clock every
+    second, independent of Streamlit's rerun cadence entirely."""
+    target_ms = int(target.replace(tzinfo=ZoneInfo(TIMEZONE)).timestamp() * 1000)
+    total = max(0, int((target - now).total_seconds()))
+    hours, rem = divmod(total, 3600)
+    minutes, seconds = divmod(rem, 60)
+    return f'<span class="jumbo-live-cd" data-target-ms="{target_ms}">{hours}:{minutes:02d}:{seconds:02d}</span>'
 
 
 def _digits_html(score) -> str:
@@ -379,11 +392,10 @@ def _board_html(state: dict, now: datetime) -> str:
     leaders_html = _top_performers_html(match, time.time())
 
     if phase == "pregame":
-        remaining = (game["start_time"] - now).total_seconds()
         kickoff = next((r["kickoff"] for r in _RAIL if r["sport"] == sport), "TO FIRST PITCH")
         center = (
             f'<div class="jumbo-center"><div class="jumbo-vs">VS</div>'
-            f'<div class="jumbo-countdown">{_fmt_countdown(remaining)}</div>'
+            f'<div class="jumbo-countdown">{_fmt_countdown(game["start_time"], now)}</div>'
             f'<div class="jumbo-cd-label">{html.escape(kickoff)}</div></div>'
         )
         start_text = game["start_time"].strftime("%-I:%M %p")
@@ -549,10 +561,9 @@ def _rail_hero_html(entry: dict, now: datetime) -> str:
         line = "No game on today's slate"
     elif game["state"] == "upcoming":
         versus = "vs" if game["is_home"] else "@"
-        remaining = (game["start_time"] - now).total_seconds()
         line = (
             f'{versus} <b>{html.escape(game["opponent"])}</b>'
-            f'<span class="jumbo-gl-cd">{_fmt_countdown(remaining)}</span>'
+            f'<span class="jumbo-gl-cd">{_fmt_countdown(game["start_time"], now)}</span>'
         )
     else:
         versus = "vs" if game["is_home"] else "@"
@@ -733,4 +744,42 @@ def render(now: datetime, state: dict, weather: dict | None) -> None:
         f"{around_block}"
         f"</div></div>",
         unsafe_allow_html=True,
+    )
+
+    # Real once-a-second countdown ticker — see _fmt_countdown's own
+    # docstring for why. Same technique as app.py's J-hotkey listener:
+    # a components iframe injecting a real <script> element into the
+    # PARENT document once (guarded so re-running this every 5s rerun
+    # never stacks up duplicate intervals), because Streamlit strips
+    # <script> out of unsafe_allow_html markdown entirely. Re-queries
+    # .jumbo-live-cd fresh on every tick rather than caching element
+    # references, so it keeps finding the right nodes even if Streamlit
+    # replaces them underneath it on its own 5s cycle.
+    components.html(
+        """
+        <script>
+        (function () {
+          var doc = window.parent.document;
+          if (doc.getElementById('jumbo-countdown-ticker')) return;
+          var s = doc.createElement('script');
+          s.id = 'jumbo-countdown-ticker';
+          s.textContent = [
+            "setInterval(function () {",
+            "  var now = Date.now();",
+            "  document.querySelectorAll('.jumbo-live-cd').forEach(function (el) {",
+            "    var target = parseInt(el.getAttribute('data-target-ms'), 10);",
+            "    if (!target) return;",
+            "    var total = Math.max(0, Math.round((target - now) / 1000));",
+            "    var h = Math.floor(total / 3600);",
+            "    var m = Math.floor((total % 3600) / 60);",
+            "    var sec = total % 60;",
+            "    el.textContent = h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');",
+            "  });",
+            "}, 1000);",
+          ].join('\\n');
+          doc.head.appendChild(s);
+        })();
+        </script>
+        """,
+        height=0,
     )
