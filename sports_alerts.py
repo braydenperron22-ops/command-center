@@ -31,6 +31,7 @@ without a score/opponent logo to show.
 
 import hashlib
 import html
+import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from xml.etree import ElementTree
@@ -76,6 +77,100 @@ MAX_SEEN_TEAM_NEWS = 200
 # story is still relevant a few days later, but the Google searches
 # themselves should stay scoped to "recent," not "ever written."
 TEAM_NEWS_WINDOW_DAYS = 3
+
+# Sports-specific junk that news.is_clickbait (tuned for finance
+# headlines) has no reason to know about — session feedback: "a little
+# too many bad headlines are creeping through." Every term/pattern here
+# came from a real headline observed in the live pool, grouped by what
+# kind of non-news it is. The bar for this feed is "something actually
+# happened to the team" (a trade, an injury, a signing, a death, a
+# roster move) — not per-game content, which the live scoring alerts
+# and the Sports page's own scoreboard already cover far better.
+TEAM_NEWS_EXCLUDE_TERMS = [
+    # Per-game clip/recap churn — MLB.com emits several of these per
+    # game ("Game Story, Scores/Highlights", "Condensed Game: TB@TOR",
+    # "Japanese Highlights", "Key takeaways: Rays 7, Blue Jays 1"),
+    # plus Google sometimes surfaces the Spanish-language mirror of the
+    # same recap ("Resumen", "Jugadas destacadas").
+    "highlights", "condensed game", "game story", "game recap",
+    "game stats", "box score", "key takeaways", "gameday live",
+    "live updates", "play in game", "breaking down", "on facing",
+    "roundup", "preview", "catching up with", "resumen",
+    "jugadas destacadas",
+    # Pregame/viewing/ticket-sales service content ("Where to watch...
+    # TV channel, start time, streaming", "Buy Tickets for Rays vs.
+    # Blue Jays", ESPN's bare "Pregame" stubs).
+    "where to watch", "tv channel", "streaming", "start time",
+    "buy tickets", "tickets for", "pregame",
+    # Betting content that slips past news.py's phrase-level terms
+    # ("Odds, Betting Lines, Expert picks, Game Projections, DFS
+    # Projections and Player Prop Projections", "Top MLB Bets: YRFI
+    # Picks"). In a team-news feed, a bare "odds"/"bets" is betting
+    # content essentially always — no "odds of making the playoffs"
+    # false-positive has shown up, and losing one would be fine.
+    "odds", "betting", "bets", "expert picks", "player prop",
+    "parlay", "moneyline", "dfs", "sportsline", "majorwager",
+    # Quote-aggregation content mills — outlets whose entire model is
+    # re-packaging one player quote per article. Google News bakes the
+    # source name into every title as a " - Source" suffix, so the
+    # outlet name alone reliably marks these regardless of phrasing.
+    "heavy.com", "fansided", "athlon sports", "larry brown sports",
+    "sportskeeda", "clutchpoints", "the spun", "essentially sports",
+    "yardbarker",
+    # The quote-churn phrasing itself, for the same articles coming
+    # through outlets not listed above ("Gets Candid About...", "Drops
+    # Honest Quote", "Makes Feelings Clear", "Shares Heartfelt
+    # Message", "Breaks Silence").
+    "gets candid", "drops honest", "drops blunt", "makes feelings clear",
+    "breaks silence", "sounds off", "heartfelt", "turning heads",
+    "fans react", "social media reacts", "nobody saw coming",
+    "must-watch",
+]
+TEAM_NEWS_EXCLUDE_PATTERNS = [
+    # Listicle/hot-take leads — "2 Reasons Why Blue Jays' Playoff Hopes
+    # Are Dwindling", "One Thing Must Change for the Blue Jays".
+    # news.py's own listicle patterns are stock-specific, so the sports
+    # shapes need their own.
+    re.compile(r"^(?:\d+|one|two|three|four|five)\s+(?:reasons?|things?|takeaways?|ways?|keys?|observations?)\b"),
+    re.compile(r"^ranking\b"),
+    # "X Reacts After...", "Dylan Cease Reacts to..." — a reaction to
+    # the news is not the news.
+    re.compile(r"\breacts?\s+(?:after|to)\b"),
+    # "Mets' Bo Bichette Sends Blue Jays Message..." — content-mill
+    # narrativizing, never a report of an actual event.
+    re.compile(r"\bsends?\b.{0,40}\bmessage\b"),
+    # MLB.com's per-play video-clip stubs — "Kevin Gausman against the
+    # Rays - MLB.com", "Dylan Cease's outing against the Rays -
+    # MLB.com". Anchored to the MLB.com source suffix so a real
+    # newspaper story that merely contains "against the" mid-sentence
+    # isn't caught; MLB.com's own genuine news doesn't use this shape.
+    re.compile(r"\bagainst the\b[^-]*- mlb\.com$"),
+    # More clip stubs: "Dylan Cease strikes out seven vs. Rays".
+    re.compile(r"\bstrikes? out\b.{0,20}\b(?:vs|against)\b"),
+    # Scoreline-recap titles — "Oh captain, my captain: Rays 7, Blue
+    # Jays 1". A "Team N, Team N" scoreline in the headline is always a
+    # game recap. \d{1,2}\b can't half-match a 4-digit year (no word
+    # boundary between digits), so date parentheticals like "(Oct 20,
+    # 2026)" don't false-positive.
+    re.compile(r"\b\w+(?:\s\w+){0,2}\s\d{1,2},\s\w+(?:\s\w+){0,2}\s\d{1,2}\b"),
+    # "Top 10 Prospects"-style numbered rankings (digits only — "Top
+    # Three Potential Fits" is trade-rumor content worth keeping).
+    re.compile(r"\btop \d+\b"),
+    # Link-roundup posts ("Sick Puck Links: Suzuki Expectations; ...").
+    # A term can't catch this one: _contains_any's trailing \b never
+    # matches between ":" and a space (both non-word chars).
+    re.compile(r"\blinks:"),
+    # "Mic'd up: Mike Condon" clip stubs — . instead of a literal
+    # apostrophe so both the straight and curly variants match.
+    re.compile(r"\bmic.d up\b"),
+]
+
+
+def _is_team_news_junk(headline: str) -> bool:
+    h = headline.lower()
+    if news._contains_any(h, TEAM_NEWS_EXCLUDE_TERMS):
+        return True
+    return any(p.search(h) for p in TEAM_NEWS_EXCLUDE_PATTERNS)
 
 # "logo" calls sports_client's own team-id-keyed URL builders directly
 # rather than pulling "team_logo" off fetch_jays()/fetch_habs()'s status
@@ -199,8 +294,9 @@ def _fetch_team_news_raw(query: str) -> list[dict]:
     """Same Google News RSS search approach as conflict_news.py — no key
     needed, and a quoted team-name search already surfaces real trade/
     injury/roster stories without a dedicated MLB/NHL news API. Filtered
-    through news.is_clickbait so teaser junk doesn't slip in, same as
-    conflict_news.py's own use of that shared check."""
+    through news.is_clickbait (same as conflict_news.py's own use of
+    that shared check) plus _is_team_news_junk above for the sports-
+    specific churn that a finance-tuned filter has no terms for."""
     params = {"q": f"{query} when:{TEAM_NEWS_WINDOW_DAYS}d", "hl": "en-US", "gl": "US", "ceid": "US:en"}
     try:
         fetch_throttle.wait_turn()
@@ -212,7 +308,7 @@ def _fetch_team_news_raw(query: str) -> list[dict]:
     items = []
     for item in root.findall(".//item"):
         title = (item.findtext("title") or "").strip()
-        if title and not news.is_clickbait(title):
+        if title and not news.is_clickbait(title) and not _is_team_news_junk(title):
             items.append({"headline": title, "published": _parse_pub_date(item.findtext("pubDate") or "")})
     return items
 
