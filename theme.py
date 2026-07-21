@@ -2492,8 +2492,13 @@ html, body, [class*="css"] {
     text-transform: uppercase;
 }
 .jumbo-live-matchup-name {
-    font-size: 22px;
-    font-weight: 700;
+    /* Same fix as jumbo-live-matchup-stat below — this was silently
+       inheriting var(--disp) (Oswald, condensed) at a forced 700, same
+       swollen/blobby look. Session feedback: "can we make their name
+       skinnier as well please i wanna be able to read that too." */
+    font-family: var(--mono);
+    font-size: 21px;
+    font-weight: 600;
     color: var(--bone);
     max-width: 100%;
     white-space: nowrap;
