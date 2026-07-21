@@ -580,6 +580,55 @@ def fetch_mlb_live_detail(game_id: int) -> dict | None:
     }
 
 
+PEOPLE_URL = "https://statsapi.mlb.com/api/v1/people/{player_id}"
+
+
+@st.cache_data(ttl=LIVE_DETAIL_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_mlb_player_season_stat_raw(player_id: int, group: str) -> dict:
+    """This one player's own season-total stat line for `group`
+    ("hitting"/"pitching") — {} if the API genuinely has none yet (a
+    two-way player with no innings pitched this season, a September
+    call-up, etc.), not just on a fetch failure."""
+    fetch_throttle.wait_turn()
+    resp = requests.get(PEOPLE_URL.format(player_id=player_id), params={"hydrate": f"stats(group=[{group}],type=[season])"}, timeout=10)
+    resp.raise_for_status()
+    people = resp.json().get("people") or []
+    if not people:
+        return {}
+    stats = people[0].get("stats") or []
+    if not stats:
+        return {}
+    splits = stats[0].get("splits") or []
+    return splits[0].get("stat", {}) if splits else {}
+
+
+def fetch_mlb_live_matchup(game_id: int) -> dict | None:
+    """{"batter": {"name", "ops"}, "pitcher": {"name", "era"}} for
+    whoever's actually at the plate/on the mound right now — session
+    request: "during the game can you make the top performers tab show
+    current pitcher and batter and their stats use OPS for batter and
+    ERA for pitchers." Reuses the same cached linescore
+    fetch_mlb_live_detail already pulls this rerun (no extra request
+    for the matchup itself), one small extra request each for the two
+    players' own season stat lines. None on any fetch failure or once
+    there's genuinely no one at the plate/mound to name (the linescore
+    payload omits offense/defense between innings)."""
+    try:
+        data = _fetch_mlb_linescore_raw(game_id)
+    except Exception:
+        return None
+    batter = (data.get("offense") or {}).get("batter")
+    pitcher = (data.get("defense") or {}).get("pitcher")
+    if not batter or not pitcher:
+        return None
+    batter_stat = _fetch_mlb_player_season_stat_raw(batter["id"], "hitting")
+    pitcher_stat = _fetch_mlb_player_season_stat_raw(pitcher["id"], "pitching")
+    return {
+        "batter": {"name": batter["fullName"], "ops": batter_stat.get("ops")},
+        "pitcher": {"name": pitcher["fullName"], "era": pitcher_stat.get("era")},
+    }
+
+
 def _nhl_period_label(period_descriptor: dict) -> str:
     period_type = period_descriptor.get("periodType")
     if period_type in ("OT", "SO"):

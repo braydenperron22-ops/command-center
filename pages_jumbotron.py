@@ -384,16 +384,47 @@ def _top_performers_html(match: dict | None, now_ts: float) -> str:
     )
 
 
+def _current_matchup_html(game_id: int) -> str:
+    """Replaces the Top Performers panel with the two players actually
+    involved in the live at-bat while a game is live — session request:
+    "during the game can you make the top performers tab show current
+    pitcher and batter and their stats use OPS for batter and ERA for
+    pitchers." MLB only (no batter/pitcher concept in hockey — NHL
+    keeps the season-leaders rotation throughout). "" between innings,
+    when the live feed has no one currently at the plate/mound to name
+    (see sports_client.fetch_mlb_live_matchup's own docstring)."""
+    matchup = sports_client.fetch_mlb_live_matchup(game_id)
+    if not matchup:
+        return ""
+    batter, pitcher = matchup["batter"], matchup["pitcher"]
+    batter_stat = f'{batter["ops"]} OPS' if batter.get("ops") else "—"
+    pitcher_stat = f'{pitcher["era"]} ERA' if pitcher.get("era") else "—"
+    return (
+        f'<div class="jumbo-leaders"><div class="jumbo-sl">Current Matchup</div>'
+        f'<div class="jumbo-live-matchup">'
+        f'<div class="jumbo-live-matchup-row"><span class="jumbo-live-matchup-tag">At Bat</span>'
+        f'<span class="jumbo-live-matchup-name">{html.escape(batter["name"])}</span>'
+        f'<span class="jumbo-live-matchup-stat">{html.escape(batter_stat)}</span></div>'
+        f'<div class="jumbo-live-matchup-row"><span class="jumbo-live-matchup-tag">Pitching</span>'
+        f'<span class="jumbo-live-matchup-name">{html.escape(pitcher["name"])}</span>'
+        f'<span class="jumbo-live-matchup-stat">{html.escape(pitcher_stat)}</span></div>'
+        f"</div></div>"
+    )
+
+
 def _board_html(state: dict, now: datetime) -> str:
     league, status, game = state["league"], state["status"], state["game"]
     sport, phase = league["sport"], state["phase"]
     away, home = _sides(status, game, league["label"])
     match = _espn_match_for(sport, game)
-    # Season-long stat leaders, not per-game box score — confirmed live
-    # ESPN's own scoreboard payload carries these regardless of
-    # whether the game itself has started, so this shows well before
-    # first pitch too, not just once the game goes live.
-    leaders_html = _top_performers_html(match, time.time())
+    if phase == "live" and sport == "mlb":
+        leaders_html = _current_matchup_html(game["game_id"])
+    else:
+        # Season-long stat leaders, not per-game box score — confirmed
+        # live ESPN's own scoreboard payload carries these regardless
+        # of whether the game itself has started, so this shows well
+        # before first pitch too, not just once the game goes live.
+        leaders_html = _top_performers_html(match, time.time())
 
     if phase == "pregame":
         kickoff = next((r["kickoff"] for r in _RAIL if r["sport"] == sport), "TO FIRST PITCH")

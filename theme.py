@@ -2459,6 +2459,39 @@ html, body, [class*="css"] {
     font-weight: 700;
 }
 .jumbo-leader-name-active .jumbo-leader-name-stat { color: var(--led); font-weight: 700; }
+/* Current batter/pitcher, live-game replacement for the Top Performers
+   card — session request: "during the game can you make the top
+   performers tab show current pitcher and batter and their stats use
+   OPS for batter and ERA for pitchers." */
+.jumbo-live-matchup { display: flex; flex-direction: column; gap: 16px; padding: 4px 4px 6px; }
+.jumbo-live-matchup-row { display: flex; align-items: baseline; gap: 16px; }
+.jumbo-live-matchup-tag {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    color: var(--led);
+    font-weight: 700;
+    text-transform: uppercase;
+    width: 84px;
+    flex: 0 0 auto;
+}
+.jumbo-live-matchup-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 21px;
+    font-weight: 600;
+    color: var(--bone);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.jumbo-live-matchup-stat {
+    font-family: var(--num);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--bone);
+    flex: 0 0 auto;
+}
 .jumbo-diamond { width: 34px; height: 34px; display: inline-block; vertical-align: -10px; margin: 0 10px; }
 .jumbo-diamond rect { fill: #1A2230; stroke: var(--edge-hi); stroke-width: 1.5; }
 .jumbo-diamond rect.on { fill: var(--led); stroke: var(--led); }
