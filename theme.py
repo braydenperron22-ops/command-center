@@ -2464,30 +2464,36 @@ html, body, [class*="css"] {
    performers tab show current pitcher and batter and their stats use
    OPS for batter and ERA for pitchers." Photo-up-top, stat-below-name
    layout — session request: "add the pitcher and batter pics and put
-   the stats below them like youd see on a jumbotron in the ballpark." */
-.jumbo-live-matchup { display: flex; align-items: center; justify-content: center; gap: 30px; padding: 6px 4px 8px; }
+   the stats below them like youd see on a jumbotron in the ballpark."
+   Sized up further, and the stat split into a big number plus a small
+   caption underneath (same pattern as the Top Performers big card's
+   own jumbo-leader-big-stat/-cat) rather than one "4.31 ERA" string —
+   session feedback: "make the ops and era less clunky and easier to
+   read from across the room... the whole matchup thing needs to be
+   easier to read." */
+.jumbo-live-matchup { display: flex; align-items: center; justify-content: center; gap: 32px; padding: 4px 4px 6px; }
 .jumbo-live-matchup-col { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 3px; flex: 1; min-width: 0; }
 .jumbo-live-matchup-photo {
-    width: 96px;
-    height: 96px;
+    width: 104px;
+    height: 104px;
     border-radius: 50%;
     object-fit: cover;
     object-position: top;
     background: #141A25;
-    border: 2px solid var(--led);
+    border: 3px solid var(--led);
     margin-bottom: 6px;
 }
 .jumbo-live-matchup-tag {
     font-family: var(--mono);
-    font-size: 12px;
-    letter-spacing: 0.16em;
+    font-size: 13px;
+    letter-spacing: 0.18em;
     color: var(--led);
     font-weight: 700;
     text-transform: uppercase;
 }
 .jumbo-live-matchup-name {
-    font-size: 19px;
-    font-weight: 600;
+    font-size: 22px;
+    font-weight: 700;
     color: var(--bone);
     max-width: 100%;
     white-space: nowrap;
@@ -2496,13 +2502,23 @@ html, body, [class*="css"] {
 }
 .jumbo-live-matchup-stat {
     font-family: var(--num);
-    font-size: 26px;
+    font-size: 38px;
     font-weight: 700;
     color: var(--bone);
+    line-height: 1.1;
+    margin-top: 2px;
+}
+.jumbo-live-matchup-stat-label {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.2em;
+    color: var(--led);
+    font-weight: 700;
+    text-transform: uppercase;
 }
 .jumbo-live-matchup-vs {
     font-family: var(--mono);
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 700;
     color: var(--mut-2);
     letter-spacing: 0.1em;

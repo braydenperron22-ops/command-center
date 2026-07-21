@@ -380,29 +380,39 @@ def _current_matchup_html(game_id: int) -> str:
     if not matchup:
         return ""
     batter, pitcher = matchup["batter"], matchup["pitcher"]
-    batter_stat = f'{batter["ops"]} OPS' if batter.get("ops") else "—"
-    pitcher_stat = f'{pitcher["era"]} ERA' if pitcher.get("era") else "—"
 
-    def col(tag: str, player: dict, stat_text: str) -> str:
+    # Session feedback: "make the ops and era less clunky... the whole
+    # matchup thing needs to be easier to read." A value+unit crammed
+    # into one string ("4.31 ERA") at one size read busy from across
+    # the room — split into a big number plus a small caption underneath,
+    # the same big-stat/small-caption pattern _top_performers_html's own
+    # big card already uses (jumbo-leader-big-stat/-cat).
+    def col(tag: str, player: dict, stat_value: str | None, stat_label: str) -> str:
         photo = (
             f'<img class="jumbo-live-matchup-photo" src="{html.escape(player["photo"])}" onerror="this.style.display=\'none\'" />'
             if player.get("photo")
             else ""
         )
+        stat_html = (
+            f'<div class="jumbo-live-matchup-stat">{html.escape(stat_value)}</div>'
+            f'<div class="jumbo-live-matchup-stat-label">{html.escape(stat_label)}</div>'
+            if stat_value
+            else '<div class="jumbo-live-matchup-stat">—</div>'
+        )
         return (
             f'<div class="jumbo-live-matchup-col">{photo}'
             f'<div class="jumbo-live-matchup-tag">{html.escape(tag)}</div>'
             f'<div class="jumbo-live-matchup-name">{html.escape(player["name"])}</div>'
-            f'<div class="jumbo-live-matchup-stat">{html.escape(stat_text)}</div>'
+            f"{stat_html}"
             f"</div>"
         )
 
     return (
         f'<div class="jumbo-leaders"><div class="jumbo-sl">Current Matchup</div>'
         f'<div class="jumbo-live-matchup">'
-        f'{col("At Bat", batter, batter_stat)}'
+        f'{col("At Bat", batter, batter.get("ops"), "OPS")}'
         f'<div class="jumbo-live-matchup-vs">VS</div>'
-        f'{col("Pitching", pitcher, pitcher_stat)}'
+        f'{col("Pitching", pitcher, pitcher.get("era"), "ERA")}'
         f"</div></div>"
     )
 
