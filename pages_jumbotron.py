@@ -45,14 +45,13 @@ _FORM_GAMES_SHOWN = 8
 
 
 def _fmt_countdown(seconds: float) -> str:
-    """H:MM:SS once an hour out, M:SS inside the final hour — the kiosk
-    reruns every 5s, so this ticks on its own without a timer."""
+    """H:MM, no seconds — session feedback: the kiosk only reruns every
+    5s anyway, so a seconds digit just sat there looking like it was
+    ticking and then jumped by 5. Whole minutes update rarely enough
+    that the 5s rerun cadence never shows."""
     total = max(0, int(seconds))
-    hours, rem = divmod(total, 3600)
-    minutes, secs = divmod(rem, 60)
-    if hours:
-        return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes}:{secs:02d}"
+    hours, minutes = divmod(total // 60, 60)
+    return f"{hours}:{minutes:02d}"
 
 
 def _digits_html(score) -> str:

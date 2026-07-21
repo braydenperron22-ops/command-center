@@ -1961,10 +1961,28 @@ html, body, [class*="css"] {
    instead of breaking. */
 .block-container:has(.jumbo) {
     max-width: 100% !important;
-    padding-top: 0.7rem !important;
+    padding-top: 0.4rem !important;
     padding-left: 1.1rem !important;
     padding-right: 1.1rem !important;
     justify-content: flex-start !important;
+}
+/* Confirmed live: with justify-content pinned to flex-start above, the
+   ~1.5-2 inch gap above the marquee was Streamlit's own per-element
+   vertical gap (repeated across several invisible 0-height markdown/
+   iframe containers that render ahead of the page body — the hotkey
+   listener, the sky/scenery markdown, staleness pills, etc.) plus the
+   autorefresh component's own 26px iframe height. None of that is
+   visible on the normal pages because centered layout just swallows it
+   as part of the whole block being centered — flex-start is what makes
+   it show up as a hard gap instead. Collapsed only while the jumbotron
+   is showing, since the normal pages still want that centering intact. */
+.block-container:has(.jumbo) > div {
+    gap: 0 !important;
+}
+.block-container:has(.jumbo) .element-container:has(iframe) {
+    height: 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
 }
 
 .jumbo-marquee {
@@ -2034,7 +2052,7 @@ html, body, [class*="css"] {
 .jumbo-grid {
     flex: 1;
     display: grid;
-    grid-template-columns: 300px 1fr 260px;
+    grid-template-columns: 420px 1fr 340px;
     gap: 12px;
     min-height: 0;
 }
@@ -2052,10 +2070,10 @@ html, body, [class*="css"] {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
-    padding: 10px 15px;
+    padding: 12px 18px;
     border-bottom: 1px solid var(--edge);
     font-family: var(--mono);
-    font-size: 9.5px;
+    font-size: 13px;
     letter-spacing: 0.32em;
     color: var(--led);
     text-transform: uppercase;
@@ -2067,7 +2085,7 @@ html, body, [class*="css"] {
 /* ---- My Teams rail ---- */
 .jumbo-rail-body { flex: 1; min-height: 0; overflow: hidden; }
 .jumbo-hero {
-    padding: 13px 15px 14px;
+    padding: 20px 20px 22px;
     border-bottom: 1px solid rgba(30,38,52,0.55);
     position: relative;
 }
@@ -2076,55 +2094,55 @@ html, body, [class*="css"] {
     content: "";
     position: absolute;
     left: 0; top: 10%; bottom: 10%;
-    width: 3px;
+    width: 4px;
     border-radius: 2px;
     background: var(--tc, var(--edge-hi));
 }
 .jumbo-hero-nhl { --tc: #D8323F; }
 .jumbo-hero-mlb { --tc: #3E7CC9; }
-.jumbo-hero-head { display: flex; align-items: center; gap: 12px; }
-.jumbo-hero-head img { width: 44px; height: 44px; object-fit: contain; flex: 0 0 auto; }
-.jumbo-hero-id { min-width: 0; }
-.jumbo-hero-name { font-weight: 600; font-size: 18px; letter-spacing: 0.04em; line-height: 1.1; }
+.jumbo-hero-head { display: flex; align-items: center; gap: 14px; }
+.jumbo-hero-head img { width: 58px; height: 58px; object-fit: contain; flex: 0 0 auto; }
+.jumbo-hero-id { min-width: 0; white-space: nowrap; }
+.jumbo-hero-name { font-weight: 600; font-size: 24px; letter-spacing: 0.02em; line-height: 1.1; white-space: nowrap; }
 .jumbo-hero-div {
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 300;
     color: var(--mut);
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    margin-top: 3px;
+    margin-top: 4px;
 }
-.jumbo-hero-rec { margin-left: auto; text-align: right; }
-.jumbo-hero-rec-v { font-family: var(--num); font-size: 24px; line-height: 1; }
-.jumbo-hero-rec-l { font-size: 8px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.3em; }
-.jumbo-form { display: flex; gap: 5px; align-items: center; margin-top: 9px; }
-.jumbo-form-label { font-size: 8.5px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.24em; margin-right: 2px; }
-.jumbo-form i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.jumbo-hero-rec { margin-left: auto; text-align: right; flex: 0 0 auto; padding-left: 10px; }
+.jumbo-hero-rec-v { font-family: var(--num); font-size: 30px; line-height: 1; white-space: nowrap; }
+.jumbo-hero-rec-l { font-size: 10px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.3em; white-space: nowrap; }
+.jumbo-form { display: flex; gap: 7px; align-items: center; margin-top: 13px; }
+.jumbo-form-label { font-size: 12px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.24em; margin-right: 3px; }
+.jumbo-form i { width: 13px; height: 13px; border-radius: 50%; display: inline-block; }
 .jumbo-form-w { background: var(--ok); box-shadow: 0 0 6px rgba(50,213,131,0.5); }
 .jumbo-form-l { background: rgba(255,69,58,0.35); border: 1px solid rgba(255,69,58,0.5); }
 .jumbo-gameline {
-    margin-top: 10px;
+    margin-top: 14px;
     border: 1px solid var(--edge);
-    border-radius: 9px;
+    border-radius: 10px;
     background: rgba(8,11,17,0.7);
-    padding: 8px 11px;
+    padding: 12px 15px;
     font-family: var(--mono);
-    font-size: 11.5px;
+    font-size: 16px;
     color: var(--mut);
     line-height: 1.7;
 }
 .jumbo-gameline b { color: var(--bone); font-weight: 600; }
-.jumbo-gl-score { color: var(--led); font-weight: 800; font-size: 14px; }
-.jumbo-gl-cd { font-family: var(--num); color: var(--bone); font-size: 17px; letter-spacing: 0.08em; margin-left: 8px; }
+.jumbo-gl-score { color: var(--led); font-weight: 800; font-size: 19px; }
+.jumbo-gl-cd { font-family: var(--num); color: var(--bone); font-size: 24px; letter-spacing: 0.08em; margin-left: 10px; }
 .jumbo-w { color: var(--ok); }
 .jumbo-l { color: var(--live); }
-.jumbo-offseason { border-style: dashed; color: var(--mut-2); letter-spacing: 0.28em; font-size: 9.5px; }
+.jumbo-offseason { border-style: dashed; color: var(--mut-2); letter-spacing: 0.28em; font-size: 13px; }
 .jumbo-hero-live .jumbo-gameline { border-color: rgba(255,69,58,0.45); box-shadow: 0 0 16px rgba(255,69,58,0.1); }
 .jumbo-livechip {
     position: absolute;
-    top: 12px; right: 15px;
+    top: 18px; right: 20px;
     font-family: var(--mono);
-    font-size: 8.5px;
+    font-size: 11px;
     font-weight: 800;
     color: var(--live);
     letter-spacing: 0.26em;
@@ -2286,30 +2304,30 @@ html, body, [class*="css"] {
 .jumbo-around-body { flex: 1; min-height: 0; overflow: hidden; }
 .jumbo-around-league {
     font-family: var(--mono);
-    font-size: 8.5px;
+    font-size: 12px;
     letter-spacing: 0.32em;
     color: var(--led);
-    padding: 9px 14px 4px;
+    padding: 13px 18px 6px;
 }
 .jumbo-mini {
     display: flex;
     align-items: center;
-    padding: 6px 14px;
-    gap: 10px;
+    padding: 10px 18px;
+    gap: 14px;
     border-bottom: 1px solid rgba(30,38,52,0.4);
 }
 .jumbo-mini-final { opacity: 0.42; }
-.jumbo-mini-live { background: rgba(255,69,58,0.05); border-left: 2px solid var(--live); }
-.jumbo-mini-teams { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.jumbo-mini-team { display: flex; align-items: center; gap: 8px; }
-.jumbo-mini-team img { width: 20px; height: 20px; object-fit: contain; flex: 0 0 auto; }
-.jumbo-mini-abbr { font-size: 12px; font-weight: 500; color: var(--mut); letter-spacing: 0.08em; }
-.jumbo-mini-score { margin-left: auto; font-family: var(--num); font-size: 18px; line-height: 1; color: var(--bone); }
+.jumbo-mini-live { background: rgba(255,69,58,0.05); border-left: 3px solid var(--live); }
+.jumbo-mini-teams { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.jumbo-mini-team { display: flex; align-items: center; gap: 10px; }
+.jumbo-mini-team img { width: 28px; height: 28px; object-fit: contain; flex: 0 0 auto; }
+.jumbo-mini-abbr { font-size: 17px; font-weight: 500; color: var(--mut); letter-spacing: 0.08em; }
+.jumbo-mini-score { margin-left: auto; font-family: var(--num); font-size: 26px; line-height: 1; color: var(--bone); }
 .jumbo-mini-status {
     font-family: var(--mono);
-    font-size: 8px;
+    font-size: 12px;
     color: var(--mut-2);
-    letter-spacing: 0.12em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     text-align: right;
     flex: 0 0 auto;

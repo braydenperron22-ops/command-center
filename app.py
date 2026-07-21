@@ -374,14 +374,25 @@ try:
     bg_fade_from = st.session_state.get("bg_fade_from", phase)
     bg_blend = min((time.time() - st.session_state.get("bg_phase_changed_at", 0)) / FADE_SECONDS, 1.0)
 
-    st.markdown(
-        sky_style(category, phase, bg_fade_from, bg_blend),
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        scene_html(category, phase),
-        unsafe_allow_html=True,
-    )
+    # Session feedback: "even if it's not dark outside, I want the
+    # screen to be dark" for the jumbotron — sky_style paints the
+    # daytime sky gradient straight onto stAppViewContainer, which sits
+    # behind every page including the jumbotron's own semi-transparent
+    # glass panels, washing out the arena-dark look with whatever tint
+    # the actual time of day happens to be. Skipped entirely during a
+    # takeover rather than overridden with more CSS — the config.toml
+    # base theme's own backgroundColor is already solid black, so
+    # simply not painting a sky over it gives the jumbotron exactly the
+    # always-dark background it wants for free.
+    if not _jumbotron_active:
+        st.markdown(
+            sky_style(category, phase, bg_fade_from, bg_blend),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            scene_html(category, phase),
+            unsafe_allow_html=True,
+        )
 
     # Dim the whole UI at night — not just the background, since bright
     # white tile text/badges in a pitch-black room is still harsh even
