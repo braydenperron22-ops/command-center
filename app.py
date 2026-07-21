@@ -192,6 +192,45 @@ if not _jumbotron_active and page == "jumbotron":
     # offseason) — fall back rather than rendering an empty board.
     page, _, _ = _scheduled_page(_rotation_epoch)
 
+# Transition overlay — session feedback: the hard cut between the
+# everyday dashboard and the jumbotron "feels dystopian," worth a real
+# transition each way. Detected as a genuine flip in _jumbotron_active
+# since the last rerun (not "is jumbotron active right now" — that's
+# true for the whole ~1hr+ takeover window, this only needs to fire
+# once at the actual moment of change), same session-state-diff
+# pattern the page-flip crossfade and score-flash animations already
+# use elsewhere in this app.
+#
+# Rendered as a fixed, full-screen, pointer-events:none curtain with a
+# CSS animation that holds briefly then fades itself out — not a
+# second Streamlit rerun's worth of a blank/loading page. The real
+# destination page (jumbotron or the normal dashboard) still renders
+# underneath it in this exact same script run, so nothing is skipped
+# or delayed; the curtain just politely reveals it a couple seconds
+# later instead of cutting instantly. Only exists in the DOM for the
+# one rerun where the flip happened — the very next 5s rerun renders
+# with no overlay markup at all.
+try:
+    _prev_jumbotron_active = st.session_state.get("_prev_jumbotron_active", False)
+    if _jumbotron_active and not _prev_jumbotron_active:
+        _team_label = (_takeover["league"]["label"] if _takeover else "").title()
+        st.markdown(
+            f'<div class="jumbo-transition jumbo-transition-in">'
+            f'<div class="jumbo-transition-brand">FANCAVE<span>JUMBOTRON</span></div>'
+            f'<div class="jumbo-transition-sub">GAME MODE · {_team_label}</div></div>',
+            unsafe_allow_html=True,
+        )
+    elif _prev_jumbotron_active and not _jumbotron_active:
+        st.markdown(
+            '<div class="jumbo-transition jumbo-transition-out">'
+            '<div class="jumbo-transition-brand-normal">Command Center</div>'
+            '<div class="jumbo-transition-sub-normal">Back to your day</div></div>',
+            unsafe_allow_html=True,
+        )
+    st.session_state["_prev_jumbotron_active"] = _jumbotron_active
+except Exception:
+    pass
+
 _PAGE_LABELS = {
     "home": "Home", "conflicts": "Conflicts", "news": "News", "markets": "Markets",
     "internals": "Internals", "today": "Today", "household": "Household",

@@ -2552,6 +2552,100 @@ html, body, [class*="css"] {
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* Takeover transition curtain (app.py) — session feedback: the hard
+   cut between the everyday dashboard and the jumbotron "feels
+   dystopian," worth a real transition each way. A fixed full-screen
+   layer that holds briefly then fades itself out via CSS alone (no JS,
+   no second Streamlit rerun needed) — the real destination page is
+   already rendering underneath it in the same script run, this just
+   reveals it a couple seconds later instead of cutting instantly.
+   pointer-events:none from the very first frame so it can never trap
+   a touch/click even before the fade finishes. */
+.jumbo-transition {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    pointer-events: none;
+    animation: jumbo-transition-hold-fade 2.4s cubic-bezier(.4,0,.2,1) forwards;
+}
+@keyframes jumbo-transition-hold-fade {
+    0% { opacity: 1; }
+    62% { opacity: 1; }
+    100% { opacity: 0; visibility: hidden; }
+}
+/* Entering the jumbotron — same LED-amber arena identity as the board
+   itself (Bebas Neue is already loaded globally, see the @import at
+   the top of this file, so no extra font request here). */
+.jumbo-transition-in { background: #05070C; }
+.jumbo-transition-brand {
+    font-family: 'Bebas Neue', 'Oswald', Impact, sans-serif;
+    font-size: 72px;
+    letter-spacing: 0.12em;
+    color: #FFB300;
+    text-shadow: 0 0 30px rgba(255,179,0,0.6), 0 0 4px rgba(255,179,0,0.9);
+    line-height: 0.9;
+    text-align: center;
+    animation: jumbo-transition-flicker 1.4s ease-out;
+}
+.jumbo-transition-brand span {
+    display: block;
+    font-family: 'Oswald', sans-serif;
+    font-weight: 300;
+    letter-spacing: 0.5em;
+    font-size: 16px;
+    color: #7E8898;
+    margin-top: 8px;
+}
+/* Same flicker-on beat the original static mockup's own boot splash
+   used for its logo — a dead-flat fade-in read as too clinical for
+   what's meant to feel like a stadium scoreboard powering up. */
+@keyframes jumbo-transition-flicker {
+    0% { opacity: 0; }
+    8% { opacity: 1; }
+    12% { opacity: 0.2; }
+    18% { opacity: 1; }
+    24% { opacity: 0.4; }
+    32% { opacity: 1; }
+    100% { opacity: 1; }
+}
+.jumbo-transition-sub {
+    font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+    font-size: 14px;
+    letter-spacing: 0.32em;
+    color: #FFB300;
+    text-transform: uppercase;
+    opacity: 0;
+    animation: jumbo-transition-sub-in 0.6s ease-out 1s forwards;
+}
+@keyframes jumbo-transition-sub-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+/* Leaving the jumbotron — back to the normal kiosk's own Apple-glass
+   identity (SF Pro stack), deliberately calmer than the arena look:
+   this is a return to "everyday," not another spectacle. */
+.jumbo-transition-out { background: rgba(5,7,12,0.97); }
+.jumbo-transition-brand-normal {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 40px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: #F5F5F7;
+    animation: jumbo-transition-sub-in 0.8s ease-out;
+}
+.jumbo-transition-sub-normal {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+    font-size: 15px;
+    color: #8E8E93;
+    opacity: 0;
+    animation: jumbo-transition-sub-in 0.6s ease-out 0.5s forwards;
+}
+
 /* Phone breakpoint. Everything above this point is untouched at any
    width above it (including the kiosk monitor, always far wider) —
    nothing in this block redefines a rule, it only adds overrides that
