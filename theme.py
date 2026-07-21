@@ -2437,6 +2437,39 @@ html, body, [class*="css"] {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+/* Full-roster list filling the rest of the card — session feedback:
+   "put the names in the big empty slot... kind of a waste of space
+   having it all empty." The currently-featured leader (highlighted)
+   still gets the big photo/stat treatment on the left; this is
+   everyone else, so the card reads as "here's the whole leaderboard,
+   spotlighting one" rather than one stat floating in a mostly-blank
+   card between rotations. */
+.jumbo-leader-namelist {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-left: 24px;
+    margin-left: 4px;
+    border-left: 1px solid var(--edge);
+    font-family: var(--mono);
+    font-size: 13px;
+}
+.jumbo-leader-name-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 5px 0;
+    color: var(--mut);
+}
+.jumbo-leader-name-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jumbo-leader-name-stat { flex: 0 0 auto; color: var(--mut-2); }
+.jumbo-leader-name-active {
+    color: var(--bone);
+    font-weight: 700;
+}
+.jumbo-leader-name-active .jumbo-leader-name-stat { color: var(--led); font-weight: 700; }
 .jumbo-diamond { width: 34px; height: 34px; display: inline-block; vertical-align: -10px; margin: 0 10px; }
 .jumbo-diamond rect { fill: #1A2230; stroke: var(--edge-hi); stroke-width: 1.5; }
 .jumbo-diamond rect.on { fill: var(--led); stroke: var(--led); }

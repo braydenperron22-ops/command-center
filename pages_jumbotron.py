@@ -341,6 +341,19 @@ def _top_performers_html(match: dict | None, now_ts: float) -> str:
         else ""
     )
     page_label = f" · {index + 1}/{len(leaders)}" if len(leaders) > 1 else ""
+
+    # Session feedback: the big card left a lot of empty space next to
+    # the single featured stat — "put the names in the big empty slot."
+    # Fills it with the full roster this rotates through, the current
+    # one highlighted, rather than leaving the rest of the card blank
+    # between rotations.
+    name_list = "".join(
+        f'<div class="jumbo-leader-name-item{" jumbo-leader-name-active" if i == index else ""}">'
+        f'<span class="jumbo-leader-name-who">{html.escape(l["who"])}</span>'
+        f'<span class="jumbo-leader-name-stat">{html.escape(l["stat"])} {html.escape(l["cat"])}</span></div>'
+        for i, l in enumerate(leaders)
+    )
+
     return (
         f'<div class="jumbo-leaders"><div class="jumbo-sl">Top Performers{page_label}</div>'
         f'<div class="jumbo-leader-big{fade_class}">{hshot}'
@@ -348,7 +361,9 @@ def _top_performers_html(match: dict | None, now_ts: float) -> str:
         f'<div class="jumbo-leader-big-stat">{html.escape(leader["stat"])}</div>'
         f'<div class="jumbo-leader-big-cat">{html.escape(leader["cat"])}</div>'
         f'<div class="jumbo-leader-big-who">{html.escape(leader["who"])}</div>'
-        f"</div></div></div>"
+        f"</div>"
+        f'<div class="jumbo-leader-namelist">{name_list}</div>'
+        f"</div></div>"
     )
 
 
