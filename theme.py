@@ -40,6 +40,13 @@ CSS = """
     flex-shrink: 0;
 }
 
+/* The kiosk hotkey component (app.py) is a zero-height iframe that only
+   exists to install a keydown listener — Streamlit still reserves a
+   block for it, which on a page sized to exactly fill the screen is a
+   real gap. Collapsed entirely rather than just made short. */
+iframe[title="st.iframe"][height="0"] { display: none !important; }
+.stElementContainer:has(> iframe[title="st.iframe"][height="0"]) { display: none !important; }
+
 html, body, [class*="css"] {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
 }

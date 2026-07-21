@@ -48,6 +48,7 @@ from config import (
     TIMEZONE,
     UV_HIGH_THRESHOLD,
 )
+import streamlit.components.v1 as components
 from icons import icon_for, label_for
 from scenery import FADE_SECONDS, condition_category, phase_for, scene_html, sky_style
 import ticker
@@ -55,6 +56,50 @@ from weather_client import fetch_weather
 
 st.set_page_config(page_title="Command Center", layout="wide")
 theme.inject()
+
+# Kiosk hotkey: press J to pull the jumbotron up on demand, J again to
+# hand the screen back to the normal rotation — session request, for
+# watching a game outside the automatic takeover window (see
+# sports_alerts.takeover_state).
+#
+# Has to be a components iframe rather than st.markdown: Streamlit
+# strips <script> out of unsafe_allow_html entirely, so markdown can't
+# run anything. The iframe's own document never has keyboard focus on a
+# kiosk (nobody clicks into it), so a listener bound inside it would
+# never fire — instead it injects the listener into the PARENT document
+# once, where the keystrokes actually land. Injecting a real <script>
+# element (rather than binding a closure from in here) also means the
+# handler keeps working after Streamlit tears this iframe down and
+# rebuilds it, which it does on every 5-second rerun.
+components.html(
+    """
+    <script>
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-hotkeys')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-hotkeys';
+      s.textContent = [
+        "document.addEventListener('keydown', function (e) {",
+        "  if (e.key !== 'j' && e.key !== 'J') return;",
+        "  if (e.metaKey || e.ctrlKey || e.altKey) return;",
+        "  var t = e.target;",
+        "  if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;",
+        "  var url = new URL(window.location.href);",
+        "  if (url.searchParams.get('page') === 'jumbotron') {",
+        "    url.searchParams.delete('page');",
+        "  } else {",
+        "    url.searchParams.set('page', 'jumbotron');",
+        "  }",
+        "  window.location.replace(url.toString());",
+        "});",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+    </script>
+    """,
+    height=0,
+)
 
 FRED_API_KEY = st.secrets.get("FRED_API_KEY")
 
