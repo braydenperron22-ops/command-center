@@ -132,3 +132,108 @@ def fetch_games(league_key: str, today: datetime | None = None) -> list[dict]:
     games.sort(key=lambda g: g["start_time"] or datetime.max)
     _last_good_games[league_key] = games
     return games
+
+
+# Session request (jumbotron Featured board): win probability and a
+# real "Top Performers" grid with headshots across BOTH teams. Neither
+# exists on the native MLB/NHL APIs sports_client.py otherwise uses for
+# the Featured board — ESPN's own scoreboard/summary payload is where
+# this data actually lives (it's also exactly where the original
+# static mockup pulled it from, which is why that version had this so
+# easily). Cross-referenced by team abbreviation against today's
+# already-fetched ESPN scoreboard rather than a separate team-schedule
+# lookup — same data this module's own fetch_games() already pulls.
+SUMMARY_URL = "https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/summary"
+
+
+def find_espn_competition(league_key: str, away_name: str, home_name: str, today: datetime | None = None) -> dict | None:
+    """{"event_id", "competition", "sport", "league"} for today's ESPN
+    game matching these two teams' full display names, or None if
+    nothing matches (ESPN simply not carrying this game) — every
+    caller of this treats None as "skip this feature," never a hard
+    failure. Matched by name rather than abbreviation: MLB Stats API's
+    own schedule payload doesn't carry team abbreviations at all
+    (confirmed live), while both it and the NHL API already hand back
+    full names (game["opponent"], sports_client.MLB_TEAM_NAME/
+    NHL_TEAM_NAME) that line up exactly with ESPN's own displayName
+    (confirmed live for tonight's real matchup)."""
+    league = next((entry for entry in LEAGUES if entry["key"] == league_key), None)
+    if league is None:
+        return None
+    today = today or datetime.now(ZoneInfo(TIMEZONE))
+    try:
+        raw = _fetch_scoreboard_raw(league["sport"], league["league"], today.strftime("%Y%m%d"))
+    except Exception:
+        return None
+    wanted = {away_name.lower(), home_name.lower()}
+    for event in raw:
+        competition = (event.get("competitions") or [{}])[0]
+        names = {(c.get("team", {}).get("displayName") or "").lower() for c in competition.get("competitors", [])}
+        if wanted <= names:
+            return {"event_id": event.get("id"), "competition": competition, "sport": league["sport"], "league": league["league"]}
+    return None
+
+
+@st.cache_data(ttl=GAME_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_summary_raw(sport: str, league: str, event_id: str) -> dict:
+    fetch_throttle.wait_turn()
+    resp = requests.get(SUMMARY_URL.format(sport=sport, league=league), params={"event": event_id}, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def win_probability(match: dict) -> float | None:
+    """Home team's live win probability (0-100) — only populates once
+    ESPN's own model has enough of the game to compute one (confirmed
+    live: null pregame), so None is the normal, expected pregame state,
+    not a failure."""
+    try:
+        summary = _fetch_summary_raw(match["sport"], match["league"], match["event_id"])
+    except Exception:
+        return None
+    wp = summary.get("winprobability") or []
+    if not wp:
+        return None
+    pct = wp[-1].get("homeWinPercentage")
+    return pct * 100 if pct is not None else None
+
+
+def leaders_with_headshots(match: dict, max_items: int = 8) -> list[dict]:
+    """Every real statistical leader across BOTH teams in this game —
+    {"cat", "who", "stat", "hshot"} — same shape and purpose as the
+    original static mockup's own leadersFrom(): a per-game "Top
+    Performers" grid with real headshot photos, ported because the
+    data (and the photos) turned out to already be one ESPN call away,
+    not because the mockup's own click-through drawer/live JS came with
+    it (see sports_alerts.py's own docstring for what was deliberately
+    left out and why). Skips ESPN's own composite "Rating" category —
+    not a real single stat, same reasoning as this module's own
+    _game_leader. [] once the game is far enough along that ESPN stops
+    returning leaders (never happens in practice, but no different a
+    result to callers than "no leaders yet")."""
+    competition = match["competition"]
+    out = []
+    for competitor in competition.get("competitors", []):
+        abbr = competitor.get("team", {}).get("abbreviation", "")
+        for category in competitor.get("leaders") or []:
+            leaders = category.get("leaders") or []
+            if not leaders or "rating" in (category.get("name") or "").lower():
+                continue
+            l0 = leaders[0]
+            athlete = l0.get("athlete") or {}
+            hshot = athlete.get("headshot")
+            if isinstance(hshot, dict):
+                hshot = hshot.get("href")
+            who = athlete.get("shortName") or athlete.get("displayName") or ""
+            stat = l0.get("displayValue") or ""
+            if not who or not stat:
+                continue
+            out.append(
+                {
+                    "cat": category.get("abbreviation") or category.get("shortDisplayName") or category.get("name") or "",
+                    "who": f"{who} · {abbr}",
+                    "stat": stat,
+                    "hshot": hshot,
+                }
+            )
+    return out[:max_items]

@@ -21,6 +21,12 @@ from config import TIMEZONE
 MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
 MLB_STANDINGS_URL = "https://statsapi.mlb.com/api/v1/standings"
 MLB_TEAM_ID = 141  # Toronto Blue Jays
+# Full display name, not an abbreviation — MLB Stats API's own schedule
+# payload doesn't carry team abbreviations at all (confirmed live,
+# both sides come back None), but ESPN's own scoreboard competitor
+# names match this exactly, which is what scores_client.
+# find_espn_competition actually matches on.
+MLB_TEAM_NAME = "Toronto Blue Jays"
 MLB_DIVISION_ID = 201  # AL East
 MLB_DIVISION_NAME = "AL East"
 # "S" (spring training) and "A" (all-star) intentionally excluded — those
@@ -38,6 +44,7 @@ def _mlb_logo_url(team_id: int) -> str:
 NHL_SCHEDULE_URL = "https://api-web.nhle.com/v1/club-schedule-season/{team}/now"
 NHL_STANDINGS_URL = "https://api-web.nhle.com/v1/standings/now"
 NHL_TEAM_ABBR = "MTL"  # Montreal Canadiens
+NHL_TEAM_NAME = "Montreal Canadiens"  # see MLB_TEAM_NAME's own comment above for why this exists
 NHL_DIVISION_ABBREV = "A"  # Atlantic
 NHL_DIVISION_NAME = "Atlantic"
 # gameType 1 is preseason — same reasoning as MLB's "S" exclusion above.
@@ -553,3 +560,76 @@ def fetch_nhl_linescore(game_id: int) -> dict | None:
     totals_raw = linescore.get("totals") or {}
     totals = {side: {"runs": totals_raw.get(side)} for side in ("away", "home")}
     return {"columns": columns, "totals": totals, "extra_labels": ("T",)}
+
+
+# Session request (jumbotron pregame board): venue, real game-day
+# weather, and probable starters. MLB's own live-feed endpoint carries
+# all three under gameData — the same endpoint sports_alerts.py already
+# polls for scoring plays, just gameData instead of liveData, and on a
+# much slower cache (this context is settled hours before first pitch,
+# no need to poll it every 15s). Defined here rather than imported from
+# sports_alerts.py to avoid a circular import (sports_alerts already
+# imports this module for team logos).
+MLB_LIVE_FEED_URL = "https://statsapi.mlb.com/api/v1.1/game/{game_id}/feed/live"
+PREGAME_CACHE_TTL_SECONDS = 5 * 60
+
+
+@st.cache_data(ttl=PREGAME_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_mlb_gamedata_raw(game_id: int) -> dict:
+    fetch_throttle.wait_turn()
+    resp = requests.get(MLB_LIVE_FEED_URL.format(game_id=game_id), timeout=15)
+    resp.raise_for_status()
+    return resp.json().get("gameData", {})
+
+
+def fetch_mlb_pregame_extra(game_id: int) -> dict | None:
+    """{"venue", "weather_line", "away_pitcher", "home_pitcher"}. The
+    weather line is MLB's own condition text as-is ("Roof Closed, 72°F"
+    for a dome, "Clear, 72°F, 15 mph Out To CF" outdoors) — confirmed
+    live a domed stadium's own weather.condition already says so, no
+    separate indoor/roof flag needed on top of it. None on any fetch
+    failure — this is pregame color, not worth a fallback."""
+    try:
+        gd = _fetch_mlb_gamedata_raw(game_id)
+    except Exception:
+        return None
+    venue = (gd.get("venue") or {}).get("name")
+    weather = gd.get("weather") or {}
+    weather_line = None
+    if weather.get("condition"):
+        parts = [weather["condition"]]
+        if weather.get("temp"):
+            parts.append(f'{weather["temp"]}°F')
+        if weather.get("wind") and "none" not in weather["wind"].lower():
+            parts.append(weather["wind"])
+        weather_line = ", ".join(parts)
+    probables = gd.get("probablePitchers") or {}
+    return {
+        "venue": venue,
+        "weather_line": weather_line,
+        "away_pitcher": (probables.get("away") or {}).get("fullName"),
+        "home_pitcher": (probables.get("home") or {}).get("fullName"),
+    }
+
+
+NHL_LANDING_URL = "https://api-web.nhle.com/v1/gamecenter/{game_id}/landing"
+
+
+@st.cache_data(ttl=PREGAME_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_nhl_landing_raw(game_id: int) -> dict:
+    fetch_throttle.wait_turn()
+    resp = requests.get(NHL_LANDING_URL.format(game_id=game_id), timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fetch_nhl_venue(game_id: int) -> str | None:
+    """Arena name only — NHL has no MLB-style probable-goalie field or
+    outdoor weather to show alongside it (every rink is indoor).
+    Separate from fetch_nhl_linescore's own right-rail fetch — that
+    endpoint's gameInfo has referees/scratches, not the venue."""
+    try:
+        data = _fetch_nhl_landing_raw(game_id)
+    except Exception:
+        return None
+    return (data.get("venue") or {}).get("default")

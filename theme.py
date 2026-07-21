@@ -2148,6 +2148,32 @@ html, body, [class*="css"] {
     letter-spacing: 0.26em;
     animation: jumbo-blink 1.4s infinite;
 }
+/* Division standings snippet (pages_jumbotron._standings_mini_html) —
+   session request. Same data/shape as pages_sports.py's own
+   _standings_table, restyled for the jumbotron's LED-mono look. */
+.jumbo-standings {
+    margin-top: 12px;
+    border: 1px solid var(--edge);
+    border-radius: 9px;
+    background: rgba(8,11,17,0.7);
+    overflow: hidden;
+    font-family: var(--mono);
+    font-size: 12px;
+}
+.jumbo-standings-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px;
+    border-bottom: 1px solid rgba(30,38,52,0.5);
+    color: var(--mut);
+}
+.jumbo-standings-row:last-child { border-bottom: none; }
+.jumbo-standings-row-team { color: var(--bone); background: rgba(255,179,0,0.07); font-weight: 700; }
+.jumbo-standings-rank { flex: 0 0 16px; color: var(--mut-2); }
+.jumbo-standings-team { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jumbo-standings-record { flex: 0 0 auto; }
+.jumbo-standings-extra { flex: 0 0 34px; text-align: right; color: var(--mut-2); }
 
 /* ---- Featured board ---- */
 .jumbo-board { position: relative; }
@@ -2279,6 +2305,120 @@ html, body, [class*="css"] {
 .jumbo-situ-who { font-size: 12px; color: var(--mut); margin-top: 2px; }
 .jumbo-dim { color: var(--mut-2); }
 .jumbo-clockbig { font-family: var(--num); font-size: 30px; color: var(--bone); letter-spacing: 0.06em; }
+/* Pregame venue/weather + probable starters (pages_jumbotron.
+   _pregame_extra_html) — session request, all free data off the same
+   feed already used for scoring plays. */
+.jumbo-pregame-venue {
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--mut);
+    letter-spacing: 0.03em;
+    padding: 2px 26px 4px;
+}
+.jumbo-probables {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    padding: 6px 0 10px;
+    font-family: var(--mono);
+    font-size: 13px;
+}
+.jumbo-probables b { color: var(--bone); font-weight: 700; font-size: 15px; }
+.jumbo-probables-label {
+    font-size: 9px;
+    letter-spacing: 0.26em;
+    color: var(--mut-2);
+    display: block;
+    margin-bottom: 3px;
+    font-weight: 600;
+}
+/* Win probability bar (pages_jumbotron._win_probability_html) —
+   session request, from ESPN's own live model (see
+   scores_client.win_probability's own docstring for why the native
+   MLB/NHL feeds this board otherwise runs on can't provide this). */
+.jumbo-wp { padding: 10px 60px 6px; }
+.jumbo-wp-title {
+    text-align: center;
+    font-size: 9px;
+    font-weight: 300;
+    letter-spacing: 0.4em;
+    color: var(--mut-2);
+    margin-bottom: 5px;
+}
+.jumbo-wp-bar {
+    height: 11px;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    border: 1px solid var(--edge);
+}
+.jumbo-wp-seg { transition: width 1s ease; }
+.jumbo-wp-labels {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--mut);
+    margin-top: 5px;
+    letter-spacing: 0.03em;
+}
+.jumbo-wp-labels b { color: var(--bone); }
+/* Top Performers grid with real headshots (pages_jumbotron.
+   _top_performers_html) — session request: "stats leaders across
+   both teams in each category... have their pictures show." */
+.jumbo-leaders { border-top: 1px solid var(--edge); padding: 10px 26px 12px; }
+.jumbo-leadgrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    background: rgba(8,11,17,0.65);
+    border: 1px solid var(--edge);
+    border-radius: 12px;
+    overflow: hidden;
+}
+.jumbo-leader {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 13px;
+}
+.jumbo-leader:nth-child(even) { background: rgba(255,255,255,0.022); }
+.jumbo-leader-hshot {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    object-fit: cover;
+    object-position: top;
+    background: #141A25;
+    border: 1px solid var(--edge-hi);
+    flex: 0 0 auto;
+}
+.jumbo-leader-col { min-width: 0; }
+.jumbo-leader-stat {
+    font-family: var(--num);
+    font-size: 24px;
+    line-height: 1;
+    color: var(--bone);
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+.jumbo-leader-cat {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    color: var(--led);
+    text-transform: uppercase;
+    margin-top: 3px;
+    font-weight: 700;
+}
+.jumbo-leader-who {
+    font-size: 10px;
+    font-weight: 300;
+    color: var(--mut);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 .jumbo-diamond { width: 34px; height: 34px; display: inline-block; vertical-align: -10px; margin: 0 10px; }
 .jumbo-diamond rect { fill: #1A2230; stroke: var(--edge-hi); stroke-width: 1.5; }
 .jumbo-diamond rect.on { fill: var(--led); stroke: var(--led); }

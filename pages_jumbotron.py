@@ -235,10 +235,107 @@ def _nhl_situation_html(game_id: int) -> str:
     return f'<div class="jumbo-situ">{"".join(parts)}</div>' if parts else ""
 
 
+_TEAM_ESPN_NAME = {"mlb": sports_client.MLB_TEAM_NAME, "nhl": sports_client.NHL_TEAM_NAME}
+_TEAM_COLOR = {"mlb": "#3E7CC9", "nhl": "#D8323F"}  # matches the rail hero's own --tc values
+
+
+def _espn_match_for(sport: str, game: dict) -> dict | None:
+    """The ESPN competition for this specific Jays/Habs game, if
+    findable — see scores_client.find_espn_competition's own docstring
+    for why name-matched rather than abbreviation-matched. Backs both
+    _win_probability_html and _top_performers_html below so there's
+    only ever one cross-reference lookup per render, not two."""
+    our_name = _TEAM_ESPN_NAME.get(sport)
+    if not our_name or not game.get("opponent"):
+        return None
+    return scores_client.find_espn_competition(sport, game["opponent"], our_name)
+
+
+def _pregame_extra_html(sport: str, game_id: int) -> str:
+    """Venue + real game-day weather + probable starters (MLB), or
+    just the arena name (NHL — no probable-goalie field, and every
+    rink is indoor) — session request, all from data already fetched
+    elsewhere in this app (see sports_client.fetch_mlb_pregame_extra/
+    fetch_nhl_venue's own docstrings)."""
+    if sport == "mlb":
+        extra = sports_client.fetch_mlb_pregame_extra(game_id)
+        if not extra:
+            return ""
+        parts = []
+        if extra.get("venue"):
+            line = html.escape(extra["venue"])
+            if extra.get("weather_line"):
+                line += f' · {html.escape(extra["weather_line"])}'
+            parts.append(f'<div class="jumbo-pregame-venue">{line}</div>')
+        if extra.get("away_pitcher") or extra.get("home_pitcher"):
+            probables = ['<div class="jumbo-probables">']
+            for label, pitcher in (("AWAY · SP", extra.get("away_pitcher")), ("HOME · SP", extra.get("home_pitcher"))):
+                if pitcher:
+                    probables.append(f'<div><span class="jumbo-probables-label">{label}</span><b>{html.escape(pitcher)}</b></div>')
+            probables.append("</div>")
+            parts.append("".join(probables))
+        return "".join(parts)
+    venue = sports_client.fetch_nhl_venue(game_id)
+    return f'<div class="jumbo-pregame-venue">{html.escape(venue)}</div>' if venue else ""
+
+
+def _win_probability_html(sport: str, match: dict | None, away: dict, home: dict) -> str:
+    """Live win-probability bar — session request. Only ESPN's own
+    payload carries this (the native MLB/NHL APIs the rest of the
+    board runs on don't), and only once ESPN's model has enough of the
+    game to compute one — "" both when match is None (no ESPN game
+    found) and pregame (confirmed live: null before the game starts),
+    same as the original static mockup's own st==='in' gate."""
+    if not match:
+        return ""
+    home_pct = scores_client.win_probability(match)
+    if home_pct is None:
+        return ""
+    home_pct = round(home_pct)
+    away_pct = 100 - home_pct
+    team_color = _TEAM_COLOR.get(sport, "#FFB300")
+    away_color = team_color if away["is_us"] else "#525C6E"
+    home_color = team_color if home["is_us"] else "#525C6E"
+    return (
+        '<div class="jumbo-wp"><div class="jumbo-wp-title">WIN PROBABILITY</div>'
+        f'<div class="jumbo-wp-bar"><div class="jumbo-wp-seg" style="width:{away_pct}%;background:{away_color}"></div>'
+        f'<div class="jumbo-wp-seg" style="width:{home_pct}%;background:{home_color}"></div></div>'
+        f'<div class="jumbo-wp-labels"><span><b>{away_pct}%</b> {html.escape(away["name"])}</span>'
+        f'<span>{html.escape(home["name"])} <b>{home_pct}%</b></span></div></div>'
+    )
+
+
+def _top_performers_html(match: dict | None) -> str:
+    """Session request: "stats leaders across both teams in each
+    category... have their pictures show." Real headshots, straight
+    from ESPN's own CDN — the same "Top Performers" grid the original
+    static mockup had (leadersFrom()), ported because the data (and
+    the photos) turned out to be one ESPN call away via
+    _espn_match_for, not because the mockup's own click-through JS
+    came with it. "" once a bad/missing headshot 404s (onerror hides
+    just that image, not the whole card — a photo-less stat line still
+    reads fine on its own)."""
+    if not match:
+        return ""
+    leaders = scores_client.leaders_with_headshots(match)
+    if not leaders:
+        return ""
+    cards = "".join(
+        f'<div class="jumbo-leader">'
+        + (f'<img class="jumbo-leader-hshot" src="{html.escape(l["hshot"])}" onerror="this.style.display=\'none\'" />' if l.get("hshot") else "")
+        + f'<div class="jumbo-leader-col"><div class="jumbo-leader-stat">{html.escape(l["stat"])}</div>'
+        f'<div class="jumbo-leader-cat">{html.escape(l["cat"])}</div>'
+        f'<div class="jumbo-leader-who">{html.escape(l["who"])}</div></div></div>'
+        for l in leaders
+    )
+    return f'<div class="jumbo-leaders"><div class="jumbo-sl">Top Performers</div><div class="jumbo-leadgrid">{cards}</div></div>'
+
+
 def _board_html(state: dict, now: datetime) -> str:
     league, status, game = state["league"], state["status"], state["game"]
     sport, phase = league["sport"], state["phase"]
     away, home = _sides(status, game, league["label"])
+    match = _espn_match_for(sport, game)
 
     if phase == "pregame":
         remaining = (game["start_time"] - now).total_seconds()
@@ -250,7 +347,8 @@ def _board_html(state: dict, now: datetime) -> str:
         )
         start_text = game["start_time"].strftime("%-I:%M %p")
         situation = f'<div class="jumbo-situ"><span class="jumbo-situ-hot">FIRST PITCH {html.escape(start_text)}</span></div>' if sport == "mlb" else f'<div class="jumbo-situ"><span class="jumbo-situ-hot">PUCK DROP {html.escape(start_text)}</span></div>'
-        linescore, scoring = "", ""
+        situation += _pregame_extra_html(sport, game["game_id"])
+        linescore, scoring, wp_html, leaders_html = "", "", "", ""
         dim_away = dim_home = False
     else:
         away_score = game["opp_score"] if game["is_home"] else game["team_score"]
@@ -294,6 +392,8 @@ def _board_html(state: dict, now: datetime) -> str:
             situation = ""
         linescore = _linescore_html(sport, game["game_id"], away, home)
         scoring = _scoring_html(sport, game["game_id"])
+        wp_html = _win_probability_html(sport, match, away, home) if phase == "live" else ""
+        leaders_html = _top_performers_html(match)
         # Only a finished game has a settled winner to dim the loser
         # against — during a live game the trailing side is still very
         # much in it.
@@ -328,9 +428,30 @@ def _board_html(state: dict, now: datetime) -> str:
         f'<span class="jumbo-ph-right">{state_label}</span></div>'
         f'<div class="jumbo-board-body">'
         f'<div class="jumbo-matchup">{_side_html(away, dim_away)}{center}{_side_html(home, dim_home)}</div>'
-        f"{situation}{linescore_block}{scoring}"
+        f"{wp_html}{situation}{linescore_block}{scoring}{leaders_html}"
         f"</div></div>"
     )
+
+
+def _standings_mini_html(status: dict) -> str:
+    """Compact division-standings snippet for the My Teams rail —
+    session request, reusing the exact same status["standings"] list
+    (see sports_client's own docstrings) the regular Sports page's
+    _standings_table already renders. No new fetch: this data was
+    already coming back from fetch_jays()/fetch_habs(), just unused on
+    this page until now."""
+    rows = status.get("standings") or []
+    if not rows:
+        return ""
+    body = "".join(
+        f'<div class="jumbo-standings-row{" jumbo-standings-row-team" if r["is_team"] else ""}">'
+        f'<span class="jumbo-standings-rank">{r["rank"]}</span>'
+        f'<span class="jumbo-standings-team">{html.escape(r["team"])}</span>'
+        f'<span class="jumbo-standings-record">{r["wins"]}-{r["losses"]}</span>'
+        f'<span class="jumbo-standings-extra">{r["extra"]}</span></div>'
+        for r in rows
+    )
+    return f'<div class="jumbo-standings">{body}</div>'
 
 
 def _rail_hero_html(entry: dict, now: datetime) -> str:
@@ -383,7 +504,8 @@ def _rail_hero_html(entry: dict, now: datetime) -> str:
         f'<div class="jumbo-hero-rec"><div class="jumbo-hero-rec-v">{html.escape(record)}</div>'
         f'<div class="jumbo-hero-rec-l">RECORD</div></div></div>'
         f"{form_html}"
-        f'<div class="jumbo-gameline">{line}</div></div>'
+        f'<div class="jumbo-gameline">{line}</div>'
+        f"{_standings_mini_html(status)}</div>"
     )
 
 
