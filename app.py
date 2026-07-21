@@ -101,6 +101,72 @@ components.html(
     height=0,
 )
 
+# Live countdown ticker — global (not page-scoped) because every timer
+# element on this dashboard (the jumbotron's pregame countdown, the
+# commute reminder's "leave in" headline, the Sports page's "first
+# pitch in" badge) needs the same fix: a server-rendered digit only
+# ever updates once per 5s rerun, so it visibly jumps in 5s steps
+# instead of actually ticking (session feedback on the jumbotron
+# countdown: bring seconds back but "uncorrelated to the sync up of
+# the whole system" — then, "make that logic work for all the timer
+# elements... specifically the big red leave in timer"). Same
+# injected-into-the-parent-document technique as the hotkey listener
+# above, same duplicate-guard reasoning. Any page can opt an element in
+# just by giving it class="live-countdown" plus:
+#   data-target-ms   required — the target instant, real UTC epoch ms
+#   data-format       "clock" (H:MM:SS, default) or "words" (e.g. "1h 26m"/"45 min")
+#   data-template     optional wrapper with a "{}" placeholder for the ticking token (default "{}")
+#   data-zero-text    optional full replacement text once the target's passed (e.g. "Leave now")
+# Re-queries .live-countdown fresh every tick rather than caching
+# element references, so it keeps finding the right nodes even though
+# Streamlit replaces them underneath it on its own 5s cycle.
+components.html(
+    """
+    <script>
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-countdown-ticker')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-countdown-ticker';
+      s.textContent = [
+        "function kioskFmtWords(totalSeconds) {",
+        "  var totalMinutes = Math.max(0, Math.floor(totalSeconds / 60));",
+        "  var hours = Math.floor(totalMinutes / 60);",
+        "  var minutes = totalMinutes % 60;",
+        "  return hours > 0 ? (hours + 'h ' + minutes + 'm') : (minutes + ' min');",
+        "}",
+        "function kioskFmtClock(totalSeconds) {",
+        "  var total = Math.max(0, Math.round(totalSeconds));",
+        "  var h = Math.floor(total / 3600);",
+        "  var m = Math.floor((total % 3600) / 60);",
+        "  var sec = total % 60;",
+        "  return h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');",
+        "}",
+        "setInterval(function () {",
+        "  var now = Date.now();",
+        "  document.querySelectorAll('.live-countdown').forEach(function (el) {",
+        "    var targetMs = parseInt(el.getAttribute('data-target-ms'), 10);",
+        "    if (!targetMs) return;",
+        "    var remainingSeconds = (targetMs - now) / 1000;",
+        "    var zeroText = el.getAttribute('data-zero-text');",
+        "    if (zeroText && remainingSeconds <= 0) {",
+        "      el.textContent = zeroText;",
+        "      return;",
+        "    }",
+        "    var format = el.getAttribute('data-format') || 'clock';",
+        "    var token = format === 'words' ? kioskFmtWords(remainingSeconds) : kioskFmtClock(remainingSeconds);",
+        "    var template = el.getAttribute('data-template') || '{}';",
+        "    el.textContent = template.replace('{}', token);",
+        "  });",
+        "}, 1000);",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+    </script>
+    """,
+    height=0,
+)
+
 FRED_API_KEY = st.secrets.get("FRED_API_KEY")
 
 # Resolved early (not down by the page-routing block that used to live

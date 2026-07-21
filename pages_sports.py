@@ -47,13 +47,21 @@ def _starting_soon_html(game: dict, kickoff_label: str, now: datetime) -> str:
     plain neutral badge, not an animated/pulsing one — a static,
     confident cue reads clearly without competing for attention the
     way a pulsing element would (same reasoning tile-significant
-    already uses)."""
+    already uses). The minutes value itself does still tick for real
+    once a second though, via app.py's global live-countdown ticker —
+    session request: "make that logic work for all the timer
+    elements" — so it never sits stale for up to 5s between reruns."""
     if game["state"] != "upcoming":
         return ""
     remaining_minutes = (game["start_time"] - now).total_seconds() / 60
     if not (0 <= remaining_minutes <= STARTING_SOON_MINUTES):
         return ""
-    return f'<div class="badge badge-neutral">{kickoff_label} in {_format_countdown(remaining_minutes)}</div>'
+    target_ms = int(game["start_time"].replace(tzinfo=ZoneInfo(TIMEZONE)).timestamp() * 1000)
+    return (
+        f'<div class="badge badge-neutral"><span class="live-countdown" data-target-ms="{target_ms}" '
+        f'data-format="words" data-template="{html.escape(kickoff_label)} in {{}}">'
+        f"{kickoff_label} in {_format_countdown(remaining_minutes)}</span></div>"
+    )
 
 
 def _game_html(status: dict, kickoff_label: str, now: datetime) -> str:

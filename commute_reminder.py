@@ -231,10 +231,11 @@ def check(now: datetime) -> dict | None:
 
 def _format_minutes(remaining_seconds: float) -> str:
     # Worded units ("1h 26m"/"45 min"), not a colon-separated clock face
-    # ("1:26") — a colon format reads as a live stopwatch, and this only
-    # updates once a minute (see render_leave_headline), so it'd look
-    # stuck rather than calm. Words don't carry that "should be actively
-    # ticking" expectation.
+    # ("1:26") — a colon format reads as a live stopwatch; a calm worded
+    # readout fits this headline better. (This used to also be a
+    # workaround for only updating once a minute per rerun — see
+    # render_leave_headline's own docstring, that part's no longer true,
+    # this is now purely a style choice.)
     total_minutes = max(0, int(remaining_seconds) // 60)
     hours, minutes = divmod(total_minutes, 60)
     if hours > 0:
@@ -250,7 +251,15 @@ def render_leave_headline(now: datetime) -> None:
     matters: the final hour before you need to leave, through a
     HEADLINE_GRACE_MINUTES grace period after. Silent outside that
     window — hours-out awareness is what the milestone toasts above are
-    for; this is specifically for keeping tabs once it's close."""
+    for; this is specifically for keeping tabs once it's close.
+
+    Ticks for real once a second via app.py's global live-countdown
+    ticker script (session request, after the jumbotron got the same
+    treatment: "make that logic work for all the timer elements...
+    specifically the big red leave in timer") — the text below is only
+    ever the first frame's value; data-target-ms/data-template/
+    data-zero-text drive everything from here on, independent of
+    Streamlit's own 5s rerun cadence."""
     leave_by = leave_by_time(now)
     if leave_by is None:
         return
@@ -258,8 +267,13 @@ def render_leave_headline(now: datetime) -> None:
     remaining = (leave_by - now_aware).total_seconds()
     if not (-HEADLINE_GRACE_MINUTES * 60 <= remaining <= HEADLINE_WINDOW_MINUTES * 60):
         return
+    target_ms = int(leave_by.timestamp() * 1000)
     text = "Leave now" if remaining <= 0 else f"Leave in {_format_minutes(remaining)}"
-    st.markdown(f'<div class="leave-headline">{text}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="leave-headline"><span class="live-countdown" data-target-ms="{target_ms}" '
+        f'data-format="words" data-template="Leave in {{}}" data-zero-text="Leave now">{text}</span></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def render_bar(alert: dict, elapsed: float, variant: str = "a") -> None:

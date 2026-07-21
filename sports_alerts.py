@@ -30,12 +30,14 @@ in Xm" countdown headline for the final hour before a game
 import html
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import requests
 import streamlit as st
 
 import fetch_throttle
 import sports_client
+from config import TIMEZONE
 
 MLB_LIVE_FEED_URL = "https://statsapi.mlb.com/api/v1.1/game/{game_id}/feed/live"
 NHL_LANDING_URL = "https://api-web.nhle.com/v1/gamecenter/{game_id}/landing"
@@ -521,7 +523,12 @@ def render_game_countdown(now: datetime) -> None:
     request: the priority order when several things are going on at
     once is "leave in at the top, then Habs, then Jays." The leave
     headline's spot at the very top is app.py's call order (it renders
-    before this); Habs-before-Jays is COUNTDOWN_PRIORITY here."""
+    before this); Habs-before-Jays is COUNTDOWN_PRIORITY here.
+
+    Ticks for real once a second via app.py's global live-countdown
+    ticker (session request, same as commute_reminder's leave headline:
+    "make that logic work for all the timer elements") — the text
+    below is only the first frame's value."""
     active = []
     for league in _LEAGUES:
         status = league["fetch_status"]()
@@ -531,14 +538,18 @@ def render_game_countdown(now: datetime) -> None:
         minutes_until = (game["start_time"] - now).total_seconds() / 60
         if not (-COUNTDOWN_GRACE_MINUTES <= minutes_until <= COUNTDOWN_WINDOW_MINUTES):
             continue
-        active.append({"league": league, "minutes_until": minutes_until})
+        active.append({"league": league, "minutes_until": minutes_until, "start_time": game["start_time"]})
 
     active.sort(key=lambda entry: COUNTDOWN_PRIORITY.index(entry["league"]["sport"]))
     for entry in active:
         kickoff = entry["league"]["kickoff_label"]
         minutes = int(entry["minutes_until"])
         text = f"{kickoff} any minute now" if minutes <= 0 else f"{kickoff} in {minutes} min"
+        target_ms = int(entry["start_time"].replace(tzinfo=ZoneInfo(TIMEZONE)).timestamp() * 1000)
         st.markdown(
-            f'<div class="game-countdown-headline game-countdown-{entry["league"]["sport"]}">{text}</div>',
+            f'<div class="game-countdown-headline game-countdown-{entry["league"]["sport"]}">'
+            f'<span class="live-countdown" data-target-ms="{target_ms}" data-format="words" '
+            f'data-template="{html.escape(kickoff)} in {{}}" data-zero-text="{html.escape(kickoff)} any minute now">'
+            f"{text}</span></div>",
             unsafe_allow_html=True,
         )

@@ -27,7 +27,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 import scores_client
 import sports_alerts
@@ -69,18 +68,18 @@ def _fmt_countdown(target: datetime, now: datetime) -> str:
     (a server-rendered digit only ever updates once per 5s rerun and
     visibly jumps by 5, which is exactly why seconds got dropped
     earlier this session). The string returned here is only ever the
-    FIRST frame's value; a data-target-ms attribute carries the real
-    target instant (this target's true UTC epoch ms, timezone-aware
-    conversion so a UTC-hosted server and a local browser still agree)
-    for the parent-document ticker script (see render()'s own
-    components.html injection, same technique as app.py's J-hotkey
-    listener) to recompute against the browser's own real clock every
-    second, independent of Streamlit's rerun cadence entirely."""
+    FIRST frame's value; app.py's own global live-countdown ticker
+    script (injected once alongside its J-hotkey listener — same
+    "make that logic work for all the timer elements" request this
+    class name is shared with commute_reminder's leave headline and
+    pages_sports' starting-soon badge) recomputes against the browser's
+    own real clock every second from here on, independent of
+    Streamlit's rerun cadence entirely."""
     target_ms = int(target.replace(tzinfo=ZoneInfo(TIMEZONE)).timestamp() * 1000)
     total = max(0, int((target - now).total_seconds()))
     hours, rem = divmod(total, 3600)
     minutes, seconds = divmod(rem, 60)
-    return f'<span class="jumbo-live-cd" data-target-ms="{target_ms}">{hours}:{minutes:02d}:{seconds:02d}</span>'
+    return f'<span class="live-countdown" data-target-ms="{target_ms}">{hours}:{minutes:02d}:{seconds:02d}</span>'
 
 
 def _digits_html(score) -> str:
@@ -744,42 +743,4 @@ def render(now: datetime, state: dict, weather: dict | None) -> None:
         f"{around_block}"
         f"</div></div>",
         unsafe_allow_html=True,
-    )
-
-    # Real once-a-second countdown ticker — see _fmt_countdown's own
-    # docstring for why. Same technique as app.py's J-hotkey listener:
-    # a components iframe injecting a real <script> element into the
-    # PARENT document once (guarded so re-running this every 5s rerun
-    # never stacks up duplicate intervals), because Streamlit strips
-    # <script> out of unsafe_allow_html markdown entirely. Re-queries
-    # .jumbo-live-cd fresh on every tick rather than caching element
-    # references, so it keeps finding the right nodes even if Streamlit
-    # replaces them underneath it on its own 5s cycle.
-    components.html(
-        """
-        <script>
-        (function () {
-          var doc = window.parent.document;
-          if (doc.getElementById('jumbo-countdown-ticker')) return;
-          var s = doc.createElement('script');
-          s.id = 'jumbo-countdown-ticker';
-          s.textContent = [
-            "setInterval(function () {",
-            "  var now = Date.now();",
-            "  document.querySelectorAll('.jumbo-live-cd').forEach(function (el) {",
-            "    var target = parseInt(el.getAttribute('data-target-ms'), 10);",
-            "    if (!target) return;",
-            "    var total = Math.max(0, Math.round((target - now) / 1000));",
-            "    var h = Math.floor(total / 3600);",
-            "    var m = Math.floor((total % 3600) / 60);",
-            "    var sec = total % 60;",
-            "    el.textContent = h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');",
-            "  });",
-            "}, 1000);",
-          ].join('\\n');
-          doc.head.appendChild(s);
-        })();
-        </script>
-        """,
-        height=0,
     )
