@@ -305,30 +305,51 @@ def _win_probability_html(sport: str, match: dict | None, away: dict, home: dict
     )
 
 
-def _top_performers_html(match: dict | None) -> str:
-    """Session request: "stats leaders across both teams in each
-    category... have their pictures show." Real headshots, straight
-    from ESPN's own CDN — the same "Top Performers" grid the original
-    static mockup had (leadersFrom()), ported because the data (and
-    the photos) turned out to be one ESPN call away via
-    _espn_match_for, not because the mockup's own click-through JS
-    came with it. "" once a bad/missing headshot 404s (onerror hides
-    just that image, not the whole card — a photo-less stat line still
-    reads fine on its own)."""
+_LEADER_ROTATE_SECONDS = 5
+
+
+def _top_performers_html(match: dict | None, now_ts: float) -> str:
+    """Session request: "make top performers bigger or put them in a
+    single slot that rotates continuously" — one big card at a time
+    (real headshot straight from ESPN's own CDN, same data as before —
+    see _espn_match_for/scores_client.leaders_with_headshots), cycling
+    on the same wall-clock-timer pattern the Around The Leagues page-
+    flip and team-news rail already use elsewhere in this app, rather
+    than cramming every category into a shared-width grid row. Fades in
+    only on a genuine index change (see the shared jumbo-around-fade-*
+    classes' own comment for why), not every 5s rerun."""
     if not match:
         return ""
     leaders = scores_client.leaders_with_headshots(match)
     if not leaders:
         return ""
-    cards = "".join(
-        f'<div class="jumbo-leader">'
-        + (f'<img class="jumbo-leader-hshot" src="{html.escape(l["hshot"])}" onerror="this.style.display=\'none\'" />' if l.get("hshot") else "")
-        + f'<div class="jumbo-leader-col"><div class="jumbo-leader-stat">{html.escape(l["stat"])}</div>'
-        f'<div class="jumbo-leader-cat">{html.escape(l["cat"])}</div>'
-        f'<div class="jumbo-leader-who">{html.escape(l["who"])}</div></div></div>'
-        for l in leaders
+    index = int(now_ts // _LEADER_ROTATE_SECONDS) % len(leaders)
+    leader = leaders[index]
+
+    identity = f"{match.get('event_id')}:{index}"
+    changed = identity != st.session_state.get("jumbotron_leader_identity")
+    st.session_state["jumbotron_leader_identity"] = identity
+    fade_class = ""
+    if changed:
+        tick = st.session_state.get("jumbotron_leader_fade_tick", 0) + 1
+        st.session_state["jumbotron_leader_fade_tick"] = tick
+        fade_class = " jumbo-around-fade-a" if tick % 2 == 0 else " jumbo-around-fade-b"
+
+    hshot = (
+        f'<img class="jumbo-leader-big-hshot" src="{html.escape(leader["hshot"])}" onerror="this.style.display=\'none\'" />'
+        if leader.get("hshot")
+        else ""
     )
-    return f'<div class="jumbo-leaders"><div class="jumbo-sl">Top Performers</div><div class="jumbo-leadgrid">{cards}</div></div>'
+    page_label = f" · {index + 1}/{len(leaders)}" if len(leaders) > 1 else ""
+    return (
+        f'<div class="jumbo-leaders"><div class="jumbo-sl">Top Performers{page_label}</div>'
+        f'<div class="jumbo-leader-big{fade_class}">{hshot}'
+        f'<div class="jumbo-leader-big-col">'
+        f'<div class="jumbo-leader-big-stat">{html.escape(leader["stat"])}</div>'
+        f'<div class="jumbo-leader-big-cat">{html.escape(leader["cat"])}</div>'
+        f'<div class="jumbo-leader-big-who">{html.escape(leader["who"])}</div>'
+        f"</div></div></div>"
+    )
 
 
 def _board_html(state: dict, now: datetime) -> str:
@@ -340,7 +361,7 @@ def _board_html(state: dict, now: datetime) -> str:
     # ESPN's own scoreboard payload carries these regardless of
     # whether the game itself has started, so this shows well before
     # first pitch too, not just once the game goes live.
-    leaders_html = _top_performers_html(match)
+    leaders_html = _top_performers_html(match, time.time())
 
     if phase == "pregame":
         remaining = (game["start_time"] - now).total_seconds()
@@ -437,25 +458,66 @@ def _board_html(state: dict, now: datetime) -> str:
     )
 
 
-def _standings_mini_html(status: dict) -> str:
-    """Compact division-standings snippet for the My Teams rail —
-    session request, reusing the exact same status["standings"] list
-    (see sports_client's own docstrings) the regular Sports page's
-    _standings_table already renders. No new fetch: this data was
-    already coming back from fetch_jays()/fetch_habs(), just unused on
-    this page until now."""
+_STANDINGS_ROTATE_SECONDS = 20
+
+
+def _standings_rows_html(status: dict) -> str:
+    """Division-standings rows with team logos — session request.
+    Reuses the exact same status["standings"] list (see sports_client's
+    own docstrings) the regular Sports page's _standings_table already
+    renders, now with each row's own "logo" field (added specifically
+    for this — see sports_client.fetch_jays/fetch_habs)."""
     rows = status.get("standings") or []
     if not rows:
         return ""
-    body = "".join(
+    return "".join(
         f'<div class="jumbo-standings-row{" jumbo-standings-row-team" if r["is_team"] else ""}">'
         f'<span class="jumbo-standings-rank">{r["rank"]}</span>'
-        f'<span class="jumbo-standings-team">{html.escape(r["team"])}</span>'
+        + (f'<img class="jumbo-standings-logo" src="{html.escape(r["logo"])}" />' if r.get("logo") else "")
+        + f'<span class="jumbo-standings-team">{html.escape(r["team"])}</span>'
         f'<span class="jumbo-standings-record">{r["wins"]}-{r["losses"]}</span>'
         f'<span class="jumbo-standings-extra">{r["extra"]}</span></div>'
         for r in rows
     )
-    return f'<div class="jumbo-standings">{body}</div>'
+
+
+def _rotating_standings_html(now_ts: float) -> str:
+    """Bottom-left rotating division standings — session request: cycle
+    through every division we track (currently the Jays' AL East and
+    the Habs' Atlantic, via _RAIL's own fetch_status calls) every ~20s,
+    replacing what used to be both divisions permanently stacked one
+    under each hero card in the My Teams rail (see _rail_hero_html,
+    which no longer renders its own copy). A league that's out of
+    season just isn't a candidate — same graceful "nothing to rotate
+    to" handling as every other rotation in this app when only one
+    thing (or nothing) qualifies."""
+    candidates = []
+    for entry in _RAIL:
+        status = entry["fetch_status"]()
+        if status and status.get("standings"):
+            candidates.append((entry, status))
+    if not candidates:
+        return ""
+
+    index = int(now_ts // _STANDINGS_ROTATE_SECONDS) % len(candidates)
+    entry, status = candidates[index]
+    division = html.escape(status.get("division_name") or entry["label"].title())
+    page_label = f" · {index + 1}/{len(candidates)}" if len(candidates) > 1 else ""
+
+    identity = f"{entry['sport']}:{index}"
+    changed = identity != st.session_state.get("jumbotron_standings_identity")
+    st.session_state["jumbotron_standings_identity"] = identity
+    fade_class = ""
+    if changed:
+        tick = st.session_state.get("jumbotron_standings_fade_tick", 0) + 1
+        st.session_state["jumbotron_standings_fade_tick"] = tick
+        fade_class = " jumbo-around-fade-a" if tick % 2 == 0 else " jumbo-around-fade-b"
+
+    return (
+        f'<div class="jumbo-ph"><span>{division} Standings{page_label}</span></div>'
+        f'<div class="jumbo-standings-body{fade_class}">'
+        f'<div class="jumbo-standings">{_standings_rows_html(status)}</div></div>'
+    )
 
 
 def _rail_hero_html(entry: dict, now: datetime) -> str:
@@ -508,8 +570,7 @@ def _rail_hero_html(entry: dict, now: datetime) -> str:
         f'<div class="jumbo-hero-rec"><div class="jumbo-hero-rec-v">{html.escape(record)}</div>'
         f'<div class="jumbo-hero-rec-l">RECORD</div></div></div>'
         f"{form_html}"
-        f'<div class="jumbo-gameline">{line}</div>'
-        f"{_standings_mini_html(status)}</div>"
+        f'<div class="jumbo-gameline">{line}</div></div>'
     )
 
 
@@ -635,6 +696,12 @@ def render(now: datetime, state: dict, weather: dict | None) -> None:
         if around
         else ""
     )
+    # Session request: division standings moved out of each hero card
+    # (where both used to sit permanently stacked) into their own
+    # rotating panel at the bottom of this same column — see
+    # _rotating_standings_html's own docstring.
+    standings = _rotating_standings_html(time.time())
+    standings_block = f'<div class="jumbo-panel jumbo-standings-panel">{standings}</div>' if standings else ""
 
     st.markdown(
         f'<div class="jumbo">'
@@ -644,8 +711,11 @@ def render(now: datetime, state: dict, weather: dict | None) -> None:
         f'<div class="jumbo-dateline">{dateline}</div>'
         f'<div class="jumbo-spacer"></div>{weather_chip}</div>'
         f'<div class="jumbo-grid">'
+        f'<div class="jumbo-rail-col">'
         f'<div class="jumbo-panel jumbo-rail"><div class="jumbo-ph"><span>My Teams</span></div>'
         f'<div class="jumbo-rail-body">{rail}</div></div>'
+        f"{standings_block}"
+        f"</div>"
         f"{_board_html(state, now)}"
         f"{around_block}"
         f"</div></div>",

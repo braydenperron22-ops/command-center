@@ -259,7 +259,7 @@ def _recent_form(games: list[dict], now: datetime) -> list[str]:
 
 
 def fetch_jays() -> dict | None:
-    """{"game": {...}|None, "standings": [{"rank","team","wins","losses",
+    """{"game": {...}|None, "standings": [{"rank","team","wins","losses","logo",
     "extra","is_team"}, ...], "division_name", "wildcard": {"games_back",
     "rank"}|None, "team_logo", "recent_form": ["W"/"L", ...]} — None
     entirely if the Jays haven't played a regular/postseason game
@@ -284,6 +284,7 @@ def fetch_jays() -> dict | None:
             "losses": t["leagueRecord"]["losses"],
             "extra": t.get("gamesBack", "-"),
             "is_team": t["team"]["id"] == MLB_TEAM_ID,
+            "logo": _mlb_logo_url(t["team"]["id"]),
         }
         for t in _fetch_mlb_standings()
     ]
@@ -404,6 +405,7 @@ def fetch_habs() -> dict | None:
             "losses": t["losses"],
             "extra": f"{t['otLosses']} OTL",
             "is_team": t["teamAbbrev"]["default"] == NHL_TEAM_ABBR,
+            "logo": _nhl_logo_url(t["teamAbbrev"]["default"]),
         }
         for t in _fetch_nhl_standings()
     ]

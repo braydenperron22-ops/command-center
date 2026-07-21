@@ -1936,8 +1936,17 @@ html, body, [class*="css"] {
     --edge: #1E2634;
     --edge-hi: #2E3B54;
     --bone: #F4F1E8;
-    --mut: #7E8898;
-    --mut-2: #525C6E;
+    /* Session feedback: "a lot of it is just gray... let's remove that
+       muted gray to a more visible color overall" — brightened both
+       secondary-text tones (records, start times, probables labels,
+       standings, captions — everywhere in the jumbotron that reads off
+       these two custom properties picks this up automatically, no
+       per-element changes needed). Kept two distinct tones rather than
+       one flat color so there's still a readable hierarchy between
+       "secondary" (--mut) and "tertiary" (--mut-2) text, just both
+       shifted much lighter than the original near-invisible grays. */
+    --mut: #C2CAD8;
+    --mut-2: #9BA6BA;
     --live: #FF453A;
     --ok: #32D583;
     --disp: 'Oswald', 'Arial Narrow', sans-serif;
@@ -2148,32 +2157,43 @@ html, body, [class*="css"] {
     letter-spacing: 0.26em;
     animation: jumbo-blink 1.4s infinite;
 }
-/* Division standings snippet (pages_jumbotron._standings_mini_html) —
-   session request. Same data/shape as pages_sports.py's own
+/* My Teams + Division Standings share the left column as two stacked
+   panels — session request moved standings out of each hero card into
+   its own rotating panel at the bottom. My Teams sizes to its own
+   content (1-2 compact hero cards); standings takes whatever's left. */
+.jumbo-rail-col { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.jumbo-rail-col .jumbo-rail { flex: 0 0 auto; }
+.jumbo-rail-col .jumbo-standings-panel { flex: 1; min-height: 0; }
+
+/* Division standings panel (pages_jumbotron._rotating_standings_html)
+   — session request: real team logos per row, and its own dedicated
+   (now rotating, ~20s per league) panel instead of a cramped snippet
+   inside each hero card — same data/shape as pages_sports.py's own
    _standings_table, restyled for the jumbotron's LED-mono look. */
+.jumbo-standings-body { flex: 1; min-height: 0; padding: 4px 18px 14px; overflow: hidden; }
 .jumbo-standings {
-    margin-top: 12px;
     border: 1px solid var(--edge);
     border-radius: 9px;
     background: rgba(8,11,17,0.7);
     overflow: hidden;
     font-family: var(--mono);
-    font-size: 12px;
+    font-size: 14px;
 }
 .jumbo-standings-row {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 6px 12px;
+    padding: 9px 14px;
     border-bottom: 1px solid rgba(30,38,52,0.5);
     color: var(--mut);
 }
 .jumbo-standings-row:last-child { border-bottom: none; }
 .jumbo-standings-row-team { color: var(--bone); background: rgba(255,179,0,0.07); font-weight: 700; }
-.jumbo-standings-rank { flex: 0 0 16px; color: var(--mut-2); }
+.jumbo-standings-rank { flex: 0 0 18px; color: var(--mut-2); }
+.jumbo-standings-logo { width: 22px; height: 22px; object-fit: contain; flex: 0 0 auto; }
 .jumbo-standings-team { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jumbo-standings-record { flex: 0 0 auto; }
-.jumbo-standings-extra { flex: 0 0 34px; text-align: right; color: var(--mut-2); }
+.jumbo-standings-extra { flex: 0 0 40px; text-align: right; color: var(--mut-2); }
 
 /* ---- Featured board ---- */
 .jumbo-board { position: relative; }
@@ -2364,57 +2384,55 @@ html, body, [class*="css"] {
     letter-spacing: 0.03em;
 }
 .jumbo-wp-labels b { color: var(--bone); }
-/* Top Performers grid with real headshots (pages_jumbotron.
-   _top_performers_html) — session request: "stats leaders across
-   both teams in each category... have their pictures show." */
-.jumbo-leaders { border-top: 1px solid var(--edge); padding: 10px 26px 12px; }
-.jumbo-leadgrid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    background: rgba(8,11,17,0.65);
-    border: 1px solid var(--edge);
-    border-radius: 12px;
-    overflow: hidden;
-}
-.jumbo-leader {
+/* Top Performers — single big rotating card with a real headshot
+   (pages_jumbotron._top_performers_html) — session request: "make top
+   performers bigger or put them in a single slot that rotates
+   continuously." Replaced the earlier shared-width grid entirely
+   (cramming 6-8 categories into one row left each card too small to
+   actually read at a glance) — one stat at a time, large, cycling
+   every 5s. */
+.jumbo-leaders { border-top: 1px solid var(--edge); padding: 12px 26px 16px; }
+.jumbo-leader-big {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 9px 13px;
+    gap: 22px;
+    background: rgba(8,11,17,0.65);
+    border: 1px solid var(--edge);
+    border-radius: 14px;
+    padding: 16px 26px;
 }
-.jumbo-leader:nth-child(even) { background: rgba(255,255,255,0.022); }
-.jumbo-leader-hshot {
-    width: 38px; height: 38px;
+.jumbo-leader-big-hshot {
+    width: 84px; height: 84px;
     border-radius: 50%;
     object-fit: cover;
     object-position: top;
     background: #141A25;
-    border: 1px solid var(--edge-hi);
+    border: 2px solid var(--led);
     flex: 0 0 auto;
 }
-.jumbo-leader-col { min-width: 0; }
-.jumbo-leader-stat {
+.jumbo-leader-big-col { min-width: 0; }
+.jumbo-leader-big-stat {
     font-family: var(--num);
-    font-size: 24px;
+    font-size: 52px;
     line-height: 1;
     color: var(--bone);
     letter-spacing: 0.03em;
     white-space: nowrap;
 }
-.jumbo-leader-cat {
+.jumbo-leader-big-cat {
     font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.16em;
+    font-size: 13px;
+    letter-spacing: 0.2em;
     color: var(--led);
     text-transform: uppercase;
-    margin-top: 3px;
+    margin-top: 6px;
     font-weight: 700;
 }
-.jumbo-leader-who {
-    font-size: 10px;
-    font-weight: 300;
-    color: var(--mut);
-    margin-top: 2px;
+.jumbo-leader-big-who {
+    font-size: 16px;
+    font-weight: 400;
+    color: var(--bone);
+    margin-top: 4px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
