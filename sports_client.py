@@ -593,18 +593,29 @@ PEOPLE_URL = "https://statsapi.mlb.com/api/v1/people/{player_id}"
 
 
 @st.cache_data(ttl=LIVE_DETAIL_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_mlb_player_raw(player_id: int, group: str) -> dict:
+    """This one player's full /people payload — bio fields (name,
+    number, height/weight, age, throws/bats hand, ...) plus their
+    season stat splits for `group` ("hitting"/"pitching") — {} if the
+    API genuinely has nothing for this id. Shared by
+    _fetch_mlb_player_season_stat_raw (just the stat line, for the
+    Current Matchup card) and fetch_mlb_pitcher_profile (bio + stat
+    both, for the full-screen new-pitcher overlay) — same endpoint/
+    params either way, so sharing this costs no extra request."""
+    fetch_throttle.wait_turn()
+    resp = requests.get(PEOPLE_URL.format(player_id=player_id), params={"hydrate": f"stats(group=[{group}],type=[season])"}, timeout=10)
+    resp.raise_for_status()
+    people = resp.json().get("people") or []
+    return people[0] if people else {}
+
+
 def _fetch_mlb_player_season_stat_raw(player_id: int, group: str) -> dict:
     """This one player's own season-total stat line for `group`
     ("hitting"/"pitching") — {} if the API genuinely has none yet (a
     two-way player with no innings pitched this season, a September
     call-up, etc.), not just on a fetch failure."""
-    fetch_throttle.wait_turn()
-    resp = requests.get(PEOPLE_URL.format(player_id=player_id), params={"hydrate": f"stats(group=[{group}],type=[season])"}, timeout=10)
-    resp.raise_for_status()
-    people = resp.json().get("people") or []
-    if not people:
-        return {}
-    stats = people[0].get("stats") or []
+    person = _fetch_mlb_player_raw(player_id, group)
+    stats = person.get("stats") or []
     if not stats:
         return {}
     splits = stats[0].get("splits") or []
@@ -626,9 +637,10 @@ def _mlb_headshot_url(player_id: int) -> str:
 
 
 def fetch_mlb_live_matchup(game_id: int) -> dict | None:
-    """{"batter": {"name", "ops", "photo"}, "pitcher": {"name", "era",
-    "photo"}} for whoever's actually at the plate/on the mound right
-    now — session request: "during the game can you make the top
+    """{"batter": {"id", "name", "ops", "photo"}, "pitcher": {"id",
+    "name", "era", "photo"}} for whoever's actually at the plate/on the
+    mound right now — session request: "during the game can you make
+    the top
     performers tab show current pitcher and batter and their stats use
     OPS for batter and ERA for pitchers... ideally add the pitcher and
     batter pics." Reuses the same cached linescore fetch_mlb_live_detail
@@ -648,8 +660,52 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     batter_stat = _fetch_mlb_player_season_stat_raw(batter["id"], "hitting")
     pitcher_stat = _fetch_mlb_player_season_stat_raw(pitcher["id"], "pitching")
     return {
-        "batter": {"name": batter["fullName"], "ops": batter_stat.get("ops"), "photo": _mlb_headshot_url(batter["id"])},
-        "pitcher": {"name": pitcher["fullName"], "era": pitcher_stat.get("era"), "photo": _mlb_headshot_url(pitcher["id"])},
+        "batter": {"id": batter["id"], "name": batter["fullName"], "ops": batter_stat.get("ops"), "photo": _mlb_headshot_url(batter["id"])},
+        "pitcher": {"id": pitcher["id"], "name": pitcher["fullName"], "era": pitcher_stat.get("era"), "photo": _mlb_headshot_url(pitcher["id"])},
+    }
+
+
+def fetch_mlb_pitcher_profile(player_id: int) -> dict | None:
+    """Full profile for the jumbotron's full-screen "new pitcher" intro
+    — session request: "can we create a full screen toast for when a
+    new pitcher comes in that shows their full profile and season
+    stats." {"name", "number", "throws" ("R"/"L"), "height", "weight",
+    "age", "role" ("Starter"/"Closer"/"Reliever"), "photo", "era",
+    "whip", "wins", "losses", "saves", "strikeouts",
+    "innings_pitched"}. None on any fetch failure or a genuinely empty
+    payload for this id."""
+    try:
+        person = _fetch_mlb_player_raw(player_id, "pitching")
+    except Exception:
+        return None
+    if not person:
+        return None
+    stats = person.get("stats") or []
+    splits = stats[0].get("splits") if stats else []
+    stat = splits[0].get("stat", {}) if splits else {}
+    games, starts, saves = stat.get("gamesPlayed"), stat.get("gamesStarted"), stat.get("saves") or 0
+    if starts and games and starts == games:
+        role = "Starter"
+    elif saves > 0:
+        role = "Closer"
+    else:
+        role = "Reliever"
+    return {
+        "name": person.get("fullName", ""),
+        "number": person.get("primaryNumber"),
+        "throws": (person.get("pitchHand") or {}).get("code"),
+        "height": person.get("height"),
+        "weight": person.get("weight"),
+        "age": person.get("currentAge"),
+        "role": role,
+        "photo": _mlb_headshot_url(player_id),
+        "era": stat.get("era"),
+        "whip": stat.get("whip"),
+        "wins": stat.get("wins"),
+        "losses": stat.get("losses"),
+        "saves": stat.get("saves"),
+        "strikeouts": stat.get("strikeOuts"),
+        "innings_pitched": stat.get("inningsPitched"),
     }
 
 
