@@ -2501,9 +2501,15 @@ html, body, [class*="css"] {
     text-overflow: ellipsis;
 }
 .jumbo-live-matchup-stat {
-    font-family: var(--num);
-    font-size: 38px;
-    font-weight: 700;
+    /* Session feedback: "the font is still so clunky that it just looks
+       like a blob. pick a skinnier font." var(--num) is Bebas Neue — a
+       squat display font with no real bold weight of its own, so
+       font-weight:700 on it was faking a bold and coming out swollen at
+       this size. JetBrains Mono actually has real weight steps and
+       tabular figures, reads far slimmer for a stat number like this. */
+    font-family: var(--mono);
+    font-size: 36px;
+    font-weight: 600;
     color: var(--bone);
     line-height: 1.1;
     margin-top: 2px;
