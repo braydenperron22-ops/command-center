@@ -66,6 +66,16 @@ TEAM_NEWS_RSS_URL = "https://news.google.com/rss/search"
 TEAM_NEWS_CACHE_TTL_SECONDS = 10 * 60
 # Same "ordered dict as a bounded set" pattern as MAX_SEEN_PLAYS above.
 MAX_SEEN_TEAM_NEWS = 200
+# Without a `when:` clause, Google News returns its own general "top
+# results" for the query — confirmed live this pulls in weeks-old
+# stories alongside today's, which both misdates pages_sports.py's own
+# "X ago" display (see its _render_team_news) and would let a genuinely
+# stale story slip through the toast's baseline as if new the first
+# time this query happens to surface it. Same `when:Nd` operator
+# conflict_news.py already uses, just a tighter window — a trade/injury
+# story is still relevant a few days later, but the Google searches
+# themselves should stay scoped to "recent," not "ever written."
+TEAM_NEWS_WINDOW_DAYS = 3
 
 # "logo" calls sports_client's own team-id-keyed URL builders directly
 # rather than pulling "team_logo" off fetch_jays()/fetch_habs()'s status
@@ -191,7 +201,7 @@ def _fetch_team_news_raw(query: str) -> list[dict]:
     injury/roster stories without a dedicated MLB/NHL news API. Filtered
     through news.is_clickbait so teaser junk doesn't slip in, same as
     conflict_news.py's own use of that shared check."""
-    params = {"q": query, "hl": "en-US", "gl": "US", "ceid": "US:en"}
+    params = {"q": f"{query} when:{TEAM_NEWS_WINDOW_DAYS}d", "hl": "en-US", "gl": "US", "ceid": "US:en"}
     try:
         fetch_throttle.wait_turn()
         resp = requests.get(TEAM_NEWS_RSS_URL, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
@@ -204,6 +214,29 @@ def _fetch_team_news_raw(query: str) -> list[dict]:
         title = (item.findtext("title") or "").strip()
         if title and not news.is_clickbait(title):
             items.append({"headline": title, "published": _parse_pub_date(item.findtext("pubDate") or "")})
+    return items
+
+
+def team_news_headlines() -> list[dict]:
+    """Every currently-live Jays/Habs news headline — {"headline",
+    "published", "sport", "team_label", "team_logo", "flash_color"} —
+    across both teams, no seen-tracking/baseline applied. This is the
+    raw pool: get_new_alerts() below layers dedup + baseline on top of
+    exactly this to decide what's toast-worthy, and pages_sports.py
+    calls this directly for its own persistent, browsable feed (same
+    split as news.fetch_headlines() vs news.get_new_alerts())."""
+    items = []
+    for league in _LEAGUES:
+        for item in _fetch_team_news_raw(league["news_query"]):
+            items.append(
+                {
+                    **item,
+                    "sport": league["sport"],
+                    "team_label": league["label"],
+                    "team_logo": league["logo"],
+                    "flash_color": league["flash_color"],
+                }
+            )
     return items
 
 
@@ -306,28 +339,27 @@ def get_new_alerts() -> list[dict]:
     seen_news = st.session_state.setdefault("seen_team_news", {})
     news_baseline_done = st.session_state.get("team_news_baseline_done", False)
     news_alerts = []
-    for league in _LEAGUES:
-        for item in _fetch_team_news_raw(league["news_query"]):
-            h = hashlib.sha1(item["headline"].encode()).hexdigest()
-            if h in seen_news:
-                continue
-            seen_news[h] = True
-            if len(seen_news) > MAX_SEEN_TEAM_NEWS:
-                seen_news.pop(next(iter(seen_news)))
-            if not news_baseline_done:
-                continue
-            news_alerts.append(
-                {
-                    "kind": "sports",
-                    "type": "news",
-                    "sport": league["sport"],
-                    "team_label": league["label"],
-                    "team_logo": league["logo"],
-                    "description": item["headline"],
-                    "flash_color": league["flash_color"],
-                    "published": item["published"],
-                }
-            )
+    for item in team_news_headlines():
+        h = hashlib.sha1(item["headline"].encode()).hexdigest()
+        if h in seen_news:
+            continue
+        seen_news[h] = True
+        if len(seen_news) > MAX_SEEN_TEAM_NEWS:
+            seen_news.pop(next(iter(seen_news)))
+        if not news_baseline_done:
+            continue
+        news_alerts.append(
+            {
+                "kind": "sports",
+                "type": "news",
+                "sport": item["sport"],
+                "team_label": item["team_label"],
+                "team_logo": item["team_logo"],
+                "description": item["headline"],
+                "flash_color": item["flash_color"],
+                "published": item["published"],
+            }
+        )
     st.session_state["team_news_baseline_done"] = True
     # Same reasoning as news.get_new_alerts: a batch spanning both teams
     # (or a feed recovering from an outage) should queue in real

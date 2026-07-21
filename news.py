@@ -335,6 +335,21 @@ CLICKBAIT_TERMS = [
     "zacks", "benzinga",
     # Explicit opinion-column labeling.
     "opinion:", "analysis:", "commentary:",
+    # Sports-betting content — surfaced once team_news started pulling
+    # in Jays/Habs headlines via Google News (see sports_alerts.py):
+    # confirmed live that a plain team-name search pulls in daily odds/
+    # predictions recaps just as readily as real trade/injury reporting.
+    # Same "what just happened, not what if" reasoning as the rest of
+    # this list — a betting line is a prediction dressed up as content,
+    # not a report of anything that occurred. Sportsbook/odds-aggregator
+    # names are included since Google News appends them as a " - Source"
+    # suffix, and that suffix alone reliably marks betting content
+    # regardless of how the headline itself is phrased.
+    "odds & predictions", "odds and predictions", "betting odds",
+    "prop bets", "best bets", "picks and predictions", "how to watch",
+    "live stream", "predictions:", "polymarket.com", "draftkings",
+    "fanduel", "vegasinsider", "covers.com", "oddsshark", "sportsbookwire",
+    "actionnetwork.com",
 ]
 CLICKBAIT_PATTERNS = [
     re.compile(r"\b\d+\s+(things?|reasons?|ways?|takeaways?|stocks?)\s+that\b"),

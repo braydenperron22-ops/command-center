@@ -26,6 +26,12 @@ THRESHOLDS_SECONDS = {
     "weather": 3 * 60 * 60,  # refreshes every ~15-30 min normally
     "sports_schedule": 24 * 60 * 60,  # a schedule pull succeeds daily even off-season (an empty games list is still a real success)
     "news": 6 * 60 * 60,  # several feeds; at least one should succeed within hours even if others are down
+    # Only goes quiet if BOTH the external (feargreedmeter.com) and
+    # computed (yfinance-derived) tiers fail at once — see
+    # market_internals.fear_greed_index's own comment.
+    "fear_greed": 6 * 60 * 60,
+    "shiller_cape": 24 * 60 * 60,  # multpl.com's own value barely moves day to day; cached 6h, so this just needs to be well past that
+    "scoreboard": 24 * 60 * 60,  # a scoreboard pull succeeds daily even on a slate with nothing live (an empty games list is still a real success)
 }
 
 LABELS = {
@@ -33,6 +39,9 @@ LABELS = {
     "weather": "Weather",
     "sports_schedule": "Sports schedule",
     "news": "News feed",
+    "fear_greed": "Fear & Greed Index",
+    "shiller_cape": "Shiller CAPE",
+    "scoreboard": "Scoreboard",
 }
 
 

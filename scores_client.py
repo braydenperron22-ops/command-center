@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 import requests
 import streamlit as st
 
+import data_health
 import fetch_throttle
 from config import TIMEZONE
 
@@ -125,6 +126,7 @@ def fetch_games(league_key: str, today: datetime | None = None) -> list[dict]:
         raw = _fetch_scoreboard_raw(league["sport"], league["league"], date_str)
     except Exception:
         return _last_good_games.get(league_key, [])
+    data_health.record_success("scoreboard")
 
     games = [g for g in (_normalize_game(e) for e in raw) if g is not None]
     games.sort(key=lambda g: g["start_time"] or datetime.max)

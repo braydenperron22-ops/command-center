@@ -49,6 +49,7 @@ import requests
 import streamlit as st
 import yfinance as yf
 
+import data_health
 import fetch_throttle
 from config import MARKET_DATA_TTL_SECONDS
 
@@ -245,10 +246,17 @@ def fear_greed_index() -> dict | None:
     self-computed approximation) when it isn't. See module docstring
     for the reasoning behind both. Check result["source"] ("external"
     vs "computed") to know which one came back."""
-    external = _external_fear_greed_index()
-    if external is not None:
-        return external
-    return _computed_fear_greed_index()
+    result = _external_fear_greed_index() or _computed_fear_greed_index()
+    # Unlike weather_client/portfolio_client's last-good pattern, the
+    # computed tier isn't a stale cached value — it's a fresh
+    # independent calculation off yfinance's own current data, so it
+    # counts as a genuine success here exactly like the external tier
+    # does. This only goes quiet (see data_health.py) if BOTH tiers are
+    # failing at once, e.g. feargreedmeter.com is down *and* yfinance
+    # itself has stopped returning price history.
+    if result is not None:
+        data_health.record_success("fear_greed")
+    return result
 
 
 def price_ratio(symbol_a: str, symbol_b: str) -> dict | None:
@@ -299,4 +307,5 @@ def shiller_cape() -> dict | None:
     except Exception:
         return {"value": _last_good_cape} if _last_good_cape is not None else None
     _last_good_cape = value
+    data_health.record_success("shiller_cape")
     return {"value": value}

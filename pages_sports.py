@@ -14,16 +14,38 @@ baserunners for MLB, period clock for NHL) from sports_client's own
 fetch_mlb_live_detail/fetch_nhl_live_detail. Standings are still shown
 below that, just no longer competing for space with the compact score
 line the rest of the time.
+
+Team News section: sports_alerts.team_news_headlines() surfaces Jays/
+Habs headlines as a fleeting ~30s toast (see that module), the same
+way news.get_new_alerts() surfaces market headlines as a toast — but
+market headlines also get a persistent, browsable home on the News
+page, and team news had no equivalent until now. Same seen-headline/
+24h-window pattern as pages_news.py's own feed, kept in its own
+session-state key so it's independent of the toast's separate seen-
+tracking (a Jays trade story can appear in both places).
 """
 
+import hashlib
 import html
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+import sports_alerts
 import sports_client
 from config import TIMEZONE
+
+TEAM_NEWS_WINDOW_SECONDS = 24 * 60 * 60
+# Confirmed live: this page is already dense (standings + wild card +
+# form strip above it), and this kiosk doesn't scroll — even 2 compact
+# rows ran off the bottom of the viewport behind the ticker bar. One
+# headline at a time, rotating, is the same fix pages_household.py's
+# own NEARBY section already uses for exactly this problem (see
+# _render_local_news there) — the toast still surfaces every headline
+# the moment it's new either way; this is just "what did I miss."
+TEAM_NEWS_ROTATION_SECONDS = 10
 
 # How close to first pitch/puck drop before the "starting soon" badge
 # shows up — 2 hours is a reasonable "worth knowing about" window
@@ -244,6 +266,65 @@ def _render_live_tile(label: str, status: dict, sport: str) -> None:
     )
 
 
+def _team_news_relative_time(seconds_ago: float) -> str:
+    minutes = int(seconds_ago / 60)
+    if minutes < 1:
+        return "just now"
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    return f"{hours}h ago"
+
+
+def _render_team_news() -> None:
+    """Persistent, browsable Jays/Habs news feed — see module docstring.
+    One headline at a time, rotating on a wall-clock timer (same
+    int(time.time() // interval) % n pattern as pages_household.py's
+    own NEARBY section) rather than a full list, to fit this already-
+    dense page's fixed, no-scroll viewport. Renders nothing at all (not
+    even an empty-state tile) when there's genuinely no recent team
+    news, so a quiet news day doesn't cost this page a tile just to say
+    so."""
+    seen_at = st.session_state.setdefault("sports_news_feed_seen_at", {})
+    now_ts = time.time()
+
+    for item in sports_alerts.team_news_headlines():
+        h = hashlib.sha1(item["headline"].encode()).hexdigest()
+        if h not in seen_at:
+            seen_at[h] = {
+                "headline": item["headline"],
+                "first_seen": now_ts,
+                # The RSS item's own publish time, when the feed carries
+                # one — used for the "X ago" display below instead of
+                # first_seen, same reasoning as pages_household.py's own
+                # NEARBY row (a story Google surfaced today but that was
+                # actually published yesterday should say "yesterday,"
+                # not "just now").
+                "published": item["published"].timestamp() if item["published"] else None,
+                "team_label": item["team_label"],
+            }
+
+    for h in [h for h, e in seen_at.items() if now_ts - e["first_seen"] > TEAM_NEWS_WINDOW_SECONDS]:
+        del seen_at[h]
+
+    entries = sorted(seen_at.values(), key=lambda e: e["published"] or e["first_seen"], reverse=True)
+    if not entries:
+        return
+
+    index = int(now_ts // TEAM_NEWS_ROTATION_SECONDS) % len(entries)
+    entry = entries[index]
+    age_seconds = now_ts - (entry["published"] or entry["first_seen"])
+    row = f"""<div class="news-feed-row compact">
+        <div class="news-feed-headline">{html.escape(entry['headline'])}</div>
+        <div class="news-feed-meta">{entry['team_label'].title()} · {_team_news_relative_time(age_seconds)}</div>
+    </div>"""
+    st.markdown(
+        f'<div class="tile"><div class="tile-label">TEAM NEWS · {index + 1}/{len(entries)}</div>'
+        f'<div class="news-feed-list">{row}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render() -> None:
     st.markdown('<div class="page-title page-title-sports">Sports</div>', unsafe_allow_html=True)
 
@@ -255,6 +336,10 @@ def render() -> None:
             '<div class="tile"><div class="tile-prev">Both MLB and NHL are between seasons right now.</div></div>',
             unsafe_allow_html=True,
         )
+        # Team news (trades, roster moves) keeps happening in the
+        # offseason even with no games to show — doesn't need either
+        # league to be active the way the rest of this page does.
+        _render_team_news()
         return
 
     now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
@@ -274,6 +359,7 @@ def render() -> None:
                     _compact_tile_html(entry["label"], entry["status"], entry["kickoff_label"], now),
                     unsafe_allow_html=True,
                 )
+        _render_team_news()
         return
 
     # A live game takes over as a full-width comprehensive scoreboard —
@@ -281,6 +367,11 @@ def render() -> None:
     # actually being played. Any other team renders underneath as its
     # own full-width compact tile (clearly secondary beneath the live
     # spotlight, rather than splitting a now-pointless 2-column grid).
+    # Team news is skipped here (unlike the two branches above) — a live
+    # scoreboard plus standings already fills this kiosk's fixed, no-
+    # scroll viewport, and a live game itself is the more urgent thing
+    # to show than a news headline; toasts still surface breaking team
+    # news regardless of which page is up.
     for entry in live:
         _render_live_tile(entry["label"], entry["status"], entry["sport"])
     for entry in entries:
