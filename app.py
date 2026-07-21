@@ -236,6 +236,18 @@ try:
 except Exception:
     severe_weather_active = False
 
+# Session request: "make it so the screen cannot turn off if there's a
+# live game — after the game is over the setup can sleep." Unlike the
+# weather override below (deliberately brief — session feedback that
+# staying bright for an entire stint was itself the problem), this one
+# is meant to hold for the game's whole duration: re-checked fresh each
+# rerun via sports_client's own game state, so it naturally reverts the
+# moment the game actually ends rather than needing its own timer.
+try:
+    game_live = sports_alerts.any_game_live()
+except Exception:
+    game_live = False
+
 # Session request: staying fully bright (or even just less-dim) for an
 # entire severe stint or rain approach — which can run for hours — was
 # itself keeping the room awake; the actual point was only ever to
@@ -312,6 +324,12 @@ try:
     # overrides dimming entirely. Used to also soften dimming for
     # ordinary (non-severe) rain — removed along with the rest of the
     # radar-based precip detection this depended on.
+    #
+    # A live game does NOT get an exemption here — session correction:
+    # "the screen is allowed to dim," the actual ask was keeping the
+    # smart plug powering the monitor from cutting out overnight (see
+    # govee_lighting.sync_plug's own game_live param), a separate thing
+    # from this dim overlay.
     if quiet_hours and not weather_wake_recent:
         night_dim = 1.0
     elif severe_weather_active:
@@ -796,6 +814,8 @@ try:
         phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
         aqi_for_lights, category, score_flash,
     )
-    govee_lighting.sync_plug(now, weather["first_light"] if weather else None, weather["last_light"] if weather else None)
+    govee_lighting.sync_plug(
+        now, weather["first_light"] if weather else None, weather["last_light"] if weather else None, game_live
+    )
 except Exception:
     pass

@@ -286,10 +286,26 @@ def sync_lights(
     alert (see sports_alerts.py) — session request: "a blue govee flash"
     for the Jays, red for the Habs. Same brief alternating pulse as the
     breaking-news flash, just the caller's own team color instead of
-    red, checked right after breaking news (which still wins if both
-    were somehow active at once — the more genuinely urgent of the
-    two)."""
+    red — and unlike every other override here, this one is checked
+    BEFORE the night gate rather than after: session request, a
+    scoring play should flash even overnight. It reverts to night's
+    own power-off automatically once the alert ends (score_flash goes
+    back to None the very next rerun — the caller only sets it while
+    the alert's own elapsed stays under FLASH_SECONDS), so this doesn't
+    keep the room lit all night, just for the flash itself. Breaking
+    news still fully respects night (unchanged, no exception) — this
+    is a scoped, deliberate exception for sports alerts specifically,
+    not a general "wake for alerts" policy.
+    """
     if not st.secrets.get("GOVEE_API_KEY"):
+        return
+    if score_flash is not None:
+        if not _apply_power(True):
+            return
+        flash_elapsed, flash_color = score_flash
+        color = flash_color if int(flash_elapsed) % 2 == 0 else FLASH_WHITE
+        _apply_color(color, min_gap=FLASH_CALL_GAP_SECONDS)
+        _apply_brightness_immediate(FLASH_BRIGHTNESS, min_gap=FLASH_CALL_GAP_SECONDS)
         return
     if phase == "night":
         _apply_power(False)
@@ -298,12 +314,6 @@ def sync_lights(
         return
     if breaking_alert_elapsed is not None:
         color = FLASH_RED if int(breaking_alert_elapsed) % 2 == 0 else FLASH_WHITE
-        _apply_color(color, min_gap=FLASH_CALL_GAP_SECONDS)
-        _apply_brightness_immediate(FLASH_BRIGHTNESS, min_gap=FLASH_CALL_GAP_SECONDS)
-        return
-    if score_flash is not None:
-        flash_elapsed, flash_color = score_flash
-        color = flash_color if int(flash_elapsed) % 2 == 0 else FLASH_WHITE
         _apply_color(color, min_gap=FLASH_CALL_GAP_SECONDS)
         _apply_brightness_immediate(FLASH_BRIGHTNESS, min_gap=FLASH_CALL_GAP_SECONDS)
         return
@@ -320,7 +330,9 @@ def sync_lights(
     _creep_brightness(brightness)
 
 
-def sync_plug(now: datetime, first_light: datetime | None, last_light: datetime | None) -> None:
+def sync_plug(
+    now: datetime, first_light: datetime | None, last_light: datetime | None, game_live: bool = False
+) -> None:
     """Off at last light, on at first light — deliberately real civil-
     twilight bounds (dawn/dusk, sun 6° below the horizon), not the same
     `phase` the dashboard's own visuals use, and not the sunrise/sunset
@@ -329,10 +341,18 @@ def sync_plug(now: datetime, first_light: datetime | None, last_light: datetime 
     phase_for also clamps "day" to never start before ~7:40am so the
     room doesn't visually brighten too early in midsummer, but that's a
     room-comfort choice specific to the sky/dimming — the monitor itself
-    should just follow the actual daylight window, no floor."""
+    should just follow the actual daylight window, no floor.
+
+    `game_live` (see sports_alerts.any_game_live) keeps this plug —
+    and so the monitor it powers — on regardless of that window while a
+    Jays/Habs game is still going (session request: "the smart plug
+    can't turn off if there's a live game... after the game is over the
+    setup can sleep"). Re-checked fresh every rerun against the real
+    game state, so it reverts to the normal daylight window the moment
+    the game actually ends, no separate timer needed."""
     if not st.secrets.get("GOVEE_API_KEY") or first_light is None or last_light is None:
         return
-    want_on = first_light <= now < last_light
+    want_on = game_live or (first_light <= now < last_light)
     if st.session_state.get("govee_plug_applied") == want_on:
         return
     if time.time() - st.session_state.get("govee_plug_last_call_ts", 0) < MIN_CALL_GAP_SECONDS:

@@ -148,57 +148,110 @@ def get_new_alerts() -> list[dict]:
     happened as if it just did. Call at most once per rerun — like
     news.get_new_alerts, marking a play "seen" is a side effect."""
     seen = st.session_state.setdefault("seen_scoring_plays", {})
+    # game_id -> True once the end-of-game alert has fired for it, so a
+    # game sitting as _pick_current_game's own "today's game" pick for
+    # the rest of the day (see sports_client._pick_current_game) doesn't
+    # re-alert on every later rerun.
+    final_alerted = st.session_state.setdefault("sports_alert_final_alerted", {})
     alerts = []
 
     for league in _LEAGUES:
         status = league["fetch_status"]()
         game = status["game"] if status else None
-        if not game or game["state"] != "live":
+        if not game:
             continue
 
         game_id = game["game_id"]
+        # Doubles as "was this game ever actually observed live this
+        # session" — the end-of-game alert below only fires for a game
+        # that reached this True at some point, so a game that was
+        # already final by the time the kiosk started watching (or
+        # before a fresh deploy) doesn't get a stale "it just ended"
+        # alert for something that happened before this session existed.
         baseline_key = f"sports_alert_baseline_{league['sport']}_{game_id}"
-        baseline_done = st.session_state.get(baseline_key, False)
 
-        for play in _SCORING_PLAY_FETCHERS[league["sport"]](game_id):
-            if play["play_id"] in seen:
-                continue
-            seen[play["play_id"]] = True
-            if len(seen) > MAX_SEEN_PLAYS:
-                seen.pop(next(iter(seen)))
-            if not baseline_done:
-                continue
-            team_score = play["home_score"] if game["is_home"] else play["away_score"]
-            opp_score = play["away_score"] if game["is_home"] else play["home_score"]
-            if team_score is None or opp_score is None:
-                continue
+        if game["state"] == "live":
+            baseline_done = st.session_state.get(baseline_key, False)
+            for play in _SCORING_PLAY_FETCHERS[league["sport"]](game_id):
+                if play["play_id"] in seen:
+                    continue
+                seen[play["play_id"]] = True
+                if len(seen) > MAX_SEEN_PLAYS:
+                    seen.pop(next(iter(seen)))
+                if not baseline_done:
+                    continue
+                team_score = play["home_score"] if game["is_home"] else play["away_score"]
+                opp_score = play["away_score"] if game["is_home"] else play["home_score"]
+                if team_score is None or opp_score is None:
+                    continue
+                alerts.append(
+                    {
+                        "kind": "sports",
+                        "type": "score",
+                        "sport": league["sport"],
+                        "team_label": league["label"],
+                        "team_logo": status["team_logo"],
+                        "opponent_logo": game["opponent_logo"],
+                        "team_score": team_score,
+                        "opp_score": opp_score,
+                        "description": play["description"],
+                        "flash_color": league["flash_color"],
+                    }
+                )
+            st.session_state[baseline_key] = True
+
+        elif (
+            game["state"] == "final"
+            and st.session_state.get(baseline_key)
+            and not final_alerted.get(game_id)
+            and game["team_score"] is not None
+            and game["opp_score"] is not None
+        ):
+            final_alerted[game_id] = True
+            team_score, opp_score = game["team_score"], game["opp_score"]
+            result = "W" if team_score > opp_score else "L" if team_score < opp_score else "T"
+            opponent_word = "vs" if game["is_home"] else "@"
             alerts.append(
                 {
                     "kind": "sports",
+                    "type": "final",
                     "sport": league["sport"],
                     "team_label": league["label"],
                     "team_logo": status["team_logo"],
                     "opponent_logo": game["opponent_logo"],
                     "team_score": team_score,
                     "opp_score": opp_score,
-                    "description": play["description"],
+                    "description": f"Final — {result} {opponent_word} {game['opponent']}",
                     "flash_color": league["flash_color"],
                 }
             )
-        st.session_state[baseline_key] = True
 
     return alerts
+
+
+def any_game_live() -> bool:
+    """True if either the Jays' or Habs' own tracked game is live right
+    now — session request: the screen shouldn't dim/sleep for the night
+    while a game is still going, only once it's actually over (see
+    app.py's night_dim override)."""
+    for league in _LEAGUES:
+        status = league["fetch_status"]()
+        game = status["game"] if status else None
+        if game and game["state"] == "live":
+            return True
+    return False
 
 
 def render_alert_bar(alert: dict, elapsed: float, variant: str = "a") -> None:
     """Same stretch/slide toast intro as news.render_alert_bar (see its
     own comment + theme.py's toast-*-intro keyframes) — a per-team
-    color bar (Jays blue / Habs red) carrying both team logos, the
-    score, and the actual play that just happened, instead of a plain
-    text headline."""
+    color bar (Jays blue / Habs red) carrying both team logos and the
+    score, plus either the play that just happened (a live scoring
+    update) or the final result (session request: "make an end of game
+    alert"), instead of a plain text headline."""
     bar_class = "sports-alert-bar-mlb" if alert["sport"] == "mlb" else "sports-alert-bar-nhl"
     delay = f"animation-delay: -{elapsed:.2f}s;"
-    label_text = f"{alert['team_label']} UPDATE"
+    label_text = f"{alert['team_label']} {'FINAL' if alert.get('type') == 'final' else 'UPDATE'}"
     description = html.escape(alert["description"])
     st.markdown(
         f'<div class="{bar_class}">'
