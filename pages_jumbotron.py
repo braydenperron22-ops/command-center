@@ -476,13 +476,13 @@ def _board_html(state: dict, now: datetime) -> str:
 _STANDINGS_ROTATE_SECONDS = 20
 
 
-def _standings_rows_html(status: dict) -> str:
+def _standings_rows_html(rows: list[dict]) -> str:
     """Division-standings rows with team logos — session request.
-    Reuses the exact same status["standings"] list (see sports_client's
-    own docstrings) the regular Sports page's _standings_table already
-    renders, now with each row's own "logo" field (added specifically
-    for this — see sports_client.fetch_jays/fetch_habs)."""
-    rows = status.get("standings") or []
+    Reuses the exact same row shape (see sports_client's own docstrings
+    on fetch_jays/fetch_habs/fetch_all_mlb_standings/
+    fetch_all_nhl_standings) the regular Sports page's _standings_table
+    already renders, now with each row's own "logo" field (added
+    specifically for this)."""
     if not rows:
         return ""
     return "".join(
@@ -497,29 +497,27 @@ def _standings_rows_html(status: dict) -> str:
 
 
 def _rotating_standings_html(now_ts: float) -> str:
-    """Bottom-left rotating division standings — session request: cycle
-    through every division we track (currently the Jays' AL East and
-    the Habs' Atlantic, via _RAIL's own fetch_status calls) every ~20s,
-    replacing what used to be both divisions permanently stacked one
-    under each hero card in the My Teams rail (see _rail_hero_html,
-    which no longer renders its own copy). A league that's out of
-    season just isn't a candidate — same graceful "nothing to rotate
-    to" handling as every other rotation in this app when only one
-    thing (or nothing) qualifies."""
-    candidates = []
-    for entry in _RAIL:
-        status = entry["fetch_status"]()
-        if status and status.get("standings"):
-            candidates.append((entry, status))
+    """Bottom-left rotating division standings — session request: "make
+    the standings rotate between all divisions and all leagues so i can
+    get a full deep dive on sports while in game mode." Every MLB and
+    NHL division (sports_client.fetch_all_mlb_standings/
+    fetch_all_nhl_standings — the Jays' and Habs' own team-specific
+    fetches underneath _RAIL are unrelated and keep the "My Teams" rail
+    unchanged), not just the two divisions the Jays/Habs themselves sit
+    in. NHL divisions still show even in the Habs' own offseason — see
+    fetch_all_nhl_standings's own docstring for why that's a deliberate
+    choice rather than an oversight."""
+    candidates = sports_client.fetch_all_mlb_standings() + sports_client.fetch_all_nhl_standings()
     if not candidates:
         return ""
 
     index = int(now_ts // _STANDINGS_ROTATE_SECONDS) % len(candidates)
-    entry, status = candidates[index]
-    division = html.escape(status.get("division_name") or entry["label"].title())
+    entry = candidates[index]
+    division = html.escape(entry["division_name"])
+    league = html.escape(entry["league"])
     page_label = f" · {index + 1}/{len(candidates)}" if len(candidates) > 1 else ""
 
-    identity = f"{entry['sport']}:{index}"
+    identity = f"{league}:{division}"
     changed = identity != st.session_state.get("jumbotron_standings_identity")
     st.session_state["jumbotron_standings_identity"] = identity
     fade_class = ""
@@ -529,9 +527,9 @@ def _rotating_standings_html(now_ts: float) -> str:
         fade_class = " jumbo-around-fade-a" if tick % 2 == 0 else " jumbo-around-fade-b"
 
     return (
-        f'<div class="jumbo-ph"><span>{division} Standings{page_label}</span></div>'
+        f'<div class="jumbo-ph"><span>{league} · {division}{page_label}</span></div>'
         f'<div class="jumbo-standings-body{fade_class}">'
-        f'<div class="jumbo-standings">{_standings_rows_html(status)}</div></div>'
+        f'<div class="jumbo-standings">{_standings_rows_html(entry["rows"])}</div></div>'
     )
 
 

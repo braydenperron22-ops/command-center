@@ -131,11 +131,21 @@ def _fetch_mlb_games(now: datetime) -> list[dict] | None:
 
 
 @st.cache_data(ttl=STANDINGS_CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_mlb_standings_raw() -> list[dict]:
+def _fetch_mlb_standings_raw_all() -> list[dict]:
+    """Every MLB division, both leagues, one request (the standings
+    endpoint's own comma-separated leagueId) — the Jays' own AL East
+    view below and fetch_all_mlb_standings()'s full-league rotation
+    (session request: "rotate between all divisions and all leagues...
+    a full deep dive") both filter from this single shared call rather
+    than hitting the endpoint once per division."""
     fetch_throttle.wait_turn()
-    resp = requests.get(MLB_STANDINGS_URL, params={"leagueId": 103, "standingsTypes": "regularSeason"}, timeout=10)
+    resp = requests.get(MLB_STANDINGS_URL, params={"leagueId": "103,104", "standingsTypes": "regularSeason"}, timeout=10)
     resp.raise_for_status()
-    for record in resp.json().get("records", []):
+    return resp.json().get("records", [])
+
+
+def _fetch_mlb_standings_raw() -> list[dict]:
+    for record in _fetch_mlb_standings_raw_all():
         if record["division"]["id"] == MLB_DIVISION_ID:
             return sorted(record["teamRecords"], key=lambda t: int(t["divisionRank"]))
     return []
@@ -298,6 +308,49 @@ def fetch_jays() -> dict | None:
     }
 
 
+# division.id -> full name — the standings endpoint itself returns null
+# for "division.name" on every record (confirmed live), so this is
+# filled in by hand; MLB's division ids are static league structure, not
+# something that changes season to season. Order here is AL then NL,
+# East/Central/West within each, purely for a sensible rotation order.
+MLB_DIVISION_NAMES = {201: "AL East", 202: "AL Central", 200: "AL West", 204: "NL East", 205: "NL Central", 203: "NL West"}
+MLB_DIVISION_ORDER = [201, 202, 200, 204, 205, 203]
+
+
+def fetch_all_mlb_standings() -> list[dict]:
+    """[{"league": "MLB", "division_name", "rows": [...]}, ...] for every
+    MLB division — session request: "rotate between all divisions and
+    all leagues... a full deep dive on sports." Same row shape as
+    fetch_jays()'s own "standings" list, so existing rendering needs no
+    changes. [] only if the standings request itself fails outright —
+    unlike fetch_jays()/fetch_habs(), not gated on that team's own
+    season being active, since this isn't about one team."""
+    try:
+        records = _fetch_mlb_standings_raw_all()
+    except Exception:
+        return []
+    by_id = {r["division"]["id"]: r for r in records}
+    out = []
+    for div_id in MLB_DIVISION_ORDER:
+        record = by_id.get(div_id)
+        if not record:
+            continue
+        rows = [
+            {
+                "rank": int(t["divisionRank"]),
+                "team": t["team"]["name"],
+                "wins": t["leagueRecord"]["wins"],
+                "losses": t["leagueRecord"]["losses"],
+                "extra": t.get("gamesBack", "-"),
+                "is_team": t["team"]["id"] == MLB_TEAM_ID,
+                "logo": _mlb_logo_url(t["team"]["id"]),
+            }
+            for t in sorted(record["teamRecords"], key=lambda t: int(t["divisionRank"]))
+        ]
+        out.append({"league": "MLB", "division_name": MLB_DIVISION_NAMES[div_id], "rows": rows})
+    return out
+
+
 @st.cache_data(ttl=GAME_CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_nhl_games_raw() -> list[dict]:
     fetch_throttle.wait_turn()
@@ -318,11 +371,19 @@ def _fetch_nhl_games() -> list[dict] | None:
 
 
 @st.cache_data(ttl=STANDINGS_CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_nhl_standings_raw() -> list[dict]:
+def _fetch_nhl_standings_raw_all() -> list[dict]:
+    """Every NHL team, all four divisions, one request — the Habs' own
+    Atlantic view, the wildcard calc, and fetch_all_nhl_standings()'s
+    full-league rotation all filter from this single shared call rather
+    than hitting the endpoint separately for each."""
     fetch_throttle.wait_turn()
     resp = requests.get(NHL_STANDINGS_URL, timeout=10, allow_redirects=True)
     resp.raise_for_status()
-    teams = [t for t in resp.json().get("standings", []) if t["divisionAbbrev"] == NHL_DIVISION_ABBREV]
+    return resp.json().get("standings", [])
+
+
+def _fetch_nhl_standings_raw() -> list[dict]:
+    teams = [t for t in _fetch_nhl_standings_raw_all() if t["divisionAbbrev"] == NHL_DIVISION_ABBREV]
     return sorted(teams, key=lambda t: t["divisionSequence"])
 
 
@@ -352,10 +413,7 @@ def _fetch_nhl_wildcard_raw() -> dict | None:
     is built and ranked by points here directly. None whenever MTL
     already holds a real Atlantic top-3 spot — Wild Card context isn't
     relevant to a team that doesn't need it."""
-    fetch_throttle.wait_turn()
-    resp = requests.get(NHL_STANDINGS_URL, timeout=10, allow_redirects=True)
-    resp.raise_for_status()
-    conference = [t for t in resp.json().get("standings", []) if t["conferenceAbbrev"] == NHL_CONFERENCE_ABBREV]
+    conference = [t for t in _fetch_nhl_standings_raw_all() if t["conferenceAbbrev"] == NHL_CONFERENCE_ABBREV]
     mtl = next((t for t in conference if t["teamAbbrev"]["default"] == NHL_TEAM_ABBR), None)
     if mtl is None or mtl["divisionSequence"] <= 3:
         return None
@@ -417,6 +475,47 @@ def fetch_habs() -> dict | None:
         "team_logo": _nhl_logo_url(NHL_TEAM_ABBR),
         "recent_form": _recent_form(normalized, now),
     }
+
+
+NHL_DIVISION_ORDER = ["A", "M", "C", "P"]  # Atlantic, Metropolitan, Central, Pacific
+
+
+def fetch_all_nhl_standings() -> list[dict]:
+    """[{"league": "NHL", "division_name", "rows": [...]}, ...] for every
+    NHL division — same session request and same row shape as
+    fetch_all_mlb_standings() above. Not gated on the Habs' own season
+    being active (unlike fetch_habs()): the standings/now endpoint keeps
+    returning the completed season's final table through the summer
+    (confirmed live), which is still real, useful "how did the season
+    end" content for an offseason deep dive rather than nothing at all.
+    [] only if the standings request itself fails outright."""
+    try:
+        teams = _fetch_nhl_standings_raw_all()
+    except Exception:
+        return []
+    by_div: dict[str, list[dict]] = {}
+    for t in teams:
+        by_div.setdefault(t["divisionAbbrev"], []).append(t)
+    out = []
+    for abbrev in NHL_DIVISION_ORDER:
+        group = by_div.get(abbrev)
+        if not group:
+            continue
+        group.sort(key=lambda t: t["divisionSequence"])
+        rows = [
+            {
+                "rank": t["divisionSequence"],
+                "team": t["teamName"]["default"],
+                "wins": t["wins"],
+                "losses": t["losses"],
+                "extra": f"{t['otLosses']} OTL",
+                "is_team": t["teamAbbrev"]["default"] == NHL_TEAM_ABBR,
+                "logo": _nhl_logo_url(t["teamAbbrev"]["default"]),
+            }
+            for t in group
+        ]
+        out.append({"league": "NHL", "division_name": group[0].get("divisionName") or abbrev, "rows": rows})
+    return out
 
 
 # --- Live in-game detail (session request: "during a game the sports
