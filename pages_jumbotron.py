@@ -336,6 +336,11 @@ def _board_html(state: dict, now: datetime) -> str:
     sport, phase = league["sport"], state["phase"]
     away, home = _sides(status, game, league["label"])
     match = _espn_match_for(sport, game)
+    # Season-long stat leaders, not per-game box score — confirmed live
+    # ESPN's own scoreboard payload carries these regardless of
+    # whether the game itself has started, so this shows well before
+    # first pitch too, not just once the game goes live.
+    leaders_html = _top_performers_html(match)
 
     if phase == "pregame":
         remaining = (game["start_time"] - now).total_seconds()
@@ -348,7 +353,7 @@ def _board_html(state: dict, now: datetime) -> str:
         start_text = game["start_time"].strftime("%-I:%M %p")
         situation = f'<div class="jumbo-situ"><span class="jumbo-situ-hot">FIRST PITCH {html.escape(start_text)}</span></div>' if sport == "mlb" else f'<div class="jumbo-situ"><span class="jumbo-situ-hot">PUCK DROP {html.escape(start_text)}</span></div>'
         situation += _pregame_extra_html(sport, game["game_id"])
-        linescore, scoring, wp_html, leaders_html = "", "", "", ""
+        linescore, scoring, wp_html = "", "", ""
         dim_away = dim_home = False
     else:
         away_score = game["opp_score"] if game["is_home"] else game["team_score"]
@@ -393,7 +398,6 @@ def _board_html(state: dict, now: datetime) -> str:
         linescore = _linescore_html(sport, game["game_id"], away, home)
         scoring = _scoring_html(sport, game["game_id"])
         wp_html = _win_probability_html(sport, match, away, home) if phase == "live" else ""
-        leaders_html = _top_performers_html(match)
         # Only a finished game has a settled winner to dim the loser
         # against — during a live game the trailing side is still very
         # much in it.
