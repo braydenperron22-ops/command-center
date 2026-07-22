@@ -19,7 +19,21 @@ now" and fall back to its own non-AI behavior. This is a free-tier
 third-party call on a 24/7 kiosk — rate limits, network hiccups, and
 model deprecations are all things that will happen sooner or later, and
 none of them should ever be able to take a page down.
+
+Two entry points, pick based on what the caller actually needs:
+- generate() — de-dupes by exact prompt text (news.py's per-headline
+  classification: each headline gets its own real call, once, ever).
+- generate_periodic() — throttled by an explicit cadence instead
+  (morning_briefing, pages_conflicts: session request, "I don't need
+  second by second updates... by limiting the amount of calls we have
+  per minute, we can add Gemini a little all over the dashboard
+  instead of exacerbating all our resources" — this is the one to
+  reach for by default whenever a new feature gets added here, since
+  the free tier's request-per-minute limit is shared across every
+  feature calling into this module, not per-caller).
 """
+
+import time
 
 import requests
 import streamlit as st
@@ -104,3 +118,50 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
         return _generate_or_raise(prompt, temperature, max_output_tokens)
     except Exception:
         return None
+
+
+# feature_key -> (generated_at, text) — see generate_periodic below.
+# Plain module state (same convention as sports_client.py's own
+# _last_good_* / _delay_buffers) rather than st.session_state: the free
+# tier's rate limit is shared across every browser session hitting this
+# one server process, so the throttle has to be too, not per-tab.
+_periodic_cache: dict[str, tuple[float, str]] = {}
+
+
+def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, temperature: float = 0.7, max_output_tokens: int = 200) -> str | None:
+    """Same as generate(), but throttled by a caller-chosen cadence
+    instead of by exact-prompt-text matching. Session request: "I don't
+    need second by second updates... by limiting the amount of calls we
+    have per minute, we can add Gemini a little all over the dashboard
+    instead of exacerbating all our resources" — with several features
+    now sharing one free-tier quota (15 req/min on this model),
+    "recompute whenever the prompt text changes" isn't tight enough on
+    its own: morning_briefing's picked facts can shift every few
+    minutes just from live commute/market numbers ticking, and
+    pages_conflicts' AI overview reruns on every 5s rerun a page is
+    open, both far more often than that content actually needs
+    refreshing.
+
+    This is the one dial each feature sets for itself: pass a stable
+    `feature_key` unique to that feature (not derived from the prompt)
+    and the cadence it actually needs (pages_conflicts: 3600, hourly —
+    conflict trajectories don't shift minute to minute; morning_
+    briefing: 300, 5 minutes — commute/market numbers do move faster
+    than that but don't need second-by-second phrasing). Whatever was
+    last generated for that key keeps being reused, no matter how much
+    the prompt content drifts within the window — a real new call only
+    ever fires once refresh_seconds has actually elapsed.
+
+    On a failed real attempt, falls back to the last good value for
+    this key if there is one (rather than flashing "unavailable" for a
+    feature that was working moments ago), and only returns None if
+    there's truly nothing cached yet at all."""
+    now = time.time()
+    cached = _periodic_cache.get(feature_key)
+    if cached and now - cached[0] < refresh_seconds:
+        return cached[1]
+    text = generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens)
+    if text is not None:
+        _periodic_cache[feature_key] = (now, text)
+        return text
+    return cached[1] if cached else None

@@ -945,14 +945,20 @@ def _daylight_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
     return 1, _pick(lines, now, "daylight").format(**fmt)
 
 
+AI_REFRESH_SECONDS = 5 * 60  # session request: "for the daily morning brief... every five minutes is great" — see gemini_client.generate_periodic
+
+
 def _ai_sentence(picked: list[str]) -> str | None:
     """Same picked clause texts, woven by Gemini into one or two
     flowing sentences instead of the mechanical semicolon-join below —
     session request: "revamp the morning brief" with a free AI. Facts
     and their priority ordering are untouched (still decided entirely
     by the *_clause functions above); this only changes how they're
-    phrased together. None (falls back to the plain join) on any
-    failure — see gemini_client.generate's own docstring."""
+    phrased together. Real calls throttled to once per
+    AI_REFRESH_SECONDS regardless of how often render() calls this
+    (every 5s during the whole morning window) — see gemini_client.
+    generate_periodic. None (falls back to the plain join) on any
+    failure with nothing usable already cached."""
     facts = "; ".join(picked)
     prompt = (
         f"You're writing this for {USER_FIRST_NAME}, personally — combine the following facts "
@@ -965,7 +971,7 @@ def _ai_sentence(picked: list[str]) -> str | None:
         "fact, don't invent or add anything not given, don't editorialize beyond the facts "
         "themselves. Start with a capital letter and end with a period. Facts: " + facts
     )
-    return gemini_client.generate(prompt)
+    return gemini_client.generate_periodic("morning_briefing_sentence", AI_REFRESH_SECONDS, prompt)
 
 
 def render(now: datetime, weather: dict | None, air_quality: dict | None) -> None:

@@ -67,6 +67,13 @@ _SEVERITY_FILL_PCT = {"HIGH": 100, "MEDIUM": 65, "LOW": 35}
 
 HEADLINES_FED_TO_AI = 150  # comfortably covers a week's real pool without an unbounded prompt
 OVERVIEW_MAX_OUTPUT_TOKENS = 2200  # up to MAX_CONFLICTS_SHOWN entries, each a real paragraph
+# Session request: "for conflicts I don't need second by second
+# updates... update that hourly." Conflict trajectories don't shift
+# minute to minute the way commute/market numbers do, and this page
+# used to re-call the AI on every 5s rerun it was open — see
+# gemini_client.generate_periodic's own docstring for the shared
+# throttle mechanism this now goes through.
+REFRESH_SECONDS = 60 * 60
 
 
 def _ai_overview(headlines: list[dict]) -> list[dict] | None:
@@ -74,8 +81,11 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
     "name"}, ...], "status", "overview", "severity", "headlines": [...]}
     (headlines re-attached below, matched back from the AI's own
     referenced numbers) — or None on any failure (missing key, rate
-    limit, network, or a response that didn't come back as valid JSON).
-    See this module's own docstring for the full design rationale."""
+    limit, network, or a response that didn't come back as valid JSON)
+    with nothing usable already cached. Real calls throttled to once
+    per REFRESH_SECONDS regardless of how often this is called — see
+    gemini_client.generate_periodic. See this module's own docstring
+    for the full design rationale."""
     texts = [h["headline"] for h in headlines[:HEADLINES_FED_TO_AI]]
     if not texts:
         return None
@@ -115,7 +125,9 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
         '[{"countries": [{"code": "ua", "name": "Ukraine"}, {"code": "ru", "name": "Russia"}], '
         '"status": "ACTIVE_WAR", "overview": "...", "severity": "HIGH", "headline_numbers": [3, 7]}]'
     )
-    result = gemini_client.generate(prompt, temperature=0.2, max_output_tokens=OVERVIEW_MAX_OUTPUT_TOKENS)
+    result = gemini_client.generate_periodic(
+        "conflicts_overview", REFRESH_SECONDS, prompt, temperature=0.2, max_output_tokens=OVERVIEW_MAX_OUTPUT_TOKENS
+    )
     if result is None:
         return None
 
