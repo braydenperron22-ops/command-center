@@ -630,19 +630,50 @@ def _mlb_headshot_url(player_id: int) -> str:
     return _MLB_HEADSHOT_URL.format(player_id=player_id)
 
 
+MLB_BOXSCORE_URL = "https://statsapi.mlb.com/api/v1/game/{game_id}/boxscore"
+
+
+@st.cache_data(ttl=LIVE_DETAIL_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_mlb_boxscore_raw(game_id: int) -> dict:
+    fetch_throttle.wait_turn()
+    resp = requests.get(MLB_BOXSCORE_URL.format(game_id=game_id), timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _mlb_game_pitch_count(game_id: int, pitcher_id: int) -> int | None:
+    """This specific game's pitch count so far for one pitcher —
+    session request: "for pitchers add number of pitches below ERA."
+    Season ERA comes from the /people stat line, but a live pitch
+    count is inherently per-game, only in the boxscore's own per-
+    player stats. None on any fetch failure or before this pitcher has
+    thrown a pitch this game (not yet in the boxscore's player list)."""
+    try:
+        data = _fetch_mlb_boxscore_raw(game_id)
+    except Exception:
+        return None
+    for side in ("home", "away"):
+        players = ((data.get("teams") or {}).get(side) or {}).get("players") or {}
+        for p in players.values():
+            if (p.get("person") or {}).get("id") == pitcher_id:
+                return (p.get("stats") or {}).get("pitching", {}).get("numberOfPitches")
+    return None
+
+
 def fetch_mlb_live_matchup(game_id: int) -> dict | None:
-    """{"batter": {"id", "name", "ops", "photo"}, "pitcher": {"id",
-    "name", "era", "photo"}} for whoever's actually at the plate/on the
-    mound right now — session request: "during the game can you make
-    the top
-    performers tab show current pitcher and batter and their stats use
-    OPS for batter and ERA for pitchers... ideally add the pitcher and
-    batter pics." Reuses the same cached linescore fetch_mlb_live_detail
-    already pulls this rerun (no extra request for the matchup itself),
-    one small extra request each for the two players' own season stat
-    lines. None on any fetch failure or once there's genuinely no one
-    at the plate/mound to name (the linescore payload omits offense/
-    defense between innings)."""
+    """{"batter": {"id", "name", "avg", "photo"}, "pitcher": {"id",
+    "name", "era", "pitches", "photo"}} for whoever's actually at the
+    plate/on the mound right now — session request: "during the game
+    can you make the top performers tab show current pitcher and
+    batter and their stats... ideally add the pitcher and batter pics,"
+    later refined to "for pitchers add number of pitches below ERA and
+    then just do average for batter." Reuses the same cached linescore
+    fetch_mlb_live_detail already pulls this rerun (no extra request
+    for the matchup itself), one small extra request each for the two
+    players' own season stat lines plus one boxscore request for the
+    pitcher's live pitch count. None on any fetch failure or once
+    there's genuinely no one at the plate/mound to name (the linescore
+    payload omits offense/defense between innings)."""
     try:
         data = _fetch_mlb_linescore_raw(game_id)
     except Exception:
@@ -654,8 +685,14 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     batter_stat = _fetch_mlb_player_season_stat_raw(batter["id"], "hitting")
     pitcher_stat = _fetch_mlb_player_season_stat_raw(pitcher["id"], "pitching")
     return {
-        "batter": {"id": batter["id"], "name": batter["fullName"], "ops": batter_stat.get("ops"), "photo": _mlb_headshot_url(batter["id"])},
-        "pitcher": {"id": pitcher["id"], "name": pitcher["fullName"], "era": pitcher_stat.get("era"), "photo": _mlb_headshot_url(pitcher["id"])},
+        "batter": {"id": batter["id"], "name": batter["fullName"], "avg": batter_stat.get("avg"), "photo": _mlb_headshot_url(batter["id"])},
+        "pitcher": {
+            "id": pitcher["id"],
+            "name": pitcher["fullName"],
+            "era": pitcher_stat.get("era"),
+            "pitches": _mlb_game_pitch_count(game_id, pitcher["id"]),
+            "photo": _mlb_headshot_url(pitcher["id"]),
+        },
     }
 
 

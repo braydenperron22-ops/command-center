@@ -366,33 +366,41 @@ def _current_matchup_html(game_id: int) -> str:
     # into one string ("4.31 ERA") at one size read busy from across
     # the room — split into a big number plus a small caption underneath,
     # the same big-stat/small-caption pattern _top_performers_html's own
-    # big card already uses (jumbo-leader-big-stat/-cat).
-    def col(tag: str, player: dict, stat_value: str | None, stat_label: str) -> str:
+    # big card already uses (jumbo-leader-big-stat/-cat). Later request:
+    # "for pitchers add number of pitches below ERA and then just do
+    # average for batter" — a pitcher now carries two stat blocks side
+    # by side, a batter just the one; `stats` takes however many
+    # (value, label) pairs apply, skipping any that came back None.
+    def col(tag: str, player: dict, stats: list[tuple]) -> str:
         photo = (
             f'<img class="jumbo-live-matchup-photo" src="{html.escape(player["photo"])}" onerror="this.style.display=\'none\'" />'
             if player.get("photo")
             else ""
         )
-        stat_html = (
-            f'<div class="jumbo-live-matchup-stat">{html.escape(stat_value)}</div>'
-            f'<div class="jumbo-live-matchup-stat-label">{html.escape(stat_label)}</div>'
-            if stat_value
-            else '<div class="jumbo-live-matchup-stat">—</div>'
+        blocks = "".join(
+            f'<div class="jumbo-live-matchup-stat-block">'
+            f'<div class="jumbo-live-matchup-stat">{html.escape(str(value))}</div>'
+            f'<div class="jumbo-live-matchup-stat-label">{html.escape(label)}</div>'
+            f"</div>"
+            for value, label in stats
+            if value is not None
         )
+        if not blocks:
+            blocks = '<div class="jumbo-live-matchup-stat-block"><div class="jumbo-live-matchup-stat">—</div></div>'
         return (
             f'<div class="jumbo-live-matchup-col">{photo}'
             f'<div class="jumbo-live-matchup-tag">{html.escape(tag)}</div>'
             f'<div class="jumbo-live-matchup-name">{html.escape(player["name"])}</div>'
-            f"{stat_html}"
+            f'<div class="jumbo-live-matchup-stat-row">{blocks}</div>'
             f"</div>"
         )
 
     return (
         f'<div class="jumbo-leaders"><div class="jumbo-sl">Current Matchup</div>'
         f'<div class="jumbo-live-matchup">'
-        f'{col("At Bat", batter, batter.get("ops"), "OPS")}'
+        f'{col("At Bat", batter, [(batter.get("avg"), "AVG")])}'
         f'<div class="jumbo-live-matchup-vs">VS</div>'
-        f'{col("Pitching", pitcher, pitcher.get("era"), "ERA")}'
+        f'{col("Pitching", pitcher, [(pitcher.get("era"), "ERA"), (pitcher.get("pitches"), "PITCHES")])}'
         f"</div></div>"
     )
 

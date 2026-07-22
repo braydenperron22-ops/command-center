@@ -2522,6 +2522,12 @@ html, body, [class*="css"] {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+/* Session request: "for pitchers add number of pitches below ERA and
+   then just do average for batter" — a pitcher now carries two stat
+   blocks (ERA, pitch count) side by side, a batter just the one (AVG);
+   this row wraps however many _current_matchup_html's own col() built. */
+.jumbo-live-matchup-stat-row { display: flex; gap: 26px; margin-top: 4px; }
+.jumbo-live-matchup-stat-block { display: flex; flex-direction: column; align-items: center; }
 .jumbo-live-matchup-stat {
     /* Session feedback: "the font is still so clunky that it just looks
        like a blob. pick a skinnier font." var(--num) is Bebas Neue — a
@@ -2530,11 +2536,10 @@ html, body, [class*="css"] {
        this size. JetBrains Mono actually has real weight steps and
        tabular figures, reads far slimmer for a stat number like this. */
     font-family: var(--mono);
-    font-size: 36px;
+    font-size: 32px;
     font-weight: 600;
     color: var(--bone);
     line-height: 1.1;
-    margin-top: 2px;
 }
 .jumbo-live-matchup-stat-label {
     font-family: var(--mono);
