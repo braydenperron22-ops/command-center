@@ -1,5 +1,9 @@
 """Static configuration: FRED series, weather location, thresholds."""
 
+# Whose dashboard this is — session request: have the AI-written morning
+# briefing (morning_briefing._ai_sentence) address him by name.
+USER_FIRST_NAME = "Brayden"
+
 # Corbeil, Ontario
 WEATHER_LAT = 46.2616
 WEATHER_LON = -79.2920

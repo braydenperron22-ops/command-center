@@ -46,7 +46,7 @@ import market_yf_client
 import payday_schedule
 import waste_schedule
 import wildfire_client
-from config import AQI_SHOW_THRESHOLD, COMMUTE_DESTINATION, TIMEZONE, WEATHER_LAT, WEATHER_LON
+from config import AQI_SHOW_THRESHOLD, COMMUTE_DESTINATION, TIMEZONE, USER_FIRST_NAME, WEATHER_LAT, WEATHER_LON
 
 MORNING_WINDOW_START_HOUR = 5
 MORNING_WINDOW_END_HOUR = 10
@@ -955,13 +955,15 @@ def _ai_sentence(picked: list[str]) -> str | None:
     failure — see gemini_client.generate's own docstring."""
     facts = "; ".join(picked)
     prompt = (
-        "Combine the following facts into one flowing sentence, or two short sentences if that "
-        "reads better, in a relaxed, warm, conversational tone (not corporate, no bullet points). "
-        "Do NOT include any greeting or salutation of any kind (no 'good morning', no 'hey', "
-        "nothing) — start directly with the first fact itself, mid-sentence style, since a "
-        "greeting is prepended separately by the caller. Keep every fact, don't invent or add "
-        "anything not given, don't editorialize beyond the facts themselves. Start with a capital "
-        "letter and end with a period. Facts: " + facts
+        f"You're writing this for {USER_FIRST_NAME}, personally — combine the following facts "
+        "into one flowing sentence, or two short sentences if that reads better, in a relaxed, "
+        f"warm, conversational tone (not corporate, no bullet points). Address {USER_FIRST_NAME} "
+        "by first name naturally somewhere in the text, the way a friend would drop your name "
+        "mid-sentence — NOT as a greeting or salutation at the very start (no 'Good morning, "
+        f"{USER_FIRST_NAME}', no 'Hey {USER_FIRST_NAME}'), since a greeting is already prepended "
+        "separately by the caller and starting with one here would duplicate it. Keep every "
+        "fact, don't invent or add anything not given, don't editorialize beyond the facts "
+        "themselves. Start with a capital letter and end with a period. Facts: " + facts
     )
     return gemini_client.generate(prompt)
 
