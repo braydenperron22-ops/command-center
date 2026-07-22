@@ -134,6 +134,9 @@ def _side_html(side: dict, dim: bool) -> str:
     )
 
 
+_INNING_ARROW = {"Top": "▲", "Bottom": "▼"}
+
+
 def _mlb_situation_html(game_id: int) -> str:
     detail = sports_client.fetch_mlb_live_detail(game_id)
     if not detail:
@@ -147,35 +150,34 @@ def _mlb_situation_html(game_id: int) -> str:
         "</g></svg>"
     )
 
-    # Session request: "are there animations for... there's a
-    # strikeout" — pulses whichever dot just lit up (balls/strikes/
-    # outs each compared to what was last rendered for this game,
-    # keyed by game_id in session_state). A new at-bat resetting these
-    # to a lower count never falsely pulses anything: there's no lit
-    # dot to pulse the instant a count drops, only when it climbs.
+    # Session request: "make counts and outs actual numbers instead of
+    # dots" — was a row of small filled/unfilled circles, hard to read
+    # at a glance from across the room; now the real "2-1" / "1 OUT"
+    # text broadcasts already use. Still pulses on a genuine increase
+    # (comparing to what was last rendered for this game, keyed by
+    # game_id in session_state) — same reasoning as the old dots had,
+    # just animating the number itself now instead of lighting up one
+    # more dot. A new at-bat resetting the count to 0 never falsely
+    # pulses anything: nothing to compare up against on the way down.
+    balls, strikes, outs = detail.get("balls") or 0, detail.get("strikes") or 0, detail.get("outs") or 0
     prev_counts = st.session_state.get(f"jumbotron_mlb_counts_{game_id}", {})
-    current_counts = {"b": detail.get("balls") or 0, "s": detail.get("strikes") or 0, "o": detail.get("outs") or 0}
-    st.session_state[f"jumbotron_mlb_counts_{game_id}"] = current_counts
+    st.session_state[f"jumbotron_mlb_counts_{game_id}"] = {"b": balls, "s": strikes, "o": outs}
+    count_pulse = " jumbo-situ-pulse" if balls > prev_counts.get("b", 0) or strikes > prev_counts.get("s", 0) else ""
+    outs_pulse = " jumbo-situ-pulse" if outs > prev_counts.get("o", 0) else ""
 
-    def dots(count, total, kind):
-        count = count or 0
-        just_up = count > prev_counts.get(kind, 0)
-        out = []
-        for i in range(total):
-            classes = f"jumbo-dot jumbo-dot-{kind}"
-            if i < count:
-                classes += " on"
-                if just_up and i == count - 1:
-                    classes += " jumbo-dot-pulse"
-            out.append(f'<i class="{classes}"></i>')
-        return "".join(out)
+    # Session request: "put an up or down arrow beside inning instead
+    # of top/bottom" — real scoreboard convention (▲ away batting/top,
+    # ▼ home batting/bottom). MLB's own "Middle"/"End" inning-break
+    # states have no such convention, so those still show as text.
+    inning_state = detail.get("inning_state") or ""
+    inning_num = detail.get("current_inning")
+    arrow = _INNING_ARROW.get(inning_state)
+    inning = f"{arrow} {inning_num}" if arrow and inning_num else f"{inning_state} {inning_num or ''}".strip()
 
-    inning = f'{detail.get("inning_state") or ""} {detail.get("current_inning") or ""}'.strip()
     parts = [f'<span class="jumbo-situ-hot">{html.escape(inning)}</span>'] if inning else []
     parts.append(diamond)
-    parts.append(f'<span class="jumbo-dots">{dots(current_counts["b"], 4, "b")}</span>')
-    parts.append(f'<span class="jumbo-dots">{dots(current_counts["s"], 3, "s")}</span>')
-    parts.append(f'<span class="jumbo-dots">{dots(current_counts["o"], 3, "o")}</span>')
+    parts.append(f'<span class="jumbo-situ-count{count_pulse}"><span class="jumbo-dim">COUNT</span> {balls}-{strikes}</span>')
+    parts.append(f'<span class="jumbo-situ-outs{outs_pulse}">{outs} OUT</span>')
     line = "".join(parts)
     who = []
     if detail.get("batter"):
@@ -263,12 +265,22 @@ def _win_probability_html(sport: str, match: dict | None, away: dict, home: dict
     team_color = _TEAM_COLOR.get(sport, "#FFB300")
     away_color = team_color if away["is_us"] else "#525C6E"
     home_color = team_color if home["is_us"] else "#525C6E"
+    # Session feedback: "find a better way to show the win odds since
+    # its hard to see" — was an 11px-tall bar with 11px percentages
+    # written below each end. The percentages themselves are now the
+    # headline (big numbers flanking the bar, not small print under
+    # it), and the bar itself is thick enough to read as a real
+    # visual split rather than a thin stripe.
     return (
         '<div class="jumbo-wp"><div class="jumbo-wp-title">WIN PROBABILITY</div>'
+        '<div class="jumbo-wp-row">'
+        f'<div class="jumbo-wp-pct" style="color:{away_color}">{away_pct}%</div>'
         f'<div class="jumbo-wp-bar"><div class="jumbo-wp-seg" style="width:{away_pct}%;background:{away_color}"></div>'
         f'<div class="jumbo-wp-seg" style="width:{home_pct}%;background:{home_color}"></div></div>'
-        f'<div class="jumbo-wp-labels"><span><b>{away_pct}%</b> {html.escape(away["name"])}</span>'
-        f'<span>{html.escape(home["name"])} <b>{home_pct}%</b></span></div></div>'
+        f'<div class="jumbo-wp-pct" style="color:{home_color}">{home_pct}%</div>'
+        "</div>"
+        f'<div class="jumbo-wp-labels"><span>{html.escape(away["name"])}</span>'
+        f'<span>{html.escape(home["name"])}</span></div></div>'
     )
 
 

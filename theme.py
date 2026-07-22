@@ -2350,18 +2350,32 @@ html, body, [class*="css"] {
    session request, from ESPN's own live model (see
    scores_client.win_probability's own docstring for why the native
    MLB/NHL feeds this board otherwise runs on can't provide this). */
-.jumbo-wp { padding: 10px 60px 6px; }
+/* Session feedback: "find a better way to show the win odds since its
+   hard to see" — was a thin 11px bar with 11px-print percentages
+   underneath. Now the percentages are the headline, big and bold,
+   flanking a bar thick enough to actually read the split at a glance. */
+.jumbo-wp { padding: 12px 36px 8px; }
 .jumbo-wp-title {
     text-align: center;
-    font-size: 9px;
-    font-weight: 300;
+    font-size: 11px;
+    font-weight: 700;
     letter-spacing: 0.4em;
     color: var(--mut-2);
-    margin-bottom: 5px;
+    margin-bottom: 10px;
 }
+.jumbo-wp-row { display: flex; align-items: center; gap: 16px; }
+.jumbo-wp-pct {
+    font-family: var(--mono);
+    font-size: 34px;
+    font-weight: 700;
+    flex: 0 0 auto;
+    min-width: 78px;
+}
+.jumbo-wp-row .jumbo-wp-pct:first-child { text-align: right; }
 .jumbo-wp-bar {
-    height: 11px;
-    border-radius: 6px;
+    flex: 1;
+    height: 30px;
+    border-radius: 8px;
     overflow: hidden;
     display: flex;
     border: 1px solid var(--edge);
@@ -2371,12 +2385,12 @@ html, body, [class*="css"] {
     display: flex;
     justify-content: space-between;
     font-family: var(--mono);
-    font-size: 11px;
-    color: var(--mut);
-    margin-top: 5px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--bone);
+    margin-top: 8px;
     letter-spacing: 0.03em;
 }
-.jumbo-wp-labels b { color: var(--bone); }
 /* Top Performers — single big rotating card with a real headshot
    (pages_jumbotron._top_performers_html) — session request: "make top
    performers bigger or put them in a single slot that rotates
@@ -2542,19 +2556,23 @@ html, body, [class*="css"] {
 .jumbo-diamond { width: 62px; height: 62px; display: inline-block; vertical-align: -18px; margin: 0 18px; }
 .jumbo-diamond rect { fill: #1A2230; stroke: var(--edge-hi); stroke-width: 1.5; }
 .jumbo-diamond rect.on { fill: var(--led); stroke: var(--led); }
-.jumbo-dots { display: inline-flex; gap: 7px; margin-left: 14px; vertical-align: 3px; }
-.jumbo-dot { width: 16px; height: 16px; border-radius: 50%; background: #1A2230; border: 1.5px solid var(--edge-hi); display: inline-block; }
-.jumbo-dot-b.on { background: var(--ok); border-color: var(--ok); }
-.jumbo-dot-s.on { background: var(--live); border-color: var(--live); }
-.jumbo-dot-o.on { background: var(--led); border-color: var(--led); }
-/* Session request: "are there animations for... there's a strikeout" —
-   the ball/strike/out dot that just lit up gets a brief pop instead of
-   just silently appearing (pages_jumbotron._mlb_situation_html decides
-   which dot, if any, qualifies each render). */
-.jumbo-dot-pulse { animation: jumbo-dot-pulse 0.6s ease-out; }
-@keyframes jumbo-dot-pulse {
-    0% { transform: scale(1.9); box-shadow: 0 0 12px var(--led); }
-    100% { transform: scale(1); box-shadow: none; }
+/* Session request: "make counts and outs actual numbers instead of
+   dots" — replaces the old ball/strike/out dot rows. */
+.jumbo-situ-count, .jumbo-situ-outs {
+    display: inline-block;
+    font-weight: 700;
+    color: var(--bone);
+}
+.jumbo-situ-count { margin-left: 14px; }
+.jumbo-situ-outs { margin-left: 22px; }
+/* Session request (carried over from the old dots): "are there
+   animations for... there's a strikeout" — the count/outs number
+   pulses the instant it climbs instead of just silently updating
+   (pages_jumbotron._mlb_situation_html decides when that's genuine). */
+.jumbo-situ-pulse { animation: jumbo-situ-pulse 0.6s ease-out; display: inline-block; }
+@keyframes jumbo-situ-pulse {
+    0% { transform: scale(1.35); text-shadow: 0 0 16px var(--led); }
+    100% { transform: scale(1); text-shadow: none; }
 }
 
 .jumbo-sl {
