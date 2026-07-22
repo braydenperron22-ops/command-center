@@ -422,100 +422,6 @@ def _current_matchup_html(game_id: int) -> str:
     )
 
 
-_PITCHER_OVERLAY_HOLD_SECONDS = 8
-
-
-def _pitcher_change_overlay_html(game_id: int, pitcher_id: int | None, team_label: str) -> str:
-    """Full-screen "new pitcher" intro, fixed over the entire kiosk —
-    session request: "can we create a full screen toast for when a new
-    pitcher comes in that shows their full profile and season stats."
-
-    Fires once per genuine pitching change — tracked as "last pitcher
-    seen for this game_id"; a change is only real once a previous
-    pitcher was already on record, so this stays silent on the game's
-    very first live sighting (that's just whoever started, not a
-    substitution) and fires again if the same pitcher somehow comes
-    back later (rare, but happens in extras). Held for
-    _PITCHER_OVERLAY_HOLD_SECONDS across however many 5s reruns that
-    spans, via the exact shown_at/elapsed + animation-delay technique
-    the bottom toast bars already use (see sports_alerts.
-    render_alert_bar) — long enough to actually read a full stat line,
-    not just glanced at like the jumbotron's own mode-switch transition
-    curtain (2.4s, see app.py)."""
-    if not pitcher_id:
-        return ""
-    last_key = f"jumbotron_last_pitcher_{game_id}"
-    shown_key = f"jumbotron_pitcher_overlay_{game_id}"
-    last_pitcher_id = st.session_state.get(last_key)
-    now_ts = time.time()
-
-    if pitcher_id != last_pitcher_id:
-        if last_pitcher_id is not None:
-            st.session_state[shown_key] = {"pitcher_id": pitcher_id, "shown_at": now_ts}
-        st.session_state[last_key] = pitcher_id
-
-    active = st.session_state.get(shown_key)
-    if not active or active.get("pitcher_id") != pitcher_id:
-        return ""
-    elapsed = now_ts - active["shown_at"]
-    if elapsed > _PITCHER_OVERLAY_HOLD_SECONDS:
-        st.session_state[shown_key] = None
-        return ""
-
-    profile = sports_client.fetch_mlb_pitcher_profile(pitcher_id)
-    if not profile:
-        return ""
-
-    photo = (
-        f'<img class="jumbo-pitcher-overlay-photo" src="{html.escape(profile["photo"])}" onerror="this.style.display=\'none\'" />'
-        if profile.get("photo")
-        else ""
-    )
-    throws = {"R": "RHP", "L": "LHP"}.get(profile.get("throws") or "", "")
-    bio_parts = [
-        p
-        for p in [
-            f'#{profile["number"]}' if profile.get("number") else "",
-            throws,
-            profile.get("height") or "",
-            f'{profile["weight"]} lbs' if profile.get("weight") else "",
-            f'Age {profile["age"]}' if profile.get("age") else "",
-        ]
-        if p
-    ]
-    bio = " · ".join(bio_parts)
-
-    def stat_block(value, label: str) -> str:
-        if value is None:
-            return ""
-        return (
-            f'<div class="jumbo-pitcher-overlay-stat">'
-            f'<div class="jumbo-pitcher-overlay-stat-v">{html.escape(str(value))}</div>'
-            f'<div class="jumbo-pitcher-overlay-stat-l">{html.escape(label)}</div></div>'
-        )
-
-    win_loss = f'{profile["wins"]}-{profile["losses"]}' if profile.get("wins") is not None and profile.get("losses") is not None else None
-    stats = "".join(
-        [
-            stat_block(profile.get("era"), "ERA"),
-            stat_block(win_loss, "W-L"),
-            stat_block(profile.get("strikeouts"), "SO"),
-            stat_block(profile.get("whip"), "WHIP"),
-            stat_block(profile.get("innings_pitched"), "IP"),
-        ]
-    )
-
-    delay = f"animation-delay: -{elapsed:.2f}s;"
-    role_line = f'{profile["role"]} · ' if profile.get("role") else ""
-    return (
-        f'<div class="jumbo-pitcher-overlay" style="{delay}"><div class="jumbo-pitcher-overlay-inner">'
-        f'<div class="jumbo-pitcher-overlay-label">Now Pitching for the {html.escape(team_label.title())}</div>'
-        f"{photo}"
-        f'<div class="jumbo-pitcher-overlay-name">{html.escape(profile["name"])}</div>'
-        f'<div class="jumbo-pitcher-overlay-bio">{html.escape(role_line)}{html.escape(bio)}</div>'
-        f'<div class="jumbo-pitcher-overlay-stats">{stats}</div>'
-        f"</div></div>"
-    )
 
 
 def _fmt_break_clock(seconds: float) -> str:
@@ -996,25 +902,8 @@ def render(now: datetime, state: dict, weather: dict | None) -> None:
     standings = _rotating_standings_html(time.time())
     standings_block = f'<div class="jumbo-panel jumbo-standings-panel">{standings}</div>' if standings else ""
 
-    # Full-screen new-pitcher overlay — MLB only (see
-    # _pitcher_change_overlay_html's own docstring), computed from the
-    # same live matchup fetch_mlb_live_matchup the Current Matchup card
-    # already pulls this rerun (no extra request).
-    pitcher_overlay = ""
-    if state["phase"] == "live" and state["league"]["sport"] == "mlb" and state["game"]:
-        matchup = sports_client.fetch_mlb_live_matchup(state["game"]["game_id"])
-        if matchup and matchup.get("pitcher"):
-            pitcher_overlay = _pitcher_change_overlay_html(
-                state["game"]["game_id"], matchup["pitcher"].get("id"), state["league"]["label"]
-            )
-
     # Full-screen out-of-town scoreboard during a natural break in the
-    # featured game (see _between_play_overlay_html's own docstring) —
-    # lower z-index than the new-pitcher overlay above so the two never
-    # visually fight if a pitching change happens to land right at a
-    # half-inning break: the pitcher overlay's own 8s hold plays on top
-    # first, then this (still active for the rest of the real break)
-    # is what's left showing underneath once that hold ends.
+    # featured game (see _between_play_overlay_html's own docstring).
     between_play_overlay = _between_play_overlay_html(state, now)
 
     st.markdown(
@@ -1032,7 +921,7 @@ def render(now: datetime, state: dict, weather: dict | None) -> None:
         f"</div>"
         f"{_board_html(state, now)}"
         f"{around_block}"
-        f"</div>{between_play_overlay}{pitcher_overlay}</div>",
+        f"</div>{between_play_overlay}</div>",
         unsafe_allow_html=True,
     )
 

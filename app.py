@@ -442,14 +442,13 @@ except Exception:
     severe_weather_active = False
 
 # Session request: "make it so the screen cannot turn off if there's a
-# live game — after the game is over the setup can sleep." Unlike the
-# weather override below (deliberately brief — session feedback that
-# staying bright for an entire stint was itself the problem), this one
-# is meant to hold for the game's whole duration: re-checked fresh each
-# rerun via sports_client's own game state, so it naturally reverts the
-# moment the game actually ends rather than needing its own timer.
+# live game — after the game is over the setup can sleep," later
+# corrected to also hold through the postgame recap (see
+# sports_alerts.plug_should_stay_on's own docstring). Reuses _takeover
+# — already nulled above by the manual End Session dismiss check — so
+# that's the one case this doesn't hold through, same as the request.
 try:
-    game_live = sports_alerts.any_game_live()
+    game_live = sports_alerts.plug_should_stay_on(_takeover)
 except Exception:
     game_live = False
 

@@ -2749,93 +2749,20 @@ html, body, [class*="css"] {
     animation: jumbo-transition-sub-in 0.6s ease-out 0.5s forwards;
 }
 
-/* Full-screen "new pitcher" intro — session request: "can we create a
-   full screen toast for when a new pitcher comes in that shows their
-   full profile and season stats." Same fixed-full-viewport approach as
-   .jumbo-transition above, but held far longer (see
-   pages_jumbotron._PITCHER_OVERLAY_HOLD_SECONDS) since this has to
-   actually be read — driven by animation-delay set from real elapsed
-   time (same technique sports_alerts.render_alert_bar's own toast bars
-   use), not a delay that resets every Streamlit rerun. */
-.jumbo-pitcher-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 9998;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    background: rgba(5,7,12,0.97);
-    pointer-events: none;
-    animation: jumbo-pitcher-overlay-fade 8.6s cubic-bezier(.4,0,.2,1) forwards;
-}
-@keyframes jumbo-pitcher-overlay-fade {
-    0% { opacity: 0; }
-    5% { opacity: 1; }
-    88% { opacity: 1; }
-    100% { opacity: 0; visibility: hidden; }
-}
-.jumbo-pitcher-overlay-inner { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.jumbo-pitcher-overlay-label {
-    font-family: var(--mono);
-    font-size: 16px;
-    letter-spacing: 0.28em;
-    color: var(--led);
-    text-transform: uppercase;
-    font-weight: 700;
-    margin-bottom: 6px;
-}
-.jumbo-pitcher-overlay-photo {
-    width: 200px;
-    height: 200px;
-    border-radius: 50%;
-    object-fit: cover;
-    object-position: top;
-    background: #141A25;
-    border: 4px solid var(--led);
-    box-shadow: 0 0 60px rgba(255,179,0,0.25);
-    margin-bottom: 8px;
-}
-.jumbo-pitcher-overlay-name {
-    font-family: var(--mono);
-    font-size: 52px;
-    font-weight: 600;
-    color: var(--bone);
-    text-align: center;
-}
-.jumbo-pitcher-overlay-bio {
-    font-family: var(--mono);
-    font-size: 16px;
-    color: var(--mut);
-    letter-spacing: 0.04em;
-    text-align: center;
-    margin-bottom: 18px;
-}
-.jumbo-pitcher-overlay-stats { display: flex; align-items: flex-start; justify-content: center; gap: 44px; }
-.jumbo-pitcher-overlay-stat { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.jumbo-pitcher-overlay-stat-v { font-family: var(--mono); font-size: 34px; font-weight: 600; color: var(--bone); }
-.jumbo-pitcher-overlay-stat-l {
-    font-family: var(--mono);
-    font-size: 12px;
-    letter-spacing: 0.2em;
-    color: var(--led);
-    text-transform: uppercase;
-    font-weight: 700;
-}
-
 /* Full-screen "out of town scoreboard" during a natural break in the
    featured game — session request: "between innings / periods can we
    go to a full screen out of town scoreboard. with a timer till the
    game resumes again." Same fixed-full-viewport approach as
-   .jumbo-pitcher-overlay above, one z-index lower so a new-pitcher
-   overlay firing right at a break still plays on top first. Reuses
-   the sidebar Around The Leagues panel's own .jumbo-mini row markup
-   (pages_jumbotron._mini_row_html) inside a bigger grid rather than a
-   separate template — .jumbo-otc-grid-scoped overrides below just
-   size those same rows up for a full-screen read. No animation-hold
-   timing here (unlike the pitcher overlay): this is driven by real
-   game state, up for exactly as long as the break itself lasts. */
+   .jumbo-transition above. Reuses the sidebar Around The Leagues
+   panel's own .jumbo-mini row markup (pages_jumbotron._mini_row_html)
+   inside a bigger grid rather than a separate template —
+   .jumbo-otc-grid-scoped overrides below just size those same rows up
+   for a full-screen read. No animation-hold timing here: this is
+   driven by real game state, up for exactly as long as the break
+   itself lasts. (A full-screen "new pitcher" intro used to share this
+   pattern at z-index 9998 — session feedback: "the pitchers toast
+   showed up at the end of the 9th... way too early, the data delay
+   didnt catch that... just get rid of them" — removed entirely.) */
 .jumbo-otc-overlay {
     position: fixed;
     inset: 0;
@@ -2899,10 +2826,9 @@ html, body, [class*="css"] {
    clearing the toast alert bar below (see that block's own comment),
    originally corrected from bottom-right which collided with
    Streamlit's own "Made with Streamlit" badge there. Higher z-index
-   than both full-screen overlays above (9998/9997) so it's always
-   reachable regardless of which one happens to be showing (neither has
-   pointer-events:none the way the pitcher overlay does, so without
-   this it could get covered instead of just visually topped). */
+   than the out-of-town-scoreboard overlay above (9997) so it's always
+   reachable if that's showing (it doesn't set pointer-events:none, so
+   without this it could get covered instead of just visually topped). */
 .st-key-jumbotron_controls {
     position: fixed;
     left: 34px;

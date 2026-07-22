@@ -637,11 +637,9 @@ def _fetch_mlb_player_raw(player_id: int, group: str) -> dict:
     """This one player's full /people payload — bio fields (name,
     number, height/weight, age, throws/bats hand, ...) plus their
     season stat splits for `group` ("hitting"/"pitching") — {} if the
-    API genuinely has nothing for this id. Shared by
-    _fetch_mlb_player_season_stat_raw (just the stat line, for the
-    Current Matchup card) and fetch_mlb_pitcher_profile (bio + stat
-    both, for the full-screen new-pitcher overlay) — same endpoint/
-    params either way, so sharing this costs no extra request."""
+    API genuinely has nothing for this id. Used via
+    _fetch_mlb_player_season_stat_raw for the Current Matchup card's
+    stat line."""
     fetch_throttle.wait_turn()
     resp = requests.get(PEOPLE_URL.format(player_id=player_id), params={"hydrate": f"stats(group=[{group}],type=[season])"}, timeout=10)
     resp.raise_for_status()
@@ -756,50 +754,6 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
             "strikes": pitcher_totals.get("strikes"),
             "photo": _mlb_headshot_url(pitcher["id"]),
         },
-    }
-
-
-def fetch_mlb_pitcher_profile(player_id: int) -> dict | None:
-    """Full profile for the jumbotron's full-screen "new pitcher" intro
-    — session request: "can we create a full screen toast for when a
-    new pitcher comes in that shows their full profile and season
-    stats." {"name", "number", "throws" ("R"/"L"), "height", "weight",
-    "age", "role" ("Starter"/"Closer"/"Reliever"), "photo", "era",
-    "whip", "wins", "losses", "saves", "strikeouts",
-    "innings_pitched"}. None on any fetch failure or a genuinely empty
-    payload for this id."""
-    try:
-        person = _fetch_mlb_player_raw(player_id, "pitching")
-    except Exception:
-        return None
-    if not person:
-        return None
-    stats = person.get("stats") or []
-    splits = stats[0].get("splits") if stats else []
-    stat = splits[0].get("stat", {}) if splits else {}
-    games, starts, saves = stat.get("gamesPlayed"), stat.get("gamesStarted"), stat.get("saves") or 0
-    if starts and games and starts == games:
-        role = "Starter"
-    elif saves > 0:
-        role = "Closer"
-    else:
-        role = "Reliever"
-    return {
-        "name": person.get("fullName", ""),
-        "number": person.get("primaryNumber"),
-        "throws": (person.get("pitchHand") or {}).get("code"),
-        "height": person.get("height"),
-        "weight": person.get("weight"),
-        "age": person.get("currentAge"),
-        "role": role,
-        "photo": _mlb_headshot_url(player_id),
-        "era": stat.get("era"),
-        "whip": stat.get("whip"),
-        "wins": stat.get("wins"),
-        "losses": stat.get("losses"),
-        "saves": stat.get("saves"),
-        "strikeouts": stat.get("strikeOuts"),
-        "innings_pitched": stat.get("inningsPitched"),
     }
 
 

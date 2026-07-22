@@ -654,17 +654,24 @@ def takeover_preview_state() -> dict | None:
     return None
 
 
-def any_game_live() -> bool:
-    """True if either the Jays' or Habs' own tracked game is live right
-    now — session request: the screen shouldn't dim/sleep for the night
-    while a game is still going, only once it's actually over (see
-    app.py's night_dim override)."""
-    for league in _LEAGUES:
-        status = league["fetch_status"]()
-        game = status["game"] if status else None
-        if game and game["state"] == "live":
-            return True
-    return False
+def plug_should_stay_on(takeover: dict | None) -> bool:
+    """True while the monitor's smart plug should be held on regardless
+    of the normal daylight window — session request: "the smart plug
+    can't turn off if there's a live game... after the game is over the
+    setup can sleep." Originally just "game state == live", which cut
+    the plug the instant a game went final — session correction: "the
+    second the end of game recap happened the smart plug turned off...
+    shouldn't have happened for at least 5 mins." Now rides the exact
+    same postgame hold the jumbotron's own recap uses (phase
+    "postgame", TAKEOVER_POSTGAME_MINUTES — comfortably more than 5),
+    rather than reverting the instant state flips to "final".
+
+    Takes the same takeover_state() dict app.py already computes each
+    rerun, rather than re-deriving live status itself — that dict is
+    nulled by the manual "End Session" dismiss check before this ever
+    sees it, which is exactly the one exception asked for: "the only
+    time it shouldn't [stay on] is when i close out mid game.\""""
+    return takeover is not None and takeover["phase"] in ("live", "postgame")
 
 
 def render_alert_bar(alert: dict, elapsed: float, variant: str = "a") -> None:

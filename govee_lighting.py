@@ -369,13 +369,15 @@ def sync_plug(
     room-comfort choice specific to the sky/dimming — the monitor itself
     should just follow the actual daylight window, no floor.
 
-    `game_live` (see sports_alerts.any_game_live) keeps this plug —
-    and so the monitor it powers — on regardless of that window while a
-    Jays/Habs game is still going (session request: "the smart plug
-    can't turn off if there's a live game... after the game is over the
-    setup can sleep"). Re-checked fresh every rerun against the real
-    game state, so it reverts to the normal daylight window the moment
-    the game actually ends, no separate timer needed."""
+    `game_live` (see sports_alerts.plug_should_stay_on) keeps this plug
+    — and so the monitor it powers — on regardless of that window while
+    a Jays/Habs game is live or in its postgame recap (session request:
+    "the smart plug can't turn off if there's a live game," later "the
+    second the end of game recap happened the smart plug turned off...
+    shouldn't have happened for at least 5 mins"). Re-checked fresh
+    every rerun, so it reverts to the normal daylight window as soon as
+    that hold ends — or immediately, if the recap's dismissed early via
+    the jumbotron's own End Session button."""
     if not st.secrets.get("GOVEE_API_KEY") or first_light is None or last_light is None:
         return
     want_on = game_live or (first_light <= now < last_light)
