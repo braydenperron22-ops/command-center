@@ -2315,7 +2315,6 @@ html, body, [class*="css"] {
     line-height: 1.7;
 }
 .jumbo-situ-hot { color: var(--led); font-weight: 700; margin-right: 16px; font-size: 28px; }
-.jumbo-situ-who { font-size: 20px; color: var(--bone); margin-top: 8px; }
 .jumbo-dim { color: var(--mut-2); }
 .jumbo-clockbig { font-family: var(--num); font-size: 30px; color: var(--bone); letter-spacing: 0.06em; }
 /* Pregame venue/weather + probable starters (pages_jumbotron.

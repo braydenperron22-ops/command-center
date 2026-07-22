@@ -179,13 +179,11 @@ def _mlb_situation_html(game_id: int) -> str:
     parts.append(f'<span class="jumbo-situ-count{count_pulse}"><span class="jumbo-dim">COUNT</span> {balls}-{strikes}</span>')
     parts.append(f'<span class="jumbo-situ-outs{outs_pulse}">{outs} OUT</span>')
     line = "".join(parts)
-    who = []
-    if detail.get("batter"):
-        who.append(f'<span class="jumbo-dim">AT BAT</span> {html.escape(detail["batter"])}')
-    if detail.get("pitcher"):
-        who.append(f'<span class="jumbo-dim">PITCHING</span> {html.escape(detail["pitcher"])}')
-    who_line = f'<div class="jumbo-situ-who">{" · ".join(who)}</div>' if who else ""
-    return f'<div class="jumbo-situ">{line}{who_line}</div>'
+    # Session feedback: "get rid of the at bat and pitching thing below
+    # the inning diamond, count, and outs since its already shown
+    # below" — the Current Matchup card (_current_matchup_html) already
+    # names both, with photos and OPS/ERA besides.
+    return f'<div class="jumbo-situ">{line}</div>'
 
 
 def _nhl_situation_html(game_id: int) -> str:
