@@ -161,10 +161,7 @@ PAGE_ROTATION_SECONDS = 5 * 60
 # PAGE_DURATION_OVERRIDES lets a specific page hold the screen longer
 # than PAGE_ROTATION_SECONDS (see app.py's _scheduled_page) — empty for
 # now, but the mechanism stays since it's a one-line reintroduction if a
-# future page needs it again (was used for a temporary wisdom-teeth
-# recovery page; that page got replaced by an always-visible badge
-# instead, see pages_recovery.status_badge_html, so it no longer needs
-# its own rotation slot at all).
+# future page needs it again.
 PAGE_DURATION_OVERRIDES = {}
 
 # Commute origin coordinate is the exact one embedded in the calendar

@@ -25,7 +25,6 @@ import pages_markets
 import pages_news
 import pages_portfolio
 import pages_radar
-import pages_recovery
 import pages_scores
 import pages_sports
 import pages_today
@@ -816,22 +815,6 @@ if not _jumbotron_active:
         </div>""",
         unsafe_allow_html=True,
     )
-
-# Page-independent (see pages_recovery.status_badge_html) — deliberately
-# NOT folded into the `extras` list above: that whole list only ever
-# renders `if weather:`, and a real live incident (Open-Meteo failing
-# to respond to this app's host for 20+ minutes straight) confirmed
-# live that coupling the two meant recovery status vanished right along
-# with weather for that entire stretch, at the exact moment reliability
-# matters most. Still wrapped in the same .weather-extras row styling
-# so it lines up with the other pills whenever weather IS showing, but
-# rendered unconditionally so it survives weather being down.
-try:
-    _recovery_badge = pages_recovery.status_badge_html(now)
-except Exception:
-    _recovery_badge = None
-if _recovery_badge and not _jumbotron_active:
-    st.markdown(f'<div class="weather-extras">{_recovery_badge}</div>', unsafe_allow_html=True)
 
 # Staleness watchdog (session request) — page-independent, same
 # reasoning and the same .weather-extra pill styling as the recovery
