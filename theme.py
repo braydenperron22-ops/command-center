@@ -742,16 +742,30 @@ html, body, [class*="css"] {
 }
 
 /* Persistent top banner: holds the latest red (important) headline for
-   up to TOP_ALERT_HOLD_SECONDS, or until the next one replaces it. Sits
-   in normal document flow above the hero row (not fixed/overlaid) — it's
-   static content, so there's no animation or backdrop-filter here to
-   fight the per-second rerun the way the bottom bar's intro sequence did. */
+   up to TOP_ALERT_HOLD_SECONDS, or until the next one replaces it.
+
+   position: fixed — session report: "i just got a really valuable red
+   headline about the us and iran and it didnt pin to the top like it
+   was supposed to." Same root cause as .leave-headline/.game-
+   countdown-headline (see those own comments): this used to sit in
+   normal document flow, at the very top of the page even before those
+   two, so it was just as exposed — more, since it renders first — to
+   .block-container's vertical-centering overflow pushing tall content
+   off both the top and bottom of the viewport. Now pinned above both
+   of those (it was already the topmost element in flow, so keeps that
+   priority), with its own solid background already providing the
+   legibility a backdrop-filter gives the other two. */
 .top-alert-bar {
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 501;
+    width: min(1200px, calc(100vw - 48px));
     display: flex;
     align-items: center;
     gap: 0.9rem;
     padding: 0.7rem 1.5rem;
-    margin-bottom: 0.9rem;
     border-radius: 16px;
     background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
     box-shadow: 0 2px 16px rgba(179,20,20,0.3);
@@ -1783,7 +1797,10 @@ html, body, [class*="css"] {
    regardless of how tall the rest of the page's content ever gets. */
 .leave-headline {
     position: fixed;
-    top: 18px;
+    /* Below .top-alert-bar (fixed at top:18px, z-index 501) — that one
+       renders first in flow and keeps that same priority now that both
+       are pinned. */
+    top: 88px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 500;
@@ -1826,7 +1843,7 @@ html, body, [class*="css"] {
    line, "Leave in H:MM:SS" — that a hardcoded gap here doesn't drift). */
 .game-countdown-headline {
     position: fixed;
-    top: 96px;
+    top: 184px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 499;
