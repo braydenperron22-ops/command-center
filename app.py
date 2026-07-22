@@ -1116,7 +1116,7 @@ try:
     # night_dim override above, just not the light).
     govee_lighting.sync_lights(
         phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
-        aqi_for_lights, category, score_flash,
+        aqi_for_lights, category, score_flash, _jumbotron_active,
     )
     govee_lighting.sync_plug(
         now, weather["first_light"] if weather else None, weather["last_light"] if weather else None, game_live

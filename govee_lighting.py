@@ -245,6 +245,7 @@ def sync_lights(
     aqi: float | None = None,
     category: str | None = None,
     score_flash: tuple[float, tuple[int, int, int]] | None = None,
+    jumbotron_active: bool = False,
 ) -> None:
     """Call once per rerun. Light follows the exact same sunset/sunrise
     pattern as the plug — off at night, no exceptions. Every override
@@ -296,6 +297,18 @@ def sync_lights(
     news still fully respects night (unchanged, no exception) — this
     is a scoped, deliberate exception for sports alerts specifically,
     not a general "wake for alerts" policy.
+
+    `jumbotron_active` — session request: "same rule with the lights"
+    (as app.py's own night_dim exemption for the screen, right after
+    it: "make it so the screen does not dim in game mode"). Same
+    narrow scope as that one: only while the jumbotron takeover is
+    actually on screen, not for the whole time some tracked game
+    happens to be live in the background. Bypasses the night power-off
+    gate AND holds brightness at DAY_BRIGHTNESS instead of settling
+    onto the floor _brightness_envelope's own night-time ramp would
+    otherwise put it at — color still comes from the normal base-state
+    logic (market/condition), so the room still reflects what's
+    actually going on, just lit for it.
     """
     if not st.secrets.get("GOVEE_API_KEY"):
         return
@@ -307,7 +320,7 @@ def sync_lights(
         _apply_color(color, min_gap=FLASH_CALL_GAP_SECONDS)
         _apply_brightness_immediate(FLASH_BRIGHTNESS, min_gap=FLASH_CALL_GAP_SECONDS)
         return
-    if phase == "night":
+    if phase == "night" and not jumbotron_active:
         _apply_power(False)
         return
     if not _apply_power(True):
@@ -324,6 +337,11 @@ def sync_lights(
     if phase in ("sunrise", "sunset"):
         _apply_color(SUNRISE_COLOR if phase == "sunrise" else SUNSET_COLOR)
         _creep_brightness(_brightness_envelope(now, DAY_BRIGHTNESS, sunset))
+        return
+    if phase == "night" and jumbotron_active:
+        color, _ = _desired_base_state(market_intraday_pct, category, now, sunset)
+        _apply_color(color)
+        _creep_brightness(DAY_BRIGHTNESS)
         return
     color, brightness = _desired_base_state(market_intraday_pct, category, now, sunset)
     _apply_color(color)
