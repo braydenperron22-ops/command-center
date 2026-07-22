@@ -2907,7 +2907,7 @@ html, body, [class*="css"] {
 div[data-testid="stButton"] {
     position: fixed;
     left: 34px;
-    bottom: 18px;
+    bottom: 88px;
     z-index: 9999;
     width: auto;
 }
