@@ -518,6 +518,111 @@ def _pitcher_change_overlay_html(game_id: int, pitcher_id: int | None, team_labe
     )
 
 
+def _fmt_break_clock(seconds: float) -> str:
+    total = max(0, int(seconds))
+    minutes, secs = divmod(total, 60)
+    return f"{minutes}:{secs:02d}"
+
+
+def _mlb_between_innings_state(game_id: int, detail: dict, now_ts: float) -> tuple[bool, float]:
+    """(is_between, elapsed_seconds since this specific break started).
+    MLB publishes no official countdown for a half-inning break (it
+    runs however long the broadcast's own commercial pod does, nothing
+    in the API says when it ends), so this counts up from when the
+    break was first observed rather than fabricating a countdown to an
+    unknown resume time — see _between_play_overlay_html's own
+    docstring. Keyed by inning+half (not just game_id) so the next
+    break starts its own count at 0 rather than inheriting the last
+    one's elapsed time."""
+    inning_state = detail.get("inning_state")
+    key = f"jumbotron_mlb_break_{game_id}"
+    if inning_state not in ("Middle", "End"):
+        st.session_state.pop(key, None)
+        return False, 0.0
+    marker = f"{inning_state}:{detail.get('current_inning')}"
+    tracked = st.session_state.get(key)
+    if not tracked or tracked.get("marker") != marker:
+        tracked = {"marker": marker, "started_at": now_ts}
+        st.session_state[key] = tracked
+    return True, now_ts - tracked["started_at"]
+
+
+def _between_play_overlay_html(state: dict, now: datetime) -> str:
+    """Full-screen "out of town scoreboard" during a natural break in
+    the featured game — session request: "between innings / periods
+    can we go to a full screen out of town scoreboard. with a timer
+    till the game resumes again." Qualifies on MLB half-inning breaks
+    (inning_state Middle/End) and NHL intermissions (in_intermission).
+
+    Unlike the fixed-duration new-pitcher overlay, this isn't a timed
+    toast — it's re-evaluated fresh every rerun and stays up for
+    exactly as long as the break condition itself stays true, gone the
+    instant play resumes. NHL's own intermission clock carries a real
+    countdown (intermission_seconds_remaining, the same number the
+    broadcast's own countdown uses) — MLB has no equivalent, so that
+    side counts up elapsed break time instead of guessing at a
+    countdown (see _mlb_between_innings_state's own docstring).
+
+    Shows every game around the leagues (scores_client.fetch_games,
+    same source the sidebar's own Around The Leagues panel reads —
+    including the featured game itself, still sitting mid-list; not
+    worth the extra matching logic to filter out one row), full-screen
+    since there's real room and a real reason to look elsewhere for a
+    minute. "" outside a break, or if there's nothing to show."""
+    if state.get("phase") != "live" or not state.get("game"):
+        return ""
+    sport = state["league"]["sport"]
+    game = state["game"]
+    game_id = game["game_id"]
+    now_ts = time.time()
+
+    if sport == "mlb":
+        detail = sports_client.fetch_mlb_live_detail(game_id)
+        if not detail:
+            return ""
+        is_between, elapsed = _mlb_between_innings_state(game_id, detail, now_ts)
+        if not is_between:
+            return ""
+        headline = f'{(detail.get("inning_state") or "").upper()} OF {detail.get("current_inning") or ""}'.strip()
+        timer_span = f'<div class="jumbo-otc-timer">{html.escape(_fmt_break_clock(elapsed))}</div>'
+        timer_label = "BREAK TIME ELAPSED"
+    elif sport == "nhl":
+        detail = sports_client.fetch_nhl_live_detail(game_id)
+        if not detail or not detail.get("in_intermission"):
+            return ""
+        headline = "INTERMISSION"
+        secs = detail.get("intermission_seconds_remaining")
+        if secs is None:
+            return ""
+        target_ms = int((now_ts + secs) * 1000)
+        timer_span = f'<div class="jumbo-otc-timer live-countdown" data-target-ms="{target_ms}" data-format="clock">{html.escape(_fmt_break_clock(secs))}</div>'
+        timer_label = "UNTIL PUCK DROP"
+    else:
+        return ""
+
+    rows = []
+    for key in _AROUND_LEAGUES:
+        try:
+            games = scores_client.fetch_games(key)
+        except Exception:
+            continue
+        if not games:
+            continue
+        rows.append(f'<div class="jumbo-otc-league">{html.escape(key.upper())}</div>')
+        rows.extend(_mini_row_html(g) for g in games)
+    if not rows:
+        return ""
+
+    return (
+        '<div class="jumbo-otc-overlay"><div class="jumbo-otc-inner">'
+        '<div class="jumbo-otc-title">Out Of Town Scoreboard</div>'
+        f'<div class="jumbo-otc-sub">{html.escape(headline)}</div>'
+        f'<div class="jumbo-otc-timer-block">{timer_span}<div class="jumbo-otc-timer-label">{html.escape(timer_label)}</div></div>'
+        f'<div class="jumbo-otc-grid">{"".join(rows)}</div>'
+        "</div></div>"
+    )
+
+
 def _board_html(state: dict, now: datetime) -> str:
     league, status, game = state["league"], state["status"], state["game"]
     sport, phase = league["sport"], state["phase"]
@@ -894,6 +999,15 @@ def render(now: datetime, state: dict, weather: dict | None) -> None:
                 state["game"]["game_id"], matchup["pitcher"].get("id"), state["league"]["label"]
             )
 
+    # Full-screen out-of-town scoreboard during a natural break in the
+    # featured game (see _between_play_overlay_html's own docstring) —
+    # lower z-index than the new-pitcher overlay above so the two never
+    # visually fight if a pitching change happens to land right at a
+    # half-inning break: the pitcher overlay's own 8s hold plays on top
+    # first, then this (still active for the rest of the real break)
+    # is what's left showing underneath once that hold ends.
+    between_play_overlay = _between_play_overlay_html(state, now)
+
     st.markdown(
         f'<div class="jumbo">'
         f'<div class="jumbo-marquee">'
@@ -909,6 +1023,6 @@ def render(now: datetime, state: dict, weather: dict | None) -> None:
         f"</div>"
         f"{_board_html(state, now)}"
         f"{around_block}"
-        f"</div>{pitcher_overlay}</div>",
+        f"</div>{between_play_overlay}{pitcher_overlay}</div>",
         unsafe_allow_html=True,
     )

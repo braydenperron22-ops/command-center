@@ -2824,6 +2824,67 @@ html, body, [class*="css"] {
     font-weight: 700;
 }
 
+/* Full-screen "out of town scoreboard" during a natural break in the
+   featured game — session request: "between innings / periods can we
+   go to a full screen out of town scoreboard. with a timer till the
+   game resumes again." Same fixed-full-viewport approach as
+   .jumbo-pitcher-overlay above, one z-index lower so a new-pitcher
+   overlay firing right at a break still plays on top first. Reuses
+   the sidebar Around The Leagues panel's own .jumbo-mini row markup
+   (pages_jumbotron._mini_row_html) inside a bigger grid rather than a
+   separate template — .jumbo-otc-grid-scoped overrides below just
+   size those same rows up for a full-screen read. No animation-hold
+   timing here (unlike the pitcher overlay): this is driven by real
+   game state, up for exactly as long as the break itself lasts. */
+.jumbo-otc-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9997;
+    display: flex;
+    justify-content: center;
+    background: rgba(5,7,12,0.98);
+    padding: 44px 60px;
+    overflow: hidden;
+}
+.jumbo-otc-inner { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 1440px; min-height: 0; }
+.jumbo-otc-title {
+    font-family: var(--mono);
+    font-size: 20px;
+    letter-spacing: 0.32em;
+    color: var(--led);
+    text-transform: uppercase;
+    font-weight: 700;
+}
+.jumbo-otc-sub { font-family: var(--mono); font-size: 30px; font-weight: 700; color: var(--bone); margin-top: 8px; }
+.jumbo-otc-timer-block { display: flex; flex-direction: column; align-items: center; margin: 16px 0 26px; }
+.jumbo-otc-timer { font-family: var(--mono); font-size: 54px; font-weight: 700; color: var(--bone); line-height: 1.1; }
+.jumbo-otc-timer-label { font-family: var(--mono); font-size: 13px; letter-spacing: 0.22em; color: var(--led); text-transform: uppercase; font-weight: 700; margin-top: 4px; }
+.jumbo-otc-league {
+    grid-column: 1 / -1;
+    font-family: var(--mono);
+    font-size: 14px;
+    letter-spacing: 0.24em;
+    color: var(--led);
+    text-transform: uppercase;
+    font-weight: 700;
+    margin: 14px 0 4px;
+}
+.jumbo-otc-league:first-child { margin-top: 0; }
+.jumbo-otc-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px 26px;
+    width: 100%;
+    min-height: 0;
+    overflow-y: auto;
+}
+.jumbo-otc-grid .jumbo-mini { padding: 9px 16px; border-radius: 8px; }
+.jumbo-otc-grid .jumbo-mini-abbr { font-size: 19px; }
+.jumbo-otc-grid .jumbo-mini-score { font-size: 28px; }
+.jumbo-otc-grid .jumbo-mini-team img { width: 30px; height: 30px; }
+.jumbo-otc-grid .jumbo-mini-status { font-size: 13px; }
+.jumbo-otc-grid .jumbo-mini-leader { font-size: 12px; }
+
 /* Phone breakpoint. Everything above this point is untouched at any
    width above it (including the kiosk monitor, always far wider) —
    nothing in this block redefines a rule, it only adds overrides that

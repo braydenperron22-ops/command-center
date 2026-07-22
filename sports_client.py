@@ -769,11 +769,15 @@ def _fetch_nhl_boxscore_raw(game_id: int) -> dict:
 
 
 def fetch_nhl_live_detail(game_id: int) -> dict | None:
-    """{"period_label", "clock", "in_intermission", "away_score",
-    "home_score"} — the live situation, plus the score itself (same
-    "the big score takes forever to update" fix as fetch_mlb_live_detail
-    — see its own docstring). None on any fetch failure, same reasoning
-    as fetch_mlb_live_detail."""
+    """{"period_label", "clock", "in_intermission",
+    "intermission_seconds_remaining", "away_score", "home_score"} —
+    the live situation, plus the score itself (same "the big score
+    takes forever to update" fix as fetch_mlb_live_detail — see its
+    own docstring). "intermission_seconds_remaining" is the same
+    clock.secondsRemaining the NHL's own broadcast intermission
+    countdown uses — real seconds left until the next period, not an
+    estimate — session request: "a timer till the game resumes again."
+    None on any fetch failure, same reasoning as fetch_mlb_live_detail."""
     try:
         box = _fetch_nhl_boxscore_raw(game_id)
     except Exception:
@@ -784,6 +788,7 @@ def fetch_nhl_live_detail(game_id: int) -> dict | None:
         "period_label": _nhl_period_label(box.get("periodDescriptor", {})),
         "clock": clock.get("timeRemaining"),
         "in_intermission": clock.get("inIntermission", False),
+        "intermission_seconds_remaining": clock.get("secondsRemaining"),
         "away_score": (box.get("awayTeam") or {}).get("score"),
         "home_score": (box.get("homeTeam") or {}).get("score"),
     }
