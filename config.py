@@ -181,83 +181,14 @@ COMMUTE_DESTINATION = {"label": "Work", "lat": 46.3185464, "lon": -79.4386137}
 MARKET_DATA_TTL_SECONDS = 5 * 60
 MARKET_SPARKLINE_PERIOD = "1y"
 
-# Conflicts page is fully dynamic — no fixed list. GDELT turned out
-# unreliable (persistent rate-limiting), so this scans the same free RSS
-# pool that powers the news alerts: any headline mentioning one of these
-# countries/regions alongside a conflict-indicator term counts as a hit,
-# grouped by which countries co-occur (so e.g. "Ukraine"+"Russia" in the
-# same headline forms one two-flag group), then ranked by hit count —
-# whatever's most documented right now surfaces automatically, and a
-# conflict that goes quiet naturally drops off.
-#
-# Name variants map to the same flag code so "Congo"/"DRC" etc. all match.
-CONFLICT_COUNTRIES = {
-    "ukraine": "ua", "russia": "ru", "russian": "ru",
-    "israel": "il", "gaza": "ps", "palestinian": "ps", "palestine": "ps",
-    "sudan": "sd", "south sudan": "ss",
-    "myanmar": "mm", "burma": "mm",
-    "syria": "sy", "syrian": "sy",
-    "iraq": "iq", "iraqi": "iq",
-    "iran": "ir", "iranian": "ir",
-    "yemen": "ye", "yemeni": "ye",
-    "lebanon": "lb", "lebanese": "lb", "hezbollah": "lb",
-    "saudi arabia": "sa", "saudi": "sa",
-    "turkey": "tr", "turkish": "tr",
-    "ethiopia": "et", "ethiopian": "et",
-    "somalia": "so", "somali": "so",
-    "congo": "cd", "drc": "cd",
-    "mali": "ml",
-    "niger": "ne",
-    "nigeria": "ng", "nigerian": "ng",
-    "libya": "ly", "libyan": "ly",
-    "chad": "td",
-    "central african republic": "cf",
-    "mozambique": "mz",
-    "cameroon": "cm",
-    "afghanistan": "af", "afghan": "af", "taliban": "af",
-    "pakistan": "pk", "pakistani": "pk",
-    "north korea": "kp",
-    "south korea": "kr",
-    "taiwan": "tw", "taiwanese": "tw",
-    "china": "cn", "chinese": "cn",
-    "philippines": "ph", "filipino": "ph",
-    "georgia": "ge", "georgian": "ge",
-    "armenia": "am", "armenian": "am",
-    "azerbaijan": "az",
-    "serbia": "rs", "serbian": "rs",
-    "kosovo": "xk",
-    "venezuela": "ve", "venezuelan": "ve",
-    "colombia": "co", "colombian": "co",
-    "mexico": "mx", "mexican": "mx",
-    "haiti": "ht", "haitian": "ht",
-    "ecuador": "ec", "ecuadorian": "ec",
-    "india": "in", "indian": "in",
-    "japan": "jp", "japanese": "jp",
-}
-
-# One canonical display name per flag code, for labeling groups (several
-# keyword variants above map to the same code, e.g. "russia"/"russian").
-FLAG_CODE_NAME = {
-    "ua": "Ukraine", "ru": "Russia", "il": "Israel", "ps": "Gaza/Palestine",
-    "sd": "Sudan", "ss": "South Sudan", "mm": "Myanmar", "sy": "Syria",
-    "iq": "Iraq", "ir": "Iran", "ye": "Yemen", "lb": "Lebanon",
-    "sa": "Saudi Arabia", "tr": "Turkey", "et": "Ethiopia", "so": "Somalia",
-    "cd": "DR Congo", "ml": "Mali", "ne": "Niger", "ng": "Nigeria",
-    "ly": "Libya", "td": "Chad", "cf": "Central African Republic",
-    "mz": "Mozambique", "cm": "Cameroon", "af": "Afghanistan", "pk": "Pakistan",
-    "kp": "North Korea", "kr": "South Korea", "tw": "Taiwan", "cn": "China",
-    "ph": "Philippines", "ge": "Georgia", "am": "Armenia", "az": "Azerbaijan",
-    "rs": "Serbia", "xk": "Kosovo", "ve": "Venezuela", "co": "Colombia",
-    "mx": "Mexico", "ht": "Haiti", "ec": "Ecuador", "in": "India", "jp": "Japan",
-}
-
-CONFLICT_TERMS = [
-    "war", "conflict", "clashes", "clash", "airstrike", "air strike",
-    "rebels", "rebel", "insurgency", "insurgent", "ceasefire", "invasion",
-    "civil war", "militant", "offensive", "shelling", "missile strike",
-    "drone strike", "junta", "coup", "troops", "strikes kill", "attack",
-]
-
+# Conflicts page is fully dynamic — no fixed list. Used to keyword-match
+# headlines against a hand-maintained country-name/conflict-term list
+# (CONFLICT_COUNTRIES/CONFLICT_TERMS); session request: "make conflicts
+# feed directly from gemini instead of looking for headlines with
+# specific names... remove the RSS keyword searching for different
+# countries." pages_conflicts._ai_overview now does that identification
+# itself from the raw headline pool, so there's no country/term list to
+# maintain here anymore — see that module's own docstring.
 MAX_CONFLICTS_SHOWN = 6
 
 # Passed straight through as Google News' own `when:Xd` search operator —

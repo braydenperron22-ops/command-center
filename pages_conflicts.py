@@ -1,230 +1,203 @@
 """Conflicts page: fully dynamic, no fixed list.
 
-Scans Google News (via its `when:7d` date-scoped RSS search — no key, and
-gives genuine week-old history directly rather than needing to accumulate
-today's snapshots locally over several days) for any headline mentioning a
-tracked country alongside a conflict-indicator term, groups by which
-countries co-occur, and ranks by hit count — whatever's most documented
-over the last week surfaces automatically, so this gives a genuine sense
-of what's heating up vs. going quiet, rather than a static watchlist.
+Used to identify conflicts by scanning Google News headlines for a
+tracked country name alongside a conflict-indicator keyword — brittle
+(a headline like "South Sudan..." could get misparsed as "Sudan",
+"stress test" and other unrelated matches slipped through elsewhere in
+the app before similar keyword lists got tightened over many rounds)
+and required maintaining CONFLICT_COUNTRIES/CONFLICT_TERMS by hand.
+Session request: "make conflicts feed directly from gemini instead of
+looking for headlines with specific names... remove the RSS keyword
+searching for different countries... it should build the entire
+overview on itself."
 
-Each tile also gets a one-sentence AI summary of its own matched
-headlines (_ai_summary, session request: "revamp... the conflict
-pages" with a free AI) — the raw headlines are individually often
-clickbait-y or narrowly framed, so a synthesized line reads better at
-a glance than any single one of them. Purely additive: the raw
-headlines still render underneath exactly as before, and the tile
-looks and works the same as ever if the AI call fails (see
-gemini_client.generate's own docstring on why that must always be an
-option)."""
+_ai_overview (below) is now the only detection/summarization step: it's
+handed the whole real headline pool from conflict_news.fetch_
+conflict_headlines (still a real, freshly-fetched RSS pool — that part
+is unchanged) and asked to identify the most significant distinct
+ongoing conflicts represented in it, classify each one's current
+trajectory (active war / escalating / stalemate / de-escalating /
+ceasefire / peace talks), and write a real overview covering what's
+happening, where it's headed, and its effect on the wider world.
+
+Important honesty note baked into the prompt itself: this key's free
+tier does NOT have live Google Search grounding available (confirmed
+live — a grounding-tool request 429s even on a trivial prompt, while a
+plain request succeeds fine), so this is NOT the model browsing the
+internet in real time. It's genuinely current in the parts that matter
+most — which headlines exist, what they say — because those are real
+headlines fetched this session, in the prompt. Where the prompt asks
+for background/context beyond the last 7 days (is this conflict
+long-running, who the parties historically are), that part does lean
+on the model's own training knowledge, which is explicitly called out
+as potentially outdated in the prompt so the model weighs the fresh
+headlines over stale recall for anything about the CURRENT state.
+
+No keyword fallback if the AI call fails (unlike news.py, which keeps
+its old keyword pipeline as a safety net) — that fallback is exactly
+what this session asked to remove, not preserve as a shadow system.
+The page just doesn't render new content on a failure and effectively
+shows last-hour's data via gemini_client.generate's own 20-minute
+cache, or the empty state if there's truly nothing cached yet."""
 
 import html
-import re
-from datetime import datetime, timezone
+import json
 
 import streamlit as st
 
 import conflict_news
 import gemini_client
-from config import CONFLICT_COUNTRIES, CONFLICT_TERMS, FLAG_CODE_NAME, MAX_CONFLICTS_SHOWN
+from config import CONFLICT_WINDOW_DAYS, MAX_CONFLICTS_SHOWN
 from flags import flag_for
 
-RECENT_WINDOW_SECONDS = 24 * 60 * 60
-_MIN_DATETIME = datetime.min.replace(tzinfo=timezone.utc)
+# (label, badge tone) — trajectory is the main signal now (this used to
+# be a separate coverage-count badge plus a rising/falling/steady arrow
+# derived from headline timestamp density; the AI's own status verdict
+# already captures that same idea more directly, so there's no separate
+# trend calculation to maintain anymore).
+_STATUS_DISPLAY = {
+    "ACTIVE_WAR": ("Active War", "bad"),
+    "ESCALATING": ("Escalating ↑", "bad"),
+    "STALEMATE": ("Stalemate →", "neutral"),
+    "DEESCALATING": ("De-escalating ↓", "good"),
+    "CEASEFIRE": ("Ceasefire", "good"),
+    "PEACE_TALKS": ("Peace Talks", "good"),
+}
+_SEVERITY_FILL_PCT = {"HIGH": 100, "MEDIUM": 65, "LOW": 35}
 
-# Coverage-trend arrow: same idea as air_quality_client's rising/falling
-# trend, but doesn't need to accumulate samples over time — the 7-day
-# headline pool already carries real `published` timestamps, so a
-# recent-vs-older split is available on the very first render. The two
-# windows are different widths (3 days vs. 4), so raw counts are
-# compared as a per-day RATE, not a raw count — otherwise the wider
-# "older" bucket would always out-count the narrower "recent" one for
-# genuinely steady coverage and read as false "de-escalating".
-TREND_RECENT_DAYS = 3
-TREND_OLDER_DAYS = 4  # covers days 4-7 back
-TREND_MIN_SAMPLE = 4  # fewer dated headlines than this isn't enough to call a direction from
-TREND_RATIO_THRESHOLD = 1.4  # rate must differ by at least this factor to read as a real move, not noise
+HEADLINES_FED_TO_AI = 150  # comfortably covers a week's real pool without an unbounded prompt
+OVERVIEW_MAX_OUTPUT_TOKENS = 2200  # up to MAX_CONFLICTS_SHOWN entries, each a real paragraph
 
 
-def _coverage_trend(headlines: list[dict], now_utc: datetime) -> str | None:
-    """"rising" / "falling" / "steady", or None if there's too little
-    dated coverage to judge a trend from."""
-    recent = older = 0
-    for h in headlines:
-        published = h["published"]
-        if published is None:
-            continue
-        age_days = (now_utc - published).total_seconds() / 86400
-        if age_days < TREND_RECENT_DAYS:
-            recent += 1
-        elif age_days < TREND_RECENT_DAYS + TREND_OLDER_DAYS:
-            older += 1
-
-    if recent + older < TREND_MIN_SAMPLE:
+def _ai_overview(headlines: list[dict]) -> list[dict] | None:
+    """Up to MAX_CONFLICTS_SHOWN entries, each {"countries": [{"code",
+    "name"}, ...], "status", "overview", "severity", "headlines": [...]}
+    (headlines re-attached below, matched back from the AI's own
+    referenced numbers) — or None on any failure (missing key, rate
+    limit, network, or a response that didn't come back as valid JSON).
+    See this module's own docstring for the full design rationale."""
+    texts = [h["headline"] for h in headlines[:HEADLINES_FED_TO_AI]]
+    if not texts:
         return None
-    recent_rate = recent / TREND_RECENT_DAYS
-    older_rate = older / TREND_OLDER_DAYS
-    if older_rate == 0:
-        return "rising"
-    ratio = recent_rate / older_rate
-    if ratio >= TREND_RATIO_THRESHOLD:
-        return "rising"
-    if ratio <= 1 / TREND_RATIO_THRESHOLD:
-        return "falling"
-    return "steady"
-
-
-def _word_in(term: str, text: str) -> bool:
-    """Whole-word match — plain substring matching let "war" match inside
-    "warm", "Ukraine" phrasing aside terms like these need real boundaries.
-
-    Tolerates an optional trailing "s": "militant" alone used to silently
-    miss the far more common "militants attack" plural phrasing (strict
-    word-boundary matching means \\bmilitant\\b does not match
-    "militants" — there's no boundary between "t" and "s")."""
-    return re.search(r"\b" + re.escape(term) + r"s?\b", text) is not None
-
-
-def _country_codes_in(text: str) -> set[str]:
-    """Every CONFLICT_COUNTRIES code mentioned in `text`, checking longer
-    (multi-word) names first and skipping any shorter name whose match
-    falls entirely inside a longer one's already-claimed span — a plain
-    "does this name appear anywhere" check per name (the previous
-    approach) let "sudan" match inside "south sudan" (a genuine whole
-    word there too, separated by a space), silently merging two
-    distinct conflicts into one inflated group any time a South-Sudan-
-    only headline appeared. Longer-name-wins mirrors how a human reader
-    would parse "south sudan" as naming one country, not two."""
-    codes = set()
-    claimed_spans = []
-    for name in sorted(CONFLICT_COUNTRIES, key=len, reverse=True):
-        pattern = r"\b" + re.escape(name) + r"s?\b"
-        for m in re.finditer(pattern, text):
-            if any(m.start() >= s and m.end() <= e for s, e in claimed_spans):
-                continue
-            codes.add(CONFLICT_COUNTRIES[name])
-            claimed_spans.append((m.start(), m.end()))
-    return codes
-
-
-def _coverage_level(count: int) -> tuple[str, str]:
-    """(label, badge tone) for how much coverage a conflict is getting."""
-    if count == 1:
-        return "Limited Coverage", "neutral"
-    if count <= 3:
-        return "Some Coverage", "neutral"
-    return "Highly Covered", "bad"
-
-
-AI_SUMMARY_HEADLINES_SHOWN = 5
-
-
-def _ai_summary(headlines: list[dict]) -> str | None:
-    """One neutral sentence summarizing what this conflict's own
-    matched headlines (newest AI_SUMMARY_HEADLINES_SHOWN, already
-    sorted newest-first by _detect_conflicts) are actually saying,
-    rather than making the tile lean on whichever single raw headline
-    happened to match. None on any failure — see gemini_client.
-    generate's own docstring; render() falls back to just the raw
-    headline list underneath, exactly as this page worked before."""
-    texts = [h["headline"] for h in headlines[:AI_SUMMARY_HEADLINES_SHOWN]]
+    headline_block = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(texts))
     prompt = (
-        "You summarize ongoing conflict news for a home dashboard tile. Given these recent "
-        "headlines, all about the same conflict, write ONE neutral, factual sentence (25 words "
-        "or fewer) capturing what's currently happening. No speculation, no opinion, no "
-        "headline-style clickbait phrasing — a plain, careful summary. Start with a capital "
-        "letter and end with a period. Headlines:\n" + "\n".join(f"- {t}" for t in texts)
+        "You are a geopolitical analyst building one tile-based overview for a home dashboard. "
+        f"Below are {len(texts)} real news headlines from the last {CONFLICT_WINDOW_DAYS} days "
+        "(numbered; many will be unrelated to conflicts at all — ignore those).\n\n"
+        "From these, identify the most significant distinct ongoing armed conflicts, wars, or "
+        f"serious military/civil crises currently active in the world — up to {MAX_CONFLICTS_SHOWN} "
+        "of them, ranked by how significant/active each currently is. If fewer than "
+        f"{MAX_CONFLICTS_SHOWN} genuine conflicts are actually represented in the headlines, "
+        "return fewer — don't pad the list with minor or borderline cases just to fill it.\n\n"
+        "For each conflict, determine:\n"
+        "- countries: the real ISO 3166-1 alpha-2 lowercase country codes and English names for "
+        "each side/party involved (a country, not an organization — e.g. for Gaza use 'ps'/"
+        "'Gaza/Palestine', not 'Hamas')\n"
+        "- status: exactly one of ACTIVE_WAR, ESCALATING, STALEMATE, DEESCALATING, CEASEFIRE, "
+        "PEACE_TALKS\n"
+        "- overview: a real 2-4 sentence overview covering what's actually happening right now, "
+        "whether it's escalating, holding steady, or winding down, whether there are peace "
+        "negotiations underway, and what effect it's having on the wider world (markets, "
+        "refugees, regional stability, energy/food prices, etc. — only mention a global effect "
+        "if there genuinely is one, don't force it)\n"
+        "- severity: HIGH, MEDIUM, or LOW\n"
+        "- headline_numbers: which of the numbered headlines above (list the numbers) actually "
+        "relate to this specific conflict\n\n"
+        "You may use your own general knowledge for background/historical context on a conflict "
+        "you recognize, but your assessment of its CURRENT status and trajectory must be "
+        "grounded in the headlines above, not assumed from memory — your training knowledge may "
+        "be outdated about how a given conflict has evolved since then; the headlines above are "
+        "genuinely current and take priority whenever they conflict with what you'd otherwise "
+        "assume.\n\n"
+        f"{headline_block}\n\n"
+        "Respond with ONLY a JSON array, no markdown code fences, no other text, in exactly this "
+        "shape:\n"
+        '[{"countries": [{"code": "ua", "name": "Ukraine"}, {"code": "ru", "name": "Russia"}], '
+        '"status": "ACTIVE_WAR", "overview": "...", "severity": "HIGH", "headline_numbers": [3, 7]}]'
     )
-    return gemini_client.generate(prompt)
+    result = gemini_client.generate(prompt, temperature=0.2, max_output_tokens=OVERVIEW_MAX_OUTPUT_TOKENS)
+    if result is None:
+        return None
 
-
-@st.cache_data(ttl=60 * 60, show_spinner=False)
-def _detect_conflicts(headlines: list[dict]) -> list[dict]:
-    """Cached at the same TTL as conflict_news.fetch_conflict_headlines()
-    (its only real input) — without this, the whole headline pool got
-    rescanned against every conflict term and every tracked country name
-    (thousands of regex checks) every single second this page is showing,
-    even though the pool itself only changes once an hour."""
-    groups = {}  # frozenset(codes) -> [{"headline": ..., "published": ...}]
-    for item in headlines:
-        h = item["headline"].lower()
-        if not any(_word_in(term, h) for term in CONFLICT_TERMS):
-            continue
-        codes = _country_codes_in(h)
-        if not codes:
-            continue
-        key = frozenset(codes)
-        groups.setdefault(key, []).append({
-            "headline": item["headline"],
-            "published": item.get("published"),
-        })
+    raw = result.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else raw
+        raw = raw.rsplit("```", 1)[0]
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(parsed, list):
+        return None
 
     entries = []
-    for codes, matched_headlines in groups.items():
-        # Newest first — Google's own feed order isn't reliably
-        # chronological (confirmed by inspection: dates come back mixed
-        # within a single response), so this is a real sort, not a
-        # no-op. Anything with an unparseable date sorts to the very
-        # end rather than crashing the comparison.
-        matched_headlines.sort(key=lambda h: h["published"] or _MIN_DATETIME, reverse=True)
-        names = [FLAG_CODE_NAME.get(c, c.upper()) for c in sorted(codes)]
-        entries.append({
-            "codes": sorted(codes),
-            "label": " – ".join(names),
-            "headlines": matched_headlines,
-        })
-
-    entries.sort(key=lambda e: len(e["headlines"]), reverse=True)
-    return entries[:MAX_CONFLICTS_SHOWN]
+    for item in parsed:
+        try:
+            countries = [
+                {"code": str(c["code"]).lower(), "name": str(c["name"])}
+                for c in item["countries"]
+                if c.get("code") and c.get("name")
+            ]
+            status = str(item["status"]).upper()
+            overview = str(item["overview"]).strip()
+            severity = str(item.get("severity", "MEDIUM")).upper()
+            numbers = item.get("headline_numbers") or []
+        except (KeyError, TypeError):
+            continue
+        if not countries or status not in _STATUS_DISPLAY or not overview:
+            continue
+        matched = [headlines[n - 1] for n in numbers if isinstance(n, int) and 1 <= n <= len(texts)]
+        entries.append(
+            {
+                "countries": countries,
+                "status": status,
+                "overview": overview,
+                "severity": severity if severity in _SEVERITY_FILL_PCT else "MEDIUM",
+                "headlines": matched,
+            }
+        )
+    return entries or None
 
 
 def render():
-    st.markdown('<div class="page-title page-title-conflicts">Ongoing Conflicts — Last 7 Days</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-title page-title-conflicts">Ongoing Conflicts — AI Overview</div>', unsafe_allow_html=True)
 
     headline_pool = conflict_news.fetch_conflict_headlines()
-    entries = _detect_conflicts(headline_pool)
+    try:
+        entries = _ai_overview(headline_pool)
+    except Exception:
+        entries = None
 
     if not entries:
         st.markdown(
-            '<div class="tile"><div class="tile-prev">No conflict-related coverage detected right now.</div></div>',
+            '<div class="tile"><div class="tile-prev">No conflict overview available right now.</div></div>',
             unsafe_allow_html=True,
         )
         return
 
-    now_utc = datetime.now(timezone.utc)
-
     cols = st.columns(len(entries))
     for i, entry in enumerate(entries):
-        count = len(entry["headlines"])
-        label, tone = _coverage_level(count)
-        trend = _coverage_trend(entry["headlines"], now_utc)
-        trend_arrow = {"rising": " ↑", "falling": " ↓", "steady": " →"}.get(trend, "")
-        label = f"{label}{trend_arrow}"
+        label_text, tone = _STATUS_DISPLAY[entry["status"]]
         badge_class = f"badge-{tone}"
         fill_class = f"severity-fill-{tone}"
-        fill_pct = min(count / 5, 1.0) * 100
+        fill_pct = _SEVERITY_FILL_PCT[entry["severity"]]
+        country_label = " – ".join(c["name"] for c in entry["countries"])
 
-        flags_html = "".join(f'<span class="conflict-flag">{flag_for(code)}</span>' for code in entry["codes"])
+        flags_html = "".join(f'<span class="conflict-flag">{flag_for(c["code"])}</span>' for c in entry["countries"])
         headlines_html = "".join(
-            f'<div class="conflict-headline{" conflict-headline-recent" if h["published"] and (now_utc - h["published"]).total_seconds() < RECENT_WINDOW_SECONDS else ""}">{html.escape(h["headline"])}</div>'
-            for h in entry["headlines"][:3]
+            f'<div class="conflict-headline">{html.escape(h["headline"])}</div>' for h in entry["headlines"][:3]
         )
-        try:
-            summary = _ai_summary(entry["headlines"])
-        except Exception:
-            summary = None
-        summary_html = f'<div class="conflict-ai-summary">{html.escape(summary)}</div>' if summary else ""
 
         with cols[i]:
             st.markdown(
                 f"""<div class="tile tile-accent-{tone}">
                     <div class="conflict-flags">{flags_html}</div>
-                    <div class="tile-label">{entry['label']}</div>
-                    <div class="badge {badge_class}">{label}</div>
+                    <div class="tile-label">{html.escape(country_label)}</div>
+                    <div class="badge {badge_class}">{label_text}</div>
                     <div class="severity-track">
-                        <div class="severity-fill {fill_class}" style="left: 0; width: {fill_pct:.0f}%;"></div>
+                        <div class="severity-fill {fill_class}" style="left: 0; width: {fill_pct}%;"></div>
                     </div>
-                    {summary_html}
+                    <div class="conflict-ai-summary">{html.escape(entry["overview"])}</div>
                     <div class="conflict-headlines">{headlines_html}</div>
                 </div>""",
                 unsafe_allow_html=True,
