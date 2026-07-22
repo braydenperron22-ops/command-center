@@ -2256,13 +2256,13 @@ html, body, [class*="css"] {
    emoji? I don't really fuck with that. Can we just make it regular
    numbers." */
 .jumbo-digit {
-    font-family: var(--num);
-    font-size: 104px;
+    font-family: var(--mono);
+    font-size: 92px;
     line-height: 0.92;
     width: 0.62em;
     text-align: center;
     color: var(--bone);
-    font-weight: 700;
+    font-weight: 600;
 }
 /* Score-change flash (pages_jumbotron._board_html) — session request:
    "are there animations for when the j score" (the original static
