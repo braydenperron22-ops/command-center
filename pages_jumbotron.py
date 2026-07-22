@@ -362,12 +362,13 @@ def _current_matchup_html(game_id: int) -> str:
     batter, pitcher = matchup["batter"], matchup["pitcher"]
 
     # Session request: "add a ball and strike count below era and
-    # pitches" — same live count _mlb_situation_html's own strip
-    # already shows above; fetch_mlb_live_detail is the same cached
-    # call that function makes this rerun (game_id, same TTL), so this
-    # is a cache hit, not an extra request.
-    detail = sports_client.fetch_mlb_live_detail(game_id)
-    count = f'{detail["balls"]}-{detail["strikes"]}' if detail and detail.get("balls") is not None and detail.get("strikes") is not None else None
+    # pitches" — clarified to mean the whole outing's ball/strike split
+    # (sports_client.fetch_mlb_live_matchup's own "balls"/"strikes"),
+    # not the live at-bat's own count _mlb_situation_html's strip above
+    # already shows — a different number, so a distinct "B-S" label
+    # here rather than reusing "COUNT".
+    balls, strikes = pitcher.get("balls"), pitcher.get("strikes")
+    pitch_split = f"{balls}-{strikes}" if balls is not None and strikes is not None else None
 
     # Session feedback: "make the ops and era less clunky... the whole
     # matchup thing needs to be easier to read." A value+unit crammed
@@ -408,7 +409,7 @@ def _current_matchup_html(game_id: int) -> str:
         f'<div class="jumbo-live-matchup">'
         f'{col("At Bat", batter, [(batter.get("ops"), "OPS")])}'
         f'<div class="jumbo-live-matchup-vs">VS</div>'
-        f'{col("Pitching", pitcher, [(pitcher.get("era"), "ERA"), (pitcher.get("pitches"), "PITCHES"), (count, "COUNT")])}'
+        f'{col("Pitching", pitcher, [(pitcher.get("era"), "ERA"), (pitcher.get("pitches"), "PITCHES"), (pitch_split, "B-S")])}'
         f"</div></div>"
     )
 

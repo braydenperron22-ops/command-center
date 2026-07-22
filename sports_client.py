@@ -641,40 +641,49 @@ def _fetch_mlb_boxscore_raw(game_id: int) -> dict:
     return resp.json()
 
 
-def _mlb_game_pitch_count(game_id: int, pitcher_id: int) -> int | None:
-    """This specific game's pitch count so far for one pitcher —
-    session request: "for pitchers add number of pitches below ERA."
-    Season ERA comes from the /people stat line, but a live pitch
-    count is inherently per-game, only in the boxscore's own per-
-    player stats. None on any fetch failure or before this pitcher has
-    thrown a pitch this game (not yet in the boxscore's player list)."""
+def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
+    """This specific game's pitch count, plus how many of those were
+    balls vs strikes, so far for one pitcher — {"pitches", "balls",
+    "strikes"}, any of which is None if genuinely not available yet.
+    Session request: "for pitchers add number of pitches below ERA,"
+    then clarified to "how many of the pitches have been balls and how
+    many have been strikes over the entire outing" (not the live
+    at-bat's own count, which the situation strip above already
+    shows). Season ERA comes from the /people stat line, but these are
+    inherently per-game, only in the boxscore's own per-player stats.
+    {} on any fetch failure or before this pitcher has thrown a pitch
+    this game (not yet in the boxscore's player list)."""
     try:
         data = _fetch_mlb_boxscore_raw(game_id)
     except Exception:
-        return None
+        return {}
     for side in ("home", "away"):
         players = ((data.get("teams") or {}).get(side) or {}).get("players") or {}
         for p in players.values():
             if (p.get("person") or {}).get("id") == pitcher_id:
-                return (p.get("stats") or {}).get("pitching", {}).get("numberOfPitches")
-    return None
+                pitching = (p.get("stats") or {}).get("pitching", {})
+                return {"pitches": pitching.get("numberOfPitches"), "balls": pitching.get("balls"), "strikes": pitching.get("strikes")}
+    return {}
 
 
 def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     """{"batter": {"id", "name", "ops", "photo"}, "pitcher": {"id",
-    "name", "era", "pitches", "photo"}} for whoever's actually at the
-    plate/on the mound right now — session request: "during the game
-    can you make the top performers tab show current pitcher and
-    batter and their stats... ideally add the pitcher and batter pics,"
-    later refined to "for pitchers add number of pitches below ERA"
-    (briefly swapped the batter stat to AVG in the same request, then
-    "keep ops, screw avg" put it right back). Reuses the same cached
-    linescore fetch_mlb_live_detail already pulls this rerun (no extra
-    request for the matchup itself), one small extra request each for
-    the two players' own season stat lines plus one boxscore request
-    for the pitcher's live pitch count. None on any fetch failure or
-    once there's genuinely no one at the plate/mound to name (the
-    linescore payload omits offense/defense between innings)."""
+    "name", "era", "pitches", "balls", "strikes", "photo"}} for
+    whoever's actually at the plate/on the mound right now — session
+    request: "during the game can you make the top performers tab show
+    current pitcher and batter and their stats... ideally add the
+    pitcher and batter pics," later refined to "for pitchers add
+    number of pitches below ERA" (briefly swapped the batter stat to
+    AVG in the same request, then "keep ops, screw avg" put it right
+    back) and then "how many of the pitches have been balls and how
+    many have been strikes over the entire outing." Reuses the same
+    cached linescore fetch_mlb_live_detail already pulls this rerun (no
+    extra request for the matchup itself), one small extra request
+    each for the two players' own season stat lines plus one boxscore
+    request for the pitcher's game-total pitch/ball/strike counts.
+    None on any fetch failure or once there's genuinely no one at the
+    plate/mound to name (the linescore payload omits offense/defense
+    between innings)."""
     try:
         data = _fetch_mlb_linescore_raw(game_id)
     except Exception:
@@ -685,13 +694,16 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
         return None
     batter_stat = _fetch_mlb_player_season_stat_raw(batter["id"], "hitting")
     pitcher_stat = _fetch_mlb_player_season_stat_raw(pitcher["id"], "pitching")
+    pitcher_totals = _mlb_game_pitching_totals(game_id, pitcher["id"])
     return {
         "batter": {"id": batter["id"], "name": batter["fullName"], "ops": batter_stat.get("ops"), "photo": _mlb_headshot_url(batter["id"])},
         "pitcher": {
             "id": pitcher["id"],
             "name": pitcher["fullName"],
             "era": pitcher_stat.get("era"),
-            "pitches": _mlb_game_pitch_count(game_id, pitcher["id"]),
+            "pitches": pitcher_totals.get("pitches"),
+            "balls": pitcher_totals.get("balls"),
+            "strikes": pitcher_totals.get("strikes"),
             "photo": _mlb_headshot_url(pitcher["id"]),
         },
     }
