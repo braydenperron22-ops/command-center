@@ -1681,6 +1681,21 @@ html, body, [class*="css"] {
     vertical-align: middle;
 }
 
+/* AI-synthesized one-liner (pages_conflicts._ai_summary) — brighter and
+   a touch bigger than the plain .conflict-headline rows below it, with
+   a left accent bar, so it reads as the tile's own synthesized take
+   rather than just another raw headline in the list. Absent entirely
+   (no gap left behind) whenever the AI call didn't return anything. */
+.conflict-ai-summary {
+    font-size: 0.92rem;
+    line-height: 1.45;
+    color: #EDEDF2;
+    font-weight: 500;
+    margin-top: 0.6rem;
+    padding-left: 0.6rem;
+    border-left: 2px solid rgba(255,255,255,0.25);
+}
+
 .news-feed-list {
     padding: 0.4rem 1.5rem;
 }

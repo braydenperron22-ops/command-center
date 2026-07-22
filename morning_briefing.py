@@ -3,13 +3,23 @@ quality/wildfire, commute, today's agenda, and household status —
 instead of reading five separate tiles and mentally combining them
 yourself. Only shown during MORNING_WINDOW.
 
-Deliberately built from many distinct phrasings per condition (not one
-template with values plugged in) so it reads as actually written about
-today, not a form letter — see the *_LINES lists below. Which variant
-gets picked is stable for the whole day (seeded by the date + a salt
-per category, not re-randomized every rerun), so it doesn't visibly
-change every 5 seconds, but still varies day to day even when the
-underlying numbers land in the same bucket twice in a row.
+Which facts make the cut and in what order is still decided entirely
+by the *_clause functions below, each returning (priority, text) —
+that logic is untouched. Historically the picked texts were then just
+semicolon-joined from many distinct hand-written phrasings per
+condition (see the *_LINES lists below) so it read as actually written
+about today, not a form letter. Session request ("revamp the morning
+brief" with a free AI) added a step on top: render() now asks Gemini
+(_ai_sentence, gemini_client.generate) to weave those same picked
+texts into real flowing prose instead of a mechanical join — the
+*_LINES pool still exists and is still what gets picked from and
+fed to the AI, and is also the exact fallback if the AI call fails for
+any reason (missing key, rate limit, network), so this never depends
+on a third-party service staying up. Picked-text selection is stable
+for the whole day (seeded by the date + a salt per category, not
+re-randomized every rerun); the AI phrasing is cached per exact prompt
+for GENERATE_CACHE_TTL_SECONDS (see gemini_client), so it also doesn't
+reword itself every 5s rerun.
 
 Global, not page-local (like commute_reminder.render_leave_headline) —
 the whole point is catching you during the actual morning routine,
@@ -31,6 +41,7 @@ import commute_client
 import commute_reminder
 import ec_alerts
 import fuel_price_client
+import gemini_client
 import market_yf_client
 import payday_schedule
 import waste_schedule
@@ -934,6 +945,27 @@ def _daylight_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
     return 1, _pick(lines, now, "daylight").format(**fmt)
 
 
+def _ai_sentence(picked: list[str]) -> str | None:
+    """Same picked clause texts, woven by Gemini into one or two
+    flowing sentences instead of the mechanical semicolon-join below —
+    session request: "revamp the morning brief" with a free AI. Facts
+    and their priority ordering are untouched (still decided entirely
+    by the *_clause functions above); this only changes how they're
+    phrased together. None (falls back to the plain join) on any
+    failure — see gemini_client.generate's own docstring."""
+    facts = "; ".join(picked)
+    prompt = (
+        "Combine the following facts into one flowing sentence, or two short sentences if that "
+        "reads better, in a relaxed, warm, conversational tone (not corporate, no bullet points). "
+        "Do NOT include any greeting or salutation of any kind (no 'good morning', no 'hey', "
+        "nothing) — start directly with the first fact itself, mid-sentence style, since a "
+        "greeting is prepended separately by the caller. Keep every fact, don't invent or add "
+        "anything not given, don't editorialize beyond the facts themselves. Start with a capital "
+        "letter and end with a period. Facts: " + facts
+    )
+    return gemini_client.generate(prompt)
+
+
 def render(now: datetime, weather: dict | None, air_quality: dict | None) -> None:
     if not (MORNING_WINDOW_START_HOUR <= now.hour < MORNING_WINDOW_END_HOUR):
         return
@@ -963,8 +995,13 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         return
     clauses.sort(key=lambda c: c[0], reverse=True)
     picked = [text for _, text in clauses[:MAX_CLAUSES]]
-    sentence = "; ".join(picked)
-    sentence = sentence[0].upper() + sentence[1:] + "."
+    try:
+        sentence = _ai_sentence(picked)
+    except Exception:
+        sentence = None
+    if sentence is None:
+        sentence = "; ".join(picked)
+        sentence = sentence[0].upper() + sentence[1:] + "."
     greeting = _pick(GREETINGS, now, "greeting")
 
     st.markdown(f'<div class="morning-briefing">{greeting}{sentence}</div>', unsafe_allow_html=True)

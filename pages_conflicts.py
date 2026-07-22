@@ -7,7 +7,16 @@ tracked country alongside a conflict-indicator term, groups by which
 countries co-occur, and ranks by hit count — whatever's most documented
 over the last week surfaces automatically, so this gives a genuine sense
 of what's heating up vs. going quiet, rather than a static watchlist.
-"""
+
+Each tile also gets a one-sentence AI summary of its own matched
+headlines (_ai_summary, session request: "revamp... the conflict
+pages" with a free AI) — the raw headlines are individually often
+clickbait-y or narrowly framed, so a synthesized line reads better at
+a glance than any single one of them. Purely additive: the raw
+headlines still render underneath exactly as before, and the tile
+looks and works the same as ever if the AI call fails (see
+gemini_client.generate's own docstring on why that must always be an
+option)."""
 
 import html
 import re
@@ -16,6 +25,7 @@ from datetime import datetime, timezone
 import streamlit as st
 
 import conflict_news
+import gemini_client
 from config import CONFLICT_COUNTRIES, CONFLICT_TERMS, FLAG_CODE_NAME, MAX_CONFLICTS_SHOWN
 from flags import flag_for
 
@@ -106,6 +116,28 @@ def _coverage_level(count: int) -> tuple[str, str]:
     return "Highly Covered", "bad"
 
 
+AI_SUMMARY_HEADLINES_SHOWN = 5
+
+
+def _ai_summary(headlines: list[dict]) -> str | None:
+    """One neutral sentence summarizing what this conflict's own
+    matched headlines (newest AI_SUMMARY_HEADLINES_SHOWN, already
+    sorted newest-first by _detect_conflicts) are actually saying,
+    rather than making the tile lean on whichever single raw headline
+    happened to match. None on any failure — see gemini_client.
+    generate's own docstring; render() falls back to just the raw
+    headline list underneath, exactly as this page worked before."""
+    texts = [h["headline"] for h in headlines[:AI_SUMMARY_HEADLINES_SHOWN]]
+    prompt = (
+        "You summarize ongoing conflict news for a home dashboard tile. Given these recent "
+        "headlines, all about the same conflict, write ONE neutral, factual sentence (25 words "
+        "or fewer) capturing what's currently happening. No speculation, no opinion, no "
+        "headline-style clickbait phrasing — a plain, careful summary. Start with a capital "
+        "letter and end with a period. Headlines:\n" + "\n".join(f"- {t}" for t in texts)
+    )
+    return gemini_client.generate(prompt)
+
+
 @st.cache_data(ttl=60 * 60, show_spinner=False)
 def _detect_conflicts(headlines: list[dict]) -> list[dict]:
     """Cached at the same TTL as conflict_news.fetch_conflict_headlines()
@@ -177,6 +209,11 @@ def render():
             f'<div class="conflict-headline{" conflict-headline-recent" if h["published"] and (now_utc - h["published"]).total_seconds() < RECENT_WINDOW_SECONDS else ""}">{html.escape(h["headline"])}</div>'
             for h in entry["headlines"][:3]
         )
+        try:
+            summary = _ai_summary(entry["headlines"])
+        except Exception:
+            summary = None
+        summary_html = f'<div class="conflict-ai-summary">{html.escape(summary)}</div>' if summary else ""
 
         with cols[i]:
             st.markdown(
@@ -187,6 +224,7 @@ def render():
                     <div class="severity-track">
                         <div class="severity-fill {fill_class}" style="left: 0; width: {fill_pct:.0f}%;"></div>
                     </div>
+                    {summary_html}
                     <div class="conflict-headlines">{headlines_html}</div>
                 </div>""",
                 unsafe_allow_html=True,
