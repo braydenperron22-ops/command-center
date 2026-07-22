@@ -956,7 +956,13 @@ def _ai_sentence(picked: list[str]) -> str | None:
     man," then a further correction once that landed too stiff: "a
     little too dry tbh.. maybe give it a fun and sarcastic personality.
     it should be enjoyable to read in the morning. make it slightly
-    dark lol." Facts and their priority ordering are untouched (still
+    dark lol," then "use numbers tho. dont spell out number its easier
+    to read as a number" — the model's own prose instinct kept writing
+    "eighteen minutes"/"zero point eight percent" rather than "18
+    minutes"/"0.8%", harder to scan at a glance on a kiosk than actual
+    prose would suggest.
+
+    Facts and their priority ordering are untouched (still
     decided entirely by the *_clause functions above); this only
     changes how they're phrased. Owns its own opening address now
     (render() below skips the separately-picked random GREETINGS
@@ -980,6 +986,10 @@ def _ai_sentence(picked: list[str]) -> str | None:
         "with a brief in-character address if it fits naturally. The humor comes entirely from "
         "how things are delivered, never from anything invented — do not add or invent any fact "
         "not given below; every fact must actually appear.\n\n"
+        "Always write numbers as actual digits, never spelled out as words — '18 minutes' and "
+        "'0.8%' and '10:00 AM', not 'eighteen minutes' or 'zero point eight percent' or 'ten "
+        "o'clock'. This is read at a glance on a screen, not literary prose, and digits are "
+        "faster to scan.\n\n"
         "Combine the following facts into one flowing sentence, or two short sentences if that "
         f"reads better. Address {USER_FIRST_NAME} by name naturally somewhere in the text. Start "
         "with a capital letter and end with a period. Facts: " + facts
