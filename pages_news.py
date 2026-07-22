@@ -1,6 +1,6 @@
 """News page: general market/finance headlines from the free RSS feeds.
 
-Uses `news.is_market_relevant` — the same filter that drives the
+Uses `news.decide` — the same AI-first verdict that drives the
 breaking-news bar, so that bar is effectively this page's feed surfaced
 the moment each headline first appears rather than something separately
 and more strictly curated.
@@ -43,49 +43,46 @@ def render():
     now_ts = time.time()
 
     for item in news.fetch_headlines():
-        if not news.is_market_relevant(item["headline"]):
-            continue
         h = hashlib.sha1(item["headline"].encode()).hexdigest()
-        if h not in seen_at:
-            classification = news.classify(item["headline"])
-            # Captured once, at first sight, and locked in from then on:
-            # the instrument (index/futures) and its price at the moment
-            # this headline broke, so the reaction badge always measures
-            # "since this happened" against a single consistent price
-            # series — not a moving target, and not a comparison across
-            # two different instruments if market status changes while
-            # the headline is still showing. None for anything outside
-            # Fed/BoC or Macro Shock, where "the market's" reaction
-            # isn't a meaningful causal claim.
-            reaction_symbol = (
-                news_market_reaction.reaction_symbol()
-                if classification in news_market_reaction.REACTION_CATEGORIES
-                else None
-            )
-            seen_at[h] = {
-                "headline": item["headline"],
-                "first_seen": now_ts,
-                "category": classification or "Market News",
-                # Captured once, at first sight — "are/were breaking,"
-                # not re-evaluated fresh on every render, so this stays
-                # true to what actually happened even if term lists
-                # change later.
-                "important": classification is not None,
-                "source": item.get("source", ""),
-                "reaction_symbol": reaction_symbol,
-                "baseline_spx": news_market_reaction.price_for(reaction_symbol) if reaction_symbol else None,
-            }
+        if h in seen_at:
+            continue
+        decision = news.decide(item["headline"])
+        if decision is None:
+            continue
+        # Captured once, at first sight, and locked in from then on:
+        # the instrument (index/futures) and its price at the moment
+        # this headline broke, so the reaction badge always measures
+        # "since this happened" against a single consistent price
+        # series — not a moving target, and not a comparison across
+        # two different instruments if market status changes while
+        # the headline is still showing. None for anything outside
+        # Fed/BoC or Macro Shock, where "the market's" reaction
+        # isn't a meaningful causal claim.
+        reaction_symbol = (
+            news_market_reaction.reaction_symbol()
+            if decision["category"] in news_market_reaction.REACTION_CATEGORIES
+            else None
+        )
+        seen_at[h] = {
+            "headline": item["headline"],
+            "first_seen": now_ts,
+            "category": decision["category"],
+            # Captured once, at first sight — "was breaking," not
+            # re-evaluated fresh on every render (see decide()'s own
+            # docstring: an AI verdict is trusted as final once made).
+            "important": decision["important"],
+            "source": item.get("source", ""),
+            "reaction_symbol": reaction_symbol,
+            "baseline_spx": news_market_reaction.price_for(reaction_symbol) if reaction_symbol else None,
+        }
 
-    # Age out old entries, AND re-check every remaining one against
-    # today's is_market_relevant() — this kiosk keeps the same browser
-    # session open for hours/days, so a headline that qualified under a
-    # since-tightened filter would otherwise just sit here, correctly
-    # filtered out for every *new* headline but never swept from what's
-    # already stored, until its 24h window happened to expire on its own.
-    for h in [
-        h for h, entry in seen_at.items()
-        if now_ts - entry["first_seen"] > WINDOW_SECONDS or not news.is_market_relevant(entry["headline"])
-    ]:
+    # Age out entries past their 24h window. Used to also re-check every
+    # remaining one against a live filter call in case a keyword-list
+    # edit mid-session changed its answer — decide()'s AI verdict is
+    # trusted as final once made (see its own docstring), so there's
+    # nothing left to re-validate here, and re-asking would mean a real
+    # AI call for every stored entry, every render.
+    for h in [h for h, entry in seen_at.items() if now_ts - entry["first_seen"] > WINDOW_SECONDS]:
         del seen_at[h]
 
     entries = sorted(seen_at.values(), key=lambda e: e["first_seen"], reverse=True)[:MAX_SHOWN]

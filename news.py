@@ -1,20 +1,28 @@
-"""RSS-based, keyword-filtered news — powers breaking-news alerts AND the
-News page's rolling 24h feed, plus keyword-scanning for the Conflicts page.
+"""RSS-based news — powers breaking-news alerts AND the News page's
+rolling 24h feed, plus keyword-scanning for the Conflicts page.
 
-No API key: pulls from the Fed's own press-release feed (zero-noise, it IS
-the source) plus a few general finance RSS feeds. The breaking-news bar
-uses the exact same `is_market_relevant` filter as the News page — it's
-the same headline pool, just surfaced immediately as each one first
-appears rather than waiting to be read on the News page. `classify()`
-gives Fed/BoC, Data Surprise, Earnings, Macro Shock, Mergers, and
-Milestone headlines their own tag; anything else market-relevant is
-tagged "Market News" instead of being dropped. `is_important()` — which
-decides red (breaking) vs black (market news) in the alert bar, and the
-News page's red-vs-category-colored row border — is exactly
-`classify(h) is not None`: every one of those six categories already
-requires a topic+qualifier pairing (or is inherently unambiguous enough
-not to need one, like Macro Shock), so there's no separate, looser path
-for something to sneak through as "breaking" without earning it.
+No API key for the feeds themselves: pulls from the Fed's own
+press-release feed (zero-noise, it IS the source) plus a few general
+finance RSS feeds. The breaking-news bar uses the exact same `decide()`
+verdict as the News page — it's the same headline pool, just surfaced
+immediately as each one first appears rather than waiting to be read on
+the News page.
+
+Every headline's fate — show it at all, and if so Breaking or Market —
+used to be decided entirely by a hand-tuned keyword pipeline
+(is_clickbait/is_market_relevant/classify/is_important below). Session
+feedback: "I don't want to rely on a crappy RSS feed that feeds straight
+bullshit... I want it to be the filter, I want data-first truly
+informational headlines, and it gets to decide where these headlines
+fall, Breaking news or market news." `decide()` (bottom of the keyword
+section below) is now the one real entry point every caller in this
+module uses — it asks Gemini to make that same judgment with actual
+understanding instead of brittle keyword pairing, and only falls back to
+the original keyword pipeline when the AI call itself fails (missing
+key, rate limit, network — see gemini_client.generate's own docstring).
+An explicit AI REJECT is trusted as final and never second-guessed by
+the keyword filter; the keyword functions themselves are untouched and
+still exactly what's used when the AI is unavailable.
 """
 
 import functools
@@ -30,6 +38,7 @@ import streamlit as st
 
 import data_health
 import fetch_throttle
+import gemini_client
 from config import TOP_ALERT_HOLD_SECONDS
 
 # (feed URL, display name) — unlike the Conflicts page's Google News
@@ -463,6 +472,84 @@ def is_important(headline: str) -> bool:
     return classify(headline) is not None
 
 
+# AI verdict tokens -> the exact same display strings classify() already
+# produces, so category_class() generates identical CSS class names to
+# what theme.py already styles for those six — BREAKING is the only new
+# one (a catch-all for something genuinely major that doesn't fit any
+# named category), and gets its own small theme.py addition.
+_AI_VERDICT_LABELS = {
+    "FED_BOC": "Fed/BoC",
+    "DATA_SURPRISE": "Data Surprise",
+    "EARNINGS": "Earnings",
+    "MACRO_SHOCK": "Macro Shock",
+    "MERGERS": "Mergers",
+    "MILESTONE": "Milestone",
+    "BREAKING": "Breaking News",
+}
+_AI_VALID_VERDICTS = {"REJECT", "MARKET"} | set(_AI_VERDICT_LABELS)
+
+
+def _ai_verdict(headline: str) -> str | None:
+    """One of REJECT / MARKET / FED_BOC / DATA_SURPRISE / EARNINGS /
+    MACRO_SHOCK / MERGERS / MILESTONE / BREAKING — or None specifically
+    if the AI call itself failed (see gemini_client.generate), which
+    decide() below must treat as "fall back to the keyword pipeline,"
+    never as a rejection. Same six named categories classify() already
+    used, asked as real judgment calls instead of keyword pairing."""
+    prompt = (
+        "You are a strict news editor for a personal finance/markets dashboard. Judge this ONE "
+        "headline in two steps.\n\n"
+        "Step 1 — is it genuinely informational: reporting a fact that has already happened, not "
+        "clickbait, not a listicle ('5 stocks to buy'), not opinion/analysis/commentary, not "
+        "speculation ('could', 'might', 'expected to'), not an advice column ('should you buy'), "
+        "and specifically finance/markets/economy relevant (not general news, sports, "
+        "entertainment, lifestyle)? If it fails this step, respond with exactly: REJECT\n\n"
+        "Step 2 — only if it passes step 1, which single category fits best:\n"
+        "FED_BOC — a real Fed or Bank of Canada policy action/decision (not routine supervisory "
+        "paperwork)\n"
+        "DATA_SURPRISE — a major economic data release (CPI, jobs, GDP, etc.) that came in "
+        "meaningfully above/below expectations\n"
+        "EARNINGS — a company's actual reported quarterly results or guidance\n"
+        "MACRO_SHOCK — a market crash, financial crisis, bank run, recession signal, or similar "
+        "systemic event\n"
+        "MERGERS — a large ($1B+) announced acquisition or merger\n"
+        "MILESTONE — a genuine record high/low or historic market move\n"
+        "MARKET — real financial/market news, but routine, not urgent enough for the categories "
+        "above\n"
+        "BREAKING — something else genuinely major and market-moving that doesn't fit any "
+        "category above\n\n"
+        "Respond with exactly one word from: REJECT, MARKET, FED_BOC, DATA_SURPRISE, EARNINGS, "
+        "MACRO_SHOCK, MERGERS, MILESTONE, BREAKING. Nothing else, no punctuation.\n\n"
+        "Headline: " + headline
+    )
+    result = gemini_client.generate(prompt)
+    if result is None:
+        return None
+    token = result.strip().upper().rstrip(".")
+    return token if token in _AI_VALID_VERDICTS else "REJECT"
+
+
+def decide(headline: str) -> dict | None:
+    """The one real decision every caller in this module uses:
+    {"category": <display name>, "important": bool} to show this
+    headline, None to drop it entirely. AI-first (see _ai_verdict) —
+    falls back to the original keyword pipeline (is_market_relevant +
+    classify) only when the AI call itself failed; an explicit AI
+    REJECT is trusted as final, never re-checked against the keyword
+    filter."""
+    verdict = _ai_verdict(headline)
+    if verdict is None:
+        if not is_market_relevant(headline):
+            return None
+        cat = classify(headline)
+        return {"category": cat or "Market News", "important": cat is not None}
+    if verdict == "REJECT":
+        return None
+    if verdict == "MARKET":
+        return {"category": "Market News", "important": False}
+    return {"category": _AI_VERDICT_LABELS[verdict], "important": True}
+
+
 def category_class(category: str) -> str:
     """CSS class for a classify()/"Market News" category — shared so the
     News page's row accent color and the alert bar's tag color are always
@@ -517,15 +604,9 @@ def fetch_headlines() -> list[dict]:
 
 def get_new_alerts() -> list[dict]:
     """Flags fresh headlines that qualify for the News page; only returns
-    ones not already seen this session. Uses the same `is_market_relevant`
-    filter as the News page itself (rather than the narrower `classify()`
-    categories) so the breaking-news bar is just the News page's feed,
-    surfaced the moment each headline first appears.
-
-    `classify()` still runs for a more specific tag (Fed/BoC, Data
-    Surprise, Earnings, Macro Shock) when a headline happens to match one
-    of those; anything else that's still market-relevant is tagged
-    generically so it isn't dropped.
+    ones not already seen this session. Uses the same `decide()` verdict
+    as the News page itself so the breaking-news bar is just the News
+    page's feed, surfaced the moment each headline first appears.
 
     The very first call establishes a baseline (marks whatever already
     qualifies as "seen" without alerting) so opening the dashboard doesn't
@@ -544,17 +625,22 @@ def get_new_alerts() -> list[dict]:
 
     alerts = []
     for item in fetch_headlines():
-        if not is_market_relevant(item["headline"]):
-            continue
-        category = classify(item["headline"]) or "Market News"
+        # Marked seen (and skipped on every later cycle) BEFORE calling
+        # decide() — a REJECT verdict is real and final, so a headline
+        # that keeps showing up in the feed's own window shouldn't burn
+        # a fresh AI call re-litigating the same rejection every 3
+        # minutes it's still there.
         h = hashlib.sha1(item["headline"].encode()).hexdigest()
         if h in seen:
             continue
         seen[h] = True
         if len(seen) > MAX_SEEN_HEADLINES:
             seen.pop(next(iter(seen)))
+        decision = decide(item["headline"])
+        if decision is None:
+            continue
         if baseline_done:
-            alerts.append({**item, "category": category, "important": is_important(item["headline"])})
+            alerts.append({**item, **decision})
 
     st.session_state["news_baseline_done"] = True
     # Session request: when several headlines qualify as new in the
@@ -573,10 +659,9 @@ def render_alert_bar(alert: dict, elapsed: float, variant: str = "a"):
     label stretches into view, holds, then slides aside to reveal the
     category tag + headline underneath.
 
-    Red "BREAKING NEWS" when the headline references one of our
-    important target words (`is_important`), black "MARKET NEWS"
-    otherwise, so the bar's own color signals how urgent a given item
-    actually is before you even read the headline.
+    Red "BREAKING NEWS" when decide() judged this important, black
+    "MARKET NEWS" otherwise, so the bar's own color signals how urgent
+    a given item actually is before you even read the headline.
 
     `variant` ("a"/"b") picks between two functionally identical
     keyframe animations (theme.py) — alternated by the caller each
@@ -613,18 +698,20 @@ def render_top_alert_bar() -> None:
     """Renders the persistent top banner if a red headline is still
     within its hold window (TOP_ALERT_HOLD_SECONDS) — a plain static bar
     in normal document flow, not fixed/animated, since it needs to sit
-    there unchanged for up to two hours rather than play an intro."""
+    there unchanged for up to two hours rather than play an intro.
+
+    Used to also re-check the stored headline against the live filter
+    each render, in case a keyword-list edit mid-session made it no
+    longer qualify. decide()'s AI verdict is trusted as final once made
+    (same "locked in at first sight" philosophy pages_news.py's own
+    entries already use) — nothing here changes that mid-hold, so
+    there's nothing left to re-validate, and it would mean a real AI
+    call every render besides."""
     top_alert = st.session_state.get("top_alert")
     if not top_alert:
         return
     expired = time.time() - top_alert["set_at"] > TOP_ALERT_HOLD_SECONDS
-    # Re-checked against today's filters, not just re-fetched under them —
-    # this kiosk keeps one browser session open for hours/days, so a
-    # headline queued under a since-tightened filter would otherwise keep
-    # showing for its full 2-hour hold even though it'd never qualify if
-    # seen fresh right now.
-    stale = not is_market_relevant(top_alert["headline"]) or not is_important(top_alert["headline"])
-    if expired or stale:
+    if expired:
         del st.session_state["top_alert"]
         return
     st.markdown(

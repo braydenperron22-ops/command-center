@@ -1033,6 +1033,9 @@ html, body, [class*="css"] {
 /* Scoped to .news-alert-tag specifically — these category classes are
    reused on .news-feed-row (below) for just a left-border accent color,
    and that row must NOT pick up this solid pill background too. */
+/* news.decide's AI catch-all — something genuinely breaking that
+   doesn't fit any of the six named categories below. */
+.news-alert-tag.news-cat-breaking-news { background: rgba(255,105,97,0.9); color: #4d0f0d; }
 .news-alert-tag.news-cat-fed-boc { background: rgba(191,90,242,0.9); color: #2b0f3d; }
 .news-alert-tag.news-cat-data-surprise { background: rgba(90,200,250,0.9); color: #0a2c3d; }
 .news-alert-tag.news-cat-earnings { background: rgba(50,215,75,0.9); color: #0b2b12; }
