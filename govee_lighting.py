@@ -71,6 +71,15 @@ SMOKE_COLOR = (255, 140, 20)
 SUNRISE_COLOR = (253, 217, 160)  # scenery._SKY_STOPS["sunrise"][3], #fdd9a0
 SUNSET_COLOR = (248, 194, 122)  # scenery._SKY_STOPS["sunset"][3], #f8c27a
 
+# Game-mode night lighting (sync_lights' own jumbotron_active branch) —
+# session feedback: "make it a more dim warmer neutral colour so its
+# easier on the eyes." A plain warm white rather than whatever
+# condition color happened to be on screen, and well below
+# DAY_BRIGHTNESS — comfortable ambient light to watch by in an
+# otherwise dark room, not full daytime brightness.
+GAME_MODE_COLOR = (255, 209, 163)
+GAME_MODE_BRIGHTNESS = 30
+
 # Gentle wake-up/wind-down curve, layered under the sunset/sunrise on/off
 # gate below — the light already powers on as early as real sunrise, well
 # before anyone's awake in summer, and previously jumped straight to
@@ -304,11 +313,11 @@ def sync_lights(
     narrow scope as that one: only while the jumbotron takeover is
     actually on screen, not for the whole time some tracked game
     happens to be live in the background. Bypasses the night power-off
-    gate AND holds brightness at DAY_BRIGHTNESS instead of settling
-    onto the floor _brightness_envelope's own night-time ramp would
-    otherwise put it at — color still comes from the normal base-state
-    logic (market/condition), so the room still reflects what's
-    actually going on, just lit for it.
+    gate, but not into DAY_BRIGHTNESS or the market/condition color
+    that'd normally apply — session feedback right after: "make it a
+    more dim warmer neutral colour so its easier on the eyes." Settles
+    on GAME_MODE_COLOR/GAME_MODE_BRIGHTNESS instead, a plain warm white
+    dim enough to watch a bright screen by in an otherwise dark room.
     """
     if not st.secrets.get("GOVEE_API_KEY"):
         return
@@ -339,9 +348,8 @@ def sync_lights(
         _creep_brightness(_brightness_envelope(now, DAY_BRIGHTNESS, sunset))
         return
     if phase == "night" and jumbotron_active:
-        color, _ = _desired_base_state(market_intraday_pct, category, now, sunset)
-        _apply_color(color)
-        _creep_brightness(DAY_BRIGHTNESS)
+        _apply_color(GAME_MODE_COLOR)
+        _creep_brightness(GAME_MODE_BRIGHTNESS)
         return
     color, brightness = _desired_base_state(market_intraday_pct, category, now, sunset)
     _apply_color(color)
