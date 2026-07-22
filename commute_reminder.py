@@ -230,18 +230,19 @@ def check(now: datetime) -> dict | None:
     return {"headline": _leave_text(milestone), "category": "Commute", "important": False, "kind": "commute"}
 
 
-def _format_minutes(remaining_seconds: float) -> str:
-    # Worded units ("1h 26m"/"45 min"), not a colon-separated clock face
-    # ("1:26") — a colon format reads as a live stopwatch; a calm worded
-    # readout fits this headline better. (This used to also be a
-    # workaround for only updating once a minute per rerun — see
-    # render_leave_headline's own docstring, that part's no longer true,
-    # this is now purely a style choice.)
-    total_minutes = max(0, int(remaining_seconds) // 60)
-    hours, minutes = divmod(total_minutes, 60)
+def _format_clock(remaining_seconds: float) -> str:
+    """H:MM:SS (or MM:SS under an hour) — session request: "why do they
+    not show seconds like our other client side timer in the jumbotron
+    mode. make it look like that," matching pages_jumbotron._fmt_
+    countdown's own fallback exactly. Only ever the first frame's
+    value; app.py's global live-countdown ticker (data-format="clock")
+    recomputes this for real every second from there."""
+    total = max(0, int(remaining_seconds))
+    hours, rem = divmod(total, 3600)
+    minutes, seconds = divmod(rem, 60)
     if hours > 0:
-        return f"{hours}h {minutes}m"
-    return f"{minutes} min"
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
 
 
 def render_leave_headline(now: datetime) -> None:
@@ -269,10 +270,10 @@ def render_leave_headline(now: datetime) -> None:
     if not (-HEADLINE_GRACE_MINUTES * 60 <= remaining <= HEADLINE_WINDOW_MINUTES * 60):
         return
     target_ms = int(leave_by.timestamp() * 1000)
-    text = "Leave now" if remaining <= 0 else f"Leave in {_format_minutes(remaining)}"
+    text = "Leave now" if remaining <= 0 else f"Leave in {_format_clock(remaining)}"
     st.markdown(
         f'<div class="leave-headline"><span class="live-countdown" data-target-ms="{target_ms}" '
-        f'data-format="words" data-template="Leave in {{}}" data-zero-text="Leave now">{text}</span></div>',
+        f'data-format="clock" data-template="Leave in {{}}" data-zero-text="Leave now">{text}</span></div>',
         unsafe_allow_html=True,
     )
 
