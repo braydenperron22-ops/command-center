@@ -398,7 +398,7 @@ def _current_matchup_html(game_id: int) -> str:
     return (
         f'<div class="jumbo-leaders"><div class="jumbo-sl">Current Matchup</div>'
         f'<div class="jumbo-live-matchup">'
-        f'{col("At Bat", batter, [(batter.get("avg"), "AVG")])}'
+        f'{col("At Bat", batter, [(batter.get("ops"), "OPS")])}'
         f'<div class="jumbo-live-matchup-vs">VS</div>'
         f'{col("Pitching", pitcher, [(pitcher.get("era"), "ERA"), (pitcher.get("pitches"), "PITCHES")])}'
         f"</div></div>"

@@ -661,19 +661,20 @@ def _mlb_game_pitch_count(game_id: int, pitcher_id: int) -> int | None:
 
 
 def fetch_mlb_live_matchup(game_id: int) -> dict | None:
-    """{"batter": {"id", "name", "avg", "photo"}, "pitcher": {"id",
+    """{"batter": {"id", "name", "ops", "photo"}, "pitcher": {"id",
     "name", "era", "pitches", "photo"}} for whoever's actually at the
     plate/on the mound right now — session request: "during the game
     can you make the top performers tab show current pitcher and
     batter and their stats... ideally add the pitcher and batter pics,"
-    later refined to "for pitchers add number of pitches below ERA and
-    then just do average for batter." Reuses the same cached linescore
-    fetch_mlb_live_detail already pulls this rerun (no extra request
-    for the matchup itself), one small extra request each for the two
-    players' own season stat lines plus one boxscore request for the
-    pitcher's live pitch count. None on any fetch failure or once
-    there's genuinely no one at the plate/mound to name (the linescore
-    payload omits offense/defense between innings)."""
+    later refined to "for pitchers add number of pitches below ERA"
+    (briefly swapped the batter stat to AVG in the same request, then
+    "keep ops, screw avg" put it right back). Reuses the same cached
+    linescore fetch_mlb_live_detail already pulls this rerun (no extra
+    request for the matchup itself), one small extra request each for
+    the two players' own season stat lines plus one boxscore request
+    for the pitcher's live pitch count. None on any fetch failure or
+    once there's genuinely no one at the plate/mound to name (the
+    linescore payload omits offense/defense between innings)."""
     try:
         data = _fetch_mlb_linescore_raw(game_id)
     except Exception:
@@ -685,7 +686,7 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     batter_stat = _fetch_mlb_player_season_stat_raw(batter["id"], "hitting")
     pitcher_stat = _fetch_mlb_player_season_stat_raw(pitcher["id"], "pitching")
     return {
-        "batter": {"id": batter["id"], "name": batter["fullName"], "avg": batter_stat.get("avg"), "photo": _mlb_headshot_url(batter["id"])},
+        "batter": {"id": batter["id"], "name": batter["fullName"], "ops": batter_stat.get("ops"), "photo": _mlb_headshot_url(batter["id"])},
         "pitcher": {
             "id": pitcher["id"],
             "name": pitcher["fullName"],
