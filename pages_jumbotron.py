@@ -13,12 +13,11 @@ Rendered as one single HTML block rather than Streamlit columns: the
 kiosk viewport doesn't scroll, and a CSS grid gives exact control over
 how the three panels share a fixed height in a way st.columns' own
 gutters/wrapping don't. Every panel degrades on its own — a failed
-linescore or scoring-summary fetch drops that section, not the board.
+fetch drops that section, not the board.
 
 Data comes entirely from fetchers this app already had (sports_client
 for game/standings/form/live detail, sports_alerts for scoring plays,
-scores_client for the league-wide slate); the only additions were the
-two linescore fetchers in sports_client.
+scores_client for the league-wide slate).
 """
 
 import html
@@ -112,8 +111,8 @@ def _record_for_name(status: dict, name: str) -> str:
 def _sides(status: dict, game: dict, team_label: str) -> tuple[dict, dict]:
     """(away, home) each {"name", "logo", "record", "is_us"} — the board
     is laid out as a real scoreboard (away on the left) rather than
-    always putting us first, so the linescore rows below it line up with
-    the logos above them."""
+    always putting us first, matching the big score digits' own
+    away-left/home-right order."""
     us = {"name": team_label.title(), "logo": status["team_logo"], "record": _record_for(status), "is_us": True}
     them = {
         "name": game["opponent"],
@@ -132,35 +131,6 @@ def _side_html(side: dict, dim: bool) -> str:
         f'<div class="jumbo-tname">{html.escape(side["name"])}</div>'
         f'<div class="jumbo-trec">{html.escape(side["record"])}</div>'
         f"</div>"
-    )
-
-
-def _linescore_html(sport: str, game_id: int, away: dict, home: dict) -> str:
-    fetch = sports_client.fetch_mlb_linescore if sport == "mlb" else sports_client.fetch_nhl_linescore
-    data = fetch(game_id)
-    if not data:
-        return ""
-    columns, totals, extras = data["columns"], data["totals"], data["extra_labels"]
-    head = "".join(f"<th>{html.escape(c['label'])}</th>" for c in columns)
-    head += "".join(f'<th class="jumbo-ls-tot">{html.escape(x)}</th>' for x in extras)
-    keys = {"R": "runs", "T": "runs", "H": "hits", "E": "errors"}
-
-    def row(side_key: str, side: dict) -> str:
-        cells = "".join(
-            f'<td>{"–" if c[side_key] is None else int(c[side_key])}</td>' for c in columns
-        )
-        cells += "".join(
-            f'<td class="jumbo-ls-tot">{totals[side_key].get(keys[x]) if totals[side_key].get(keys[x]) is not None else "–"}</td>'
-            for x in extras
-        )
-        return (
-            f'<tr><td class="jumbo-ls-team"><img src="{html.escape(side["logo"])}" />'
-            f'{html.escape(side["name"][:14])}</td>{cells}</tr>'
-        )
-
-    return (
-        f'<table class="jumbo-linescore"><thead><tr><th></th>{head}</tr></thead>'
-        f'<tbody>{row("away", away)}{row("home", home)}</tbody></table>'
     )
 
 
@@ -537,7 +507,7 @@ def _board_html(state: dict, now: datetime) -> str:
         start_text = game["start_time"].strftime("%-I:%M %p")
         situation = f'<div class="jumbo-situ"><span class="jumbo-situ-hot">FIRST PITCH {html.escape(start_text)}</span></div>' if sport == "mlb" else f'<div class="jumbo-situ"><span class="jumbo-situ-hot">PUCK DROP {html.escape(start_text)}</span></div>'
         situation += _pregame_extra_html(sport, game["game_id"])
-        linescore, wp_html = "", ""
+        wp_html = ""
         dim_away = dim_home = False
     else:
         away_score = game["opp_score"] if game["is_home"] else game["team_score"]
@@ -596,7 +566,6 @@ def _board_html(state: dict, now: datetime) -> str:
             situation = _mlb_situation_html(game["game_id"]) if sport == "mlb" else _nhl_situation_html(game["game_id"])
         else:
             situation = ""
-        linescore = _linescore_html(sport, game["game_id"], away, home)
         wp_html = _win_probability_html(sport, match, away, home) if phase == "live" else ""
         # Only a finished game has a settled winner to dim the loser
         # against — during a live game the trailing side is still very
@@ -624,7 +593,6 @@ def _board_html(state: dict, now: datetime) -> str:
         "postgame": "FINAL",
     }[phase]
     live_class = " jumbo-board-live" if phase == "live" else ""
-    linescore_block = f'<div class="jumbo-linewrap">{linescore}</div>' if linescore else ""
 
     return (
         f'<div class="jumbo-panel jumbo-board{live_class}{win_burst}">'
@@ -632,7 +600,7 @@ def _board_html(state: dict, now: datetime) -> str:
         f'<span class="jumbo-ph-right">{state_label}</span></div>'
         f'<div class="jumbo-board-body">'
         f'<div class="jumbo-matchup">{_side_html(away, dim_away)}{center}{_side_html(home, dim_home)}</div>'
-        f"{wp_html}{situation}{linescore_block}{leaders_html}"
+        f"{wp_html}{situation}{leaders_html}"
         f"</div></div>"
     )
 

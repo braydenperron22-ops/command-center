@@ -2302,16 +2302,20 @@ html, body, [class*="css"] {
     margin-top: 8px;
     box-shadow: 0 0 18px rgba(255,179,0,0.4);
 }
+/* Session feedback: "make the inning, bases, count, and outs more
+   visible from across the room" — sized up across the board (the
+   inning-by-inning linescore this used to sit above was dropped in
+   the same request, freeing up real room to grow into). */
 .jumbo-situ {
     text-align: center;
     font-family: var(--mono);
-    font-size: 13px;
+    font-size: 24px;
     letter-spacing: 0.05em;
-    padding: 4px 26px 8px;
-    line-height: 1.9;
+    padding: 10px 26px 14px;
+    line-height: 1.7;
 }
-.jumbo-situ-hot { color: var(--led); font-weight: 700; margin-right: 10px; }
-.jumbo-situ-who { font-size: 12px; color: var(--mut); margin-top: 2px; }
+.jumbo-situ-hot { color: var(--led); font-weight: 700; margin-right: 16px; font-size: 28px; }
+.jumbo-situ-who { font-size: 20px; color: var(--bone); margin-top: 8px; }
 .jumbo-dim { color: var(--mut-2); }
 .jumbo-clockbig { font-family: var(--num); font-size: 30px; color: var(--bone); letter-spacing: 0.06em; }
 /* Pregame venue/weather + probable starters (pages_jumbotron.
@@ -2535,11 +2539,11 @@ html, body, [class*="css"] {
     letter-spacing: 0.1em;
     flex: 0 0 auto;
 }
-.jumbo-diamond { width: 34px; height: 34px; display: inline-block; vertical-align: -10px; margin: 0 10px; }
+.jumbo-diamond { width: 62px; height: 62px; display: inline-block; vertical-align: -18px; margin: 0 18px; }
 .jumbo-diamond rect { fill: #1A2230; stroke: var(--edge-hi); stroke-width: 1.5; }
 .jumbo-diamond rect.on { fill: var(--led); stroke: var(--led); }
-.jumbo-dots { display: inline-flex; gap: 4px; margin-left: 8px; vertical-align: 1px; }
-.jumbo-dot { width: 9px; height: 9px; border-radius: 50%; background: #1A2230; border: 1px solid var(--edge-hi); display: inline-block; }
+.jumbo-dots { display: inline-flex; gap: 7px; margin-left: 14px; vertical-align: 3px; }
+.jumbo-dot { width: 16px; height: 16px; border-radius: 50%; background: #1A2230; border: 1.5px solid var(--edge-hi); display: inline-block; }
 .jumbo-dot-b.on { background: var(--ok); border-color: var(--ok); }
 .jumbo-dot-s.on { background: var(--live); border-color: var(--live); }
 .jumbo-dot-o.on { background: var(--led); border-color: var(--led); }
@@ -2552,36 +2556,6 @@ html, body, [class*="css"] {
     0% { transform: scale(1.9); box-shadow: 0 0 12px var(--led); }
     100% { transform: scale(1); box-shadow: none; }
 }
-
-/* Session feedback: the linescore numbers were "clunky" and unreadable
-   "from a distance" (this is a kiosk meant to be read across a room,
-   not a phone screen) — sized up across the board, not just a tweak. */
-.jumbo-linewrap { display: flex; justify-content: center; padding: 4px 26px 12px; }
-.jumbo-linescore {
-    border-collapse: separate;
-    border-spacing: 0;
-    font-family: var(--num);
-    font-size: 20px;
-    background: rgba(8,11,17,0.75);
-    border: 1px solid var(--edge);
-    border-radius: 10px;
-    overflow: hidden;
-}
-.jumbo-linescore th, .jumbo-linescore td { padding: 8px 14px; text-align: center; min-width: 38px; }
-.jumbo-linescore thead th {
-    font-family: var(--mono);
-    font-size: 12px;
-    letter-spacing: 0.16em;
-    color: var(--mut-2);
-    border-bottom: 1px solid var(--edge);
-    background: rgba(6,9,14,0.9);
-    font-weight: 700;
-}
-.jumbo-linescore td { color: var(--bone); border-bottom: 1px solid rgba(30,38,52,0.4); font-weight: 700; }
-.jumbo-linescore tr:last-child td { border-bottom: none; }
-.jumbo-ls-team { text-align: left !important; font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--bone) !important; white-space: nowrap; }
-.jumbo-ls-team img { width: 22px; height: 22px; object-fit: contain; vertical-align: -5px; margin-right: 8px; }
-.jumbo-ls-tot { color: var(--led) !important; font-weight: 800; border-left: 1px solid var(--edge); }
 
 .jumbo-sl {
     font-family: var(--mono);

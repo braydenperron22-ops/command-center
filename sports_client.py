@@ -77,12 +77,6 @@ LIVE_DETAIL_CACHE_TTL_SECONDS = 30
 
 MLB_LINESCORE_URL = "https://statsapi.mlb.com/api/v1/game/{game_id}/linescore"
 NHL_BOXSCORE_URL = "https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore"
-# Per-period goals for the jumbotron's linescore table. The NHL's own
-# landing/boxscore payloads don't carry one (confirmed live: landing's
-# `summary` has only scoring/penalties/threeStars, and boxscore has no
-# linescore key at all) — right-rail is where it actually lives.
-NHL_RIGHT_RAIL_URL = "https://api-web.nhle.com/v1/gamecenter/{game_id}/right-rail"
-
 _last_good_mlb_games: list[dict] | None = None
 _last_good_mlb_standings: list[dict] | None = None
 _last_good_mlb_wildcard: dict | None = None
@@ -743,75 +737,6 @@ def fetch_nhl_live_detail(game_id: int) -> dict | None:
         "away_score": (box.get("awayTeam") or {}).get("score"),
         "home_score": (box.get("homeTeam") or {}).get("score"),
     }
-
-
-def fetch_mlb_linescore(game_id: int) -> dict | None:
-    """Inning-by-inning runs plus R/H/E totals for the jumbotron's
-    linescore table — {"columns": [{"label", "away", "home"}, ...],
-    "totals": {"away": {"runs","hits","errors"}, "home": {...}},
-    "away_is_team", ...}. None on any fetch failure (a half-drawn
-    linescore is worse than none). Reuses the same cached raw linescore
-    call fetch_mlb_live_detail already makes, so this costs no extra
-    request."""
-    try:
-        data = _fetch_mlb_linescore_raw(game_id)
-    except Exception:
-        return None
-    innings = data.get("innings") or []
-    if not innings:
-        return None
-    columns = [
-        {
-            "label": str(inning.get("num", "")),
-            "away": (inning.get("away") or {}).get("runs"),
-            "home": (inning.get("home") or {}).get("runs"),
-        }
-        for inning in innings
-    ]
-    teams = data.get("teams") or {}
-    totals = {
-        side: {
-            "runs": (teams.get(side) or {}).get("runs"),
-            "hits": (teams.get(side) or {}).get("hits"),
-            "errors": (teams.get(side) or {}).get("errors"),
-        }
-        for side in ("away", "home")
-    }
-    return {"columns": columns, "totals": totals, "extra_labels": ("R", "H", "E")}
-
-
-@st.cache_data(ttl=LIVE_DETAIL_CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_nhl_right_rail_raw(game_id: int) -> dict:
-    fetch_throttle.wait_turn()
-    resp = requests.get(NHL_RIGHT_RAIL_URL.format(game_id=game_id), timeout=10)
-    resp.raise_for_status()
-    return resp.json()
-
-
-def fetch_nhl_linescore(game_id: int) -> dict | None:
-    """Same shape as fetch_mlb_linescore, per period instead of per
-    inning, with only a goals total (no hits/errors equivalent) — see
-    NHL_RIGHT_RAIL_URL's own comment for why this endpoint and not the
-    boxscore/landing ones."""
-    try:
-        data = _fetch_nhl_right_rail_raw(game_id)
-    except Exception:
-        return None
-    linescore = data.get("linescore") or {}
-    by_period = linescore.get("byPeriod") or []
-    if not by_period:
-        return None
-    columns = [
-        {
-            "label": _nhl_period_label(period.get("periodDescriptor") or {}),
-            "away": period.get("away"),
-            "home": period.get("home"),
-        }
-        for period in by_period
-    ]
-    totals_raw = linescore.get("totals") or {}
-    totals = {side: {"runs": totals_raw.get(side)} for side in ("away", "home")}
-    return {"columns": columns, "totals": totals, "extra_labels": ("T",)}
 
 
 # Session request (jumbotron pregame board): venue, real game-day
