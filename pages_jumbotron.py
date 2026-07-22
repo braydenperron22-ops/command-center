@@ -524,27 +524,33 @@ def _fmt_break_clock(seconds: float) -> str:
     return f"{minutes}:{secs:02d}"
 
 
-def _mlb_between_innings_state(game_id: int, detail: dict, now_ts: float) -> tuple[bool, float]:
-    """(is_between, elapsed_seconds since this specific break started).
-    MLB publishes no official countdown for a half-inning break (it
-    runs however long the broadcast's own commercial pod does, nothing
-    in the API says when it ends), so this counts up from when the
-    break was first observed rather than fabricating a countdown to an
-    unknown resume time — see _between_play_overlay_html's own
-    docstring. Keyed by inning+half (not just game_id) so the next
-    break starts its own count at 0 rather than inheriting the last
-    one's elapsed time."""
+# MLB's own pitch-clock rule fixes every half-inning break at exactly
+# this long (session correction: "its a 1:30 countdown" — the live
+# feed itself doesn't hand back a literal countdown field, but the
+# rule does fix the number, so a real countdown is possible after all).
+MLB_BREAK_SECONDS = 90
+
+
+def _mlb_between_innings_target(game_id: int, detail: dict, now_ts: float) -> float | None:
+    """The real epoch-seconds timestamp this break should end at, or
+    None if not currently between innings. Keyed by inning+half (not
+    just game_id) so a fresh break starts its own MLB_BREAK_SECONDS
+    countdown rather than inheriting the last one's target. If the
+    real game ever runs past 0:00 (a pitching change mid-break, say),
+    the countdown just holds at 0:00 — the live-countdown ticker
+    already clamps negative to zero — rather than going negative or
+    looking broken."""
     inning_state = detail.get("inning_state")
     key = f"jumbotron_mlb_break_{game_id}"
     if inning_state not in ("Middle", "End"):
         st.session_state.pop(key, None)
-        return False, 0.0
+        return None
     marker = f"{inning_state}:{detail.get('current_inning')}"
     tracked = st.session_state.get(key)
     if not tracked or tracked.get("marker") != marker:
         tracked = {"marker": marker, "started_at": now_ts}
         st.session_state[key] = tracked
-    return True, now_ts - tracked["started_at"]
+    return tracked["started_at"] + MLB_BREAK_SECONDS
 
 
 def _between_play_overlay_html(state: dict, now: datetime) -> str:
@@ -557,11 +563,13 @@ def _between_play_overlay_html(state: dict, now: datetime) -> str:
     Unlike the fixed-duration new-pitcher overlay, this isn't a timed
     toast — it's re-evaluated fresh every rerun and stays up for
     exactly as long as the break condition itself stays true, gone the
-    instant play resumes. NHL's own intermission clock carries a real
-    countdown (intermission_seconds_remaining, the same number the
-    broadcast's own countdown uses) — MLB has no equivalent, so that
-    side counts up elapsed break time instead of guessing at a
-    countdown (see _mlb_between_innings_state's own docstring).
+    instant play resumes. Both sports get a real countdown, driven by
+    the same live-countdown ticker the pregame/leave-headline countdowns
+    already use: NHL's own intermission clock carries one directly
+    (intermission_seconds_remaining, the same number the broadcast's
+    own countdown uses); MLB's live feed doesn't hand one back, but the
+    pitch-clock rule fixes every half-inning break at MLB_BREAK_SECONDS,
+    so _mlb_between_innings_target counts down against that instead.
 
     Shows every game around the leagues (scores_client.fetch_games,
     same source the sidebar's own Around The Leagues panel reads —
@@ -580,12 +588,13 @@ def _between_play_overlay_html(state: dict, now: datetime) -> str:
         detail = sports_client.fetch_mlb_live_detail(game_id)
         if not detail:
             return ""
-        is_between, elapsed = _mlb_between_innings_state(game_id, detail, now_ts)
-        if not is_between:
+        target_ts = _mlb_between_innings_target(game_id, detail, now_ts)
+        if target_ts is None:
             return ""
         headline = f'{(detail.get("inning_state") or "").upper()} OF {detail.get("current_inning") or ""}'.strip()
-        timer_span = f'<div class="jumbo-otc-timer">{html.escape(_fmt_break_clock(elapsed))}</div>'
-        timer_label = "BREAK TIME ELAPSED"
+        target_ms = int(target_ts * 1000)
+        timer_span = f'<div class="jumbo-otc-timer live-countdown" data-target-ms="{target_ms}" data-format="clock">{html.escape(_fmt_break_clock(target_ts - now_ts))}</div>'
+        timer_label = "GAME RESUMES IN"
     elif sport == "nhl":
         detail = sports_client.fetch_nhl_live_detail(game_id)
         if not detail or not detail.get("in_intermission"):
