@@ -70,7 +70,8 @@ FLASH_RED = (255, 0, 0)  # Canadiens' own game — same red govee_lighting's bre
 # How close to first pitch/puck drop the countdown headline starts
 # showing — session request: "First Pitch In, and then we start
 # counting down from like an hour, similar to the get ready to go
-# timers" (commute_reminder's HEADLINE_WINDOW_MINUTES, same value).
+# timers" (commute_reminder's HEADLINE_WINDOW_MINUTES — same idea, not
+# kept in sync; that one was later bumped to 120 on its own).
 COUNTDOWN_WINDOW_MINUTES = 60
 # A game's state stays "upcoming" briefly past its scheduled start
 # (delays, ceremonies, the feed just lagging) — keep the headline up as

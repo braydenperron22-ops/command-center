@@ -47,9 +47,10 @@ LATEST_FIRE_MINUTES = -30
 # The persistent headline (render_leave_headline, below) is deliberately
 # narrower than the toast milestones above — hours-out visibility is
 # what those toasts are for. The headline is for the one window where
-# you actually want it parked on screen: the final hour, plus a short
-# grace period after so it doesn't vanish the instant you're running late.
-HEADLINE_WINDOW_MINUTES = 60
+# you actually want it parked on screen: the final two hours, plus a
+# short grace period after so it doesn't vanish the instant you're
+# running late. (Session request: bumped from 60 to 120.)
+HEADLINE_WINDOW_MINUTES = 120
 HEADLINE_GRACE_MINUTES = 10
 
 # Intro sequencing via the toast-label-intro/toast-headline-intro CSS
@@ -248,8 +249,8 @@ def render_leave_headline(now: datetime) -> None:
     page-independent (renders regardless of which of the 6 rotating
     pages is currently up, unlike anything living inside a page's own
     render()), so it's actually visible during the one window that
-    matters: the final hour before you need to leave, through a
-    HEADLINE_GRACE_MINUTES grace period after. Silent outside that
+    matters: the final HEADLINE_WINDOW_MINUTES before you need to leave,
+    through a HEADLINE_GRACE_MINUTES grace period after. Silent outside that
     window — hours-out awareness is what the milestone toasts above are
     for; this is specifically for keeping tabs once it's close.
 
