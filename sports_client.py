@@ -8,6 +8,7 @@ corrects around lockouts, elimination, early/late starts, etc. without
 yearly upkeep.
 """
 
+import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -74,6 +75,13 @@ STANDINGS_CACHE_TTL_SECONDS = 30 * 60  # standings only move once a game finishe
 # every few seconds — polled far tighter than the 5-minute schedule
 # cache above, which only needs to catch state flipping to/from "live".
 LIVE_DETAIL_CACHE_TTL_SECONDS = 30
+# The live feeds above are close to real-time, but Brayden's actual TV
+# broadcast runs a beat behind that — session report: "the inning over
+# thing is being picked up before the live stream." Rather than just
+# polling slower (which would still show the true current instant, only
+# choppier), every live-situation payload is held back by this long so
+# the jumbotron deliberately trails the broadcast instead of leading it.
+LIVE_DATA_DELAY_SECONDS = 10
 
 MLB_LINESCORE_URL = "https://statsapi.mlb.com/api/v1/game/{game_id}/linescore"
 NHL_BOXSCORE_URL = "https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore"
@@ -82,6 +90,26 @@ _last_good_mlb_standings: list[dict] | None = None
 _last_good_mlb_wildcard: dict | None = None
 _last_good_nhl_games: list[dict] | None = None
 _last_good_nhl_standings: list[dict] | None = None
+# {buffer_key: [(fetched_at, payload), ...]}, oldest first — backs
+# _delayed() below. Plain module state like _last_good_* above rather
+# than session_state: this is about trailing the real-world event by a
+# fixed wall-clock amount, not anything session-specific.
+_delay_buffers: dict[str, list] = {}
+
+
+def _delayed(key: str, value):
+    """Returns whatever `value` was for this key as of
+    LIVE_DATA_DELAY_SECONDS ago, buffering the fresh value in first.
+    Falls back to `value` itself until the buffer's been running long
+    enough to have anything older (start of a game/app) — briefly live,
+    rather than blocking display entirely."""
+    now = time.time()
+    buf = _delay_buffers.setdefault(key, [])
+    buf.append((now, value))
+    cutoff = now - LIVE_DATA_DELAY_SECONDS
+    while len(buf) > 1 and buf[1][0] <= cutoff:
+        buf.pop(0)
+    return buf[0][1] if buf[0][0] <= cutoff else value
 
 
 def _ordinal(n: int) -> str:
@@ -547,6 +575,14 @@ def _fetch_mlb_linescore_raw(game_id: int) -> dict:
     return resp.json()
 
 
+def _mlb_linescore_delayed(game_id: int) -> dict:
+    """_fetch_mlb_linescore_raw, run through _delayed — shared by
+    fetch_mlb_live_detail and fetch_mlb_live_matchup so the inning/count
+    state and the batter/pitcher on it stay in lockstep at the same
+    delayed instant, rather than each drifting against its own buffer."""
+    return _delayed(f"mlb_linescore_{game_id}", _fetch_mlb_linescore_raw(game_id))
+
+
 def fetch_mlb_live_detail(game_id: int) -> dict | None:
     """{"inning_state" ("Top"/"Bottom"/"Middle"/"End"), "current_inning",
     "balls", "strikes", "outs", "batter", "pitcher", "bases":
@@ -560,9 +596,11 @@ def fetch_mlb_live_detail(game_id: int) -> dict | None:
     and carries the real live score too). None on any fetch failure (no
     last-good fallback: a stale pitch count/base state — or score —
     would be actively misleading rather than just old, unlike a season
-    schedule that barely changes)."""
+    schedule that barely changes). Held back LIVE_DATA_DELAY_SECONDS
+    behind the real feed via _mlb_linescore_delayed, to trail the TV
+    broadcast rather than lead it."""
     try:
-        data = _fetch_mlb_linescore_raw(game_id)
+        data = _mlb_linescore_delayed(game_id)
     except Exception:
         return None
 
@@ -652,9 +690,11 @@ def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
     shows). Season ERA comes from the /people stat line, but these are
     inherently per-game, only in the boxscore's own per-player stats.
     {} on any fetch failure or before this pitcher has thrown a pitch
-    this game (not yet in the boxscore's player list)."""
+    this game (not yet in the boxscore's player list). Delayed the same
+    LIVE_DATA_DELAY_SECONDS as the linescore feed, so this pitcher's
+    count doesn't tick up before the pitch it reflects has aired."""
     try:
-        data = _fetch_mlb_boxscore_raw(game_id)
+        data = _delayed(f"mlb_boxscore_{game_id}", _fetch_mlb_boxscore_raw(game_id))
     except Exception:
         return {}
     for side in ("home", "away"):
@@ -683,9 +723,11 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     request for the pitcher's game-total pitch/ball/strike counts.
     None on any fetch failure or once there's genuinely no one at the
     plate/mound to name (the linescore payload omits offense/defense
-    between innings)."""
+    between innings). Uses the same _mlb_linescore_delayed snapshot as
+    fetch_mlb_live_detail (see its own docstring) so the matchup shown
+    here never gets ahead of the situation strip above it."""
     try:
-        data = _fetch_mlb_linescore_raw(game_id)
+        data = _mlb_linescore_delayed(game_id)
     except Exception:
         return None
     batter = (data.get("offense") or {}).get("batter")
@@ -777,9 +819,12 @@ def fetch_nhl_live_detail(game_id: int) -> dict | None:
     clock.secondsRemaining the NHL's own broadcast intermission
     countdown uses — real seconds left until the next period, not an
     estimate — session request: "a timer till the game resumes again."
-    None on any fetch failure, same reasoning as fetch_mlb_live_detail."""
+    None on any fetch failure, same reasoning as fetch_mlb_live_detail.
+    Delayed the same LIVE_DATA_DELAY_SECONDS as the MLB side, so the
+    intermission countdown targets when the broadcast shows puck drop,
+    not the true (slightly earlier) instant."""
     try:
-        box = _fetch_nhl_boxscore_raw(game_id)
+        box = _delayed(f"nhl_boxscore_{game_id}", _fetch_nhl_boxscore_raw(game_id))
     except Exception:
         return None
 
