@@ -380,36 +380,44 @@ def _current_matchup_html(game_id: int) -> str:
     # average for batter" — a pitcher now carries two stat blocks side
     # by side, a batter just the one; `stats` takes however many
     # (value, label) pairs apply, skipping any that came back None.
-    def col(tag: str, player: dict, stats: list[tuple]) -> str:
+    # Session request: "move that count below the other pitcher stats"
+    # — `stat_rows` is a list of rows, each a list of (value, label)
+    # pairs, so a pitcher can get ERA/PITCHES on one row and B-S on its
+    # own row underneath, while a batter's single-row OPS is unaffected.
+    def col(tag: str, player: dict, stat_rows: list[list[tuple]]) -> str:
         photo = (
             f'<img class="jumbo-live-matchup-photo" src="{html.escape(player["photo"])}" onerror="this.style.display=\'none\'" />'
             if player.get("photo")
             else ""
         )
-        blocks = "".join(
-            f'<div class="jumbo-live-matchup-stat-block">'
-            f'<div class="jumbo-live-matchup-stat">{html.escape(str(value))}</div>'
-            f'<div class="jumbo-live-matchup-stat-label">{html.escape(label)}</div>'
-            f"</div>"
-            for value, label in stats
-            if value is not None
-        )
-        if not blocks:
-            blocks = '<div class="jumbo-live-matchup-stat-block"><div class="jumbo-live-matchup-stat">—</div></div>'
+        rows_html = ""
+        for stats in stat_rows:
+            blocks = "".join(
+                f'<div class="jumbo-live-matchup-stat-block">'
+                f'<div class="jumbo-live-matchup-stat">{html.escape(str(value))}</div>'
+                f'<div class="jumbo-live-matchup-stat-label">{html.escape(label)}</div>'
+                f"</div>"
+                for value, label in stats
+                if value is not None
+            )
+            if blocks:
+                rows_html += f'<div class="jumbo-live-matchup-stat-row">{blocks}</div>'
+        if not rows_html:
+            rows_html = '<div class="jumbo-live-matchup-stat-row"><div class="jumbo-live-matchup-stat-block"><div class="jumbo-live-matchup-stat">—</div></div></div>'
         return (
             f'<div class="jumbo-live-matchup-col">{photo}'
             f'<div class="jumbo-live-matchup-tag">{html.escape(tag)}</div>'
             f'<div class="jumbo-live-matchup-name">{html.escape(player["name"])}</div>'
-            f'<div class="jumbo-live-matchup-stat-row">{blocks}</div>'
+            f"{rows_html}"
             f"</div>"
         )
 
     return (
         f'<div class="jumbo-leaders"><div class="jumbo-sl">Current Matchup</div>'
         f'<div class="jumbo-live-matchup">'
-        f'{col("At Bat", batter, [(batter.get("ops"), "OPS")])}'
+        f'{col("At Bat", batter, [[(batter.get("ops"), "OPS")]])}'
         f'<div class="jumbo-live-matchup-vs">VS</div>'
-        f'{col("Pitching", pitcher, [(pitcher.get("era"), "ERA"), (pitcher.get("pitches"), "PITCHES"), (pitch_split, "B-S")])}'
+        f'{col("Pitching", pitcher, [[(pitcher.get("era"), "ERA"), (pitcher.get("pitches"), "PITCHES")], [(pitch_split, "B-S")]])}'
         f"</div></div>"
     )
 
