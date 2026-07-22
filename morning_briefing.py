@@ -951,25 +951,33 @@ AI_REFRESH_SECONDS = 5 * 60  # session request: "for the daily morning brief... 
 def _ai_sentence(picked: list[str]) -> str | None:
     """Same picked clause texts, woven by Gemini into one or two
     flowing sentences instead of the mechanical semicolon-join below —
-    session request: "revamp the morning brief" with a free AI. Facts
-    and their priority ordering are untouched (still decided entirely
-    by the *_clause functions above); this only changes how they're
-    phrased together. Real calls throttled to once per
-    AI_REFRESH_SECONDS regardless of how often render() calls this
-    (every 5s during the whole morning window) — see gemini_client.
-    generate_periodic. None (falls back to the plain join) on any
-    failure with nothing usable already cached."""
+    session request: "revamp the morning brief" with a free AI, later
+    "i want the daily recap to have a jarvis type energy from iron man."
+    Facts and their priority ordering are untouched (still decided
+    entirely by the *_clause functions above); this only changes how
+    they're phrased. Owns its own opening address now (JARVIS greets
+    Tony himself rather than a narrator doing it for him) — render()
+    below skips the separately-picked random GREETINGS prefix whenever
+    this succeeds, so there's nothing left for the AI's own in-character
+    opener to clash with; GREETINGS is now only used on the fallback
+    path. Real calls throttled to once per AI_REFRESH_SECONDS regardless
+    of how often render() calls this (every 5s during the whole morning
+    window) — see gemini_client.generate_periodic. None (falls back to
+    the plain join + a random greeting) on any failure with nothing
+    usable already cached."""
     facts = "; ".join(picked)
     prompt = (
-        f"You're writing this for {USER_FIRST_NAME}, personally — combine the following facts "
-        "into one flowing sentence, or two short sentences if that reads better, in a relaxed, "
-        f"warm, conversational tone (not corporate, no bullet points). Address {USER_FIRST_NAME} "
-        "by first name naturally somewhere in the text, the way a friend would drop your name "
-        "mid-sentence — NOT as a greeting or salutation at the very start (no 'Good morning, "
-        f"{USER_FIRST_NAME}', no 'Hey {USER_FIRST_NAME}'), since a greeting is already prepended "
-        "separately by the caller and starting with one here would duplicate it. Keep every "
-        "fact, don't invent or add anything not given, don't editorialize beyond the facts "
-        "themselves. Start with a capital letter and end with a period. Facts: " + facts
+        f"You are {USER_FIRST_NAME}'s personal AI assistant, and your voice should read exactly "
+        "like J.A.R.V.I.S. from Iron Man — impeccably composed, dryly witty, hyper-competent, "
+        "unflappable, understated. Not cheerful, not corporate, no exclamation points, no bullet "
+        "points. You may open with a brief in-character address if it fits naturally, the way "
+        "JARVIS greets Tony each morning, and a subtle dry aside on the facts themselves is "
+        "welcome — the wit comes entirely from how things are delivered, never from anything "
+        "invented. Do not add or invent any fact not given below; every fact must actually "
+        "appear.\n\n"
+        "Combine the following facts into one flowing sentence, or two short sentences if that "
+        f"reads better. Address {USER_FIRST_NAME} by name naturally somewhere in the text. Start "
+        "with a capital letter and end with a period. Facts: " + facts
     )
     return gemini_client.generate_periodic("morning_briefing_sentence", AI_REFRESH_SECONDS, prompt)
 
@@ -1007,9 +1015,14 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         sentence = _ai_sentence(picked)
     except Exception:
         sentence = None
-    if sentence is None:
-        sentence = "; ".join(picked)
-        sentence = sentence[0].upper() + sentence[1:] + "."
-    greeting = _pick(GREETINGS, now, "greeting")
+    if sentence is not None:
+        # JARVIS opens the line himself (see _ai_sentence's own
+        # docstring) — no separate randomized greeting prefix here, or
+        # it would collide with his own in-character address.
+        st.markdown(f'<div class="morning-briefing">{sentence}</div>', unsafe_allow_html=True)
+        return
 
+    sentence = "; ".join(picked)
+    sentence = sentence[0].upper() + sentence[1:] + "."
+    greeting = _pick(GREETINGS, now, "greeting")
     st.markdown(f'<div class="morning-briefing">{greeting}{sentence}</div>', unsafe_allow_html=True)
