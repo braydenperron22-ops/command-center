@@ -951,30 +951,35 @@ AI_REFRESH_SECONDS = 5 * 60  # session request: "for the daily morning brief... 
 def _ai_sentence(picked: list[str]) -> str | None:
     """Same picked clause texts, woven by Gemini into one or two
     flowing sentences instead of the mechanical semicolon-join below —
-    session request: "revamp the morning brief" with a free AI, later
-    "i want the daily recap to have a jarvis type energy from iron man."
-    Facts and their priority ordering are untouched (still decided
-    entirely by the *_clause functions above); this only changes how
-    they're phrased. Owns its own opening address now (JARVIS greets
-    Tony himself rather than a narrator doing it for him) — render()
-    below skips the separately-picked random GREETINGS prefix whenever
-    this succeeds, so there's nothing left for the AI's own in-character
-    opener to clash with; GREETINGS is now only used on the fallback
-    path. Real calls throttled to once per AI_REFRESH_SECONDS regardless
-    of how often render() calls this (every 5s during the whole morning
-    window) — see gemini_client.generate_periodic. None (falls back to
-    the plain join + a random greeting) on any failure with nothing
-    usable already cached."""
+    session request: "revamp the morning brief" with a free AI, then
+    "i want the daily recap to have a jarvis type energy from iron
+    man," then a further correction once that landed too stiff: "a
+    little too dry tbh.. maybe give it a fun and sarcastic personality.
+    it should be enjoyable to read in the morning. make it slightly
+    dark lol." Facts and their priority ordering are untouched (still
+    decided entirely by the *_clause functions above); this only
+    changes how they're phrased. Owns its own opening address now
+    (render() below skips the separately-picked random GREETINGS
+    prefix whenever this succeeds, so there's nothing left for the AI's
+    own in-character opener to clash with; GREETINGS is now only used
+    on the fallback path). Real calls throttled to once per
+    AI_REFRESH_SECONDS regardless of how often render() calls this
+    (every 5s during the whole morning window) — see gemini_client.
+    generate_periodic. None (falls back to the plain join + a random
+    greeting) on any failure with nothing usable already cached."""
     facts = "; ".join(picked)
     prompt = (
-        f"You are {USER_FIRST_NAME}'s personal AI assistant, and your voice should read exactly "
-        "like J.A.R.V.I.S. from Iron Man — impeccably composed, dryly witty, hyper-competent, "
-        "unflappable, understated. Not cheerful, not corporate, no exclamation points, no bullet "
-        "points. You may open with a brief in-character address if it fits naturally, the way "
-        "JARVIS greets Tony each morning, and a subtle dry aside on the facts themselves is "
-        "welcome — the wit comes entirely from how things are delivered, never from anything "
-        "invented. Do not add or invent any fact not given below; every fact must actually "
-        "appear.\n\n"
+        f"You are {USER_FIRST_NAME}'s personal AI assistant, in the spirit of J.A.R.V.I.S. from "
+        "Iron Man — sharp, hyper-competent, quick with a comeback — but leaned toward genuinely "
+        "fun and sarcastic rather than stiff or overly formal. This needs to be enjoyable to read "
+        "first thing in the morning: real jokes, a playful jab, a slightly dark/morbid sense of "
+        "humor is welcome and encouraged — nothing mean-spirited AT "
+        f"{USER_FIRST_NAME}, just a wry, "
+        "bleak-humor take on the day's mundane realities (traffic, weather, a full calendar, red "
+        "markets — all fair game for a joke). Not corporate, not a stiff butler. You may open "
+        "with a brief in-character address if it fits naturally. The humor comes entirely from "
+        "how things are delivered, never from anything invented — do not add or invent any fact "
+        "not given below; every fact must actually appear.\n\n"
         "Combine the following facts into one flowing sentence, or two short sentences if that "
         f"reads better. Address {USER_FIRST_NAME} by name naturally somewhere in the text. Start "
         "with a capital letter and end with a period. Facts: " + facts
