@@ -1766,15 +1766,39 @@ html, body, [class*="css"] {
    a headline/statement, not another chip competing with the agenda
    for attention right below it. Distinct from the transient bottom-bar
    toast (commute_reminder.render_bar), which still owns the "Leave
-   now" moment once this stops rendering. */
+   now" moment once this stops rendering.
+
+   position: fixed rather than normal document flow — session report:
+   "the red headline at the top has been lost since the morning brief
+   has gotten significantly longer and bigger." Root cause: .block-
+   container centers its content vertically (justify-content: center,
+   for a nicer look on the many days everything comfortably fits one
+   screen) — once the AI-written morning brief runs long enough to push
+   total content past one viewport's height, that same centering pushes
+   the excess out equally above AND below the fold, so the very first
+   thing on the page silently loses the top-of-viewport tug of war along
+   with whatever falls off the bottom. Pinning this specific element to
+   the viewport itself (with its own semi-opaque backdrop so it stays
+   legible over whatever's rendered beneath it) makes it immune to that
+   regardless of how tall the rest of the page's content ever gets. */
 .leave-headline {
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 500;
     text-align: center;
     font-size: 2.6rem;
     font-weight: 800;
     color: #FF453A;
     letter-spacing: -0.01em;
-    margin: 0 0 0.6rem;
     text-shadow: 0 0 22px rgba(255,69,58,0.45);
+    background: rgba(12,12,16,0.72);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid rgba(255,69,58,0.25);
+    border-radius: 20px;
+    padding: 0.5rem 1.6rem;
     /* Slow breathing glow, not a strobe — this only shows up in a
        genuinely time-critical window (see commute_reminder.
        render_leave_headline), so it earns pulling more attention than
@@ -1792,13 +1816,29 @@ html, body, [class*="css"] {
    smaller and calmer than the leave headline (no pulse): a game
    starting is anticipation, not a deadline, and if both ever render at
    once the commute one must clearly be the urgent one. Team-colored,
-   matching each team's own alert bar (see .sports-alert-bar-*). */
+   matching each team's own alert bar (see .sports-alert-bar-*).
+
+   Same position: fixed fix as .leave-headline above and for the same
+   reason — stacked directly beneath it (a fixed top offset rather than
+   flowing after it, since the two are independent st.markdown calls
+   with nothing to naturally stack them once both are pulled out of
+   document flow; .leave-headline's own height is stable enough — one
+   line, "Leave in H:MM:SS" — that a hardcoded gap here doesn't drift). */
 .game-countdown-headline {
+    position: fixed;
+    top: 96px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 499;
     text-align: center;
     font-size: 1.9rem;
     font-weight: 800;
     letter-spacing: -0.01em;
-    margin: 0 0 0.6rem;
+    background: rgba(12,12,16,0.72);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border-radius: 20px;
+    padding: 0.4rem 1.4rem;
 }
 .game-countdown-mlb {
     color: #4AA8FF;
