@@ -534,6 +534,17 @@ try:
     elif severe_weather_active:
         night_dim = 0.0
 
+    # Session request: "make it so the screen does not dim in game
+    # mode" — narrower than (and doesn't reopen) the "any live game"
+    # exemption reverted just above: this only kicks in while the
+    # jumbotron is actually the thing on screen (the pregame-through-
+    # postgame takeover window), not for the whole time some tracked
+    # game happens to be live in the background during the normal
+    # rotation. Takes final precedence over quiet hours/night too —
+    # game mode is for actually watching, not for sleeping through.
+    if _jumbotron_active:
+        night_dim = 0.0
+
     if night_dim > 0:
         # This runs 24/7 in a bedroom — night needs to be genuinely dim
         # enough to sleep next to, not just "a bit darker." Used to be a
