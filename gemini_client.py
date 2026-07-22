@@ -36,16 +36,26 @@ GENERATE_CACHE_TTL_SECONDS = 20 * 60
 
 
 @st.cache_data(ttl=GENERATE_CACHE_TTL_SECONDS, show_spinner=False)
-def generate(prompt: str) -> str | None:
+def generate(prompt: str, temperature: float = 0.7) -> str | None:
     """One short piece of AI-written text for `prompt`, or None if the
     key's missing, the request fails, or the free tier's rate-limited
-    right now — never raises. Cached by the exact prompt string: build
-    prompts from already-rounded/bucketed values (this dashboard's
-    other templated text already does this — see morning_briefing's
-    *_LINES format calls), not raw floats or timestamps, so the same
-    real-world situation reuses one cached call across the ~5s reruns
-    it actually spans, rather than missing the cache (and burning a
-    real API call) on every rerun's tiny jitter."""
+    right now — never raises. Cached by the exact prompt string AND
+    temperature: build prompts from already-rounded/bucketed values
+    (this dashboard's other templated text already does this — see
+    morning_briefing's *_LINES format calls), not raw floats or
+    timestamps, so the same real-world situation reuses one cached call
+    across the ~5s reruns it actually spans, rather than missing the
+    cache (and burning a real API call) on every rerun's tiny jitter.
+
+    `temperature` defaults to 0.7 — good for callers doing creative
+    prose (morning_briefing's sentence-weaving, pages_conflicts' plain-
+    English summaries), where some real variety is fine. A caller doing
+    a judgment call instead of writing prose (news.py's decide/
+    _ai_judge — keep-or-reject, which category) should pass something
+    much lower: confirmed live that 0.7 made the exact same headline
+    flip between two different verdicts across repeat calls, which is
+    fine for phrasing but not for a decision that's supposed to be
+    final once made."""
     api_key = st.secrets.get("GEMINI_API_KEY")
     if not api_key:
         return None
@@ -55,7 +65,7 @@ def generate(prompt: str) -> str | None:
             params={"key": api_key},
             json={
                 "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0.7, "maxOutputTokens": 200},
+                "generationConfig": {"temperature": temperature, "maxOutputTokens": 200},
             },
             timeout=REQUEST_TIMEOUT_SECONDS,
         )

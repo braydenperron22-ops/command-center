@@ -46,7 +46,7 @@ def render():
         h = hashlib.sha1(item["headline"].encode()).hexdigest()
         if h in seen_at:
             continue
-        decision = news.decide(item["headline"])
+        decision = news.decide(item["headline"], item.get("description", ""))
         if decision is None:
             continue
         # Captured once, at first sight, and locked in from then on:
@@ -64,7 +64,7 @@ def render():
             else None
         )
         seen_at[h] = {
-            "headline": item["headline"],
+            "headline": decision["headline"],
             "first_seen": now_ts,
             "category": decision["category"],
             # Captured once, at first sight — "was breaking," not

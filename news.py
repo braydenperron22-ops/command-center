@@ -23,6 +23,17 @@ key, rate limit, network — see gemini_client.generate's own docstring).
 An explicit AI REJECT is trusted as final and never second-guessed by
 the keyword filter; the keyword functions themselves are untouched and
 still exactly what's used when the AI is unavailable.
+
+`decide()` also rewrites the displayed headline itself when it can —
+session feedback: "theres a lot of headlines who dont tell me a whole
+lot... wiston shares surge (by how much???)... I need numbers, context,
+and data in a short concise headline." Real feeds' <description> is
+often the only place the actual number lives (sometimes it's empty —
+Yahoo Finance never sets one — or just a duplicate of the title, but
+sometimes it has exactly the figure the headline is missing); see
+_ai_judge's own docstring for why it's explicitly forbidden from
+inventing a number that isn't actually present in that text — a
+confidently wrong figure would be worse than a vague headline here.
 """
 
 import functools
@@ -489,65 +500,117 @@ _AI_VERDICT_LABELS = {
 _AI_VALID_VERDICTS = {"REJECT", "MARKET"} | set(_AI_VERDICT_LABELS)
 
 
-def _ai_verdict(headline: str) -> str | None:
-    """One of REJECT / MARKET / FED_BOC / DATA_SURPRISE / EARNINGS /
-    MACRO_SHOCK / MERGERS / MILESTONE / BREAKING — or None specifically
-    if the AI call itself failed (see gemini_client.generate), which
-    decide() below must treat as "fall back to the keyword pipeline,"
-    never as a rejection. Same six named categories classify() already
-    used, asked as real judgment calls instead of keyword pairing."""
+def _ai_judge(headline: str, description: str) -> tuple[str | None, str | None]:
+    """(verdict, display_headline).
+
+    verdict is one of REJECT / MARKET / FED_BOC / DATA_SURPRISE /
+    EARNINGS / MACRO_SHOCK / MERGERS / MILESTONE / BREAKING — or None
+    specifically if the AI call itself failed (see gemini_client.
+    generate), which decide() below must treat as "fall back to the
+    keyword pipeline," never as a rejection. Same six named categories
+    classify() already used, asked as real judgment calls instead of
+    keyword pairing.
+
+    display_headline is the headline text to actually show — session
+    complaint: "theres a lot of headlines who dont tell me a whole lot
+    ... wiston shares surge (by how much???) ... I need numbers,
+    context, and data in a short concise headline." Rewritten to
+    include a concrete number/figure ONLY when one is actually present
+    in `description` (the RSS item's own summary — often empty or a
+    plain duplicate of the title, several of these feeds just don't
+    carry one) and missing from the bare title. The prompt explicitly
+    forbids inventing, estimating, or recalling a number from the
+    model's own training knowledge — a wrong number stated confidently
+    is worse than a vague headline on a finance dashboard, so whenever
+    nothing safely groundable was actually available, this is just the
+    original headline verbatim. None (not the original headline) when
+    the call itself failed — decide() uses the real original in that
+    case, this return value is only meaningful alongside a real
+    verdict."""
+    context = f"Headline: {headline}"
+    if description and description.strip() and description.strip() != headline.strip():
+        context += f"\nArticle summary: {description.strip()}"
     prompt = (
-        "You are a strict news editor for a personal finance/markets dashboard. Judge this ONE "
-        "headline in two steps.\n\n"
-        "Step 1 — is it genuinely informational: reporting a fact that has already happened, not "
-        "clickbait, not a listicle ('5 stocks to buy'), not opinion/analysis/commentary, not "
-        "speculation ('could', 'might', 'expected to'), not an advice column ('should you buy'), "
-        "and specifically finance/markets/economy relevant (not general news, sports, "
-        "entertainment, lifestyle)? If it fails this step, respond with exactly: REJECT\n\n"
-        "Step 2 — only if it passes step 1, which single category fits best:\n"
-        "FED_BOC — a real Fed or Bank of Canada policy action/decision (not routine supervisory "
-        "paperwork)\n"
-        "DATA_SURPRISE — a major economic data release (CPI, jobs, GDP, etc.) that came in "
-        "meaningfully above/below expectations\n"
-        "EARNINGS — a company's actual reported quarterly results or guidance\n"
-        "MACRO_SHOCK — a market crash, financial crisis, bank run, recession signal, or similar "
-        "systemic event\n"
-        "MERGERS — a large ($1B+) announced acquisition or merger\n"
-        "MILESTONE — a genuine record high/low or historic market move\n"
-        "MARKET — real financial/market news, but routine, not urgent enough for the categories "
-        "above\n"
-        "BREAKING — something else genuinely major and market-moving that doesn't fit any "
-        "category above\n\n"
-        "Respond with exactly one word from: REJECT, MARKET, FED_BOC, DATA_SURPRISE, EARNINGS, "
-        "MACRO_SHOCK, MERGERS, MILESTONE, BREAKING. Nothing else, no punctuation.\n\n"
-        "Headline: " + headline
+        "You are a strict news editor for a personal finance/markets dashboard, doing two things "
+        "at once for this one headline.\n\n"
+        "TASK 1 — classify. Judge whether it's genuinely informational: reporting a fact that has "
+        "already happened, not clickbait, not a listicle ('5 stocks to buy'), not opinion/"
+        "analysis/commentary, not speculation ('could', 'might', 'expected to'), not an advice "
+        "column ('should you buy'), and specifically finance/markets/economy relevant (not "
+        "general news, sports, entertainment, lifestyle). Also REJECT routine Fed/regulator "
+        "administrative or supervisory business that isn't real news to a general reader — "
+        "enforcement actions against individual bank employees, routine stress-test results "
+        "confirming banks are fine, name/personnel changes, procedural notices — these read as "
+        "Fed-related but aren't; don't let them through as MARKET just because they mention the "
+        "Fed. If it fails any of this, the verdict is REJECT. Otherwise pick exactly one: "
+        "FED_BOC (a real Fed/BoC policy action — a rate decision, a genuinely market-moving "
+        "statement — not routine paperwork), DATA_SURPRISE (a major economic data release "
+        "meaningfully above/below "
+        "expectations), EARNINGS (a company's actual reported results/guidance), MACRO_SHOCK (a "
+        "crash/crisis/systemic event), MERGERS (a $1B+ announced deal), MILESTONE (a genuine "
+        "record high/low), MARKET (real but routine financial news), or BREAKING (something else "
+        "genuinely major that doesn't fit those).\n\n"
+        "TASK 2 — tighten the headline. Vague headlines that don't state the actual number "
+        "('shares surge', 'CPI comes in cooler than expected', 'oil prices climb') are much less "
+        "useful than ones that do. If the article summary below contains a specific number, "
+        "percentage, or figure that the bare headline is missing, rewrite the headline into one "
+        "short, concise, factual sentence that includes it. If NO real number is available "
+        "anywhere in the headline or summary below, do NOT invent, estimate, or guess one from "
+        "your own general knowledge — accuracy matters more than completeness here. In that case "
+        "just output the original headline, tightened for clarity if needed but with no "
+        "fabricated numbers.\n\n"
+        f"{context}\n\n"
+        "Respond in exactly this two-line format, nothing else:\n"
+        "VERDICT: <one word from REJECT/MARKET/FED_BOC/DATA_SURPRISE/EARNINGS/MACRO_SHOCK/"
+        "MERGERS/MILESTONE/BREAKING>\n"
+        "HEADLINE: <the headline to show>"
     )
-    result = gemini_client.generate(prompt)
+    # Low temperature — this is a judgment call that should be
+    # consistent, not creative prose (see gemini_client.generate's own
+    # docstring: confirmed live that the default 0.7 made the exact
+    # same headline flip between two different verdicts across repeat
+    # calls).
+    result = gemini_client.generate(prompt, temperature=0.1)
     if result is None:
-        return None
-    token = result.strip().upper().rstrip(".")
-    return token if token in _AI_VALID_VERDICTS else "REJECT"
+        return None, None
+    verdict = None
+    display_headline = None
+    for line in result.splitlines():
+        line = line.strip()
+        if line.upper().startswith("VERDICT:"):
+            token = line.split(":", 1)[1].strip().upper().rstrip(".")
+            verdict = token if token in _AI_VALID_VERDICTS else "REJECT"
+        elif line.upper().startswith("HEADLINE:"):
+            display_headline = line.split(":", 1)[1].strip()
+    if verdict is None:
+        # Response didn't come back in the expected format at all — safer
+        # to drop it than to either show unreviewed text or fall through
+        # to the keyword pipeline, which a real (if unparseable) AI
+        # response shouldn't be second-guessed by.
+        return "REJECT", None
+    return verdict, display_headline or headline
 
 
-def decide(headline: str) -> dict | None:
+def decide(headline: str, description: str = "") -> dict | None:
     """The one real decision every caller in this module uses:
-    {"category": <display name>, "important": bool} to show this
-    headline, None to drop it entirely. AI-first (see _ai_verdict) —
-    falls back to the original keyword pipeline (is_market_relevant +
-    classify) only when the AI call itself failed; an explicit AI
-    REJECT is trusted as final, never re-checked against the keyword
-    filter."""
-    verdict = _ai_verdict(headline)
+    {"headline": <display text, possibly AI-rewritten with real numbers
+    — see _ai_judge>, "category": <display name>, "important": bool} to
+    show this headline, None to drop it entirely. AI-first — falls back
+    to the original keyword pipeline (is_market_relevant + classify),
+    with the headline verbatim, only when the AI call itself failed; an
+    explicit AI REJECT is trusted as final, never re-checked against
+    the keyword filter."""
+    verdict, display_headline = _ai_judge(headline, description)
     if verdict is None:
         if not is_market_relevant(headline):
             return None
         cat = classify(headline)
-        return {"category": cat or "Market News", "important": cat is not None}
+        return {"headline": headline, "category": cat or "Market News", "important": cat is not None}
     if verdict == "REJECT":
         return None
     if verdict == "MARKET":
-        return {"category": "Market News", "important": False}
-    return {"category": _AI_VERDICT_LABELS[verdict], "important": True}
+        return {"headline": display_headline, "category": "Market News", "important": False}
+    return {"headline": display_headline, "category": _AI_VERDICT_LABELS[verdict], "important": True}
 
 
 def category_class(category: str) -> str:
@@ -555,6 +618,17 @@ def category_class(category: str) -> str:
     News page's row accent color and the alert bar's tag color are always
     the same mapping, not two copies that could drift apart."""
     return "news-cat-" + category.lower().replace("/", "-").replace(" ", "-")
+
+
+_HTML_TAG = re.compile(r"<[^>]+>")
+
+
+def _strip_html(raw: str) -> str:
+    """Some feeds' <description> carries inline markup (a stray <a>/<b>)
+    — plain text is all _ai_judge needs, and stripped-but-imperfect is
+    fine here since this only ever feeds a prompt, never gets rendered
+    as HTML itself."""
+    return _HTML_TAG.sub("", raw).strip()
 
 
 def _parse_pub_date(raw: str) -> datetime | None:
@@ -588,8 +662,19 @@ def fetch_headlines() -> list[dict]:
                 title = (item.findtext("title") or "").strip()
                 link = (item.findtext("link") or "").strip()
                 published = _parse_pub_date(item.findtext("pubDate") or "")
+                # Each feed's own <description> — often empty (Yahoo
+                # Finance never sets it) or just a duplicate of the
+                # title (the Fed's feed), but sometimes carries the
+                # concrete number/figure the headline itself lacks. Fed
+                # to _ai_judge as grounding for its headline rewrite —
+                # see that function's own docstring for why it's only
+                # ever allowed to use a number if it's actually here,
+                # never invented.
+                description = _strip_html(item.findtext("description") or "")
                 if title:
-                    items.append({"headline": title, "link": link, "source": source, "published": published})
+                    items.append(
+                        {"headline": title, "link": link, "source": source, "published": published, "description": description}
+                    )
         except Exception:
             continue  # one dead/slow feed shouldn't take down the others
     # At least one of FEEDS came through — news is still genuinely
@@ -636,7 +721,7 @@ def get_new_alerts() -> list[dict]:
         seen[h] = True
         if len(seen) > MAX_SEEN_HEADLINES:
             seen.pop(next(iter(seen)))
-        decision = decide(item["headline"])
+        decision = decide(item["headline"], item.get("description", ""))
         if decision is None:
             continue
         if baseline_done:
