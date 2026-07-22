@@ -2885,33 +2885,49 @@ html, body, [class*="css"] {
 .jumbo-otc-grid .jumbo-mini-status { font-size: 13px; }
 .jumbo-otc-grid .jumbo-mini-leader { font-size: 12px; }
 
-/* Manual "End Session" button (pages_jumbotron.render()) — session
-   request: "an end session button... that closes out the game session
-   therefore closing the jumbotron." This app's first real interactive
-   widget (everything else is passive display) — a genuine st.button.
-   Originally pinned bottom-right, but that collided with Streamlit's
-   own "Made with Streamlit" badge there — session correction: "put it
-   in the bottom left in the same box as the standings." Positioned via
-   its own Streamlit-generated wrapper (can't nest an actual st widget
-   inside the standings panel's raw-HTML block) at coordinates matched
-   to that panel's own on-screen box: left column starts at the
-   .block-container's 1.1rem left padding, panel width 420px (see
-   .jumbo-grid's grid-template-columns). Broad div[data-testid="stButton"]
-   selector is safe only because this is currently the app's ONLY
-   button anywhere — revisit with a scoped selector if a second one is
-   ever added elsewhere. Higher z-index than both full-screen overlays
-   above (9998/9997) so it's always reachable regardless of which one
-   happens to be showing (neither has pointer-events:none the way the
-   pitcher overlay does, so without this it could get covered instead
-   of just visually topped). */
-div[data-testid="stButton"] {
+/* Bottom-left control cluster — End Session button (session request:
+   "an end session button... that closes out the game session therefore
+   closing the jumbotron") plus the live-data delay stepper (session
+   request: "make it a setting i can adjust throughout the game").
+   This app's only real interactive widgets (everything else is passive
+   display) — genuine st.button()s, grouped in one
+   st.container(key="jumbotron_controls") so they can be positioned and
+   laid out as a single row via that container's own st-key-* class,
+   rather than a bare div[data-testid="stButton"] selector (which only
+   ever worked while there was exactly one button in the whole app).
+   Position matches the old single-button placement — bottom-left,
+   clearing the toast alert bar below (see that block's own comment),
+   originally corrected from bottom-right which collided with
+   Streamlit's own "Made with Streamlit" badge there. Higher z-index
+   than both full-screen overlays above (9998/9997) so it's always
+   reachable regardless of which one happens to be showing (neither has
+   pointer-events:none the way the pitcher overlay does, so without
+   this it could get covered instead of just visually topped). */
+.st-key-jumbotron_controls {
     position: fixed;
     left: 34px;
     bottom: 88px;
     z-index: 9999;
-    width: auto;
+    width: auto !important;
+    /* Streamlit's own div[data-testid="stVerticalBlock"] rule sets
+       flex-direction: column at higher selector specificity than a
+       plain class here can beat on its own (tag+attribute vs. one
+       class) — confirmed live: without !important this cluster still
+       stacked vertically, full viewport width, centered mid-screen
+       instead of sitting as a row pinned bottom-left. */
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 10px;
 }
-div[data-testid="stButton"] button {
+/* Streamlit gives each widget's own wrapper a fixed column-style
+   width by default — without this override the "−"/"+" buttons and
+   the label between them stretch apart instead of sitting snug. */
+.st-key-jumbotron_controls .stElementContainer {
+    width: auto !important;
+    flex: 0 0 auto;
+}
+.st-key-jumbotron_controls div[data-testid="stButton"] button {
     background: rgba(16,22,32,0.82);
     border: 1px solid var(--edge);
     color: var(--mut);
@@ -2921,10 +2937,22 @@ div[data-testid="stButton"] button {
     text-transform: uppercase;
     padding: 8px 16px;
     border-radius: 8px;
+    white-space: nowrap;
 }
-div[data-testid="stButton"] button:hover {
+.st-key-jumbotron_controls div[data-testid="stButton"] button:hover {
     border-color: var(--led);
     color: var(--bone);
+}
+.st-key-jumbotron_delay_minus div[data-testid="stButton"] button,
+.st-key-jumbotron_delay_plus div[data-testid="stButton"] button {
+    padding: 8px 14px;
+}
+.jumbo-delay-label {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--mut);
+    white-space: nowrap;
 }
 
 /* Phone breakpoint. Everything above this point is untouched at any

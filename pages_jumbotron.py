@@ -1036,16 +1036,29 @@ def render(now: datetime, state: dict, weather: dict | None) -> None:
         unsafe_allow_html=True,
     )
 
-    # Manual "End Session" button, bottom-right — session request: "an
-    # end session button... that closes out the game session therefore
-    # closing the jumbotron which turns on the dimming and turns off
-    # the govee lights." A real Streamlit button (this app's first —
-    # everything else here is passive display), CSS-pinned to the
-    # corner via theme.py's own div[data-testid="stButton"] rule since
-    # there's nowhere natural to put it inside the raw HTML block above.
-    # Setting the dismissal flag alone wouldn't take effect until the
-    # next 5s autorefresh — st.rerun() makes the takeover actually drop
-    # the instant this is clicked, not up to 5s later.
-    if state.get("game") and st.button("✕ End Session", key="jumbotron_end_session_btn"):
-        st.session_state["jumbotron_dismissed_game_id"] = state["game"]["game_id"]
-        st.rerun()
+    # Bottom-left control cluster — session request: "an end session
+    # button... that closes out the game session," later "can you make
+    # [the live-data delay] a setting i can adjust throughout the game."
+    # Real Streamlit widgets (this app's first — everything else here is
+    # passive display), grouped in one st.container(key=...) so theme.py
+    # can lay them out as a single fixed-position row via that key's own
+    # CSS class rather than the old single-button div[data-testid=
+    # "stButton"] rule (which only worked while this was the app's only
+    # button at all).
+    if state.get("game"):
+        with st.container(key="jumbotron_controls"):
+            if st.button("✕ End Session", key="jumbotron_end_session_btn"):
+                # Setting the dismissal flag alone wouldn't take effect
+                # until the next 5s autorefresh — st.rerun() makes the
+                # takeover actually drop the instant this is clicked.
+                st.session_state["jumbotron_dismissed_game_id"] = state["game"]["game_id"]
+                st.rerun()
+
+            delay = st.session_state.get("jumbotron_live_delay_seconds", sports_client.DEFAULT_LIVE_DATA_DELAY_SECONDS)
+            if st.button("−", key="jumbotron_delay_minus"):
+                st.session_state["jumbotron_live_delay_seconds"] = max(0, delay - 5)
+                st.rerun()
+            st.markdown(f'<div class="jumbo-delay-label">DELAY {delay}s</div>', unsafe_allow_html=True)
+            if st.button("+", key="jumbotron_delay_plus"):
+                st.session_state["jumbotron_live_delay_seconds"] = min(60, delay + 5)
+                st.rerun()

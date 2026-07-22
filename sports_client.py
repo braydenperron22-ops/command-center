@@ -81,7 +81,12 @@ LIVE_DETAIL_CACHE_TTL_SECONDS = 30
 # polling slower (which would still show the true current instant, only
 # choppier), every live-situation payload is held back by this long so
 # the jumbotron deliberately trails the broadcast instead of leading it.
-LIVE_DATA_DELAY_SECONDS = 10
+# Broadcast lag isn't constant (cable vs. streaming, mid-game provider
+# hiccups), so this is only the starting point — the jumbotron's own
+# delay stepper (pages_jumbotron.render) lets it be tuned mid-game via
+# st.session_state["jumbotron_live_delay_seconds"], read in _delayed
+# below.
+DEFAULT_LIVE_DATA_DELAY_SECONDS = 10
 
 MLB_LINESCORE_URL = "https://statsapi.mlb.com/api/v1/game/{game_id}/linescore"
 NHL_BOXSCORE_URL = "https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore"
@@ -98,15 +103,18 @@ _delay_buffers: dict[str, list] = {}
 
 
 def _delayed(key: str, value):
-    """Returns whatever `value` was for this key as of
-    LIVE_DATA_DELAY_SECONDS ago, buffering the fresh value in first.
-    Falls back to `value` itself until the buffer's been running long
-    enough to have anything older (start of a game/app) — briefly live,
-    rather than blocking display entirely."""
+    """Returns whatever `value` was for this key as of the current delay
+    setting ago (st.session_state["jumbotron_live_delay_seconds"],
+    DEFAULT_LIVE_DATA_DELAY_SECONDS until the jumbotron's own stepper
+    changes it), buffering the fresh value in first. Falls back to
+    `value` itself until the buffer's been running long enough to have
+    anything older (start of a game/app) — briefly live, rather than
+    blocking display entirely."""
     now = time.time()
+    delay_seconds = st.session_state.get("jumbotron_live_delay_seconds", DEFAULT_LIVE_DATA_DELAY_SECONDS)
     buf = _delay_buffers.setdefault(key, [])
     buf.append((now, value))
-    cutoff = now - LIVE_DATA_DELAY_SECONDS
+    cutoff = now - delay_seconds
     while len(buf) > 1 and buf[1][0] <= cutoff:
         buf.pop(0)
     return buf[0][1] if buf[0][0] <= cutoff else value
@@ -596,9 +604,9 @@ def fetch_mlb_live_detail(game_id: int) -> dict | None:
     and carries the real live score too). None on any fetch failure (no
     last-good fallback: a stale pitch count/base state — or score —
     would be actively misleading rather than just old, unlike a season
-    schedule that barely changes). Held back LIVE_DATA_DELAY_SECONDS
-    behind the real feed via _mlb_linescore_delayed, to trail the TV
-    broadcast rather than lead it."""
+    schedule that barely changes). Held back the current live-data
+    delay behind the real feed via _mlb_linescore_delayed, to trail the
+    TV broadcast rather than lead it."""
     try:
         data = _mlb_linescore_delayed(game_id)
     except Exception:
@@ -691,8 +699,8 @@ def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
     inherently per-game, only in the boxscore's own per-player stats.
     {} on any fetch failure or before this pitcher has thrown a pitch
     this game (not yet in the boxscore's player list). Delayed the same
-    LIVE_DATA_DELAY_SECONDS as the linescore feed, so this pitcher's
-    count doesn't tick up before the pitch it reflects has aired."""
+    amount as the linescore feed, so this pitcher's count doesn't tick
+    up before the pitch it reflects has aired."""
     try:
         data = _delayed(f"mlb_boxscore_{game_id}", _fetch_mlb_boxscore_raw(game_id))
     except Exception:
@@ -820,9 +828,9 @@ def fetch_nhl_live_detail(game_id: int) -> dict | None:
     countdown uses — real seconds left until the next period, not an
     estimate — session request: "a timer till the game resumes again."
     None on any fetch failure, same reasoning as fetch_mlb_live_detail.
-    Delayed the same LIVE_DATA_DELAY_SECONDS as the MLB side, so the
-    intermission countdown targets when the broadcast shows puck drop,
-    not the true (slightly earlier) instant."""
+    Delayed the same amount as the MLB side, so the intermission
+    countdown targets when the broadcast shows puck drop, not the true
+    (slightly earlier) instant."""
     try:
         box = _delayed(f"nhl_boxscore_{game_id}", _fetch_nhl_boxscore_raw(game_id))
     except Exception:
