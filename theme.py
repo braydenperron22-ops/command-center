@@ -2885,6 +2885,42 @@ html, body, [class*="css"] {
 .jumbo-otc-grid .jumbo-mini-status { font-size: 13px; }
 .jumbo-otc-grid .jumbo-mini-leader { font-size: 12px; }
 
+/* Manual "End Session" button (pages_jumbotron.render()) — session
+   request: "an end session button... that closes out the game session
+   therefore closing the jumbotron." This app's first real interactive
+   widget (everything else is passive display) — a genuine st.button,
+   pinned to the bottom-right corner via its own Streamlit-generated
+   wrapper rather than living inside the jumbotron's own raw-HTML block.
+   Broad div[data-testid="stButton"] selector is safe only because this
+   is currently the app's ONLY button anywhere — revisit with a scoped
+   selector if a second one is ever added elsewhere. Higher z-index than
+   both full-screen overlays above (9998/9997) so it's always reachable
+   regardless of which one happens to be showing (neither has
+   pointer-events:none the way the pitcher overlay does, so without
+   this it could get covered instead of just visually topped). */
+div[data-testid="stButton"] {
+    position: fixed;
+    right: 22px;
+    bottom: 18px;
+    z-index: 9999;
+    width: auto;
+}
+div[data-testid="stButton"] button {
+    background: rgba(16,22,32,0.82);
+    border: 1px solid var(--edge);
+    color: var(--mut);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 8px 16px;
+    border-radius: 8px;
+}
+div[data-testid="stButton"] button:hover {
+    border-color: var(--led);
+    color: var(--bone);
+}
+
 /* Phone breakpoint. Everything above this point is untouched at any
    width above it (including the kiosk monitor, always far wider) —
    nothing in this block redefines a rule, it only adds overrides that

@@ -230,6 +230,23 @@ try:
 except Exception:
     _takeover = None
 
+# Manual "End Session" button (pages_jumbotron.render(), bottom-right of
+# the board) — session request: "make an end session button... that
+# closes out the game session therefore closing the jumbotron which
+# turns on the dimming and turns off the govee lights." Suppresses the
+# automatic takeover for this specific game_id only (pregame/live/
+# postgame all share the same id, so ending it mid-game also skips that
+# game's own postgame recap — the point is "I'm done watching," not
+# "skip to the next phase"); a different game later, even the same
+# team's next one, isn't affected. Nulling _takeover itself here (before
+# every routing/dim/light decision below derives from it) means nothing
+# downstream needs its own separate check — an explicit ?page=jumbotron
+# or the J-hotkey still overrides this and shows the board on demand,
+# same as they already do when there's no real takeover at all (see the
+# takeover_preview_state() fallback just below).
+if _takeover and _takeover["game"]["game_id"] == st.session_state.get("jumbotron_dismissed_game_id"):
+    _takeover = None
+
 _requested_page = None
 try:
     _requested_page = st.query_params.get("page")

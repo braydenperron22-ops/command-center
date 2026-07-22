@@ -1035,3 +1035,17 @@ def render(now: datetime, state: dict, weather: dict | None) -> None:
         f"</div>{between_play_overlay}{pitcher_overlay}</div>",
         unsafe_allow_html=True,
     )
+
+    # Manual "End Session" button, bottom-right — session request: "an
+    # end session button... that closes out the game session therefore
+    # closing the jumbotron which turns on the dimming and turns off
+    # the govee lights." A real Streamlit button (this app's first —
+    # everything else here is passive display), CSS-pinned to the
+    # corner via theme.py's own div[data-testid="stButton"] rule since
+    # there's nowhere natural to put it inside the raw HTML block above.
+    # Setting the dismissal flag alone wouldn't take effect until the
+    # next 5s autorefresh — st.rerun() makes the takeover actually drop
+    # the instant this is clicked, not up to 5s later.
+    if state.get("game") and st.button("✕ End Session", key="jumbotron_end_session_btn"):
+        st.session_state["jumbotron_dismissed_game_id"] = state["game"]["game_id"]
+        st.rerun()
