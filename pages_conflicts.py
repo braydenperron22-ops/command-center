@@ -21,24 +21,42 @@ ceasefire / peace talks), and write a real overview covering what's
 happening, where it's headed, and its effect on the wider world.
 
 Important honesty note baked into the prompt itself: plain chat-
-completions calls (what groq_client.generate uses) do NOT have live
-web search — that's a separate, different Groq model ("groq/compound")
-this app doesn't use, so this is NOT the model browsing the internet
-in real time. It's genuinely current in the parts that matter most —
-which headlines exist, what they say — because those are real
-headlines fetched this session, in the prompt. Where the prompt asks
-for background/context beyond the last 7 days (is this conflict
-long-running, who the parties historically are), that part does lean
-on the model's own training knowledge, which is explicitly called out
-as potentially outdated in the prompt so the model weighs the fresh
-headlines over stale recall for anything about the CURRENT state.
+completions calls (what gemini_client.generate uses, same as
+groq_client before it) do NOT have live web search — that's a
+different capability neither provider's plain chat endpoint offers as
+called here, so this is NOT the model browsing the internet in real
+time. It's genuinely current in the parts that matter most — which
+headlines exist, what they say — because those are real headlines
+fetched this session, in the prompt. Where the prompt asks for
+background/context beyond the last 7 days (is this conflict long-
+running, who the parties historically are), that part does lean on the
+model's own training knowledge, which is explicitly called out as
+potentially outdated in the prompt so the model weighs the fresh
+headlines over stale recall for anything about the CURRENT state. This
+was reconfirmed directly rather than assumed — session request: "I
+want our Llama model to do a research on active conflicts" was
+declined in that literal form (no live search exists to actually do
+that) in favor of what this already does: real headlines for current
+state, the model's own knowledge only for background.
+
+Routed to gemini_client exclusively, not groq_client — session
+request: "since it's done through Grock, I need you to crack the whip
+a little bit on it. It's not giving me a whole lot" — same fix, and
+same reasoning, as morning_briefing.py's own provider switch earlier
+the same day: same prompt, meaningfully sharper output from Gemini. No
+Groq fallback for this one feature specifically; if Gemini fails, this
+still returns None and the page shows its existing empty state, not a
+second provider. Still respects the same overnight quiet-hours
+schedule as every Groq-routed call (see groq_client.ai_pulls_paused)
+even though the call itself bypasses groq_client entirely.
 
 No keyword fallback if the AI call fails (unlike news.py, which keeps
 its old keyword pipeline as a safety net) — that fallback is exactly
-what this session asked to remove, not preserve as a shadow system.
-The page just doesn't render new content on a failure and effectively
-shows last-hour's data via groq_client.generate's own 20-minute
-cache, or the empty state if there's truly nothing cached yet."""
+what an earlier session asked to remove, not preserve as a shadow
+system. The page just doesn't render new content on a failure and
+effectively shows last-run's data via gemini_client.generate's own
+20-minute cache, or the empty state if there's truly nothing cached
+yet."""
 
 import html
 import json
@@ -46,6 +64,7 @@ import json
 import streamlit as st
 
 import conflict_news
+import gemini_client
 import groq_client
 from config import CONFLICT_WINDOW_DAYS, MAX_CONFLICTS_SHOWN
 from flags import flag_for
@@ -67,17 +86,13 @@ _SEVERITY_FILL_PCT = {"HIGH": 100, "MEDIUM": 65, "LOW": 35}
 
 HEADLINES_FED_TO_AI = 150  # comfortably covers a week's real pool without an unbounded prompt
 OVERVIEW_MAX_OUTPUT_TOKENS = 2200  # up to MAX_CONFLICTS_SHOWN entries, each a real paragraph
-# Session request: "for conflicts I don't need second by second
-# updates... update that hourly." Conflict trajectories don't shift
-# minute to minute the way commute/market numbers do, and this page
-# used to re-call the AI on every 5s rerun it was open — see
-# groq_client.generate_periodic's own docstring for the shared
-# throttle mechanism this now goes through. Widened further from
-# hourly — this is also comfortably the single most expensive call per
-# request (up to 2200 output tokens plus up to 150 fed-in headlines) —
-# session request: "make everything cheaper by lowering how often
-# theyre pulled."
-REFRESH_SECONDS = 3 * 60 * 60
+# Session request history: "for conflicts I don't need second by
+# second updates... update that hourly" -> widened to 3h for cost
+# reasons -> "honestly, have it run once a day, but make it intentful."
+# Conflict trajectories don't shift minute to minute the way commute/
+# market numbers do, so once daily is still a real, current read —
+# just one considered pass instead of several shallow ones.
+REFRESH_SECONDS = 24 * 60 * 60
 
 
 def _ai_overview(headlines: list[dict]) -> list[dict] | None:
@@ -88,16 +103,18 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
     limit, network, or a response that didn't come back as valid JSON)
     with nothing usable already cached. Real calls throttled to once
     per REFRESH_SECONDS regardless of how often this is called — see
-    groq_client.generate_periodic. See this module's own docstring
-    for the full design rationale."""
+    gemini_client.generate_periodic. See this module's own docstring
+    for the full design rationale, including why this is routed to
+    Gemini specifically."""
     texts = [h["headline"] for h in headlines[:HEADLINES_FED_TO_AI]]
     if not texts:
         return None
     headline_block = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(texts))
     prompt = (
-        "You are a geopolitical analyst building one tile-based overview for a home dashboard. "
-        f"Below are {len(texts)} real news headlines from the last {CONFLICT_WINDOW_DAYS} days "
-        "(numbered; many will be unrelated to conflicts at all — ignore those).\n\n"
+        "You are a sharp, decisive geopolitical analyst building one tile-based overview for a "
+        f"home dashboard. Below are {len(texts)} real news headlines from the last "
+        f"{CONFLICT_WINDOW_DAYS} days (numbered; many will be unrelated to conflicts at all — "
+        "ignore those).\n\n"
         "From these, identify the most significant distinct ongoing armed conflicts, wars, or "
         f"serious military/civil crises currently active in the world — up to {MAX_CONFLICTS_SHOWN} "
         "of them, ranked by how significant/active each currently is. If fewer than "
@@ -113,7 +130,9 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
         "whether it's escalating, holding steady, or winding down, whether there are peace "
         "negotiations underway, and what effect it's having on the wider world (markets, "
         "refugees, regional stability, energy/food prices, etc. — only mention a global effect "
-        "if there genuinely is one, don't force it)\n"
+        "if there genuinely is one, don't force it). Write with real analytical judgment — a "
+        "clear, specific, intentful read on where this is actually headed, not a vague, hedgy "
+        "summary that could describe any conflict\n"
         "- severity: HIGH, MEDIUM, or LOW\n"
         "- headline_numbers: which of the numbered headlines above (list the numbers) actually "
         "relate to this specific conflict\n\n"
@@ -129,9 +148,12 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
         '[{"countries": [{"code": "ua", "name": "Ukraine"}, {"code": "ru", "name": "Russia"}], '
         '"status": "ACTIVE_WAR", "overview": "...", "severity": "HIGH", "headline_numbers": [3, 7]}]'
     )
-    result = groq_client.generate_periodic(
-        "conflicts_overview", REFRESH_SECONDS, prompt, temperature=0.2, max_output_tokens=OVERVIEW_MAX_OUTPUT_TOKENS
-    )
+    if groq_client.ai_pulls_paused():
+        result = None
+    else:
+        result = gemini_client.generate_periodic(
+            "conflicts_overview", REFRESH_SECONDS, prompt, temperature=0.2, max_output_tokens=OVERVIEW_MAX_OUTPUT_TOKENS
+        )
     if result is None:
         return None
 
