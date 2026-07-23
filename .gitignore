@@ -5,3 +5,4 @@ __pycache__/
 .streamlit/secrets.toml
 todo.json
 commute_history.json
+.periodic_cache.json

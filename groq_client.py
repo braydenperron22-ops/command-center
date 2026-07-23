@@ -63,6 +63,8 @@ third copy of Groq's guardrails.
 """
 
 import datetime
+import json
+import os
 import time
 from zoneinfo import ZoneInfo
 
@@ -342,7 +344,44 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
 # rather than st.session_state: the rate limit is shared across every
 # browser session hitting this one server process, so the throttle has
 # to be too, not per-tab.
-_periodic_cache: dict[str, tuple[float, str]] = {}
+#
+# Session request: "can you improve the cache so that conflicts cant
+# fail during an outage." Mid-process, an outage already falls back to
+# the last good value correctly (see generate_periodic's own
+# docstring) — the actual gap is a fresh process: a redeploy wipes this
+# dict back to empty, so the very first call for each feature has
+# nothing to fall back to if Groq happens to be down right then. Below
+# persists every successful result to a small local JSON file and
+# reloads it at import time, so a restart starts from "whatever last
+# worked" instead of from nothing. Best-effort, not a guarantee — a
+# platform that gives this app a genuinely fresh filesystem on every
+# deploy (not just every restart) would still start empty; there's no
+# external database here to survive that, only this local file.
+_PERIODIC_CACHE_PATH = os.path.join(os.path.dirname(__file__), ".periodic_cache.json")
+
+
+def _load_periodic_cache() -> dict[str, tuple[float, str]]:
+    try:
+        with open(_PERIODIC_CACHE_PATH) as f:
+            raw = json.load(f)
+        return {
+            str(k): (float(v[0]), str(v[1]))
+            for k, v in raw.items()
+            if isinstance(v, list) and len(v) == 2
+        }
+    except Exception:
+        return {}
+
+
+def _save_periodic_cache() -> None:
+    try:
+        with open(_PERIODIC_CACHE_PATH, "w") as f:
+            json.dump(_periodic_cache, f)
+    except Exception:
+        pass  # best-effort — a failed write just means no persistence this time, never a crash
+
+
+_periodic_cache: dict[str, tuple[float, str]] = _load_periodic_cache()
 
 
 # Deterministic per-feature delay (0-90s) applied only to a feature's
@@ -369,12 +408,18 @@ def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, tempe
     On a failed real attempt, falls back to the last good value for
     this key if there is one (rather than flashing "unavailable" for a
     feature that was working moments ago), and only returns None if
-    there's truly nothing cached yet at all."""
+    there's truly nothing cached yet at all — which the on-disk
+    persistence above (see _load_periodic_cache) makes much rarer:
+    a feature that's ever succeeded once, on any past run this
+    filesystem has seen, skips the startup jitter below entirely and
+    already has real fallback content from the moment this process
+    starts."""
     now = time.time()
     cached = _periodic_cache.get(feature_key)
     if cached is None:
-        # First time this feature_key has ever been seen this process —
-        # stagger its real first pull instead of firing immediately.
+        # First time this feature_key has EVER succeeded, on this
+        # filesystem, period — not just this process. Stagger its real
+        # first pull instead of firing immediately.
         jitter = hash(feature_key) % _STARTUP_JITTER_SECONDS
         _periodic_cache[feature_key] = (now - refresh_seconds + jitter, "")
         return None
@@ -383,5 +428,6 @@ def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, tempe
     text = generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens)
     if text is not None:
         _periodic_cache[feature_key] = (now, text)
+        _save_periodic_cache()
         return text
     return cached[1] or None
