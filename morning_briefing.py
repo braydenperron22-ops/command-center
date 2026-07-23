@@ -978,11 +978,23 @@ def _ai_sentence(picked: list[str]) -> str | None:
     Session feedback on tone, same conversation: "there can be mean or
     dark jokes directed towards me, i dont care" (dropping the earlier
     "nothing mean-spirited AT Brayden" carve-out), "make it lean on its
-    personality more, kind of lame rn," and — after this whole cycle —
-    "gemini was way funnier bro but wtv i can live with it." Groq's own
-    output quality for this specific creative-prose feature is a real,
-    acknowledged gap versus Gemini's, not something this prompt rewrite
-    fully closes; noted rather than silently accepted.
+    personality more, kind of lame rn," then a real bad example ("dude
+    this breifing sucks... one giant run-on with a sarcastic tag on
+    every fact") fixed by explicitly banning that per-fact-quip shape,
+    then the sharpest feedback of the round: a direct comparison to
+    Gemini's own output — "the market is doing its best impression of a
+    flatlining patient... I'd recommend throwing your portfolio in with
+    the blue bins" — real constructed jokes (metaphor, cross-fact
+    connection), versus Groq's sarcasm-stapled-onto-a-flat-statement.
+    Fixed by adding an explicit good-vs-bad example pair showing that
+    exact quality bar — which then caused its own problem in testing:
+    the model started reusing THOSE examples almost verbatim ("flat-
+    lined patient" in 3 of 6 live test runs) instead of inventing new
+    ones. Fixed with an explicit "these are only illustrations, never
+    reuse them" instruction — confirmed live afterward: 6 fresh runs,
+    zero repeats of the example phrasing, genuinely original analogies
+    each time ("impersonating a painted wall", "a sedated sloth", "the
+    market is mirroring your morning commute").
 
     Facts and their priority ordering are otherwise untouched (still
     decided entirely by the *_clause functions above); this only
@@ -1002,25 +1014,36 @@ def _ai_sentence(picked: list[str]) -> str | None:
         "real edge: dry, cutting, deadpan, willing to roast "
         f"{USER_FIRST_NAME} directly and make it a "
         "little dark — he doesn't need protecting from the joke, mean is fine, go there. Not "
-        "corporate, not a stiff butler, not playing it safe. You may open with a brief "
-        "in-character address if it fits naturally, but two things are banned outright: starting "
-        "with the word 'Generally' (in any form — 'Generally,' 'Generally speaking,' etc.), and "
+        "corporate, not a stiff butler, not playing it safe.\n\n"
+        "The bar for 'funny' here is a REAL joke — an actual metaphor, analogy, or clever "
+        "connection between two of the facts — not a flat statement with a sarcastic tag stapled "
+        "on. Bad (this is sarcasm-as-filler, not a joke): 'markets are flat, which is thrilling.' "
+        "Good (this is an actual constructed joke): 'the market's doing its best impression of a "
+        "flatlined patient.' Bad: 'it's recycling day, neat.' Good: 'it's recycling day — might as "
+        "well toss the portfolio in with the blue bins while you're at it.' That second kind — a "
+        "real image, or an unexpected link between two unrelated facts — is what you're going for. "
+        "Those two examples are ONLY there to show the quality bar — never reuse them, or close "
+        "variants of them ('flatlined patient', 'toss it in with the bins'), verbatim or paraphrased; "
+        "invent your own original one each time from today's actual facts. If you can't come up with "
+        "a genuinely new one, deliver the fact straight rather than reaching for a stale one.\n\n"
+        "Never open with a generic throat-clearing word — 'Generally', 'Obviously', 'Apparently', "
+        "'Naturally', 'Currently', 'Given [X]' are all banned as openers, in any form. Also banned: "
         "any construction shaped like '[the day] is usually [a bad thing], but...' — you have no "
-        "idea what day or date it actually is, so never reference, guess, or imply one at all. "
-        "Come at the opening differently every single time — lead with a stat, a blunt jab, a "
-        "rhetorical question, mid-thought, whatever — just never that one shape. The humor comes "
-        "entirely from how things are delivered, never from anything invented — do not add or "
-        "invent any fact not given below; every fact must actually appear.\n\n"
-        "Always write numbers as actual digits, never spelled out as words — '18 minutes' and "
-        "'0.8%' and '10:00 AM', not 'eighteen minutes' or 'zero point eight percent' or 'ten "
-        "o'clock'. This is read at a glance on a screen, not literary prose, and digits are "
-        "faster to scan.\n\n"
+        "idea what day or date it actually is, so never reference, guess, or imply one at all. Jump "
+        "straight into content — a real image, a blunt jab, a stat, mid-thought — never a hedge "
+        "word first.\n\n"
         "Do NOT hang a quip, aside, or ironic tag off of every single fact — that reads as "
         "exhausting, not funny, and turns into one long run-on sentence chaining everything "
         "together with commas and 'and'/'but'/'so that's'/'might I add'. Most facts should just be "
         "stated cleanly and quickly, no commentary. Pick ONE genuine moment, maybe two, for the "
-        "real wit, and let the rest move fast and plain. If a line isn't actually funny, cut it — "
-        "don't include a weak aside just to have one.\n\n"
+        "real wit (see above — an actual joke, not a sarcastic tag), and let the rest move fast and "
+        "plain.\n\n"
+        "The humor comes entirely from how things are delivered, never from anything invented — do "
+        "not add or invent any fact not given below; every fact must actually appear.\n\n"
+        "Always write numbers as actual digits, never spelled out as words — '18 minutes' and "
+        "'0.8%' and '10:00 AM', not 'eighteen minutes' or 'zero point eight percent' or 'ten "
+        "o'clock'. This is read at a glance on a screen, not literary prose, and digits are "
+        "faster to scan.\n\n"
         "Combine the following facts into two or three short sentences, not one sprawling one. "
         f"Address {USER_FIRST_NAME} by name naturally somewhere in the text. Start with a capital "
         "letter and end with a period. Facts: " + facts
