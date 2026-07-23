@@ -64,6 +64,7 @@ import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from xml.etree import ElementTree
+from zoneinfo import ZoneInfo
 
 import requests
 import streamlit as st
@@ -74,7 +75,7 @@ import fetch_throttle
 import groq_client
 import ntfy_client
 import persisted_state
-from config import TOP_ALERT_HOLD_SECONDS
+from config import TIMEZONE, TOP_ALERT_HOLD_SECONDS
 
 # (feed URL, display name) — unlike the Conflicts page's Google News
 # search (which already gets a " - Publisher" suffix baked into every
@@ -387,8 +388,21 @@ _AI_VALID_VERDICTS = {"REJECT", "MARKET"} | set(_AI_VERDICT_LABELS)
 BATCH_REFRESH_SECONDS = 30 * 60
 # Caps prompt/response size — a real burst beyond this just waits for
 # the next batch window rather than growing the request unbounded.
-BATCH_MAX_HEADLINES = 30
+# Weekday/weekend split, not one flat number — session request: "make
+# it so during the weekends the news bot only fetches like 5 headlines
+# per refresh and during the market day make it 15 instead of 30...
+# lower the api stress." Market-day news volume (earnings, Fed-adjacent
+# headlines) genuinely justifies more headroom than a quiet weekend,
+# when there's a lot less real news and the AI can use the break too.
+BATCH_MAX_HEADLINES_WEEKDAY = 15
+BATCH_MAX_HEADLINES_WEEKEND = 5
 BATCH_MAX_OUTPUT_TOKENS = 1500
+
+
+def _batch_max_headlines(now: datetime | None = None) -> int:
+    now = now or datetime.now(ZoneInfo(TIMEZONE))
+    is_weekend = now.weekday() >= 5  # Monday=0 ... Saturday=5, Sunday=6
+    return BATCH_MAX_HEADLINES_WEEKEND if is_weekend else BATCH_MAX_HEADLINES_WEEKDAY
 
 # hash -> decision dict (kept) or None (AI rejected). A key's absence
 # means "not yet reached by a batch" — decide() and _run_batch_decide()
@@ -541,7 +555,7 @@ def _run_batch_decide() -> None:
     now = time.time()
     if now - _last_batch_at < BATCH_REFRESH_SECONDS:
         return
-    pending = [item for item in fetch_headlines() if _hash(item["headline"]) not in _decided][:BATCH_MAX_HEADLINES]
+    pending = [item for item in fetch_headlines() if _hash(item["headline"]) not in _decided][:_batch_max_headlines()]
     if not pending:
         _last_batch_at = now
         return
