@@ -484,7 +484,20 @@ def _build_batch_prompt(items: list[dict]) -> str:
     headline with no number anywhere now only survives if its own core
     claim is already a single, concrete, unambiguous event — otherwise
     REJECT, even if it would have passed the relevance check on its
-    own."""
+    own.
+
+    Session report of a further quality gap: "the AI classifier is
+    letting non-actionable, retrospective fluff (e.g., 'Why stock X
+    surged in the first half of 2026') trigger breaking news push
+    alerts... reserve notification-worthy status strictly for genuine,
+    real-time market-moving events." A "why did X happen" explainer can
+    describe a perfectly real, specific fact and still not be news —
+    it's looking back at something already known, not reporting
+    something breaking now. Explicit REJECT criteria added for that
+    shape of headline, and EARNINGS tightened to require an actual
+    beat/miss rather than any routine earnings report — both push
+    notifications (see update_top_alert) and the News page itself
+    inherit this directly, since both key off the same verdict here."""
     lines = []
     for i, item in enumerate(items):
         entry = f"{i + 1}. HEADLINE: {item['headline']}"
@@ -508,13 +521,22 @@ def _build_batch_prompt(items: list[dict]) -> str:
         "supervisory business that isn't real news to a general reader — enforcement actions "
         "against individual bank employees, routine stress-test results confirming banks are "
         "fine, name/personnel changes, procedural notices — these read as Fed-related but "
-        "aren't; don't let them through as MARKET just because they mention the Fed. If a "
-        "headline fails any of this, its verdict is REJECT.\n\n"
+        "aren't; don't let them through as MARKET just because they mention the Fed.\n\n"
+        "Also REJECT retrospective analysis, recaps, and explainers — a headline whose entire "
+        "point is looking back at or explaining something that already happened, not reporting a "
+        "new event as it's happening. This includes headlines shaped like 'Why [X] surged/fell/"
+        "did...', 'Here's why...', 'Here's what...', '[period] in Review', 'First Half of "
+        "[year]...', 'Everything you need to know about...', 'Breaking down...', 'The story "
+        "behind...' — even when the underlying fact is real and specific, explaining or "
+        "recapping it after the fact is not the same as it breaking now. If a headline fails any "
+        "of this, its verdict is REJECT.\n\n"
         "Otherwise pick exactly one category: FED_BOC (a real Fed/BoC policy action — a rate "
         "decision, a genuinely market-moving statement — not routine paperwork), DATA_SURPRISE "
         "(a major economic data release meaningfully above/below expectations), EARNINGS (a "
-        "company's actual reported results/guidance), MACRO_SHOCK (a crash/crisis/systemic "
-        "event), MERGERS (a $1B+ announced deal), MILESTONE (a genuine record high/low), MARKET "
+        "company's actual reported results that meaningfully BEAT or MISSED expectations — not "
+        "a routine 'reports Q2 results' headline with no real surprise attached), MACRO_SHOCK (a "
+        "crash/crisis/systemic event, or a real trading halt/circuit breaker), MERGERS (a $1B+ "
+        "announced deal), MILESTONE (a genuine record high/low), MARKET "
         "(real but routine financial news), or BREAKING (something else genuinely major that "
         "doesn't fit those).\n\n"
         "STRICT DATA REQUIREMENT — be strict here. Look at the headline, its SUMMARY, and its "
