@@ -948,7 +948,7 @@ def _daylight_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
 AI_REFRESH_SECONDS = 15 * 60  # widened from the original 5 min — session request: "make everything cheaper by lowering how often theyre pulled"; see groq_client's module docstring for the daily-budget guarantee this contributes to
 
 
-def _ai_sentence(picked: list[str]) -> str | None:
+def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     """Same picked clause texts, woven by Groq into one or two
     flowing sentences instead of the mechanical semicolon-join below —
     session request: "revamp the morning brief" with a free AI, then
@@ -962,7 +962,16 @@ def _ai_sentence(picked: list[str]) -> str | None:
     minutes"/"0.8%", harder to scan at a glance on a kiosk than actual
     prose would suggest.
 
-    Facts and their priority ordering are untouched (still
+    `now` exists solely so the day-of-week/date can be handed over as a
+    real fact — caught live on an actual Thursday: "Generally, Mondays
+    are a drag, but hey Brayden..." The picked clauses never included
+    what day it is, so despite the prompt's own "never invent a fact"
+    rule, the model just picked one for flavor. Grounding it the same
+    way the IBM-headline fix grounded numbers earlier this session —
+    give it the real thing instead of leaving a gap it'll fill with
+    something plausible-sounding.
+
+    Facts and their priority ordering are otherwise untouched (still
     decided entirely by the *_clause functions above); this only
     changes how they're phrased. Owns its own opening address now
     (render() below skips the separately-picked random GREETINGS
@@ -974,6 +983,7 @@ def _ai_sentence(picked: list[str]) -> str | None:
     generate_periodic. None (falls back to the plain join + a random
     greeting) on any failure with nothing usable already cached."""
     facts = "; ".join(picked)
+    day_name = now.strftime("%A")
     prompt = (
         f"You are {USER_FIRST_NAME}'s personal AI assistant, in the spirit of J.A.R.V.I.S. from "
         "Iron Man — sharp, hyper-competent, quick with a comeback — but leaned toward genuinely "
@@ -986,6 +996,9 @@ def _ai_sentence(picked: list[str]) -> str | None:
         "with a brief in-character address if it fits naturally. The humor comes entirely from "
         "how things are delivered, never from anything invented — do not add or invent any fact "
         "not given below; every fact must actually appear.\n\n"
+        f"Today is {day_name}. If you reference the day of the week at all (a 'Monday dread' "
+        "type line, etc.), it must be this actual day — never a different or assumed one, and "
+        "don't force a day-of-week joke in if it doesn't fit naturally.\n\n"
         "Always write numbers as actual digits, never spelled out as words — '18 minutes' and "
         "'0.8%' and '10:00 AM', not 'eighteen minutes' or 'zero point eight percent' or 'ten "
         "o'clock'. This is read at a glance on a screen, not literary prose, and digits are "
@@ -1027,7 +1040,7 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     clauses.sort(key=lambda c: c[0], reverse=True)
     picked = [text for _, text in clauses[:MAX_CLAUSES]]
     try:
-        sentence = _ai_sentence(picked)
+        sentence = _ai_sentence(picked, now)
     except Exception:
         sentence = None
     if sentence is not None:
