@@ -80,8 +80,20 @@ from config import TOP_ALERT_HOLD_SECONDS
 # search (which already gets a " - Publisher" suffix baked into every
 # title by Google), these feeds' own <title> tags carry no source
 # attribution at all, so it has to come from knowing which feed it was.
+#
+# The Federal Reserve's own press-release feed
+# (federalreserve.gov/feeds/press_all.xml) used to be here — session
+# request: "these three fed headlines i want them completely gone, i
+# dont want you to pull directly from the fed anymore, theyve been
+# showing up since day 1." Its content is administrative/regulatory
+# press releases (enforcement actions, routine data reports), not
+# market news, and apparently never cleared the AI's own relevance bar
+# either way — removed as a source outright rather than trying to
+# filter it more aggressively. Real Fed news (rate decisions, etc.)
+# still comes through normally via CNBC/MarketWatch/Yahoo reporting on
+# it, same "Fed/BoC" category as always — this only removes the Fed's
+# own direct feed as a source, not Fed coverage in general.
 FEEDS = [
-    ("https://www.federalreserve.gov/feeds/press_all.xml", "Federal Reserve"),
     ("https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114", "CNBC"),
     ("https://feeds.marketwatch.com/marketwatch/topstories/", "MarketWatch"),
     ("https://finance.yahoo.com/news/rssindex", "Yahoo Finance"),
