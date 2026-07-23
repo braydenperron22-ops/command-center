@@ -1,6 +1,6 @@
 """Groq's inference API — used to turn structured facts or raw headlines
 into natural short text (see morning_briefing.py's _ai_sentence,
-pages_conflicts.py's _ai_overview, news.py's _run_batch_decide). Session
+pages_conflicts.py's _ai_overview, news.py's _run_individual_decide). Session
 request: "im sick of hitting quotas man... whats the ai api with the
 highest rate limit" — Groq runs open-weight models (Meta/OpenAI/etc.'s
 own releases, not Groq's own) on custom inference hardware built for
@@ -392,7 +392,7 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
     prose (morning_briefing's sentence-weaving, pages_conflicts' plain-
     English summaries), where some real variety is fine. A caller doing
     a judgment call instead of writing prose (news.py's
-    _run_batch_decide — keep-or-reject, which category) should pass
+    _run_individual_decide — keep-or-reject, which category) should pass
     something much lower, for the same consistency reasons documented
     in gemini_client's own docstring.
 

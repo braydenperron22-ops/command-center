@@ -104,7 +104,7 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
     prose (morning_briefing's sentence-weaving, pages_conflicts' plain-
     English summaries), where some real variety is fine. A caller doing
     a judgment call instead of writing prose (news.py's
-    _run_batch_decide — keep-or-reject, which category) should pass
+    _run_individual_decide — keep-or-reject, which category) should pass
     something much lower: confirmed live that 0.7 made the exact same
     headline flip between two different verdicts across repeat calls,
     which is fine for phrasing but not for a decision that's supposed

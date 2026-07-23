@@ -18,19 +18,31 @@ through the ai." Per-headline AI calls turned out to have the same
 failure mode as the keyword system whenever the free tier's per-minute
 limit got hit mid-burst — a real headline's decide() call would fail
 and silently fall back to the old, much looser keyword pipeline, which
-is exactly where the "slop" was coming from.
+is exactly where the "slop" was coming from. That led to batching
+(_build_batch_prompt, then BATCH_REFRESH_SECONDS/BATCH_MAX_HEADLINES,
+long since renamed away) — one Groq call for every pending headline at
+once, first every 5, then every 30 minutes as cost concerns grew.
 
-Now: _run_batch_decide() sends every not-yet-classified headline to
-Groq in ONE call, throttled to at most once per BATCH_REFRESH_SECONDS
-(5 minutes) regardless of how often it's invoked. decide() itself is
-now a pure cache lookup — no network call, no fallback. A headline
-that hasn't been reached by a batch yet (or that a batch call flat-out
-failed to reach) simply doesn't show anywhere until a later batch
-classifies it; there is no keyword-based backstop anymore, by design —
-"only have them shown through the ai" means exactly that. is_clickbait
-and the term lists it depends on are the one piece of the old keyword
-system kept, since conflict_news.py separately reuses it as a pre-
-filter before its own AI overview.
+Reversed again, later the same day: "transition feed processing from
+15-minute batching to 1-minute polling so news is processed instantly
+as it drops... stream headlines through the classifier individually
+so notifications fire in real-time... rather than in periodic bursts."
+_run_individual_decide() now classifies each pending headline with its
+own real Groq call, polling every INDIVIDUAL_REFRESH_SECONDS (60s)
+rather than batching — told directly this costs meaningfully more per
+headline (each one now pays the full judgment-criteria overhead alone,
+confirmed live at roughly 4x the overhead tokens for the same headline
+volume, on the account that had already hit its daily cap once that
+same day) and chosen anyway. Crucially, the ORIGINAL reason per-
+headline calls got abandoned no longer applies: there is still no
+keyword-based fallback — a failed individual call just leaves that one
+headline pending, retried on the next tick, never "shown anyway" via
+looser rules the way the old slop happened. decide() is still a pure
+cache lookup, no network call, no fallback; "only have them shown
+through the ai" still means exactly that, per-headline now instead of
+per-batch. is_clickbait and the term lists it depends on are the one
+piece of the old keyword system kept, since conflict_news.py separately
+reuses it as a pre-filter before its own AI overview.
 
 decide() also carries the display headline itself, possibly rewritten
 by the AI — session feedback: "theres a lot of headlines who dont tell
@@ -38,7 +50,7 @@ me a whole lot... wiston shares surge (by how much???)... I need
 numbers, context, and data in a short concise headline." Real feeds'
 <description> is often the only place the actual number lives
 (sometimes it's empty — Yahoo Finance never sets one — or just a
-duplicate of the title), so _run_batch_decide also fetches each
+duplicate of the title), so _run_individual_decide also fetches each
 pending headline's own full article page (_fetch_article_excerpt) as
 extra grounding beyond the thin RSS summary — session follow-up: "make
 it look at the full story for a more detailed headline." Even that can
@@ -48,12 +60,13 @@ In that case the rule is strict, not permissive — session correction:
 dont allow it... if you dont have a number you better have a good
 reason for letting it through." A headline only survives without a
 real number if its own core claim is already a single, concrete,
-unambiguous event (see _build_batch_prompt's own docstring for exactly
-where that line is drawn) — a headline that's vague on both counts
-gets REJECTed outright, not shown vague. Numbers are still never
-invented, estimated, or recalled from the model's own training
-knowledge — a confidently wrong figure would be worse than dropping
-the headline entirely.
+unambiguous event (see _CLASSIFICATION_CRITERIA for exactly where that
+line is drawn, shared word-for-word by the batch and single-headline
+prompt builders) — a headline that's vague on both counts gets
+REJECTed outright, not shown vague. Numbers are still never invented,
+estimated, or recalled from the model's own training knowledge — a
+confidently wrong figure would be worse than dropping the headline
+entirely.
 """
 
 import functools
@@ -373,46 +386,49 @@ _AI_VERDICT_LABELS = {
 _AI_VALID_VERDICTS = {"REJECT", "MARKET"} | set(_AI_VERDICT_LABELS)
 
 
-# Session request: "maybe ping the ai every five minutes to find
-# genuine headlines." One batch call handles every pending headline at
-# once — cheap on the free tier's per-minute limit regardless of how
-# many new headlines actually showed up in the window, unlike the old
-# one-call-per-headline design that could burst past 15 RPM the moment
-# several new headlines arrived in the same 3-minute fetch cycle.
-# Widened from the original 5 min once full-article grounding made a
-# worst-case full batch ~9-11k tokens on its own — see groq_client's
-# module docstring for the daily-budget guarantee this (plus the
-# overnight pause it also enforces) now exists alongside. Session
-# request: "make everything cheaper by lowering how often theyre
-# pulled."
-BATCH_REFRESH_SECONDS = 30 * 60
-# Caps prompt/response size — a real burst beyond this just waits for
-# the next batch window rather than growing the request unbounded.
-# Weekday/weekend split, not one flat number — session request: "make
-# it so during the weekends the news bot only fetches like 5 headlines
-# per refresh and during the market day make it 15 instead of 30...
-# lower the api stress." Market-day news volume (earnings, Fed-adjacent
-# headlines) genuinely justifies more headroom than a quiet weekend,
-# when there's a lot less real news and the AI can use the break too.
-BATCH_MAX_HEADLINES_WEEKDAY = 15
-BATCH_MAX_HEADLINES_WEEKEND = 5
-BATCH_MAX_OUTPUT_TOKENS = 1500
+# Session request history: "maybe ping the ai every five minutes to
+# find genuine headlines" -> widened to 30 min once full-article
+# grounding made a worst-case full batch ~9-11k tokens on its own ->
+# weekday/weekend headline caps to cut per-call size further. Then a
+# direct reversal: "transition feed processing from 15-minute batching
+# to 1-minute polling so news is processed instantly as it drops...
+# stream headlines through the classifier individually so notifications
+# fire in real-time... rather than in periodic bursts." Told explicitly
+# this costs meaningfully more (each headline now pays the full
+# judgment-criteria overhead alone instead of sharing it across a
+# batch — confirmed live, roughly 4x more overhead tokens for the same
+# headline volume) on the account that had already hit its daily cap
+# once that same day, and chose it anyway — see groq_client's own
+# daily-budget guard for what still catches this gracefully if it runs
+# the account dry again.
+INDIVIDUAL_REFRESH_SECONDS = 60
+# Caps how many headlines get their own real classification call in a
+# single tick — NOT the old batch caps repurposed, deliberately much
+# smaller: at up to ~900 tokens each (criteria overhead + one
+# headline), the old weekday batch cap of 15 would mean ~13,500 tokens
+# in a single minute if a backlog ever piled up, blowing straight
+# through Groq's 12k-tokens/minute bucket in one tick. A genuine
+# backlog beyond this just drains over the next several 1-minute ticks
+# instead — nothing is ever dropped, only delayed a little further.
+INDIVIDUAL_MAX_PER_TICK_WEEKDAY = 5
+INDIVIDUAL_MAX_PER_TICK_WEEKEND = 2
+INDIVIDUAL_MAX_OUTPUT_TOKENS = 150
 
 
-def _batch_max_headlines(now: datetime | None = None) -> int:
+def _max_headlines_per_tick(now: datetime | None = None) -> int:
     now = now or datetime.now(ZoneInfo(TIMEZONE))
     is_weekend = now.weekday() >= 5  # Monday=0 ... Saturday=5, Sunday=6
-    return BATCH_MAX_HEADLINES_WEEKEND if is_weekend else BATCH_MAX_HEADLINES_WEEKDAY
+    return INDIVIDUAL_MAX_PER_TICK_WEEKEND if is_weekend else INDIVIDUAL_MAX_PER_TICK_WEEKDAY
 
 # hash -> decision dict (kept) or None (AI rejected). A key's absence
-# means "not yet reached by a batch" — decide() and _run_batch_decide()
+# means "not yet classified" — decide() and _run_individual_decide()
 # both rely on that three-way distinction (see their own docstrings).
 # Plain module state (same convention as sports_client.py's own
 # _last_good_*/_delay_buffers, groq_client's _periodic_cache) rather
 # than st.session_state: classification is shared across every browser
 # session hitting this one server process, not per-tab.
 _decided: dict[str, dict | None] = {}
-_last_batch_at: float = 0.0
+_last_tick_at: float = 0.0
 
 
 def _hash(headline: str) -> str:
@@ -465,6 +481,58 @@ def _fetch_article_excerpt(url: str) -> str:
         return ""
 
 
+# Shared word-for-word between _build_batch_prompt and
+# _build_single_prompt so the two paths (batch, and per-headline
+# individual streaming — see _run_individual_decide) can never quietly
+# drift into judging the same headline differently depending on which
+# one happened to classify it. "this list"/"the same batch" language
+# generalized to "a different story" so it reads correctly whether
+# there's one headline in front of the model or several.
+_CLASSIFICATION_CRITERIA = (
+    "For each: is it genuinely informational — reporting a fact that has already happened, "
+    "not clickbait, not a listicle ('5 stocks to buy'), not opinion/analysis/commentary, not "
+    "speculation ('could', 'might', 'expected to'), not an advice column ('should you buy') "
+    "— and specifically finance/markets/economy relevant (not general news, sports, "
+    "entertainment, lifestyle)? Also REJECT routine Fed/regulator administrative or "
+    "supervisory business that isn't real news to a general reader — enforcement actions "
+    "against individual bank employees, routine stress-test results confirming banks are "
+    "fine, name/personnel changes, procedural notices — these read as Fed-related but "
+    "aren't; don't let them through as MARKET just because they mention the Fed.\n\n"
+    "Also REJECT retrospective analysis, recaps, and explainers — a headline whose entire "
+    "point is looking back at or explaining something that already happened, not reporting a "
+    "new event as it's happening. This includes headlines shaped like 'Why [X] surged/fell/"
+    "did...', 'Here's why...', 'Here's what...', '[period] in Review', 'First Half of "
+    "[year]...', 'Everything you need to know about...', 'Breaking down...', 'The story "
+    "behind...' — even when the underlying fact is real and specific, explaining or "
+    "recapping it after the fact is not the same as it breaking now. If a headline fails any "
+    "of this, its verdict is REJECT.\n\n"
+    "Otherwise pick exactly one category: FED_BOC (a real Fed/BoC policy action — a rate "
+    "decision, a genuinely market-moving statement — not routine paperwork), DATA_SURPRISE "
+    "(a major economic data release meaningfully above/below expectations), EARNINGS (a "
+    "company's actual reported results that meaningfully BEAT or MISSED expectations — not "
+    "a routine 'reports Q2 results' headline with no real surprise attached), MACRO_SHOCK (a "
+    "crash/crisis/systemic event, or a real trading halt/circuit breaker), MERGERS (a $1B+ "
+    "announced deal), MILESTONE (a genuine record high/low), MARKET "
+    "(real but routine financial news), or BREAKING (something else genuinely major that "
+    "doesn't fit those).\n\n"
+    "STRICT DATA REQUIREMENT — be strict here. Look at the headline, its SUMMARY, and its "
+    "ARTICLE EXCERPT (whichever are present) for a specific number, percentage, or figure. "
+    "If one exists, rewrite the headline into one short, concise, factual sentence that "
+    "includes it — never invent, estimate, or guess a number that isn't actually present in "
+    "that text, and never borrow a number from a different story.\n\n"
+    "If NO real number is available anywhere in the headline, summary, or article excerpt, "
+    "apply strict scrutiny before letting the headline through: is its own core claim "
+    "already a single, concrete, unambiguous event on its own — a specific decision, "
+    "acquisition, resignation, bankruptcy, ceasefire, or similarly definite fact — genuinely "
+    "meaningful even without a number attached? If yes, keep it as-is, unchanged, with no "
+    "fabricated data. If no — the headline is fundamentally vague with no specifics anywhere "
+    "about by how much, to what, or what exactly changed ('lowers forecast', 'warns of "
+    "headwinds', 'beats expectations' with nothing concrete attached anywhere) — its verdict "
+    "MUST be REJECT, even if it would otherwise pass the relevance check above. A vague, "
+    "unactionable headline is not worth showing regardless of topic."
+)
+
+
 def _build_batch_prompt(items: list[dict]) -> str:
     """One prompt judging every item in `items` independently — same
     two-task judgment the old per-headline version asked (keep-or-
@@ -513,47 +581,7 @@ def _build_batch_prompt(items: list[dict]) -> str:
         "You are a strict news editor for a personal finance/markets dashboard. Judge EACH of "
         f"the following {len(items)} headlines independently — they are unrelated to each "
         "other.\n\n"
-        "For each: is it genuinely informational — reporting a fact that has already happened, "
-        "not clickbait, not a listicle ('5 stocks to buy'), not opinion/analysis/commentary, not "
-        "speculation ('could', 'might', 'expected to'), not an advice column ('should you buy') "
-        "— and specifically finance/markets/economy relevant (not general news, sports, "
-        "entertainment, lifestyle)? Also REJECT routine Fed/regulator administrative or "
-        "supervisory business that isn't real news to a general reader — enforcement actions "
-        "against individual bank employees, routine stress-test results confirming banks are "
-        "fine, name/personnel changes, procedural notices — these read as Fed-related but "
-        "aren't; don't let them through as MARKET just because they mention the Fed.\n\n"
-        "Also REJECT retrospective analysis, recaps, and explainers — a headline whose entire "
-        "point is looking back at or explaining something that already happened, not reporting a "
-        "new event as it's happening. This includes headlines shaped like 'Why [X] surged/fell/"
-        "did...', 'Here's why...', 'Here's what...', '[period] in Review', 'First Half of "
-        "[year]...', 'Everything you need to know about...', 'Breaking down...', 'The story "
-        "behind...' — even when the underlying fact is real and specific, explaining or "
-        "recapping it after the fact is not the same as it breaking now. If a headline fails any "
-        "of this, its verdict is REJECT.\n\n"
-        "Otherwise pick exactly one category: FED_BOC (a real Fed/BoC policy action — a rate "
-        "decision, a genuinely market-moving statement — not routine paperwork), DATA_SURPRISE "
-        "(a major economic data release meaningfully above/below expectations), EARNINGS (a "
-        "company's actual reported results that meaningfully BEAT or MISSED expectations — not "
-        "a routine 'reports Q2 results' headline with no real surprise attached), MACRO_SHOCK (a "
-        "crash/crisis/systemic event, or a real trading halt/circuit breaker), MERGERS (a $1B+ "
-        "announced deal), MILESTONE (a genuine record high/low), MARKET "
-        "(real but routine financial news), or BREAKING (something else genuinely major that "
-        "doesn't fit those).\n\n"
-        "STRICT DATA REQUIREMENT — be strict here. Look at the headline, its SUMMARY, and its "
-        "ARTICLE EXCERPT (whichever are present) for a specific number, percentage, or figure. "
-        "If one exists, rewrite the headline into one short, concise, factual sentence that "
-        "includes it — never invent, estimate, or guess a number that isn't actually present in "
-        "that text, and never borrow a number from a DIFFERENT headline in this list.\n\n"
-        "If NO real number is available anywhere in the headline, summary, or article excerpt, "
-        "apply strict scrutiny before letting the headline through: is its own core claim "
-        "already a single, concrete, unambiguous event on its own — a specific decision, "
-        "acquisition, resignation, bankruptcy, ceasefire, or similarly definite fact — genuinely "
-        "meaningful even without a number attached? If yes, keep it as-is, unchanged, with no "
-        "fabricated data. If no — the headline is fundamentally vague with no specifics anywhere "
-        "about by how much, to what, or what exactly changed ('lowers forecast', 'warns of "
-        "headwinds', 'beats expectations' with nothing concrete attached anywhere) — its verdict "
-        "MUST be REJECT, even if it would otherwise pass the relevance check above. A vague, "
-        "unactionable headline is not worth showing regardless of topic.\n\n"
+        f"{_CLASSIFICATION_CRITERIA}\n\n"
         f"{headline_block}\n\n"
         "Respond with ONLY a JSON array, no markdown code fences, no other text, exactly one "
         "object per headline above IN THE SAME ORDER, in exactly this shape (omit \"headline\" "
@@ -563,66 +591,118 @@ def _build_batch_prompt(items: list[dict]) -> str:
     )
 
 
-def _run_batch_decide() -> None:
-    """Classifies every currently-pending headline (from the current
-    fetch_headlines() pool, not already in _decided) in one Groq
-    call, throttled to at most once per BATCH_REFRESH_SECONDS — see
-    this module's own docstring. A no-op if it's not yet time for a
-    new batch, or there's nothing pending. Call this once per rerun
-    before relying on decide() for fresh coverage; get_new_alerts()
-    already does, and since that runs early in app.py regardless of
-    which page is up, callers like pages_news.py don't need to call
-    this themselves."""
-    global _last_batch_at
+def _build_single_prompt(item: dict) -> str:
+    """Same judgment as _build_batch_prompt (see _CLASSIFICATION_CRITERIA,
+    shared word-for-word between both so they can never quietly drift
+    apart), for exactly one headline instead of a numbered list — session
+    request: "stream headlines through the classifier individually so
+    notifications fire in real-time... instead of in periodic bursts."
+    Asks for a single JSON object rather than an array of one; that
+    framing difference, plus dropping the batch prompt's "judge each of
+    the following N headlines... IN THE SAME ORDER" wrapper, is the only
+    real savings available here without weakening the actual judgment
+    criteria, which is the bulk of the prompt either way."""
+    entry = f"HEADLINE: {item['headline']}"
+    description = (item.get("description") or "").strip()
+    if description and description != item["headline"].strip():
+        entry += f"\nSUMMARY: {description}"
+    excerpt = (item.get("article_excerpt") or "").strip()
+    if excerpt:
+        entry += f"\nARTICLE EXCERPT: {excerpt}"
+    return (
+        "You are a strict news editor for a personal finance/markets dashboard. Judge this one "
+        "headline.\n\n"
+        f"{_CLASSIFICATION_CRITERIA}\n\n"
+        f"{entry}\n\n"
+        "Respond with ONLY a JSON object, no markdown code fences, no other text, in exactly "
+        "this shape (omit \"headline\" entirely for a REJECT):\n"
+        '{"verdict": "REJECT"}\n'
+        "or\n"
+        '{"verdict": "MARKET", "headline": "..."}\n'
+        "or e.g.\n"
+        '{"verdict": "FED_BOC", "headline": "..."}'
+    )
+
+
+def _apply_verdict(item: dict, verdict_obj) -> None:
+    """Parses one AI verdict object — the batch and single-headline
+    prompts both ask for the exact same object shape, just wrapped
+    differently (an array of them vs. one on its own) — and records it
+    in _decided. Shared so both call sites apply identical parsing and
+    validation, not two copies that could quietly drift apart."""
+    h = _hash(item["headline"])
+    if not isinstance(verdict_obj, dict):
+        return
+    verdict = str(verdict_obj.get("verdict", "")).strip().upper()
+    if verdict not in _AI_VALID_VERDICTS or verdict == "REJECT":
+        _decided[h] = None
+        return
+    display_headline = (verdict_obj.get("headline") or "").strip() or item["headline"]
+    if verdict == "MARKET":
+        _decided[h] = {"headline": display_headline, "category": "Market News", "important": False}
+    else:
+        _decided[h] = {"headline": display_headline, "category": _AI_VERDICT_LABELS[verdict], "important": True}
+
+
+def _run_individual_decide() -> None:
+    """Classifies up to _max_headlines_per_tick() currently-pending
+    headlines (from the current fetch_headlines() pool, not already in
+    _decided), each with its own real Groq call, throttled to at most
+    once per INDIVIDUAL_REFRESH_SECONDS regardless of how often this is
+    called — see this module's own docstring for why this replaced
+    batching. A no-op if it's not yet time for a new tick, or there's
+    nothing pending. Call this once per rerun before relying on
+    decide() for fresh coverage; get_new_alerts() already does, and
+    since that runs early in app.py regardless of which page is up,
+    callers like pages_news.py don't need to call this themselves.
+
+    A backlog beyond the per-tick cap simply waits for the next tick —
+    nothing is ever dropped, only delayed a little further (see
+    INDIVIDUAL_MAX_PER_TICK_WEEKDAY/WEEKEND's own comment for why that
+    cap exists — protecting the per-minute token bucket from a burst,
+    now that each headline's classification isn't sharing a single
+    call's overhead with anything else). Each headline's call succeeds
+    or fails independently — one rate-limited or unparseable response
+    only leaves THAT headline pending for the next tick, not the rest
+    of this one."""
+    global _last_tick_at
     now = time.time()
-    if now - _last_batch_at < BATCH_REFRESH_SECONDS:
+    if now - _last_tick_at < INDIVIDUAL_REFRESH_SECONDS:
         return
-    pending = [item for item in fetch_headlines() if _hash(item["headline"]) not in _decided][:_batch_max_headlines()]
+    pending = [item for item in fetch_headlines() if _hash(item["headline"]) not in _decided][:_max_headlines_per_tick()]
     if not pending:
-        _last_batch_at = now
+        _last_tick_at = now
         return
-    # Set before the call, not after — a failed attempt still counts
-    # against the cadence, so a rate-limit blip can't turn into a tight
-    # retry loop; the next real attempt waits the full window regardless.
-    _last_batch_at = now
-    # Full article text, not just the RSS description — session
-    # request: "make it look at the full story for a more detailed
-    # headline." One fetch per pending headline; a slow or blocked site
-    # just contributes "" for that one item (see _fetch_article_
-    # excerpt's own docstring) rather than derailing the whole batch.
-    enriched = [{**item, "article_excerpt": _fetch_article_excerpt(item.get("link", ""))} for item in pending]
-    prompt = _build_batch_prompt(enriched)
-    # Low temperature — this is a judgment call that should be
-    # consistent, not creative prose (see groq_client.generate's own
-    # docstring: confirmed live that the default 0.7 made the exact
-    # same headline flip between two different verdicts across repeat
-    # calls).
-    result = groq_client.generate(prompt, temperature=0.1, max_output_tokens=BATCH_MAX_OUTPUT_TOKENS)
-    if result is None:
-        return  # everything in `pending` stays pending, retried next window
-    text = result.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text
-        text = text.rsplit("```", 1)[0]
-    try:
-        verdicts = json.loads(text.strip())
-    except Exception:
-        return  # unparseable response — stays pending, retried next window
-    if not isinstance(verdicts, list):
-        return
-    for item, verdict_obj in zip(pending, verdicts):
-        h = _hash(item["headline"])
-        if not isinstance(verdict_obj, dict):
-            continue
-        verdict = str(verdict_obj.get("verdict", "")).strip().upper()
-        if verdict not in _AI_VALID_VERDICTS or verdict == "REJECT":
-            _decided[h] = None
-            continue
-        display_headline = (verdict_obj.get("headline") or "").strip() or item["headline"]
-        if verdict == "MARKET":
-            _decided[h] = {"headline": display_headline, "category": "Market News", "important": False}
-        else:
-            _decided[h] = {"headline": display_headline, "category": _AI_VERDICT_LABELS[verdict], "important": True}
+    # Set before the calls, not after — same reasoning the old batch
+    # design already established: a failed attempt still counts against
+    # the cadence, so a rate-limit blip can't turn into a tight retry
+    # loop; the next tick waits the full window regardless.
+    _last_tick_at = now
+    for item in pending:
+        # Full article text, not just the RSS description — session
+        # request: "make it look at the full story for a more detailed
+        # headline." A slow or blocked site just contributes "" for
+        # this one item (see _fetch_article_excerpt's own docstring)
+        # rather than derailing anything else in this tick.
+        excerpt = _fetch_article_excerpt(item.get("link", ""))
+        prompt = _build_single_prompt({**item, "article_excerpt": excerpt})
+        # Low temperature — this is a judgment call that should be
+        # consistent, not creative prose (see groq_client.generate's own
+        # docstring: confirmed live that the default 0.7 made the exact
+        # same headline flip between two different verdicts across
+        # repeat calls).
+        result = groq_client.generate(prompt, temperature=0.1, max_output_tokens=INDIVIDUAL_MAX_OUTPUT_TOKENS)
+        if result is None:
+            continue  # this one headline stays pending, retried next tick
+        text = result.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text
+            text = text.rsplit("```", 1)[0]
+        try:
+            verdict_obj = json.loads(text.strip())
+        except Exception:
+            continue  # unparseable response — stays pending, retried next tick
+        _apply_verdict(item, verdict_obj)
 
 
 def decide(headline: str) -> dict | None:
@@ -630,11 +710,11 @@ def decide(headline: str) -> dict | None:
     {"headline": <display text, possibly AI-rewritten with real
     numbers>, "category": <display name>, "important": bool} to show
     this headline, None to drop it — either because the AI rejected it,
-    or because no batch has reached it yet (see _run_batch_decide).
+    or because no tick has reached it yet (see _run_individual_decide).
     There is no keyword-based fallback anymore — session request: "only
     have them shown through the ai." Pure cache lookup, no network
-    call; callers must have already given _run_batch_decide a chance to
-    run this rerun for the answer to be fresh."""
+    call; callers must have already given _run_individual_decide a
+    chance to run this rerun for the answer to be fresh."""
     return _decided.get(_hash(headline))
 
 
@@ -718,17 +798,18 @@ def get_new_alerts() -> list[dict]:
     as the News page itself so the breaking-news bar is just the News
     page's feed, surfaced the moment each headline first appears.
 
-    Calls _run_batch_decide() first — this is the one call site that
-    runs every rerun regardless of which page is up, so it's what keeps
-    the batch cadence moving even when nobody's looking at the News or
-    Conflicts pages; pages_news.py relies on this having already run
-    earlier in the same script execution and just calls decide() itself.
+    Calls _run_individual_decide() first — this is the one call site
+    that runs every rerun regardless of which page is up, so it's what
+    keeps the classification cadence moving even when nobody's looking
+    at the News or Conflicts pages; pages_news.py relies on this having
+    already run earlier in the same script execution and just calls
+    decide() itself.
 
     The very first call establishes a baseline (marks whatever already
     qualifies as "seen" without alerting) so opening the dashboard doesn't
     immediately flood every historical headline as if it just broke.
     """
-    _run_batch_decide()
+    _run_individual_decide()
     # A plain set only ever grew — fine for a normal Streamlit session,
     # but this kiosk's one browser tab can stay open for weeks without a
     # reload, so it was a real unbounded-forever accumulator on a process
