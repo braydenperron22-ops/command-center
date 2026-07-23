@@ -950,52 +950,37 @@ AI_REFRESH_SECONDS = 15 * 60  # widened from the original 5 min — session requ
 
 
 def _ai_sentence(picked: list[str]) -> str | None:
-    """Same picked clause texts, woven by Groq into one or two
-    flowing sentences instead of the mechanical semicolon-join below —
-    session request: "revamp the morning brief" with a free AI, then
-    "i want the daily recap to have a jarvis type energy from iron
-    man," then a further correction once that landed too stiff: "a
-    little too dry tbh.. maybe give it a fun and sarcastic personality.
-    it should be enjoyable to read in the morning. make it slightly
-    dark lol," then "use numbers tho. dont spell out number its easier
-    to read as a number" — the model's own prose instinct kept writing
-    "eighteen minutes"/"zero point eight percent" rather than "18
-    minutes"/"0.8%", harder to scan at a glance on a kiosk than actual
-    prose would suggest.
+    """Same picked clause texts, woven into one or two flowing
+    sentences instead of the mechanical semicolon-join below — session
+    request: "revamp the morning brief" with "a jarvis type energy from
+    iron man," "fun and sarcastic... slightly dark," real digits not
+    spelled-out numbers (kiosk needs to be scannable at a glance, not
+    literary).
 
-    No day-of-week/date fact anymore, deliberately — this went through
-    a whole cycle: caught live inventing the wrong day ("Generally,
-    Mondays are a drag..." on an actual Thursday), fixed by grounding
-    it in the real date, which then turned out to be exactly what was
-    nudging every generation into the same stale "[Day] is usually [a
-    bad thing], but..." opener regardless of instructions banning that
-    shape. Session call after seeing the fix still wasn't landing
-    right: "just leave the date out of it." Simplest fix that actually
-    holds — no date fact means no hook to build a formulaic weekday
-    opener around, and the "never invent a fact" instruction plus an
-    explicit ban below on inventing a day keeps it from just making one
-    up again the way the original bug happened.
+    This prompt went through a long tuning cycle while still routed
+    through Groq: no date fact (it kept inventing one — "Generally,
+    Mondays are a drag" on an actual Thursday), an explicit ban on the
+    formulaic "[Day] is usually X, but..." opener, an explicit ban on
+    hanging a sarcastic tag off of every single fact (a real bad
+    example: "dude this breifing sucks... one giant run-on"), and a
+    good/bad example pair to push toward real constructed jokes instead
+    of sarcasm-as-filler. All of that was reverse-engineered against
+    specific Groq failure modes, one at a time, as they showed up live.
 
-    Session feedback on tone, same conversation: "there can be mean or
-    dark jokes directed towards me, i dont care" (dropping the earlier
-    "nothing mean-spirited AT Brayden" carve-out), "make it lean on its
-    personality more, kind of lame rn," then a real bad example ("dude
-    this breifing sucks... one giant run-on with a sarcastic tag on
-    every fact") fixed by explicitly banning that per-fact-quip shape,
-    then the sharpest feedback of the round: a direct comparison to
-    Gemini's own output — "the market is doing its best impression of a
-    flatlining patient... I'd recommend throwing your portfolio in with
-    the blue bins" — real constructed jokes (metaphor, cross-fact
-    connection), versus Groq's sarcasm-stapled-onto-a-flat-statement.
-    Fixed by adding an explicit good-vs-bad example pair showing that
-    exact quality bar — which then caused its own problem in testing:
-    the model started reusing THOSE examples almost verbatim ("flat-
-    lined patient" in 3 of 6 live test runs) instead of inventing new
-    ones. Fixed with an explicit "these are only illustrations, never
-    reuse them" instruction — confirmed live afterward: 6 fresh runs,
-    zero repeats of the example phrasing, genuinely original analogies
-    each time ("impersonating a painted wall", "a sedated sloth", "the
-    market is mirroring your morning commute").
+    Once routed to gemini_client exclusively (see below) — session
+    call: "we gave Grok all of those extra filters because it couldn't
+    figure out how to be funny. meanwhile Gemini has a lot more reason
+    and is a lot stronger by default. so it doesn't need all of those.
+    let Gemini be creative... take off the handcuffs." Stripped back to
+    just what's genuinely provider-agnostic (never invent a fact, no
+    date reference, real digits) plus the core creative brief (JARVIS
+    voice, dark humor fine, roast him directly) — no banned-word list,
+    no example pair, no per-fact quip rule. Gemini's own real live
+    output already lands genuine original wit without any of that
+    scaffolding ("meteorological ambition at its most profoundly
+    wheezing", "dragging themselves down the page like a bad grade in
+    pencil") — the constraints were a Groq patch, not a requirement of
+    the format itself, so they don't travel with the provider switch.
 
     Facts and their priority ordering are otherwise untouched (still
     decided entirely by the *_clause functions above); this only
@@ -1009,18 +994,13 @@ def _ai_sentence(picked: list[str]) -> str | None:
     None (falls back to the plain join + a random greeting) on any
     failure with nothing usable already cached.
 
-    Routed to gemini_client exclusively, not groq_client — session
-    call once Gemini's own quota had clearly recovered post-migration
-    (confirmed live, real 200) and after a whole round of prompt work
-    still left Groq's output here weaker: "the morning brief should
-    become gemini's one and only responsability since its good at
-    that." No Groq fallback for this one feature specifically — if
-    Gemini fails, this returns None same as before and render() drops
-    to the plain mechanical join, not a second provider. Still
-    respects the same overnight quiet-hours schedule as every Groq
-    call (see groq_client.ai_pulls_paused) even though the call itself
-    bypasses groq_client entirely — "screen off, don't pull" was never
-    a Groq-specific rule."""
+    Routed to gemini_client exclusively, not groq_client — no Groq
+    fallback for this one feature specifically; if Gemini fails, this
+    still returns None and render() drops to the plain mechanical join,
+    not a second provider. Still respects the same overnight quiet-
+    hours schedule as every Groq call (see groq_client.ai_pulls_paused)
+    even though the call itself bypasses groq_client entirely —
+    "screen off, don't pull" was never a Groq-specific rule."""
     facts = "; ".join(picked)
     prompt = (
         f"You are {USER_FIRST_NAME}'s personal AI assistant, in the spirit of J.A.R.V.I.S. from "
@@ -1028,39 +1008,18 @@ def _ai_sentence(picked: list[str]) -> str | None:
         "real edge: dry, cutting, deadpan, willing to roast "
         f"{USER_FIRST_NAME} directly and make it a "
         "little dark — he doesn't need protecting from the joke, mean is fine, go there. Not "
-        "corporate, not a stiff butler, not playing it safe.\n\n"
-        "The bar for 'funny' here is a REAL joke — an actual metaphor, analogy, or clever "
-        "connection between two of the facts — not a flat statement with a sarcastic tag stapled "
-        "on. Bad (this is sarcasm-as-filler, not a joke): 'markets are flat, which is thrilling.' "
-        "Good (this is an actual constructed joke): 'the market's doing its best impression of a "
-        "flatlined patient.' Bad: 'it's recycling day, neat.' Good: 'it's recycling day — might as "
-        "well toss the portfolio in with the blue bins while you're at it.' That second kind — a "
-        "real image, or an unexpected link between two unrelated facts — is what you're going for. "
-        "Those two examples are ONLY there to show the quality bar — never reuse them, or close "
-        "variants of them ('flatlined patient', 'toss it in with the bins'), verbatim or paraphrased; "
-        "invent your own original one each time from today's actual facts. If you can't come up with "
-        "a genuinely new one, deliver the fact straight rather than reaching for a stale one.\n\n"
-        "Never open with a generic throat-clearing word — 'Generally', 'Obviously', 'Apparently', "
-        "'Naturally', 'Currently', 'Given [X]' are all banned as openers, in any form. Also banned: "
-        "any construction shaped like '[the day] is usually [a bad thing], but...' — you have no "
-        "idea what day or date it actually is, so never reference, guess, or imply one at all. Jump "
-        "straight into content — a real image, a blunt jab, a stat, mid-thought — never a hedge "
-        "word first.\n\n"
-        "Do NOT hang a quip, aside, or ironic tag off of every single fact — that reads as "
-        "exhausting, not funny, and turns into one long run-on sentence chaining everything "
-        "together with commas and 'and'/'but'/'so that's'/'might I add'. Most facts should just be "
-        "stated cleanly and quickly, no commentary. Pick ONE genuine moment, maybe two, for the "
-        "real wit (see above — an actual joke, not a sarcastic tag), and let the rest move fast and "
-        "plain.\n\n"
-        "The humor comes entirely from how things are delivered, never from anything invented — do "
-        "not add or invent any fact not given below; every fact must actually appear.\n\n"
+        "corporate, not a stiff butler, not playing it safe. Use your own judgment on structure, "
+        "pacing, and where the actual wit lands — you don't need a formula for this.\n\n"
+        "You have no idea what day or date it actually is, so never reference, guess, or imply one "
+        "at all. The humor comes entirely from how things are delivered, never from anything "
+        "invented — do not add or invent any fact not given below; every fact must actually appear.\n\n"
         "Always write numbers as actual digits, never spelled out as words — '18 minutes' and "
         "'0.8%' and '10:00 AM', not 'eighteen minutes' or 'zero point eight percent' or 'ten "
         "o'clock'. This is read at a glance on a screen, not literary prose, and digits are "
         "faster to scan.\n\n"
-        "Combine the following facts into two or three short sentences, not one sprawling one. "
-        f"Address {USER_FIRST_NAME} by name naturally somewhere in the text. Start with a capital "
-        "letter and end with a period. Facts: " + facts
+        "Combine the following facts into a couple of sentences — short enough to read at a "
+        f"glance on a kiosk display. Address {USER_FIRST_NAME} by name naturally somewhere in the "
+        "text. Start with a capital letter and end with a period. Facts: " + facts
     )
     if groq_client.ai_pulls_paused():
         return None
