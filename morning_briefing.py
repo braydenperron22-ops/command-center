@@ -1015,9 +1015,15 @@ def _ai_sentence(picked: list[str]) -> str | None:
         "'0.8%' and '10:00 AM', not 'eighteen minutes' or 'zero point eight percent' or 'ten "
         "o'clock'. This is read at a glance on a screen, not literary prose, and digits are "
         "faster to scan.\n\n"
-        "Combine the following facts into one flowing sentence, or two short sentences if that "
-        f"reads better. Address {USER_FIRST_NAME} by name naturally somewhere in the text. Start "
-        "with a capital letter and end with a period. Facts: " + facts
+        "Do NOT hang a quip, aside, or ironic tag off of every single fact — that reads as "
+        "exhausting, not funny, and turns into one long run-on sentence chaining everything "
+        "together with commas and 'and'/'but'/'so that's'/'might I add'. Most facts should just be "
+        "stated cleanly and quickly, no commentary. Pick ONE genuine moment, maybe two, for the "
+        "real wit, and let the rest move fast and plain. If a line isn't actually funny, cut it — "
+        "don't include a weak aside just to have one.\n\n"
+        "Combine the following facts into two or three short sentences, not one sprawling one. "
+        f"Address {USER_FIRST_NAME} by name naturally somewhere in the text. Start with a capital "
+        "letter and end with a period. Facts: " + facts
     )
     return groq_client.generate_periodic("morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85)
 
