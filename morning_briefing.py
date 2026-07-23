@@ -46,6 +46,7 @@ import groq_client
 import market_yf_client
 import ntfy_client
 import payday_schedule
+import persisted_state
 import waste_schedule
 import wildfire_client
 from config import AQI_SHOW_THRESHOLD, COMMUTE_DESTINATION, TIMEZONE, USER_FIRST_NAME, WEATHER_LAT, WEATHER_LON
@@ -1073,27 +1074,24 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     st.markdown(f'<div class="morning-briefing">{sentence}</div>', unsafe_allow_html=True)
 
 
-# Module-level, NOT st.session_state — session report: "I received the
-# morning brief three times." st.session_state is scoped per browser
-# connection, not per server process; any reconnect (a Cloud restart, a
-# dropped connection, even a second tab) starts a fresh session with
-# empty state, and from THAT session's point of view "have I sent
-# today's brief yet" is no again. Same reasoning already documented for
-# every other cross-session-shared tracker in this app (groq_client's
-# usage ledger, its periodic cache) — this dedup needed the same
-# treatment and didn't get it the first time.
-_notified_date: object = None
-
-
 def _notify_new_brief(sentence: str, now: datetime) -> None:
     """Pushes the morning brief to the phone once per calendar day — the
     first time render() produces a real brief that day (AI-written or
     the plain fallback, whichever path it came from), not every 5s
     rerun for the rest of the morning window, and not once per browser
-    session either (see _notified_date's own comment). Session request:
-    "morning brief push... a little five AM push... that'd be sick.\""""
-    global _notified_date
-    if _notified_date == now.date():
+    session either. Session request: "morning brief push... a little
+    five AM push... that'd be sick," then, once it was still firing more
+    than once: "I don't want an alert every fifteen minutes basically
+    saying the same thing... pick one time each day."
+
+    Persisted to disk (persisted_state), not just a module-level
+    global — a plain global survives across browser sessions but not
+    across an actual process restart, and this session's own several
+    redeploys in a row kept resetting an in-memory version of this
+    right back to "nothing sent yet," reproducing the exact same
+    symptom (a duplicate real push) from a different cause than the
+    first fix addressed."""
+    if persisted_state.load("morning_brief_date", None) == now.date().isoformat():
         return
-    _notified_date = now.date()
+    persisted_state.save("morning_brief_date", now.date().isoformat())
     ntfy_client.send(title="Morning Brief", message=sentence, priority="default", tags="sunny")

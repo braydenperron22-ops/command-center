@@ -73,6 +73,7 @@ import data_health
 import fetch_throttle
 import groq_client
 import ntfy_client
+import persisted_state
 from config import TOP_ALERT_HOLD_SECONDS
 
 # (feed URL, display name) — unlike the Conflicts page's Google News
@@ -750,6 +751,14 @@ def render_alert_bar(alert: dict, elapsed: float, variant: str = "a"):
     )
 
 
+# Bounded, FIFO, disk-persisted list of headline hashes already
+# pushed — comfortably covers a long stretch of breaking headlines
+# without growing forever (same shape as MAX_SEEN_HEADLINES above, same
+# reasoning: headlines this old have long since rolled off every RSS
+# feed's own window, so they'd never come back around as "new" anyway).
+PUSHED_HEADLINES_MAX = 200
+
+
 def update_top_alert(new_alerts: list[dict]) -> None:
     """Whenever a fresh important (red) headline comes through, it takes
     over the persistent top banner, replacing whatever was there before —
@@ -759,19 +768,38 @@ def update_top_alert(new_alerts: list[dict]) -> None:
 
     Also pushes a phone notification for the same event — session
     request: "if it deems that a headline is truly breaking news... get
-    it to ping me." Safe to fire here with no extra dedup: `new_alerts`
-    only ever contains headlines get_new_alerts() has never handed back
-    before (its own seen_headlines tracking), so each important alert
-    reaches this loop exactly once, ever, for this process."""
+    it to ping me." The push specifically needs its own independent,
+    disk-persisted dedup (PUSHED_HEADLINES_MAX below), NOT just trust in
+    `new_alerts` already being filtered — session report of a real
+    duplicate (the same Brent oil headline pushed twice) traced to
+    get_new_alerts()'s own seen_headlines tracking living in
+    st.session_state, which resets on a reconnect or a process restart
+    and can hand the exact same headline back as "new" a second time.
+    The on-screen top banner isn't re-gated here, only the push — a
+    banner re-appearing after a rare reconnect was never reported as a
+    problem the way a duplicate phone buzz was."""
+    pushed = persisted_state.load("pushed_headlines", [])
+    pushed_set = set(pushed)
+    changed = False
     for alert in new_alerts:
         if alert.get("important"):
             st.session_state["top_alert"] = {**alert, "set_at": time.time()}
+            h = _hash(alert["headline"])
+            if h in pushed_set:
+                continue
+            pushed_set.add(h)
+            pushed.append(h)
+            changed = True
             ntfy_client.send(
                 title=f"Breaking: {alert['category']}",
                 message=alert["headline"],
                 priority="urgent",
                 tags="rotating_light",
             )
+    if changed:
+        if len(pushed) > PUSHED_HEADLINES_MAX:
+            pushed = pushed[-PUSHED_HEADLINES_MAX:]
+        persisted_state.save("pushed_headlines", pushed)
 
 
 def render_top_alert_bar() -> None:

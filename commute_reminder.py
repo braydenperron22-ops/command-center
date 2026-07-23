@@ -23,6 +23,7 @@ import calendar_client
 import commute_client
 import commute_history
 import ntfy_client
+import persisted_state
 from config import COMMUTE_DESTINATION
 
 EARLY_BUFFER_MINUTES = 10
@@ -193,21 +194,6 @@ def leave_by_time(now: datetime) -> datetime | None:
     return current[1] if current else None
 
 
-# Module-level, NOT st.session_state (unlike `state` below, which
-# stays session-scoped for the on-screen toast's own "shown" tracking —
-# that part wasn't reported as broken). Session report: "I received the
-# leave for work [alert] three times." st.session_state is scoped per
-# browser connection; any reconnect (a Cloud restart, a dropped
-# connection) starts a fresh session with empty state, so a dedup built
-# on it fires again from that session's point of view even though the
-# milestone already pushed once from a previous connection. The push
-# specifically needs to survive that in a way the on-screen toast
-# doesn't strictly need to, so it gets its own independent, process-
-# wide tracking here.
-_notified_milestones: set[str] = set()
-_notified_milestones_date = None
-
-
 def check(now: datetime) -> dict | None:
     """Call once per rerun. Returns a news_queue-shaped alert dict the
     moment a new milestone is due for whichever shift is currently
@@ -218,8 +204,9 @@ def check(now: datetime) -> dict | None:
     same minute marks.
 
     Also pushes a phone notification for the same milestone, once per
-    (event, milestone) — see _notified_milestones's own comment for why
-    that's tracked separately from the on-screen "shown" state above."""
+    (event, milestone), disk-persisted separately from the on-screen
+    "shown" state above (see the push call's own comment further
+    down)."""
     current = _current_shift(now)
     if current is None:
         return None
@@ -247,13 +234,22 @@ def check(now: datetime) -> dict | None:
         return None
     shown_for_event.add(milestone)
 
-    global _notified_milestones_date
-    if _notified_milestones_date != now.date():
-        _notified_milestones_date = now.date()
-        _notified_milestones.clear()
+    # Disk-persisted (persisted_state), not a plain module-level global
+    # or st.session_state — session report: "I received the leave for
+    # work [alert] three times," then, after a module-level-global fix,
+    # a duplicate morning brief push traced to a redeploy resetting an
+    # in-memory tracker right back to empty. A module global alone
+    # survives multiple browser sessions but not an actual process
+    # restart; this needs to survive both. Kept independent of `state`
+    # above (the on-screen toast's own still-session-scoped "shown"
+    # tracking, unreported as broken, left as-is).
+    pushed = persisted_state.load("commute_milestones", {"date": None, "keys": []})
+    if pushed["date"] != now.date().isoformat():
+        pushed = {"date": now.date().isoformat(), "keys": []}
     push_key = f"{event_key}|{milestone}"
-    if push_key not in _notified_milestones:
-        _notified_milestones.add(push_key)
+    if push_key not in pushed["keys"]:
+        pushed["keys"].append(push_key)
+        persisted_state.save("commute_milestones", pushed)
         ntfy_client.send(title="Leave for work", message=_leave_text(milestone), priority="high", tags="clock3")
 
     return {"headline": _leave_text(milestone), "category": "Commute", "important": False, "kind": "commute"}

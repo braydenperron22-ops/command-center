@@ -75,6 +75,7 @@ from astral.sun import sun
 
 import gemini_client
 import ntfy_client
+import persisted_state
 from config import TIMEZONE, WEATHER_LAT, WEATHER_LON
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
@@ -292,38 +293,31 @@ def ai_status() -> dict:
 # own per-source THRESHOLDS_SECONDS.
 AI_OUTAGE_ALERT_AFTER_SECONDS = 20 * 60
 
-# Module-level, NOT st.session_state — session report: "I received the
-# morning brief three times" (a different feature, same root cause):
-# st.session_state is scoped per browser connection, and any reconnect
-# starts a fresh session with empty state, making a dedup built on it
-# fire again from that session's point of view. Same fix as
-# morning_briefing._notified_date — see its own comment.
-_outage_since: float | None = None
-_outage_notified = False
-
-
 def notify_if_outage() -> None:
     """Pushes a phone notification once per outage episode once "Rate
     Limited" (see ai_status — every tier failed on the most recent real
     attempt) has held continuously for AI_OUTAGE_ALERT_AFTER_SECONDS,
     not on the first failed attempt. Tracks the episode's start time and
-    whether it's already been notified at module level (see
-    _outage_since/_outage_notified's own comment); any status other
-    than "Rate Limited" clears both, so a later, separate outage gets
-    its own fresh alert rather than being permanently suppressed
-    because one already fired once before."""
-    global _outage_since, _outage_notified
+    whether it's already been notified via persisted_state, not
+    st.session_state or a plain module global — a session reset or a
+    process restart (a redeploy, a Cloud sleep/wake) must never look
+    like "nothing sent yet" for an outage still genuinely in progress.
+    Any status other than "Rate Limited" clears the episode, so a
+    later, separate outage gets its own fresh alert rather than being
+    permanently suppressed because one already fired once before."""
     status = ai_status()
+    episode = persisted_state.load("ai_outage", {"since": None, "notified": False})
     if status["label"] != "Rate Limited":
-        _outage_since = None
-        _outage_notified = False
+        if episode["since"] is not None:
+            persisted_state.save("ai_outage", {"since": None, "notified": False})
         return
     now = time.time()
-    if _outage_since is None:
-        _outage_since = now
-    if now - _outage_since < AI_OUTAGE_ALERT_AFTER_SECONDS or _outage_notified:
+    if episode["since"] is None:
+        episode = {"since": now, "notified": False}
+        persisted_state.save("ai_outage", episode)
+    if now - episode["since"] < AI_OUTAGE_ALERT_AFTER_SECONDS or episode["notified"]:
         return
-    _outage_notified = True
+    persisted_state.save("ai_outage", {"since": episode["since"], "notified": True})
     ntfy_client.send(
         title="AI outage",
         message=f"Primary, failsafe, and Gemini have all been failing for over {AI_OUTAGE_ALERT_AFTER_SECONDS // 60} minutes.",

@@ -24,6 +24,7 @@ import time
 import streamlit as st
 
 import ntfy_client
+import persisted_state
 
 # source_key -> max seconds of silence before it's worth flagging.
 # Deliberately generous — the point is "this has been broken for a
@@ -79,15 +80,6 @@ def check() -> list[dict]:
     return stale
 
 
-# Module-level, NOT st.session_state — session report: "I received the
-# morning brief three times" (a different feature, same root cause):
-# st.session_state is scoped per browser connection, and any reconnect
-# starts a fresh session with empty state, making a dedup built on it
-# fire again from that session's point of view. Same fix as
-# morning_briefing._notified_date — see its own comment.
-_notified: set[str] = set()
-
-
 def notify_stale(stale: list[dict]) -> None:
     """Pushes a phone notification once per source, per outage episode —
     not every rerun for as long as it stays stale, which could be hours
@@ -98,22 +90,25 @@ def notify_stale(stale: list[dict]) -> None:
     few minutes' lateness), so nothing extra needed here beyond not
     re-pinging every rerun for the same ongoing outage.
 
-    Tracks which source_keys have already been notified this episode at
-    module level (see _notified's own comment); a source dropping out
-    of `stale` (i.e. it recovered) clears its own flag, so a second,
-    later outage on the same source gets its own fresh alert rather
-    than staying silently suppressed forever because it already fired
-    once months ago."""
-    global _notified
-    stale_keys = {s["key"] for s in stale}
-    _notified &= stale_keys  # drop any source that's since recovered
+    Tracks which source_keys have already been notified this episode via
+    persisted_state, not st.session_state or a plain module global — a
+    session reset or a process restart (a redeploy, a Cloud sleep/wake)
+    must never look like "nothing sent yet" for an outage still
+    genuinely in progress. A source dropping out of `stale` (i.e. it
+    recovered) clears its own flag, so a second, later outage on the
+    same source gets its own fresh alert rather than staying silently
+    suppressed forever because it already fired once months ago."""
+    original = set(persisted_state.load("data_health_stale", []))
+    notified = original & {s["key"] for s in stale}  # drop any source that's since recovered
     for s in stale:
-        if s["key"] in _notified:
+        if s["key"] in notified:
             continue
-        _notified.add(s["key"])
+        notified.add(s["key"])
         ntfy_client.send(
             title="Data source down",
             message=f"{s['label']} hasn't updated in {s['hours_stale']:.0f}h.",
             priority="high",
             tags="warning",
         )
+    if notified != original:
+        persisted_state.save("data_health_stale", sorted(notified))

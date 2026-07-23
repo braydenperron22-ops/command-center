@@ -6,3 +6,4 @@ __pycache__/
 todo.json
 commute_history.json
 .periodic_cache.json
+.notify_*.json
