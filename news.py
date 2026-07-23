@@ -77,7 +77,6 @@ import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from xml.etree import ElementTree
-from zoneinfo import ZoneInfo
 
 import requests
 import streamlit as st
@@ -88,7 +87,7 @@ import fetch_throttle
 import groq_client
 import ntfy_client
 import persisted_state
-from config import TIMEZONE, TOP_ALERT_HOLD_SECONDS
+from config import TOP_ALERT_HOLD_SECONDS
 
 # (feed URL, display name) — unlike the Conflicts page's Google News
 # search (which already gets a " - Publisher" suffix baked into every
@@ -402,23 +401,17 @@ _AI_VALID_VERDICTS = {"REJECT", "MARKET"} | set(_AI_VERDICT_LABELS)
 # daily-budget guard for what still catches this gracefully if it runs
 # the account dry again.
 INDIVIDUAL_REFRESH_SECONDS = 60
-# Caps how many headlines get their own real classification call in a
-# single tick — NOT the old batch caps repurposed, deliberately much
-# smaller: at up to ~900 tokens each (criteria overhead + one
-# headline), the old weekday batch cap of 15 would mean ~13,500 tokens
-# in a single minute if a backlog ever piled up, blowing straight
-# through Groq's 12k-tokens/minute bucket in one tick. A genuine
-# backlog beyond this just drains over the next several 1-minute ticks
-# instead — nothing is ever dropped, only delayed a little further.
-INDIVIDUAL_MAX_PER_TICK_WEEKDAY = 5
-INDIVIDUAL_MAX_PER_TICK_WEEKEND = 2
+# Fixed at exactly one headline per tick — session correction: "it
+# should only track one headline per minute fixed, not 5." Simpler
+# than the original weekday/weekend cap this replaced, and a stronger
+# guarantee against the exact "4 alerts in one minute" burst complaint
+# that started this whole change: with a hard cap of 1, there is
+# structurally no way for more than one push to fire in the same
+# minute, regardless of how large a backlog piles up. A backlog beyond
+# this one headline just drains one-per-minute over however many ticks
+# it takes — nothing dropped, only spread out further.
+INDIVIDUAL_MAX_PER_TICK = 1
 INDIVIDUAL_MAX_OUTPUT_TOKENS = 150
-
-
-def _max_headlines_per_tick(now: datetime | None = None) -> int:
-    now = now or datetime.now(ZoneInfo(TIMEZONE))
-    is_weekend = now.weekday() >= 5  # Monday=0 ... Saturday=5, Sunday=6
-    return INDIVIDUAL_MAX_PER_TICK_WEEKEND if is_weekend else INDIVIDUAL_MAX_PER_TICK_WEEKDAY
 
 # hash -> decision dict (kept) or None (AI rejected). A key's absence
 # means "not yet classified" — decide() and _run_individual_decide()
@@ -645,10 +638,10 @@ def _apply_verdict(item: dict, verdict_obj) -> None:
 
 
 def _run_individual_decide() -> None:
-    """Classifies up to _max_headlines_per_tick() currently-pending
-    headlines (from the current fetch_headlines() pool, not already in
-    _decided), each with its own real Groq call, throttled to at most
-    once per INDIVIDUAL_REFRESH_SECONDS regardless of how often this is
+    """Classifies up to INDIVIDUAL_MAX_PER_TICK (one) currently-pending
+    headline (from the current fetch_headlines() pool, not already in
+    _decided) with its own real Groq call, throttled to at most once
+    per INDIVIDUAL_REFRESH_SECONDS regardless of how often this is
     called — see this module's own docstring for why this replaced
     batching. A no-op if it's not yet time for a new tick, or there's
     nothing pending. Call this once per rerun before relying on
@@ -656,20 +649,15 @@ def _run_individual_decide() -> None:
     since that runs early in app.py regardless of which page is up,
     callers like pages_news.py don't need to call this themselves.
 
-    A backlog beyond the per-tick cap simply waits for the next tick —
-    nothing is ever dropped, only delayed a little further (see
-    INDIVIDUAL_MAX_PER_TICK_WEEKDAY/WEEKEND's own comment for why that
-    cap exists — protecting the per-minute token bucket from a burst,
-    now that each headline's classification isn't sharing a single
-    call's overhead with anything else). Each headline's call succeeds
-    or fails independently — one rate-limited or unparseable response
-    only leaves THAT headline pending for the next tick, not the rest
-    of this one."""
+    A backlog beyond one headline simply waits, one per tick, for
+    however many ticks it takes — nothing is ever dropped, only spread
+    out further (see INDIVIDUAL_MAX_PER_TICK's own comment for why a
+    hard cap of exactly one, not a small handful)."""
     global _last_tick_at
     now = time.time()
     if now - _last_tick_at < INDIVIDUAL_REFRESH_SECONDS:
         return
-    pending = [item for item in fetch_headlines() if _hash(item["headline"]) not in _decided][:_max_headlines_per_tick()]
+    pending = [item for item in fetch_headlines() if _hash(item["headline"]) not in _decided][:INDIVIDUAL_MAX_PER_TICK]
     if not pending:
         _last_tick_at = now
         return
