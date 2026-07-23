@@ -39,6 +39,27 @@ can't promise that (headline volume on a busy news day is out of this
 app's control), so the daily budget is the actual guarantee; the pause
 window and slower cadences just keep usage smooth across the day
 instead of front-loaded.
+
+generate() now tries two independent Groq accounts before giving up —
+see GROQ_ACCOUNTS ("primary" then "failsafe", each its own real key and
+its own real 100k/day quota, tracked as two separate rolling ledgers).
+Session request: "what if i use my burner gmail account to make a
+second unrelated groq key that acts as our failsafe, same exact
+instructions same model no hiccups." Only after both are exhausted does
+it fall back to gemini_client (same public interface by design — see
+that module's own docstring). Session request: "can we handoff and
+delegate to a shittier model elsewhere when we hit the quota."
+Deliberately NOT triggered by the overnight pause — that's checked once
+up front and short-circuits before either Groq account or gemini_client
+is even tried, since the pause is a chosen quiet period to conserve
+budget, not a capacity problem to route around; a real None during
+those hours, not a shifted call. Gemini has no equivalent daily-budget
+guard of its own here — a full day of both Groq accounts being
+genuinely exhausted would mean every one of those calls lands on
+Gemini's quota instead, which could exhaust that too. Acceptable for
+now since the failure mode is still graceful either way (a caller never
+gets anything worse than the None it already has to handle), not a
+third copy of Groq's guardrails.
 """
 
 import datetime
@@ -48,6 +69,7 @@ from zoneinfo import ZoneInfo
 import requests
 import streamlit as st
 
+import gemini_client
 from config import TIMEZONE
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
@@ -90,19 +112,30 @@ ROLLING_WINDOW_SECONDS = 24 * 60 * 60
 AI_PAUSE_START_HOUR = 23
 AI_PAUSE_END_HOUR = 3
 
-# Each entry is a mutable [timestamp, tokens] pair for one real call —
-# a list, not a tuple, so _reconcile_budget can update a call's token
-# count in place once the real usage is known (see _reserve_budget's
-# return value). Only ever holds entries from the trailing
-# ROLLING_WINDOW_SECONDS; anything older is pruned in _rolling_used
-# every time it's read, so it never grows unbounded across a long
-# server uptime. This can only ever know about calls THIS process has
-# actually made — a redeploy starts it empty, with no way to recover
-# what Groq's own server-side ledger says happened before that (Groq
-# doesn't expose current daily usage on a successful call, only inside
-# a 429's error body when something's actually already blocked) — see
-# budget_status's own docstring.
-_usage_log: list[list] = []
+# Two genuinely separate Groq accounts, tried in order — session
+# request: "what if i use my burner gmail account to make a second
+# unrelated groq key that acts as our failsafe, same exact
+# instructions same model no hiccups... small risk small reward." Each
+# has its own real 100k/day quota, so each gets its own independent
+# rolling ledger below — "primary" being exhausted says nothing about
+# "failsafe"'s own budget. Tried before gemini_client since same-model
+# Groq output is the real thing, not a step down in quality the way
+# Gemini is.
+GROQ_ACCOUNTS = ("primary", "failsafe")
+_GROQ_SECRET_NAMES = {"primary": "GROQ_API_KEY", "failsafe": "GROQ_API_KEY_FAILSAFE"}
+# account -> list of mutable [timestamp, tokens] pairs for that
+# account's own real calls — a list, not a tuple, so _reconcile_budget
+# can update a call's token count in place once the real usage is
+# known (see _reserve_budget's return value). Only ever holds entries
+# from the trailing ROLLING_WINDOW_SECONDS; anything older is pruned in
+# _rolling_used every time it's read, so neither log grows unbounded
+# across a long server uptime. Each log can only ever know about calls
+# THIS process has made on that account — a redeploy starts both
+# empty, with no way to recover what Groq's own server-side ledger says
+# happened before that (Groq doesn't expose current daily usage on a
+# successful call, only inside a 429's error body when something's
+# actually already blocked) — see budget_status's own docstring.
+_usage_logs: dict[str, list] = {account: [] for account in GROQ_ACCOUNTS}
 
 
 def _local_now() -> datetime.datetime:
@@ -115,25 +148,25 @@ def _in_pause_window(now: datetime.datetime) -> bool:
     return now.hour >= AI_PAUSE_START_HOUR or now.hour < AI_PAUSE_END_HOUR
 
 
-def _rolling_used(now_ts: float) -> int:
-    global _usage_log
+def _rolling_used(account: str, now_ts: float) -> int:
+    log = _usage_logs[account]
     cutoff = now_ts - ROLLING_WINDOW_SECONDS
-    _usage_log = [entry for entry in _usage_log if entry[0] > cutoff]
-    return sum(entry[1] for entry in _usage_log)
+    log[:] = [entry for entry in log if entry[0] > cutoff]
+    return sum(entry[1] for entry in log)
 
 
-def _reserve_budget(now: datetime.datetime, estimated_tokens: int) -> list | None:
+def _reserve_budget(account: str, now: datetime.datetime, estimated_tokens: int) -> list | None:
     """The new log entry (provisionally reserved at this call's rough
-    estimate — see _reconcile_budget below) if it still fits inside the
-    trailing 24h's remaining budget, for the caller to hold onto and
-    reconcile once the real usage is known. None means: don't even
-    attempt the network call, same graceful "nothing new right now"
-    fallback a real 429 already causes."""
+    estimate — see _reconcile_budget below) if it still fits inside
+    this account's trailing 24h remaining budget, for the caller to
+    hold onto and reconcile once the real usage is known. None means:
+    don't even attempt the network call, same graceful "nothing new
+    right now" fallback a real 429 already causes."""
     now_ts = now.timestamp()
-    if _rolling_used(now_ts) + estimated_tokens > DAILY_TOKEN_BUDGET:
+    if _rolling_used(account, now_ts) + estimated_tokens > DAILY_TOKEN_BUDGET:
         return None
     entry = [now_ts, estimated_tokens]
-    _usage_log.append(entry)
+    _usage_logs[account].append(entry)
     return entry
 
 
@@ -143,9 +176,9 @@ def _reconcile_budget(entry: list, actual_tokens: int | None) -> None:
     rejected request isn't billed) — so a call whose ceiling
     (max_output_tokens) was high but whose real output was short
     doesn't permanently over-charge the rolling window. Updates the
-    same entry already sitting in _usage_log in place, keeping its
-    original timestamp so it still ages out on the schedule it actually
-    happened on, not when it was reconciled."""
+    same entry already sitting in that account's usage log in place,
+    keeping its original timestamp so it still ages out on the schedule
+    it actually happened on, not when it was reconciled."""
     entry[1] = actual_tokens or 0
 
 
@@ -165,9 +198,16 @@ def budget_status() -> dict:
     own server-side history into a fresh process. "paused" reflects the
     overnight window, not the budget — shown separately since "0% left"
     and "asleep until 3am" are different situations worth telling apart
-    at a glance."""
+    at a glance.
+
+    Reflects the "primary" account specifically, not "failsafe" (see
+    GROQ_ACCOUNTS) — that's the account meant to carry normal load, so
+    its health is what's worth a glance at. The failsafe quietly taking
+    over when primary is exhausted doesn't change what this number
+    means; it just means real output can keep flowing even while this
+    badge reads 0%."""
     now = _local_now()
-    used = max(0, min(_rolling_used(now.timestamp()), DAILY_TOKEN_BUDGET))
+    used = max(0, min(_rolling_used("primary", now.timestamp()), DAILY_TOKEN_BUDGET))
     remaining_pct = max(0.0, 100.0 * (DAILY_TOKEN_BUDGET - used) / DAILY_TOKEN_BUDGET)
     return {
         "used": used,
@@ -178,22 +218,23 @@ def budget_status() -> dict:
 
 
 @st.cache_data(ttl=GENERATE_CACHE_TTL_SECONDS, show_spinner=False)
-def _generate_or_raise(prompt: str, temperature: float, max_output_tokens: int) -> str:
-    """Real request, real exception on any failure — st.cache_data only
-    ever caches a genuine successful return, never a raised exception,
-    so a transient failure (rate limit, network blip, paused overnight,
-    daily budget exhausted) is never what gets cached here. See
-    generate() below for why that split matters."""
-    api_key = st.secrets.get("GROQ_API_KEY")
+def _generate_or_raise(account: str, prompt: str, temperature: float, max_output_tokens: int) -> str:
+    """Real request against the given GROQ_ACCOUNTS entry, real
+    exception on any failure — st.cache_data only ever caches a genuine
+    successful return, never a raised exception, so a transient failure
+    (rate limit, network blip, daily budget exhausted) is never what
+    gets cached here. See generate() below for why that split matters,
+    and for the overnight pause — that's checked once by the caller
+    before either account is tried, not per-account here, since both
+    accounts share the same pause window."""
+    api_key = st.secrets.get(_GROQ_SECRET_NAMES[account])
     if not api_key:
-        raise RuntimeError("no GROQ_API_KEY configured")
+        raise RuntimeError(f"no {_GROQ_SECRET_NAMES[account]} configured")
     now = _local_now()
-    if _in_pause_window(now):
-        raise RuntimeError("AI pulls paused overnight")
     estimated_tokens = len(prompt) // 4 + max_output_tokens
-    reservation = _reserve_budget(now, estimated_tokens)
+    reservation = _reserve_budget(account, now, estimated_tokens)
     if reservation is None:
-        raise RuntimeError("daily Groq token budget exhausted for today")
+        raise RuntimeError(f"{account} Groq account's daily token budget exhausted for today")
     try:
         resp = requests.post(
             GROQ_URL,
@@ -249,11 +290,23 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
     `max_output_tokens` defaults to 200 — plenty for one sentence or a
     short paragraph. A caller asking for something structurally bigger
     (pages_conflicts' multi-conflict JSON overview) needs to raise this
-    explicitly, or the response silently truncates mid-output."""
-    try:
-        return _generate_or_raise(prompt, temperature, max_output_tokens)
-    except Exception:
+    explicitly, or the response silently truncates mid-output.
+
+    During the overnight pause, returns None immediately without
+    attempting anything — neither Groq account nor gemini_client, since
+    the pause is a deliberate quiet period, not a capacity problem (see
+    this module's own docstring). Otherwise tries "primary", then
+    "failsafe" (see GROQ_ACCOUNTS — two genuinely separate Groq
+    accounts/quotas), then falls back to gemini_client before finally
+    giving up and returning None."""
+    if _in_pause_window(_local_now()):
         return None
+    for account in GROQ_ACCOUNTS:
+        try:
+            return _generate_or_raise(account, prompt, temperature, max_output_tokens)
+        except Exception:
+            continue
+    return gemini_client.generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens)
 
 
 # feature_key -> (generated_at, text) — see generate_periodic below.
