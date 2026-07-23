@@ -1073,13 +1073,27 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     st.markdown(f'<div class="morning-briefing">{sentence}</div>', unsafe_allow_html=True)
 
 
+# Module-level, NOT st.session_state — session report: "I received the
+# morning brief three times." st.session_state is scoped per browser
+# connection, not per server process; any reconnect (a Cloud restart, a
+# dropped connection, even a second tab) starts a fresh session with
+# empty state, and from THAT session's point of view "have I sent
+# today's brief yet" is no again. Same reasoning already documented for
+# every other cross-session-shared tracker in this app (groq_client's
+# usage ledger, its periodic cache) — this dedup needed the same
+# treatment and didn't get it the first time.
+_notified_date: object = None
+
+
 def _notify_new_brief(sentence: str, now: datetime) -> None:
     """Pushes the morning brief to the phone once per calendar day — the
     first time render() produces a real brief that day (AI-written or
     the plain fallback, whichever path it came from), not every 5s
-    rerun for the rest of the morning window. Session request: "morning
-    brief push... a little five AM push... that'd be sick."""
-    if st.session_state.get("morning_brief_notified_date") == now.date():
+    rerun for the rest of the morning window, and not once per browser
+    session either (see _notified_date's own comment). Session request:
+    "morning brief push... a little five AM push... that'd be sick.\""""
+    global _notified_date
+    if _notified_date == now.date():
         return
-    st.session_state["morning_brief_notified_date"] = now.date()
+    _notified_date = now.date()
     ntfy_client.send(title="Morning Brief", message=sentence, priority="default", tags="sunny")

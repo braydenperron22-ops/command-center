@@ -17,7 +17,6 @@ import groq_client
 import market_yf_client
 import morning_briefing
 import news
-import ntfy_client
 import pages_conflicts
 import pages_home
 import pages_household
@@ -1011,20 +1010,16 @@ with st.container(key="page_body"):
 # alerts, and appended to new_alerts before that block runs so a
 # freshly-due milestone gets picked up in this same rerun.
 #
-# Also pushes a phone notification for the same milestone — session
-# request: "toast alerts for when I have to leave pinged to my phone."
-# Safe with no extra dedup: commute_reminder.check() already only
-# returns non-None the one time each milestone first becomes due (its
-# own session-state "shown" tracking), same guarantee update_top_alert
-# relies on for news. Mirrors every on-screen toast milestone
-# (MILESTONES_MINUTES = 2h, 90/60/45/30/20/15/10/5/3min, and go-time) —
-# up to 11 pushes across one shift's runway, not just a single "time to
-# go" ping; trim the list in commute_reminder.py if that's too many.
+# The phone push for this same milestone lives inside commute_reminder.
+# check() itself now, not here — session report: "I received the leave
+# for work [alert] three times," root-caused to st.session_state being
+# scoped per browser connection (a reconnect resets it, so a dedup
+# built on it fires again from that fresh session's point of view).
+# check()'s own module-level dedup is immune to that; see its docstring.
 try:
     commute_alert = commute_reminder.check(now)
     if commute_alert:
         new_alerts.append(commute_alert)
-        ntfy_client.send(title="Leave for work", message=commute_alert["headline"], priority="high", tags="clock3")
 except Exception:
     pass
 
