@@ -20,12 +20,12 @@ trajectory (active war / escalating / stalemate / de-escalating /
 ceasefire / peace talks), and write a real overview covering what's
 happening, where it's headed, and its effect on the wider world.
 
-Important honesty note baked into the prompt itself: this key's free
-tier does NOT have live Google Search grounding available (confirmed
-live — a grounding-tool request 429s even on a trivial prompt, while a
-plain request succeeds fine), so this is NOT the model browsing the
-internet in real time. It's genuinely current in the parts that matter
-most — which headlines exist, what they say — because those are real
+Important honesty note baked into the prompt itself: plain chat-
+completions calls (what groq_client.generate uses) do NOT have live
+web search — that's a separate, different Groq model ("groq/compound")
+this app doesn't use, so this is NOT the model browsing the internet
+in real time. It's genuinely current in the parts that matter most —
+which headlines exist, what they say — because those are real
 headlines fetched this session, in the prompt. Where the prompt asks
 for background/context beyond the last 7 days (is this conflict
 long-running, who the parties historically are), that part does lean
@@ -37,7 +37,7 @@ No keyword fallback if the AI call fails (unlike news.py, which keeps
 its old keyword pipeline as a safety net) — that fallback is exactly
 what this session asked to remove, not preserve as a shadow system.
 The page just doesn't render new content on a failure and effectively
-shows last-hour's data via gemini_client.generate's own 20-minute
+shows last-hour's data via groq_client.generate's own 20-minute
 cache, or the empty state if there's truly nothing cached yet."""
 
 import html
@@ -46,7 +46,7 @@ import json
 import streamlit as st
 
 import conflict_news
-import gemini_client
+import groq_client
 from config import CONFLICT_WINDOW_DAYS, MAX_CONFLICTS_SHOWN
 from flags import flag_for
 
@@ -71,7 +71,7 @@ OVERVIEW_MAX_OUTPUT_TOKENS = 2200  # up to MAX_CONFLICTS_SHOWN entries, each a r
 # updates... update that hourly." Conflict trajectories don't shift
 # minute to minute the way commute/market numbers do, and this page
 # used to re-call the AI on every 5s rerun it was open — see
-# gemini_client.generate_periodic's own docstring for the shared
+# groq_client.generate_periodic's own docstring for the shared
 # throttle mechanism this now goes through.
 REFRESH_SECONDS = 60 * 60
 
@@ -84,7 +84,7 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
     limit, network, or a response that didn't come back as valid JSON)
     with nothing usable already cached. Real calls throttled to once
     per REFRESH_SECONDS regardless of how often this is called — see
-    gemini_client.generate_periodic. See this module's own docstring
+    groq_client.generate_periodic. See this module's own docstring
     for the full design rationale."""
     texts = [h["headline"] for h in headlines[:HEADLINES_FED_TO_AI]]
     if not texts:
@@ -125,7 +125,7 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
         '[{"countries": [{"code": "ua", "name": "Ukraine"}, {"code": "ru", "name": "Russia"}], '
         '"status": "ACTIVE_WAR", "overview": "...", "severity": "HIGH", "headline_numbers": [3, 7]}]'
     )
-    result = gemini_client.generate_periodic(
+    result = groq_client.generate_periodic(
         "conflicts_overview", REFRESH_SECONDS, prompt, temperature=0.2, max_output_tokens=OVERVIEW_MAX_OUTPUT_TOKENS
     )
     if result is None:

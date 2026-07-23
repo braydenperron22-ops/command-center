@@ -21,7 +21,7 @@ and silently fall back to the old, much looser keyword pipeline, which
 is exactly where the "slop" was coming from.
 
 Now: _run_batch_decide() sends every not-yet-classified headline to
-Gemini in ONE call, throttled to at most once per BATCH_REFRESH_SECONDS
+Groq in ONE call, throttled to at most once per BATCH_REFRESH_SECONDS
 (5 minutes) regardless of how often it's invoked. decide() itself is
 now a pure cache lookup — no network call, no fallback. A headline
 that hasn't been reached by a batch yet (or that a batch call flat-out
@@ -59,7 +59,7 @@ import streamlit as st
 
 import data_health
 import fetch_throttle
-import gemini_client
+import groq_client
 from config import TOP_ALERT_HOLD_SECONDS
 
 # (feed URL, display name) — unlike the Conflicts page's Google News
@@ -362,7 +362,7 @@ BATCH_MAX_OUTPUT_TOKENS = 3000
 # means "not yet reached by a batch" — decide() and _run_batch_decide()
 # both rely on that three-way distinction (see their own docstrings).
 # Plain module state (same convention as sports_client.py's own
-# _last_good_*/_delay_buffers, gemini_client's _periodic_cache) rather
+# _last_good_*/_delay_buffers, groq_client's _periodic_cache) rather
 # than st.session_state: classification is shared across every browser
 # session hitting this one server process, not per-tab.
 _decided: dict[str, dict | None] = {}
@@ -433,7 +433,7 @@ def _build_batch_prompt(items: list[dict]) -> str:
 
 def _run_batch_decide() -> None:
     """Classifies every currently-pending headline (from the current
-    fetch_headlines() pool, not already in _decided) in one Gemini
+    fetch_headlines() pool, not already in _decided) in one Groq
     call, throttled to at most once per BATCH_REFRESH_SECONDS — see
     this module's own docstring. A no-op if it's not yet time for a
     new batch, or there's nothing pending. Call this once per rerun
@@ -455,11 +455,11 @@ def _run_batch_decide() -> None:
     _last_batch_at = now
     prompt = _build_batch_prompt(pending)
     # Low temperature — this is a judgment call that should be
-    # consistent, not creative prose (see gemini_client.generate's own
+    # consistent, not creative prose (see groq_client.generate's own
     # docstring: confirmed live that the default 0.7 made the exact
     # same headline flip between two different verdicts across repeat
     # calls).
-    result = gemini_client.generate(prompt, temperature=0.1, max_output_tokens=BATCH_MAX_OUTPUT_TOKENS)
+    result = groq_client.generate(prompt, temperature=0.1, max_output_tokens=BATCH_MAX_OUTPUT_TOKENS)
     if result is None:
         return  # everything in `pending` stays pending, retried next window
     text = result.strip()

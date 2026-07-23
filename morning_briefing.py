@@ -9,8 +9,8 @@ that logic is untouched. Historically the picked texts were then just
 semicolon-joined from many distinct hand-written phrasings per
 condition (see the *_LINES lists below) so it read as actually written
 about today, not a form letter. Session request ("revamp the morning
-brief" with a free AI) added a step on top: render() now asks Gemini
-(_ai_sentence, gemini_client.generate) to weave those same picked
+brief" with a free AI) added a step on top: render() now asks Groq
+(_ai_sentence, groq_client.generate) to weave those same picked
 texts into real flowing prose instead of a mechanical join — the
 *_LINES pool still exists and is still what gets picked from and
 fed to the AI, and is also the exact fallback if the AI call fails for
@@ -18,7 +18,7 @@ any reason (missing key, rate limit, network), so this never depends
 on a third-party service staying up. Picked-text selection is stable
 for the whole day (seeded by the date + a salt per category, not
 re-randomized every rerun); the AI phrasing is cached per exact prompt
-for GENERATE_CACHE_TTL_SECONDS (see gemini_client), so it also doesn't
+for GENERATE_CACHE_TTL_SECONDS (see groq_client), so it also doesn't
 reword itself every 5s rerun.
 
 Global, not page-local (like commute_reminder.render_leave_headline) —
@@ -41,7 +41,7 @@ import commute_client
 import commute_reminder
 import ec_alerts
 import fuel_price_client
-import gemini_client
+import groq_client
 import market_yf_client
 import payday_schedule
 import waste_schedule
@@ -945,11 +945,11 @@ def _daylight_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
     return 1, _pick(lines, now, "daylight").format(**fmt)
 
 
-AI_REFRESH_SECONDS = 5 * 60  # session request: "for the daily morning brief... every five minutes is great" — see gemini_client.generate_periodic
+AI_REFRESH_SECONDS = 5 * 60  # session request: "for the daily morning brief... every five minutes is great" — see groq_client.generate_periodic
 
 
 def _ai_sentence(picked: list[str]) -> str | None:
-    """Same picked clause texts, woven by Gemini into one or two
+    """Same picked clause texts, woven by Groq into one or two
     flowing sentences instead of the mechanical semicolon-join below —
     session request: "revamp the morning brief" with a free AI, then
     "i want the daily recap to have a jarvis type energy from iron
@@ -970,7 +970,7 @@ def _ai_sentence(picked: list[str]) -> str | None:
     own in-character opener to clash with; GREETINGS is now only used
     on the fallback path). Real calls throttled to once per
     AI_REFRESH_SECONDS regardless of how often render() calls this
-    (every 5s during the whole morning window) — see gemini_client.
+    (every 5s during the whole morning window) — see groq_client.
     generate_periodic. None (falls back to the plain join + a random
     greeting) on any failure with nothing usable already cached."""
     facts = "; ".join(picked)
@@ -994,7 +994,7 @@ def _ai_sentence(picked: list[str]) -> str | None:
         f"reads better. Address {USER_FIRST_NAME} by name naturally somewhere in the text. Start "
         "with a capital letter and end with a period. Facts: " + facts
     )
-    return gemini_client.generate_periodic("morning_briefing_sentence", AI_REFRESH_SECONDS, prompt)
+    return groq_client.generate_periodic("morning_briefing_sentence", AI_REFRESH_SECONDS, prompt)
 
 
 def render(now: datetime, weather: dict | None, air_quality: dict | None) -> None:
