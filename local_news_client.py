@@ -2,9 +2,9 @@
 official 511 Ontario road events, and keyword-matched construction
 items, not general local-news (which mixes in lifestyle pieces and
 cross-posted "Good morning, North Bay!" weather fluff from other
-sections). Deliberately separate from news.py: that module's entire
-filtering apparatus (is_market_relevant, classify, FED_BOC_INCLUDE,
-...) is tuned for financial news specifically — a police-beat headline
+sections). Deliberately separate from news.py: that module's whole
+classification pipeline (decide(), AI-judged — see its own docstring)
+is tuned for financial news specifically — a police-beat headline
 would just get discarded by it, not surfaced.
 """
 

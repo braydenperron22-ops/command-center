@@ -1,5 +1,6 @@
 """RSS-based news — powers breaking-news alerts AND the News page's
-rolling 24h feed, plus keyword-scanning for the Conflicts page.
+rolling 24h feed, plus (via is_clickbait) a shared pre-filter for the
+Conflicts page.
 
 No API key for the feeds themselves: pulls from the Fed's own
 press-release feed (zero-noise, it IS the source) plus a few general
@@ -9,35 +10,44 @@ immediately as each one first appears rather than waiting to be read on
 the News page.
 
 Every headline's fate — show it at all, and if so Breaking or Market —
-used to be decided entirely by a hand-tuned keyword pipeline
-(is_clickbait/is_market_relevant/classify/is_important below). Session
-feedback: "I don't want to rely on a crappy RSS feed that feeds straight
-bullshit... I want it to be the filter, I want data-first truly
-informational headlines, and it gets to decide where these headlines
-fall, Breaking news or market news." `decide()` (bottom of the keyword
-section below) is now the one real entry point every caller in this
-module uses — it asks Gemini to make that same judgment with actual
-understanding instead of brittle keyword pairing, and only falls back to
-the original keyword pipeline when the AI call itself fails (missing
-key, rate limit, network — see gemini_client.generate's own docstring).
-An explicit AI REJECT is trusted as final and never second-guessed by
-the keyword filter; the keyword functions themselves are untouched and
-still exactly what's used when the AI is unavailable.
+used to be decided by a hand-tuned keyword pipeline, then by an AI call
+per individual headline as each one arrived. Session feedback moved
+this again: "im only getting slop red headlines rn. maybe ping the ai
+every five minutes to find genuine headlines and only have them shown
+through the ai." Per-headline AI calls turned out to have the same
+failure mode as the keyword system whenever the free tier's per-minute
+limit got hit mid-burst — a real headline's decide() call would fail
+and silently fall back to the old, much looser keyword pipeline, which
+is exactly where the "slop" was coming from.
 
-`decide()` also rewrites the displayed headline itself when it can —
-session feedback: "theres a lot of headlines who dont tell me a whole
-lot... wiston shares surge (by how much???)... I need numbers, context,
-and data in a short concise headline." Real feeds' <description> is
-often the only place the actual number lives (sometimes it's empty —
-Yahoo Finance never sets one — or just a duplicate of the title, but
-sometimes it has exactly the figure the headline is missing); see
-_ai_judge's own docstring for why it's explicitly forbidden from
-inventing a number that isn't actually present in that text — a
-confidently wrong figure would be worse than a vague headline here.
+Now: _run_batch_decide() sends every not-yet-classified headline to
+Gemini in ONE call, throttled to at most once per BATCH_REFRESH_SECONDS
+(5 minutes) regardless of how often it's invoked. decide() itself is
+now a pure cache lookup — no network call, no fallback. A headline
+that hasn't been reached by a batch yet (or that a batch call flat-out
+failed to reach) simply doesn't show anywhere until a later batch
+classifies it; there is no keyword-based backstop anymore, by design —
+"only have them shown through the ai" means exactly that. is_clickbait
+and the term lists it depends on are the one piece of the old keyword
+system kept, since conflict_news.py separately reuses it as a pre-
+filter before its own AI overview.
+
+decide() also carries the display headline itself, possibly rewritten
+by the AI — session feedback: "theres a lot of headlines who dont tell
+me a whole lot... wiston shares surge (by how much???)... I need
+numbers, context, and data in a short concise headline." Real feeds'
+<description> is often the only place the actual number lives
+(sometimes it's empty — Yahoo Finance never sets one — or just a
+duplicate of the title, but sometimes it has exactly the figure the
+headline is missing); see _build_batch_prompt's own docstring for why
+the model is explicitly forbidden from inventing a number that isn't
+actually present in that text — a confidently wrong figure would be
+worse than a vague headline here.
 """
 
 import functools
 import hashlib
+import json
 import re
 import time
 from datetime import datetime, timezone
@@ -80,43 +90,13 @@ MAX_SEEN_HEADLINES = 500
 STRETCH_END = 1.8
 SLIDE_END = 3.0
 
-FED_BOC_INCLUDE = [
-    "fomc statement", "fomc meeting", "rate decision", "interest rate decision",
-    "rate hike", "rate cut", "raises rates", "cuts rates", "holds rates", "holds interest rates",
-    "jerome powell", "bank of canada", "boc rate", "tiff macklem", "fed chair",
-    "takes oath of office", "sworn in as chair", "steps down as chair", "resigns as chair",
-    "named fed chair", "confirmed as fed chair", "quantitative easing", "quantitative tightening",
-    "dot plot", "emergency meeting", "emergency rate", "press conference",
-    "rate pause", "pauses rate", "hawkish pivot", "dovish pivot", "balance sheet runoff",
-    "tapering", "forward guidance", "rate path",
-]
-# The Fed's own RSS feed is mostly routine bank-supervision paperwork —
-# these show up alongside genuine policy news and would otherwise slip
-# through on any headline that happens to say "Federal Reserve".
-FED_BOC_EXCLUDE = [
-    "enforcement action", "triennial payments study", "stress test",
-    "distressed or underserved", "reputation risk", "data standards",
-    "customer identification program", "results will be released", "stablecoin issuers",
-    "middle-income geographies", "passing of",
-]
-DATA_PRINT_TERMS = [
-    "cpi", "consumer price index", "inflation data", "jobs report",
-    "nonfarm payrolls", "unemployment rate", "gdp growth", "employment situation",
-    "gross domestic product", "inflation report", "retail sales", "ppi",
-    "producer price index", "consumer confidence", "housing starts",
-]
-SURPRISE_TERMS = [
-    "unexpectedly", "surprise", "beats estimates", "misses estimates",
-    "higher than expected", "lower than expected", "surges", "plunges",
-    "hotter than expected", "cooler than expected", "tops forecast", "misses forecast",
-    "jumps", "tumbles", "slows more than", "sharply higher", "sharply lower",
-    "sinks", "soars", "spikes",
-]
-# name/ticker variant -> canonical ticker symbol. A dict (not a flat
-# list) so a detected company can be resolved to an actual tradable
-# symbol — used both for the classify() Earnings pairing check (as
-# EARNINGS_COMPANIES.keys()) and to look up a company's 1-year return
-# for the News page's inline ticker badge (headline_tickers.py).
+# name/ticker variant -> canonical ticker symbol. A dict, not a flat
+# list, so a detected company can be resolved to an actual tradable
+# symbol — used by headline_tickers.py to look up a company's 1-year
+# return for the News page's inline ticker badge. (Used to also drive
+# this module's own keyword-based Earnings classification — that's
+# gone now that decide() is AI-first, see this module's own docstring
+# — but headline_tickers.py's own use is unrelated and still live.)
 EARNINGS_COMPANIES = {
     # Mega-cap tech.
     "apple": "AAPL", "aapl": "AAPL", "microsoft": "MSFT", "msft": "MSFT",
@@ -254,71 +234,6 @@ EARNINGS_COMPANIES = {
     "honda motor": "HMC", "honda": "HMC", "infosys": "INFY",
     "icici bank": "IBN", "hdfc bank": "HDB",
 }
-EARNINGS_TERMS = [
-    "earnings", "quarterly results", "beats estimates", "misses estimates",
-    "guidance", "q1 results", "q2 results", "q3 results", "q4 results", "profit",
-    "revenue", "quarterly report",
-]
-MACRO_SHOCK_TERMS = [
-    "recession fears", "banking crisis", "financial crisis", "market crash",
-    "stocks plunge", "stock market sell-off", "bear market", "debt default",
-    "credit downgrade", "circuit breaker", "market meltdown", "stocks tumble",
-    "flash crash", "contagion fears", "systemic risk",
-    # Filled real gaps — genuinely major, unambiguous single-word/phrase
-    # events that weren't covered by anything above.
-    "bankruptcy", "bailout", "bank run", "trading halted", "halts trading",
-    "market rout", "worst day since", "biggest drop since", "stocks crash",
-    "stocks collapse", "shares crash", "shares collapse", "wipes out",
-    "credit crunch", "liquidity crisis",
-]
-# Genuinely huge M&A ("$X billion deal") and market-milestone headlines
-# ("record high") had no coverage at all before — neither fit the
-# existing categories, so big deal/record-setting news was never
-# flagged as breaking no matter how significant.
-MA_TERMS = [
-    "to acquire", "acquires", "announces acquisition", "merger agreement",
-    "agrees to buy", "takeover bid", "hostile takeover", "buyout deal",
-    "to merge with", "acquisition of",
-]
-MA_SCALE_TERMS = ["billion", "trillion"]
-MILESTONE_TERMS = [
-    "record high", "record low", "all-time high", "all-time low",
-    "closes at a record", "biggest gain since", "best day since",
-]
-
-# Deliberately looser than the breaking-news categories above — those
-# require a topic AND a surprise/magnitude qualifier together, which is
-# right for something worth interrupting the screen for, but far too
-# narrow for a general news feed. These RSS feeds mix real financial
-# content with lifestyle/celebrity fluff (weddings, parenting advice,
-# travel pieces), so this still requires ONE real market/finance signal —
-# just not the strict pairing — to keep the feed relevant without being
-# nearly empty.
-#
-# Deliberately excludes bare "fed"/"federal reserve" — the Fed's own feed is
-# mostly routine bank-supervision paperwork (same issue as the breaking-news
-# filter), and matching on those terms let dozens of procedural notices
-# crowd out more relevant content. Genuinely policy-relevant Fed news still
-# qualifies via FED_BOC_INCLUDE below.
-# Deliberately excludes a bare "rate" — it word-boundary-matches ANY rate
-# ("discount rate," "birth rate," "graduation rate"), not just financial
-# ones, and was letting routine Fed committee-minutes headlines through
-# just because they happened to mention a meeting about rates. The
-# specific rate-related phrasing that actually signals real news is
-# already covered by FED_BOC_INCLUDE ("rate hike," "rate decision," etc.)
-# and "bond"/"yield" below.
-GENERAL_MARKET_TERMS = [
-    "stock", "shares", "earnings", "ipo", "buy rating", "sell rating",
-    "price target", "outperform", "underperform", "upgrade", "downgrade",
-    "dividend", "etf", "market cap", "bond", "yield", "mortgage rate", "interest rate",
-    "inflation", "cpi", "gdp", "jobs report", "unemployment", "recession",
-    "economy", "economic", "rally", "sell-off", "selloff", "surge", "plunge",
-    "futures", "wall street", "dow jones", "s&p", "nasdaq", "oil", "opec",
-    "crude", "takeover", "acquisition", "merger", "analyst", "valuation",
-    "warren buffett", "buffett", "hedge fund", "portfolio",
-]
-TICKER_PATTERN = re.compile(r"\([A-Z]{2,5}\)")
-
 # Clickbait/speculation tells. The goal: "what just happened," not "what
 # if" — a real news headline reports a fact that already occurred, it
 # doesn't tease an answer, hedge with a maybe, or dress up someone's
@@ -415,79 +330,10 @@ def is_clickbait(headline: str) -> bool:
     return any(p.search(h) for p in CLICKBAIT_PATTERNS)
 
 
-@functools.lru_cache(maxsize=2048)
-def is_market_relevant(headline: str) -> bool:
-    """Looser filter for the News page: any real finance/market signal
-    qualifies, not just the narrow topic+surprise combos above — except
-    clickbait, which is excluded outright regardless of what else it
-    matches (see is_clickbait).
-
-    Cached: this app reruns its whole script every second for the clock
-    tick, and `fetch_headlines()` only changes every 3 minutes (its own
-    cache TTL) — without memoizing, the same ~100 headlines were getting
-    re-run through a few dozen regex checks each, every single second,
-    for no reason. The input is just a string, so a plain function cache
-    is safe (no session/request state involved).
-    """
-    if is_clickbait(headline):
-        return False
-    h = headline.lower()
-    # Routine Fed supervisory paperwork (stress tests, enforcement
-    # actions, etc.) is excluded outright — this used to only guard the
-    # strict FED_BOC_INCLUDE path above, but a stress-test press release
-    # mentioning "recession" (as in "confirms banks can weather a severe
-    # recession") was slipping in through GENERAL_MARKET_TERMS instead,
-    # which this blanket check up front closes for good.
-    if _contains_any(h, FED_BOC_EXCLUDE):
-        return False
-    if TICKER_PATTERN.search(headline):
-        return True
-    if _contains_any(h, FED_BOC_INCLUDE):
-        return True
-    return _contains_any(h, GENERAL_MARKET_TERMS)
-
-
-@functools.lru_cache(maxsize=2048)
-def classify(headline: str) -> str | None:
-    """Cached for the same reason as is_market_relevant above."""
-    h = headline.lower()
-    if _contains_any(h, FED_BOC_INCLUDE) and not _contains_any(h, FED_BOC_EXCLUDE):
-        return "Fed/BoC"
-    if _contains_any(h, DATA_PRINT_TERMS) and _contains_any(h, SURPRISE_TERMS):
-        return "Data Surprise"
-    if _contains_any(h, EARNINGS_COMPANIES) and _contains_any(h, EARNINGS_TERMS):
-        return "Earnings"
-    if _contains_any(h, MACRO_SHOCK_TERMS):
-        return "Macro Shock"
-    if _contains_any(h, MA_TERMS) and _contains_any(h, MA_SCALE_TERMS):
-        return "Mergers"
-    if _contains_any(h, MILESTONE_TERMS):
-        return "Milestone"
-    return None
-
-
-def is_important(headline: str) -> bool:
-    """True if this headline matches one of the strict breaking
-    categories above — decides red (breaking) vs black (market news) in
-    the alert bar.
-
-    This used to be its own separate, looser check: a flat OR across
-    every term in every category's list, with no requirement that a
-    topic term be paired with its qualifier the way classify() requires
-    (a data-print term needs a surprise word alongside it; a company
-    name needs an earnings word alongside it). That looseness meant a
-    headline just containing "Apple" or "CPI" — with zero surprising or
-    earnings-related content — still flagged as breaking. Now it's
-    exactly classify()'s pairing logic; nothing gets to skip it.
-    """
-    return classify(headline) is not None
-
-
-# AI verdict tokens -> the exact same display strings classify() already
-# produces, so category_class() generates identical CSS class names to
-# what theme.py already styles for those six — BREAKING is the only new
-# one (a catch-all for something genuinely major that doesn't fit any
-# named category), and gets its own small theme.py addition.
+# AI verdict tokens -> display strings, used both for category_class()'s
+# CSS mapping and as the actual category shown. BREAKING is a catch-all
+# for something genuinely major that doesn't fit any named category, and
+# gets its own small theme.py addition.
 _AI_VERDICT_LABELS = {
     "FED_BOC": "Fed/BoC",
     "DATA_SURPRISE": "Data Surprise",
@@ -500,122 +346,163 @@ _AI_VERDICT_LABELS = {
 _AI_VALID_VERDICTS = {"REJECT", "MARKET"} | set(_AI_VERDICT_LABELS)
 
 
-def _ai_judge(headline: str, description: str) -> tuple[str | None, str | None]:
-    """(verdict, display_headline).
+# Session request: "maybe ping the ai every five minutes to find
+# genuine headlines." One batch call handles every pending headline at
+# once — cheap on the free tier's per-minute limit regardless of how
+# many new headlines actually showed up in the window, unlike the old
+# one-call-per-headline design that could burst past 15 RPM the moment
+# several new headlines arrived in the same 3-minute fetch cycle.
+BATCH_REFRESH_SECONDS = 5 * 60
+# Caps prompt/response size — a real burst beyond this just waits for
+# the next batch window rather than growing the request unbounded.
+BATCH_MAX_HEADLINES = 30
+BATCH_MAX_OUTPUT_TOKENS = 3000
 
-    verdict is one of REJECT / MARKET / FED_BOC / DATA_SURPRISE /
-    EARNINGS / MACRO_SHOCK / MERGERS / MILESTONE / BREAKING — or None
-    specifically if the AI call itself failed (see gemini_client.
-    generate), which decide() below must treat as "fall back to the
-    keyword pipeline," never as a rejection. Same six named categories
-    classify() already used, asked as real judgment calls instead of
-    keyword pairing.
+# hash -> decision dict (kept) or None (AI rejected). A key's absence
+# means "not yet reached by a batch" — decide() and _run_batch_decide()
+# both rely on that three-way distinction (see their own docstrings).
+# Plain module state (same convention as sports_client.py's own
+# _last_good_*/_delay_buffers, gemini_client's _periodic_cache) rather
+# than st.session_state: classification is shared across every browser
+# session hitting this one server process, not per-tab.
+_decided: dict[str, dict | None] = {}
+_last_batch_at: float = 0.0
 
-    display_headline is the headline text to actually show — session
-    complaint: "theres a lot of headlines who dont tell me a whole lot
-    ... wiston shares surge (by how much???) ... I need numbers,
-    context, and data in a short concise headline." Rewritten to
-    include a concrete number/figure ONLY when one is actually present
-    in `description` (the RSS item's own summary — often empty or a
-    plain duplicate of the title, several of these feeds just don't
-    carry one) and missing from the bare title. The prompt explicitly
-    forbids inventing, estimating, or recalling a number from the
-    model's own training knowledge — a wrong number stated confidently
-    is worse than a vague headline on a finance dashboard, so whenever
-    nothing safely groundable was actually available, this is just the
-    original headline verbatim. None (not the original headline) when
-    the call itself failed — decide() uses the real original in that
-    case, this return value is only meaningful alongside a real
-    verdict."""
-    context = f"Headline: {headline}"
-    if description and description.strip() and description.strip() != headline.strip():
-        context += f"\nArticle summary: {description.strip()}"
-    prompt = (
-        "You are a strict news editor for a personal finance/markets dashboard, doing two things "
-        "at once for this one headline.\n\n"
-        "TASK 1 — classify. Judge whether it's genuinely informational: reporting a fact that has "
-        "already happened, not clickbait, not a listicle ('5 stocks to buy'), not opinion/"
-        "analysis/commentary, not speculation ('could', 'might', 'expected to'), not an advice "
-        "column ('should you buy'), and specifically finance/markets/economy relevant (not "
-        "general news, sports, entertainment, lifestyle). Also REJECT routine Fed/regulator "
-        "administrative or supervisory business that isn't real news to a general reader — "
-        "enforcement actions against individual bank employees, routine stress-test results "
-        "confirming banks are fine, name/personnel changes, procedural notices — these read as "
-        "Fed-related but aren't; don't let them through as MARKET just because they mention the "
-        "Fed. If it fails any of this, the verdict is REJECT. Otherwise pick exactly one: "
-        "FED_BOC (a real Fed/BoC policy action — a rate decision, a genuinely market-moving "
-        "statement — not routine paperwork), DATA_SURPRISE (a major economic data release "
-        "meaningfully above/below "
-        "expectations), EARNINGS (a company's actual reported results/guidance), MACRO_SHOCK (a "
-        "crash/crisis/systemic event), MERGERS (a $1B+ announced deal), MILESTONE (a genuine "
-        "record high/low), MARKET (real but routine financial news), or BREAKING (something else "
-        "genuinely major that doesn't fit those).\n\n"
-        "TASK 2 — tighten the headline. Vague headlines that don't state the actual number "
-        "('shares surge', 'CPI comes in cooler than expected', 'oil prices climb') are much less "
-        "useful than ones that do. If the article summary below contains a specific number, "
-        "percentage, or figure that the bare headline is missing, rewrite the headline into one "
-        "short, concise, factual sentence that includes it. If NO real number is available "
-        "anywhere in the headline or summary below, do NOT invent, estimate, or guess one from "
-        "your own general knowledge — accuracy matters more than completeness here. In that case "
-        "just output the original headline, tightened for clarity if needed but with no "
-        "fabricated numbers.\n\n"
-        f"{context}\n\n"
-        "Respond in exactly this two-line format, nothing else:\n"
-        "VERDICT: <one word from REJECT/MARKET/FED_BOC/DATA_SURPRISE/EARNINGS/MACRO_SHOCK/"
-        "MERGERS/MILESTONE/BREAKING>\n"
-        "HEADLINE: <the headline to show>"
+
+def _hash(headline: str) -> str:
+    return hashlib.sha1(headline.encode()).hexdigest()
+
+
+def _build_batch_prompt(items: list[dict]) -> str:
+    """One prompt judging every item in `items` independently — same
+    two-task judgment the old per-headline version asked (keep-or-
+    reject + category; rewrite with real numbers when available), just
+    asked once for many headlines instead of once per headline. Numbers
+    are only ever pulled from each item's own `description` (the RSS
+    item's own summary, often empty or a bare duplicate of the title —
+    several of these feeds just don't carry one) and NEVER invented,
+    estimated, or recalled from the model's own training knowledge — a
+    confidently wrong figure would be worse than a vague headline on a
+    finance dashboard."""
+    lines = []
+    for i, item in enumerate(items):
+        entry = f"{i + 1}. HEADLINE: {item['headline']}"
+        description = (item.get("description") or "").strip()
+        if description and description != item["headline"].strip():
+            entry += f"\n   SUMMARY: {description}"
+        lines.append(entry)
+    headline_block = "\n".join(lines)
+    return (
+        "You are a strict news editor for a personal finance/markets dashboard. Judge EACH of "
+        f"the following {len(items)} headlines independently — they are unrelated to each "
+        "other.\n\n"
+        "For each: is it genuinely informational — reporting a fact that has already happened, "
+        "not clickbait, not a listicle ('5 stocks to buy'), not opinion/analysis/commentary, not "
+        "speculation ('could', 'might', 'expected to'), not an advice column ('should you buy') "
+        "— and specifically finance/markets/economy relevant (not general news, sports, "
+        "entertainment, lifestyle)? Also REJECT routine Fed/regulator administrative or "
+        "supervisory business that isn't real news to a general reader — enforcement actions "
+        "against individual bank employees, routine stress-test results confirming banks are "
+        "fine, name/personnel changes, procedural notices — these read as Fed-related but "
+        "aren't; don't let them through as MARKET just because they mention the Fed. If a "
+        "headline fails any of this, its verdict is REJECT.\n\n"
+        "Otherwise pick exactly one category: FED_BOC (a real Fed/BoC policy action — a rate "
+        "decision, a genuinely market-moving statement — not routine paperwork), DATA_SURPRISE "
+        "(a major economic data release meaningfully above/below expectations), EARNINGS (a "
+        "company's actual reported results/guidance), MACRO_SHOCK (a crash/crisis/systemic "
+        "event), MERGERS (a $1B+ announced deal), MILESTONE (a genuine record high/low), MARKET "
+        "(real but routine financial news), or BREAKING (something else genuinely major that "
+        "doesn't fit those).\n\n"
+        "Also tighten each headline: vague headlines that don't state the actual number ('shares "
+        "surge', 'CPI comes in cooler than expected', 'oil prices climb') are much less useful "
+        "than ones that do. If a headline's SUMMARY above contains a specific number, "
+        "percentage, or figure the bare headline is missing, rewrite it into one short, concise, "
+        "factual sentence that includes it. If no real number is available anywhere in that "
+        "headline's own text, do NOT invent, estimate, or guess one from your own general "
+        "knowledge — in that case just use the original headline, tightened for clarity if "
+        "needed but with no fabricated numbers. Never borrow a number from a DIFFERENT "
+        "headline in this list.\n\n"
+        f"{headline_block}\n\n"
+        "Respond with ONLY a JSON array, no markdown code fences, no other text, exactly one "
+        "object per headline above IN THE SAME ORDER, in exactly this shape (omit \"headline\" "
+        "entirely for a REJECT):\n"
+        '[{"verdict": "REJECT"}, {"verdict": "MARKET", "headline": "..."}, '
+        '{"verdict": "FED_BOC", "headline": "..."}]'
     )
+
+
+def _run_batch_decide() -> None:
+    """Classifies every currently-pending headline (from the current
+    fetch_headlines() pool, not already in _decided) in one Gemini
+    call, throttled to at most once per BATCH_REFRESH_SECONDS — see
+    this module's own docstring. A no-op if it's not yet time for a
+    new batch, or there's nothing pending. Call this once per rerun
+    before relying on decide() for fresh coverage; get_new_alerts()
+    already does, and since that runs early in app.py regardless of
+    which page is up, callers like pages_news.py don't need to call
+    this themselves."""
+    global _last_batch_at
+    now = time.time()
+    if now - _last_batch_at < BATCH_REFRESH_SECONDS:
+        return
+    pending = [item for item in fetch_headlines() if _hash(item["headline"]) not in _decided][:BATCH_MAX_HEADLINES]
+    if not pending:
+        _last_batch_at = now
+        return
+    # Set before the call, not after — a failed attempt still counts
+    # against the cadence, so a rate-limit blip can't turn into a tight
+    # retry loop; the next real attempt waits the full window regardless.
+    _last_batch_at = now
+    prompt = _build_batch_prompt(pending)
     # Low temperature — this is a judgment call that should be
     # consistent, not creative prose (see gemini_client.generate's own
     # docstring: confirmed live that the default 0.7 made the exact
     # same headline flip between two different verdicts across repeat
     # calls).
-    result = gemini_client.generate(prompt, temperature=0.1)
+    result = gemini_client.generate(prompt, temperature=0.1, max_output_tokens=BATCH_MAX_OUTPUT_TOKENS)
     if result is None:
-        return None, None
-    verdict = None
-    display_headline = None
-    for line in result.splitlines():
-        line = line.strip()
-        if line.upper().startswith("VERDICT:"):
-            token = line.split(":", 1)[1].strip().upper().rstrip(".")
-            verdict = token if token in _AI_VALID_VERDICTS else "REJECT"
-        elif line.upper().startswith("HEADLINE:"):
-            display_headline = line.split(":", 1)[1].strip()
-    if verdict is None:
-        # Response didn't come back in the expected format at all — safer
-        # to drop it than to either show unreviewed text or fall through
-        # to the keyword pipeline, which a real (if unparseable) AI
-        # response shouldn't be second-guessed by.
-        return "REJECT", None
-    return verdict, display_headline or headline
+        return  # everything in `pending` stays pending, retried next window
+    text = result.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else text
+        text = text.rsplit("```", 1)[0]
+    try:
+        verdicts = json.loads(text.strip())
+    except Exception:
+        return  # unparseable response — stays pending, retried next window
+    if not isinstance(verdicts, list):
+        return
+    for item, verdict_obj in zip(pending, verdicts):
+        h = _hash(item["headline"])
+        if not isinstance(verdict_obj, dict):
+            continue
+        verdict = str(verdict_obj.get("verdict", "")).strip().upper()
+        if verdict not in _AI_VALID_VERDICTS or verdict == "REJECT":
+            _decided[h] = None
+            continue
+        display_headline = (verdict_obj.get("headline") or "").strip() or item["headline"]
+        if verdict == "MARKET":
+            _decided[h] = {"headline": display_headline, "category": "Market News", "important": False}
+        else:
+            _decided[h] = {"headline": display_headline, "category": _AI_VERDICT_LABELS[verdict], "important": True}
 
 
-def decide(headline: str, description: str = "") -> dict | None:
+def decide(headline: str) -> dict | None:
     """The one real decision every caller in this module uses:
-    {"headline": <display text, possibly AI-rewritten with real numbers
-    — see _ai_judge>, "category": <display name>, "important": bool} to
-    show this headline, None to drop it entirely. AI-first — falls back
-    to the original keyword pipeline (is_market_relevant + classify),
-    with the headline verbatim, only when the AI call itself failed; an
-    explicit AI REJECT is trusted as final, never re-checked against
-    the keyword filter."""
-    verdict, display_headline = _ai_judge(headline, description)
-    if verdict is None:
-        if not is_market_relevant(headline):
-            return None
-        cat = classify(headline)
-        return {"headline": headline, "category": cat or "Market News", "important": cat is not None}
-    if verdict == "REJECT":
-        return None
-    if verdict == "MARKET":
-        return {"headline": display_headline, "category": "Market News", "important": False}
-    return {"headline": display_headline, "category": _AI_VERDICT_LABELS[verdict], "important": True}
+    {"headline": <display text, possibly AI-rewritten with real
+    numbers>, "category": <display name>, "important": bool} to show
+    this headline, None to drop it — either because the AI rejected it,
+    or because no batch has reached it yet (see _run_batch_decide).
+    There is no keyword-based fallback anymore — session request: "only
+    have them shown through the ai." Pure cache lookup, no network
+    call; callers must have already given _run_batch_decide a chance to
+    run this rerun for the answer to be fresh."""
+    return _decided.get(_hash(headline))
 
 
 def category_class(category: str) -> str:
-    """CSS class for a classify()/"Market News" category — shared so the
-    News page's row accent color and the alert bar's tag color are always
+    """CSS class for a decide()-returned category — shared so the News
+    page's row accent color and the alert bar's tag color are always
     the same mapping, not two copies that could drift apart."""
     return "news-cat-" + category.lower().replace("/", "-").replace(" ", "-")
 
@@ -625,9 +512,9 @@ _HTML_TAG = re.compile(r"<[^>]+>")
 
 def _strip_html(raw: str) -> str:
     """Some feeds' <description> carries inline markup (a stray <a>/<b>)
-    — plain text is all _ai_judge needs, and stripped-but-imperfect is
-    fine here since this only ever feeds a prompt, never gets rendered
-    as HTML itself."""
+    — plain text is all _build_batch_prompt needs, and stripped-but-
+    imperfect is fine here since this only ever feeds a prompt, never
+    gets rendered as HTML itself."""
     return _HTML_TAG.sub("", raw).strip()
 
 
@@ -666,10 +553,10 @@ def fetch_headlines() -> list[dict]:
                 # Finance never sets it) or just a duplicate of the
                 # title (the Fed's feed), but sometimes carries the
                 # concrete number/figure the headline itself lacks. Fed
-                # to _ai_judge as grounding for its headline rewrite —
-                # see that function's own docstring for why it's only
-                # ever allowed to use a number if it's actually here,
-                # never invented.
+                # to _build_batch_prompt as grounding for its headline
+                # rewrite — see that function's own docstring for why
+                # it's only ever allowed to use a number if it's
+                # actually here, never invented.
                 description = _strip_html(item.findtext("description") or "")
                 if title:
                     items.append(
@@ -693,10 +580,17 @@ def get_new_alerts() -> list[dict]:
     as the News page itself so the breaking-news bar is just the News
     page's feed, surfaced the moment each headline first appears.
 
+    Calls _run_batch_decide() first — this is the one call site that
+    runs every rerun regardless of which page is up, so it's what keeps
+    the batch cadence moving even when nobody's looking at the News or
+    Conflicts pages; pages_news.py relies on this having already run
+    earlier in the same script execution and just calls decide() itself.
+
     The very first call establishes a baseline (marks whatever already
     qualifies as "seen" without alerting) so opening the dashboard doesn't
     immediately flood every historical headline as if it just broke.
     """
+    _run_batch_decide()
     # A plain set only ever grew — fine for a normal Streamlit session,
     # but this kiosk's one browser tab can stay open for weeks without a
     # reload, so it was a real unbounded-forever accumulator on a process
@@ -710,20 +604,19 @@ def get_new_alerts() -> list[dict]:
 
     alerts = []
     for item in fetch_headlines():
-        # Marked seen (and skipped on every later cycle) BEFORE calling
-        # decide() — a REJECT verdict is real and final, so a headline
-        # that keeps showing up in the feed's own window shouldn't burn
-        # a fresh AI call re-litigating the same rejection every 3
-        # minutes it's still there.
+        # decide() is a plain cache lookup now (no network call), so
+        # checking it before "seen" costs nothing — a still-pending or
+        # rejected headline just keeps getting skipped for free until a
+        # later batch (if ever) actually classifies it as keepable.
+        decision = decide(item["headline"])
+        if decision is None:
+            continue
         h = hashlib.sha1(item["headline"].encode()).hexdigest()
         if h in seen:
             continue
         seen[h] = True
         if len(seen) > MAX_SEEN_HEADLINES:
             seen.pop(next(iter(seen)))
-        decision = decide(item["headline"], item.get("description", ""))
-        if decision is None:
-            continue
         if baseline_done:
             alerts.append({**item, **decision})
 

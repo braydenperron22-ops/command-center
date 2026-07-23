@@ -1,9 +1,12 @@
 """News page: general market/finance headlines from the free RSS feeds.
 
-Uses `news.decide` — the same AI-first verdict that drives the
+Uses `news.decide` — the same AI-batch verdict that drives the
 breaking-news bar, so that bar is effectively this page's feed surfaced
 the moment each headline first appears rather than something separately
-and more strictly curated.
+and more strictly curated. decide() is a pure cache lookup (see its own
+docstring) — the actual classification happens in news._run_batch_decide,
+which get_new_alerts() already calls every rerun regardless of page, so
+this page doesn't need to trigger it itself.
 """
 
 import hashlib
@@ -46,7 +49,7 @@ def render():
         h = hashlib.sha1(item["headline"].encode()).hexdigest()
         if h in seen_at:
             continue
-        decision = news.decide(item["headline"], item.get("description", ""))
+        decision = news.decide(item["headline"])
         if decision is None:
             continue
         # Captured once, at first sight, and locked in from then on:
