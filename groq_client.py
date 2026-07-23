@@ -27,9 +27,9 @@ obligation, only how rarely it should actually trigger.
 Two guardrails live here, applied uniformly to every caller regardless
 of which throttle wrapper they use (generate_periodic's cadence cache
 or news.py's own hand-rolled one) since both eventually call
-_generate_or_raise: an overnight pause window (AI_PAUSE_START_HOUR/
-AI_PAUSE_END_HOUR) and a hard daily token budget (DAILY_TOKEN_BUDGET) —
-see each constant's own comment. Session request, after a day of
+_generate_or_raise: an overnight pause window (see _in_pause_window,
+synced to the bedroom monitor's own smart-plug schedule) and a hard
+daily token budget (DAILY_TOKEN_BUDGET) — see each one's own comment. Session request, after a day of
 testing discovered Groq's real cap is 100k tokens/day (not just the
 12k/min the response headers had already surfaced): "make everything
 cheaper by lowering how often theyre pulled... completely pause AI
@@ -70,9 +70,11 @@ from zoneinfo import ZoneInfo
 
 import requests
 import streamlit as st
+from astral import LocationInfo
+from astral.sun import sun
 
 import gemini_client
-from config import TIMEZONE
+from config import TIMEZONE, WEATHER_LAT, WEATHER_LON
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -107,12 +109,26 @@ DAILY_TOKEN_BUDGET = 100_000
 # go down gracefully as time passes... does the badge know this."
 ROLLING_WINDOW_SECONDS = 24 * 60 * 60
 # Session request: "we can completely pause AI pulls overnight and
-# gracefully start it back up around 3am." Local time (America/
-# Toronto — see config.TIMEZONE), same basis morning_briefing.py's own
-# 5am-10am window already uses, so the two windows agree with each
-# other instead of one being UTC and one being local.
-AI_PAUSE_START_HOUR = 23
-AI_PAUSE_END_HOUR = 3
+# gracefully start it back up around 3am" — refined further to "ai
+# sleep period should be from 10pm to 4am no need for it pulling while
+# screen is off... sync it with the smart plug turning off." The
+# bedroom monitor's own smart plug (govee_lighting.sync_plug) already
+# goes off at last light and on at first light — real civil-twilight
+# dawn/dusk, not a fixed clock window, so it drifts with the actual
+# season rather than being wrong by up to an hour either side of
+# solstice. Reusing the exact same astral calculation here (not
+# weather_client._first_last_light — that's the weather module's own
+# cached, network-dependent reading; this needs a cheap, local,
+# dependency-free calculation groq_client can run on its own) keeps
+# the two genuinely in sync instead of two hand-picked clock times that
+# could quietly drift apart from each other and from the actual screen
+# state over the year.
+_LOCATION = LocationInfo(latitude=WEATHER_LAT, longitude=WEATHER_LON, timezone=TIMEZONE)
+
+
+def _first_last_light(day: datetime.date) -> tuple[datetime.datetime, datetime.datetime]:
+    s = sun(_LOCATION.observer, date=day, tzinfo=ZoneInfo(TIMEZONE))
+    return s["dawn"].replace(tzinfo=None), s["dusk"].replace(tzinfo=None)
 
 # Two genuinely separate Groq accounts, tried in order — session
 # request: "what if i use my burner gmail account to make a second
@@ -145,9 +161,25 @@ def _local_now() -> datetime.datetime:
 
 
 def _in_pause_window(now: datetime.datetime) -> bool:
-    # Wraps past midnight (23 -> 3), so this is "hour >= start OR hour <
-    # end", not a plain range check.
-    return now.hour >= AI_PAUSE_START_HOUR or now.hour < AI_PAUSE_END_HOUR
+    """True outside today's first_light..last_light window — same
+    civil-twilight bounds the smart plug uses, so "screen off" and "AI
+    paused" are the same real condition, not two schedules that happen
+    to roughly agree. Uses `now`'s own calendar date for both bounds:
+    dawn and dusk both fall later the same day, so unlike the old fixed
+    23:00-03:00 range this never needs a midnight-wraparound check.
+
+    `now` is expected timezone-aware (see _local_now — kept that way
+    since _reserve_budget's .timestamp() call needs it), but
+    _first_last_light returns naive datetimes (same convention
+    weather_client's own version and govee_lighting.sync_plug already
+    use). Stripped to naive here, locally, just for this comparison —
+    confirmed live this matters: comparing aware against naive raises
+    TypeError, which app.py's blanket try/except around the badge's
+    render call was silently swallowing, making the whole badge vanish
+    with no visible error at all rather than a wrong-but-visible one."""
+    first_light, last_light = _first_last_light(now.date())
+    naive_now = now.replace(tzinfo=None)
+    return not (first_light <= naive_now < last_light)
 
 
 def _rolling_used(account: str, now_ts: float) -> int:
