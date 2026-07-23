@@ -1873,10 +1873,18 @@ html, body, [class*="css"] {
    glance, not something that needs to compete for focus the way a
    breaking headline does. Lower z-index than the pinned headlines
    (which sit at 499-501) since it never needs to sit above anything —
-   nothing else lives in this corner. */
+   nothing else lives in this corner other than Streamlit Community
+   Cloud's own "Hosted with Streamlit" badge, which the app itself
+   doesn't control (session report: "the red streamlit logo is covering
+   the ai bar" — same corner Streamlit's badge already claimed once
+   before, see .st-key-jumbotron_controls's own comment on being moved
+   off bottom-right for the identical reason). Bumped up to clear it
+   rather than trying to out-z-index or hide it — that badge isn't part
+   of this app's own DOM (survives the #MainMenu/header/footer hiding
+   rule above), so there's nothing here to hide it with anyway. */
 .ai-usage-bar {
     position: fixed;
-    bottom: 14px;
+    bottom: 60px;
     right: 14px;
     z-index: 400;
     display: flex;
