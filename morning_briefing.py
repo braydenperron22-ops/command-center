@@ -962,14 +962,25 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     minutes"/"0.8%", harder to scan at a glance on a kiosk than actual
     prose would suggest.
 
-    `now` exists solely so the day-of-week/date can be handed over as a
-    real fact — caught live on an actual Thursday: "Generally, Mondays
-    are a drag, but hey Brayden..." The picked clauses never included
-    what day it is, so despite the prompt's own "never invent a fact"
-    rule, the model just picked one for flavor. Grounding it the same
-    way the IBM-headline fix grounded numbers earlier this session —
-    give it the real thing instead of leaving a gap it'll fill with
-    something plausible-sounding.
+    `now` exists so the day-of-week/date can ride along as just another
+    fact in the list — caught live on an actual Thursday: "Generally,
+    Mondays are a drag, but hey Brayden..." The picked clauses never
+    included what day it is, so despite the prompt's own "never invent
+    a fact" rule, the model just picked one for flavor. Originally
+    fixed by giving it the real day in its own dedicated paragraph
+    ("if you reference the day of the week, it must be this one") —
+    which then backfired into ITS OWN problem: session feedback,
+    "having that second paragraph is forcing him to use the bleak
+    usually ____ is a ____ which is super plain and unoriginal." Calling
+    special attention to the date as something worth a dedicated
+    instruction was itself the nudge toward that one stock opener every
+    time. Folded into the plain facts list instead (see `facts` below)
+    so it's grounded without being staged as The Bit.
+
+    Session feedback on tone, same conversation: "there can be mean or
+    dark jokes directed towards me, i dont care" (dropping the earlier
+    "nothing mean-spirited AT Brayden" carve-out) and "make it lean on
+    its personality more, kind of lame rn."
 
     Facts and their priority ordering are otherwise untouched (still
     decided entirely by the *_clause functions above); this only
@@ -982,23 +993,31 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     (every 5s during the whole morning window) — see groq_client.
     generate_periodic. None (falls back to the plain join + a random
     greeting) on any failure with nothing usable already cached."""
-    facts = "; ".join(picked)
-    day_name = now.strftime("%A")
+    # Date deliberately NOT first in the list — confirmed live it kept
+    # leading the model straight into "Generally, [Day] is a [slog/
+    # grind/mixed bag], but..." verbatim every single time, even with
+    # an explicit "vary the structure" instruction and no dedicated
+    # paragraph calling it out. The opener template turned out to be a
+    # strong enough prior on its own that a soft nudge didn't beat it;
+    # burying the date mid-list plus the hard ban below is what
+    # actually broke it in testing.
+    facts = "; ".join(picked + [f"it's {now.strftime('%A, %B %d')}"])
     prompt = (
         f"You are {USER_FIRST_NAME}'s personal AI assistant, in the spirit of J.A.R.V.I.S. from "
-        "Iron Man — sharp, hyper-competent, quick with a comeback — but leaned toward genuinely "
-        "fun and sarcastic rather than stiff or overly formal. This needs to be enjoyable to read "
-        "first thing in the morning: real jokes, a playful jab, a slightly dark/morbid sense of "
-        "humor is welcome and encouraged — nothing mean-spirited AT "
-        f"{USER_FIRST_NAME}, just a wry, "
-        "bleak-humor take on the day's mundane realities (traffic, weather, a full calendar, red "
-        "markets — all fair game for a joke). Not corporate, not a stiff butler. You may open "
-        "with a brief in-character address if it fits naturally. The humor comes entirely from "
-        "how things are delivered, never from anything invented — do not add or invent any fact "
-        "not given below; every fact must actually appear.\n\n"
-        f"Today is {day_name}. If you reference the day of the week at all (a 'Monday dread' "
-        "type line, etc.), it must be this actual day — never a different or assumed one, and "
-        "don't force a day-of-week joke in if it doesn't fit naturally.\n\n"
+        "Iron Man — sharp, hyper-competent, genuinely funny rather than just pleasant. Real wit, "
+        "real edge: dry, cutting, deadpan, willing to roast "
+        f"{USER_FIRST_NAME} directly and make it a "
+        "little dark — he doesn't need protecting from the joke, mean is fine, go there. Not "
+        "corporate, not a stiff butler, not playing it safe. You may open with a brief "
+        "in-character address if it fits naturally, but two things are banned outright: starting "
+        "with the word 'Generally' (in any form — 'Generally,' 'Generally speaking,' etc.), and "
+        "any construction shaped like '[the day] is usually [a bad thing], but...' — swapping in a "
+        "different adjective (nightmare, slog, disaster, whatever) still counts as the same banned "
+        "template, it's the SHAPE that's overused, not the specific word. Come at the opening "
+        "differently every single time — lead with a stat, a blunt jab, a rhetorical question, "
+        "mid-thought, whatever — just never that one shape. The humor comes entirely from how "
+        "things are delivered, never from anything invented — do not add or invent any fact not "
+        "given below; every fact must actually appear, including the date if you use it.\n\n"
         "Always write numbers as actual digits, never spelled out as words — '18 minutes' and "
         "'0.8%' and '10:00 AM', not 'eighteen minutes' or 'zero point eight percent' or 'ten "
         "o'clock'. This is read at a glance on a screen, not literary prose, and digits are "
@@ -1007,7 +1026,7 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         f"reads better. Address {USER_FIRST_NAME} by name naturally somewhere in the text. Start "
         "with a capital letter and end with a period. Facts: " + facts
     )
-    return groq_client.generate_periodic("morning_briefing_sentence", AI_REFRESH_SECONDS, prompt)
+    return groq_client.generate_periodic("morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85)
 
 
 def render(now: datetime, weather: dict | None, air_quality: dict | None) -> None:
