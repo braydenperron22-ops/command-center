@@ -44,6 +44,7 @@ import fuel_price_client
 import gemini_client
 import groq_client
 import market_yf_client
+import ntfy_client
 import payday_schedule
 import waste_schedule
 import wildfire_client
@@ -1059,14 +1060,26 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         sentence = _ai_sentence(picked)
     except Exception:
         sentence = None
-    if sentence is not None:
-        # JARVIS opens the line himself (see _ai_sentence's own
-        # docstring) — no separate randomized greeting prefix here, or
-        # it would collide with his own in-character address.
-        st.markdown(f'<div class="morning-briefing">{sentence}</div>', unsafe_allow_html=True)
-        return
+    if sentence is None:
+        # JARVIS opens the line himself when this succeeds (see
+        # _ai_sentence's own docstring) — the plain fallback needs its
+        # own random greeting since there's no in-character opener to
+        # supply one.
+        plain = "; ".join(picked)
+        plain = plain[0].upper() + plain[1:] + "."
+        sentence = f"{_pick(GREETINGS, now, 'greeting')}{plain}"
 
-    sentence = "; ".join(picked)
-    sentence = sentence[0].upper() + sentence[1:] + "."
-    greeting = _pick(GREETINGS, now, "greeting")
-    st.markdown(f'<div class="morning-briefing">{greeting}{sentence}</div>', unsafe_allow_html=True)
+    _notify_new_brief(sentence, now)
+    st.markdown(f'<div class="morning-briefing">{sentence}</div>', unsafe_allow_html=True)
+
+
+def _notify_new_brief(sentence: str, now: datetime) -> None:
+    """Pushes the morning brief to the phone once per calendar day — the
+    first time render() produces a real brief that day (AI-written or
+    the plain fallback, whichever path it came from), not every 5s
+    rerun for the rest of the morning window. Session request: "morning
+    brief push... a little five AM push... that'd be sick."""
+    if st.session_state.get("morning_brief_notified_date") == now.date():
+        return
+    st.session_state["morning_brief_notified_date"] = now.date()
+    ntfy_client.send(title="Morning Brief", message=sentence, priority="default", tags="sunny")
