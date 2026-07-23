@@ -182,6 +182,17 @@ def _in_pause_window(now: datetime.datetime) -> bool:
     return not (first_light <= naive_now < last_light)
 
 
+def ai_pulls_paused() -> bool:
+    """Public wrapper on _in_pause_window/_local_now — the "screen off,
+    no need for AI to be pulling" schedule isn't specific to Groq, so
+    any other provider a feature routes to directly (e.g. gemini_client,
+    for morning_briefing.py's own "gemini's one and only responsibility"
+    routing) should still respect the same quiet hours rather than
+    ignoring them just because the call bypasses this module's own
+    generate()/generate_periodic()."""
+    return _in_pause_window(_local_now())
+
+
 def _rolling_used(account: str, now_ts: float) -> int:
     log = _usage_logs[account]
     cutoff = now_ts - ROLLING_WINDOW_SECONDS

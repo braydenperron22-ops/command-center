@@ -41,6 +41,7 @@ import commute_client
 import commute_reminder
 import ec_alerts
 import fuel_price_client
+import gemini_client
 import groq_client
 import market_yf_client
 import payday_schedule
@@ -1004,9 +1005,22 @@ def _ai_sentence(picked: list[str]) -> str | None:
     own in-character opener to clash with; GREETINGS is now only used
     on the fallback path). Real calls throttled to once per
     AI_REFRESH_SECONDS regardless of how often render() calls this
-    (every 5s during the whole morning window) — see groq_client.
-    generate_periodic. None (falls back to the plain join + a random
-    greeting) on any failure with nothing usable already cached."""
+    (every 5s during the whole morning window) — see generate_periodic.
+    None (falls back to the plain join + a random greeting) on any
+    failure with nothing usable already cached.
+
+    Routed to gemini_client exclusively, not groq_client — session
+    call once Gemini's own quota had clearly recovered post-migration
+    (confirmed live, real 200) and after a whole round of prompt work
+    still left Groq's output here weaker: "the morning brief should
+    become gemini's one and only responsability since its good at
+    that." No Groq fallback for this one feature specifically — if
+    Gemini fails, this returns None same as before and render() drops
+    to the plain mechanical join, not a second provider. Still
+    respects the same overnight quiet-hours schedule as every Groq
+    call (see groq_client.ai_pulls_paused) even though the call itself
+    bypasses groq_client entirely — "screen off, don't pull" was never
+    a Groq-specific rule."""
     facts = "; ".join(picked)
     prompt = (
         f"You are {USER_FIRST_NAME}'s personal AI assistant, in the spirit of J.A.R.V.I.S. from "
@@ -1048,7 +1062,9 @@ def _ai_sentence(picked: list[str]) -> str | None:
         f"Address {USER_FIRST_NAME} by name naturally somewhere in the text. Start with a capital "
         "letter and end with a period. Facts: " + facts
     )
-    return groq_client.generate_periodic("morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85)
+    if groq_client.ai_pulls_paused():
+        return None
+    return gemini_client.generate_periodic("morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85)
 
 
 def render(now: datetime, weather: dict | None, air_quality: dict | None) -> None:
