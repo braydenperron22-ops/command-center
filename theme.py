@@ -1881,15 +1881,22 @@ html, body, [class*="css"] {
    off bottom-right for the identical reason). Bumped up to clear it
    rather than trying to out-z-index or hide it — that badge isn't part
    of this app's own DOM (survives the #MainMenu/header/footer hiding
-   rule above), so there's nothing here to hide it with anyway. */
-.ai-usage-bar {
+   rule above), so there's nothing here to hide it with anyway.
+
+   Was a percentage bar; replaced with a plain status dot + label —
+   session request, after the percentage's own blind spots caused real
+   confusion (a fresh-process estimate reading "100%" right after a
+   real rate limit had just been hit): "can you just change the badge
+   to say AI: Active or AI: Rate Limited or any an all other statuses
+   it may have." See groq_client.ai_status for the full status list. */
+.ai-status-bar {
     position: fixed;
     bottom: 60px;
     right: 14px;
     z-index: 400;
     display: flex;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.4rem;
     padding: 0.32rem 0.65rem;
     border-radius: 10px;
     background: rgba(12,12,16,0.62);
@@ -1899,36 +1906,24 @@ html, body, [class*="css"] {
     opacity: 0.55;
     transition: opacity 0.2s ease;
 }
-.ai-usage-bar:hover {
+.ai-status-bar:hover {
     opacity: 1;
 }
-.ai-usage-label {
-    font-size: 0.62rem;
-    font-weight: 800;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.45);
+.ai-status-dot {
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
 }
-.ai-usage-track {
-    width: 40px;
-    height: 5px;
-    border-radius: 3px;
-    background: rgba(255,255,255,0.12);
-    overflow: hidden;
-}
-.ai-usage-fill {
-    height: 100%;
-    border-radius: 3px;
-}
-.ai-usage-fill-good { background: #32D74B; }
-.ai-usage-fill-medium { background: #FF9F0A; }
-.ai-usage-fill-low { background: #FF6961; }
-.ai-usage-pct {
+.ai-status-dot-good { background: #32D74B; box-shadow: 0 0 6px 1px rgba(50,215,75,0.55); }
+.ai-status-dot-medium { background: #FF9F0A; box-shadow: 0 0 6px 1px rgba(255,159,10,0.55); }
+.ai-status-dot-low { background: #FF6961; box-shadow: 0 0 6px 1px rgba(255,105,97,0.55); }
+.ai-status-dot-neutral { background: #5AC8FA; box-shadow: 0 0 6px 1px rgba(90,200,250,0.55); }
+.ai-status-text {
     font-size: 0.68rem;
     font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    color: rgba(255,255,255,0.55);
-    min-width: 2.6em;
+    color: rgba(255,255,255,0.6);
+    white-space: nowrap;
 }
 
 /* Today page's agenda only — same news-feed-row shape the News page

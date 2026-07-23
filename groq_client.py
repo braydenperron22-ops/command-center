@@ -134,7 +134,7 @@ _GROQ_SECRET_NAMES = {"primary": "GROQ_API_KEY", "failsafe": "GROQ_API_KEY_FAILS
 # empty, with no way to recover what Groq's own server-side ledger says
 # happened before that (Groq doesn't expose current daily usage on a
 # successful call, only inside a 429's error body when something's
-# actually already blocked) — see budget_status's own docstring.
+# actually already blocked) — see ai_status's own docstring.
 _usage_logs: dict[str, list] = {account: [] for account in GROQ_ACCOUNTS}
 
 
@@ -182,39 +182,58 @@ def _reconcile_budget(entry: list, actual_tokens: int | None) -> None:
     entry[1] = actual_tokens or 0
 
 
-def budget_status() -> dict:
-    """{"used": int, "budget": DAILY_TOKEN_BUDGET, "remaining_pct": float
-    0-100, "paused": bool} for a small live usage indicator — session
-    request: "a little ai usage bar that shows the health bar for groq
-    ie how many credits we have left shown as a percentage." Tracks the
-    same rolling 24h window Groq's own limit actually uses (see
-    ROLLING_WINDOW_SECONDS), so it recovers gradually through the day
-    the same way the real thing does, rather than jumping to 100% at a
-    fixed reset instant that doesn't match reality. Still only knows
-    about calls this process has made itself — right after a redeploy
-    this reads optimistic (starts at 100% even if the real account is
-    still constrained) until either 24h passes or enough real calls
-    happen to start reflecting it; there's no way to backfill Groq's
-    own server-side history into a fresh process. "paused" reflects the
-    overnight window, not the budget — shown separately since "0% left"
-    and "asleep until 3am" are different situations worth telling apart
-    at a glance.
+# Which tier actually served the most recent real generate() call,
+# system-wide (not per-feature — same framing ai_status() already
+# used for "primary" specifically). "not_attempted" is the fresh-
+# process default, distinct from "none" (attempted, and every tier —
+# primary, failsafe, AND gemini — genuinely failed) since those are
+# different situations worth telling apart. Session request, after the
+# budget-estimate percentage alone caused real confusion ("thought we
+# rate limited main?? ... badge said 100%" — the estimate can't see a
+# real failure the way an actual observed outcome can): "can you just
+# change the badge to say AI: Active or AI: Rate Limited or any an all
+# other statuses it may have."
+_last_served_by = "not_attempted"
 
-    Reflects the "primary" account specifically, not "failsafe" (see
-    GROQ_ACCOUNTS) — that's the account meant to carry normal load, so
-    its health is what's worth a glance at. The failsafe quietly taking
-    over when primary is exhausted doesn't change what this number
-    means; it just means real output can keep flowing even while this
-    badge reads 0%."""
+
+def ai_status() -> dict:
+    """{"label": str, "tone": "good"|"medium"|"low"|"neutral"} for a
+    small live status badge. Grounded in what actually just happened
+    (see _last_served_by), not only the budget estimate — that
+    estimate has real blind spots of its own (a redeploy resets it
+    optimistically; input-token guesses can run a hair over) that a
+    real observed outcome doesn't share. Statuses, in priority order:
+
+    - "Asleep" (neutral): the overnight pause window — deliberately not
+      attempting anything, not a failure.
+    - "Rate Limited" (low): the most recent real attempt failed on
+      every tier — primary, failsafe, AND gemini. Nothing is currently
+      getting through.
+    - "On Failsafe" / "On Gemini" (medium): primary's most recent real
+      attempt failed, but a fallback tier covered it — output is still
+      flowing, just not from the primary account.
+    - "Low" (medium): primary's own rolling budget has under 20%
+      remaining, even though its last real attempt succeeded (or
+      nothing's been attempted yet this process) — a heads-up that
+      Rate Limited may be coming.
+    - "Active" (good): primary healthy, most recent attempt (if any)
+      succeeded on primary."""
     now = _local_now()
+    if _in_pause_window(now):
+        return {"label": "Asleep", "tone": "neutral"}
+    if _last_served_by == "none":
+        return {"label": "Rate Limited", "tone": "low"}
+    if _last_served_by == "failsafe":
+        return {"label": "On Failsafe", "tone": "medium"}
+    if _last_served_by == "gemini":
+        return {"label": "On Gemini", "tone": "medium"}
+    # _last_served_by is "primary" or "not_attempted" — primary's own
+    # remaining budget still decides between a Low warning and Active.
     used = max(0, min(_rolling_used("primary", now.timestamp()), DAILY_TOKEN_BUDGET))
-    remaining_pct = max(0.0, 100.0 * (DAILY_TOKEN_BUDGET - used) / DAILY_TOKEN_BUDGET)
-    return {
-        "used": used,
-        "budget": DAILY_TOKEN_BUDGET,
-        "remaining_pct": remaining_pct,
-        "paused": _in_pause_window(now),
-    }
+    remaining_pct = 100.0 * (DAILY_TOKEN_BUDGET - used) / DAILY_TOKEN_BUDGET
+    if remaining_pct < 20:
+        return {"label": "Low", "tone": "medium"}
+    return {"label": "Active", "tone": "good"}
 
 
 @st.cache_data(ttl=GENERATE_CACHE_TTL_SECONDS, show_spinner=False)
@@ -298,15 +317,23 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
     this module's own docstring). Otherwise tries "primary", then
     "failsafe" (see GROQ_ACCOUNTS — two genuinely separate Groq
     accounts/quotas), then falls back to gemini_client before finally
-    giving up and returning None."""
+    giving up and returning None. Records which tier actually served
+    this call (or that none did) in _last_served_by for ai_status() —
+    left untouched during the pause itself, since that's a separate
+    status, not a failure to record."""
+    global _last_served_by
     if _in_pause_window(_local_now()):
         return None
     for account in GROQ_ACCOUNTS:
         try:
-            return _generate_or_raise(account, prompt, temperature, max_output_tokens)
+            result = _generate_or_raise(account, prompt, temperature, max_output_tokens)
+            _last_served_by = account
+            return result
         except Exception:
             continue
-    return gemini_client.generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens)
+    result = gemini_client.generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens)
+    _last_served_by = "gemini" if result is not None else "none"
+    return result
 
 
 # feature_key -> (generated_at, text) — see generate_periodic below.

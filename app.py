@@ -822,25 +822,22 @@ if not _jumbotron_active:
     except Exception:
         pass
 
-# Small bottom-right system-health glance — session request: "a little
-# ai usage bar that shows the health bar for groq ie how many credits
-# we have left shown as a percentage... bottom right." Page-independent
-# like the pinned headlines above; suppressed during a takeover for the
-# same reason they are — see groq_client.budget_status for what backs
-# the percentage (a hard daily token budget, not Groq account credits).
+# Small bottom-right system-health glance — session request, after the
+# original percentage-based version's own blind spots caused real
+# confusion ("thought we rate limited main?? ... badge said 100%"):
+# "can you just change the badge to say AI: Active or AI: Rate Limited
+# or any an all other statuses it may have." See groq_client.ai_status
+# for the full status list and what each one actually means.
+# Page-independent like the pinned headlines above; suppressed during a
+# takeover for the same reason they are.
 if not _jumbotron_active:
     try:
-        _ai_budget = groq_client.budget_status()
-        _ai_pct = _ai_budget["remaining_pct"]
-        _ai_fill_class = (
-            "ai-usage-fill-good" if _ai_pct >= 50 else ("ai-usage-fill-medium" if _ai_pct >= 20 else "ai-usage-fill-low")
-        )
-        _ai_label = "AI · asleep" if _ai_budget["paused"] else "AI"
+        _ai_status = groq_client.ai_status()
+        _ai_dot_class = f"ai-status-dot-{_ai_status['tone']}"
         st.markdown(
-            f"""<div class="ai-usage-bar">
-                <span class="ai-usage-label">{_ai_label}</span>
-                <span class="ai-usage-track"><span class="ai-usage-fill {_ai_fill_class}" style="width:{_ai_pct:.0f}%;"></span></span>
-                <span class="ai-usage-pct">{_ai_pct:.0f}%</span>
+            f"""<div class="ai-status-bar">
+                <span class="ai-status-dot {_ai_dot_class}"></span>
+                <span class="ai-status-text">AI: {_ai_status['label']}</span>
             </div>""",
             unsafe_allow_html=True,
         )
