@@ -17,7 +17,15 @@ already US-only elsewhere in this app, so synthesizing across countries
 would mean comparing US risk appetite to Canadian growth data — not a
 coherent single read. Canada still gets its own indicator tiles on the
 Home page; this is an additional layer, not a replacement.
-"""
+
+A Groq-written version of this narrative (grounded in real values plus
+recent headlines from news.recent_market_headlines) briefly lived here
+and was removed the same day it shipped — session request: "get rid of
+the macro regime AI calls" as part of a broader pass to cut every AI
+feature's token usage after a day of testing discovered Groq's real
+cap is 100k tokens/day, not just the 12k/min the response headers had
+surfaced. classify()'s own plain narrative below is deliberately
+mechanical (direction words only) and costs nothing."""
 
 GROWTH_LABELS = {1: "strengthening", 0: "steady", -1: "weakening"}
 INFLATION_LABELS = {1: "hot", 0: "stable", -1: "cooling"}

@@ -72,8 +72,12 @@ OVERVIEW_MAX_OUTPUT_TOKENS = 2200  # up to MAX_CONFLICTS_SHOWN entries, each a r
 # minute to minute the way commute/market numbers do, and this page
 # used to re-call the AI on every 5s rerun it was open — see
 # groq_client.generate_periodic's own docstring for the shared
-# throttle mechanism this now goes through.
-REFRESH_SECONDS = 60 * 60
+# throttle mechanism this now goes through. Widened further from
+# hourly — this is also comfortably the single most expensive call per
+# request (up to 2200 output tokens plus up to 150 fed-in headlines) —
+# session request: "make everything cheaper by lowering how often
+# theyre pulled."
+REFRESH_SECONDS = 3 * 60 * 60
 
 
 def _ai_overview(headlines: list[dict]) -> list[dict] | None:

@@ -13,6 +13,7 @@ import air_quality_client
 import commute_reminder
 import data_health
 import govee_lighting
+import groq_client
 import market_yf_client
 import morning_briefing
 import news
@@ -818,6 +819,31 @@ if not _jumbotron_active:
 if not _jumbotron_active:
     try:
         sports_alerts.render_game_countdown(now)
+    except Exception:
+        pass
+
+# Small bottom-right system-health glance — session request: "a little
+# ai usage bar that shows the health bar for groq ie how many credits
+# we have left shown as a percentage... bottom right." Page-independent
+# like the pinned headlines above; suppressed during a takeover for the
+# same reason they are — see groq_client.budget_status for what backs
+# the percentage (a hard daily token budget, not Groq account credits).
+if not _jumbotron_active:
+    try:
+        _ai_budget = groq_client.budget_status()
+        _ai_pct = _ai_budget["remaining_pct"]
+        _ai_fill_class = (
+            "ai-usage-fill-good" if _ai_pct >= 50 else ("ai-usage-fill-medium" if _ai_pct >= 20 else "ai-usage-fill-low")
+        )
+        _ai_label = "AI · asleep" if _ai_budget["paused"] else "AI"
+        st.markdown(
+            f"""<div class="ai-usage-bar">
+                <span class="ai-usage-label">{_ai_label}</span>
+                <span class="ai-usage-track"><span class="ai-usage-fill {_ai_fill_class}" style="width:{_ai_pct:.0f}%;"></span></span>
+                <span class="ai-usage-pct">{_ai_pct:.0f}%</span>
+            </div>""",
+            unsafe_allow_html=True,
+        )
     except Exception:
         pass
 

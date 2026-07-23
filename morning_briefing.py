@@ -945,7 +945,7 @@ def _daylight_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
     return 1, _pick(lines, now, "daylight").format(**fmt)
 
 
-AI_REFRESH_SECONDS = 5 * 60  # session request: "for the daily morning brief... every five minutes is great" — see groq_client.generate_periodic
+AI_REFRESH_SECONDS = 15 * 60  # widened from the original 5 min — session request: "make everything cheaper by lowering how often theyre pulled"; see groq_client's module docstring for the daily-budget guarantee this contributes to
 
 
 def _ai_sentence(picked: list[str]) -> str | None:

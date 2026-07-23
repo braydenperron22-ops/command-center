@@ -1866,6 +1866,63 @@ html, body, [class*="css"] {
     text-shadow: 0 0 22px rgba(255,90,95,0.4);
 }
 
+/* Small, deliberately unobtrusive — session request: "a little ai
+   usage bar... in a small space on the dashboard probs like bottom
+   right." Page-independent like the pinned headlines above, but tucked
+   in a corner rather than pinned to attention: this is a system-health
+   glance, not something that needs to compete for focus the way a
+   breaking headline does. Lower z-index than the pinned headlines
+   (which sit at 499-501) since it never needs to sit above anything —
+   nothing else lives in this corner. */
+.ai-usage-bar {
+    position: fixed;
+    bottom: 14px;
+    right: 14px;
+    z-index: 400;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.32rem 0.65rem;
+    border-radius: 10px;
+    background: rgba(12,12,16,0.62);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid rgba(255,255,255,0.1);
+    opacity: 0.55;
+    transition: opacity 0.2s ease;
+}
+.ai-usage-bar:hover {
+    opacity: 1;
+}
+.ai-usage-label {
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.45);
+}
+.ai-usage-track {
+    width: 40px;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.12);
+    overflow: hidden;
+}
+.ai-usage-fill {
+    height: 100%;
+    border-radius: 3px;
+}
+.ai-usage-fill-good { background: #32D74B; }
+.ai-usage-fill-medium { background: #FF9F0A; }
+.ai-usage-fill-low { background: #FF6961; }
+.ai-usage-pct {
+    font-size: 0.68rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: rgba(255,255,255,0.55);
+    min-width: 2.6em;
+}
+
 /* Today page's agenda only — same news-feed-row shape the News page
    uses for its own (much longer, faster-scanned) list, but scaled up
    here since this list is short and meant to be read at a glance, not

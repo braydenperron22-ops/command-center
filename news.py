@@ -364,11 +364,17 @@ _AI_VALID_VERDICTS = {"REJECT", "MARKET"} | set(_AI_VERDICT_LABELS)
 # many new headlines actually showed up in the window, unlike the old
 # one-call-per-headline design that could burst past 15 RPM the moment
 # several new headlines arrived in the same 3-minute fetch cycle.
-BATCH_REFRESH_SECONDS = 5 * 60
+# Widened from the original 5 min once full-article grounding made a
+# worst-case full batch ~9-11k tokens on its own — see groq_client's
+# module docstring for the daily-budget guarantee this (plus the
+# overnight pause it also enforces) now exists alongside. Session
+# request: "make everything cheaper by lowering how often theyre
+# pulled."
+BATCH_REFRESH_SECONDS = 30 * 60
 # Caps prompt/response size — a real burst beyond this just waits for
 # the next batch window rather than growing the request unbounded.
 BATCH_MAX_HEADLINES = 30
-BATCH_MAX_OUTPUT_TOKENS = 3000
+BATCH_MAX_OUTPUT_TOKENS = 1500
 
 # hash -> decision dict (kept) or None (AI rejected). A key's absence
 # means "not yet reached by a batch" — decide() and _run_batch_decide()
@@ -386,7 +392,12 @@ def _hash(headline: str) -> str:
 
 
 ARTICLE_FETCH_TIMEOUT_SECONDS = 6
-ARTICLE_EXCERPT_MAX_CHARS = 1500
+# A full 30-headline batch at the old 1500-char cap ran ~11k input
+# tokens — right against Groq's 12k-tokens/minute limit, so the whole
+# batch (not just this one headline) would silently 429 and every
+# pending headline would stay unclassified for another window. 800 is
+# still enough for a lead paragraph's numbers while leaving headroom.
+ARTICLE_EXCERPT_MAX_CHARS = 800
 
 
 @st.cache_data(ttl=60 * 60, show_spinner=False)
