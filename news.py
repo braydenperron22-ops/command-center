@@ -38,11 +38,22 @@ me a whole lot... wiston shares surge (by how much???)... I need
 numbers, context, and data in a short concise headline." Real feeds'
 <description> is often the only place the actual number lives
 (sometimes it's empty — Yahoo Finance never sets one — or just a
-duplicate of the title, but sometimes it has exactly the figure the
-headline is missing); see _build_batch_prompt's own docstring for why
-the model is explicitly forbidden from inventing a number that isn't
-actually present in that text — a confidently wrong figure would be
-worse than a vague headline here.
+duplicate of the title), so _run_batch_decide also fetches each
+pending headline's own full article page (_fetch_article_excerpt) as
+extra grounding beyond the thin RSS summary — session follow-up: "make
+it look at the full story for a more detailed headline." Even that can
+come up empty (a genuinely thin wire piece, a fetch a site blocked).
+In that case the rule is strict, not permissive — session correction:
+"if they cant find anything to make the headline unactionable then
+dont allow it... if you dont have a number you better have a good
+reason for letting it through." A headline only survives without a
+real number if its own core claim is already a single, concrete,
+unambiguous event (see _build_batch_prompt's own docstring for exactly
+where that line is drawn) — a headline that's vague on both counts
+gets REJECTed outright, not shown vague. Numbers are still never
+invented, estimated, or recalled from the model's own training
+knowledge — a confidently wrong figure would be worse than dropping
+the headline entirely.
 """
 
 import functools
@@ -56,6 +67,7 @@ from xml.etree import ElementTree
 
 import requests
 import streamlit as st
+from bs4 import BeautifulSoup
 
 import data_health
 import fetch_throttle
@@ -373,23 +385,76 @@ def _hash(headline: str) -> str:
     return hashlib.sha1(headline.encode()).hexdigest()
 
 
+ARTICLE_FETCH_TIMEOUT_SECONDS = 6
+ARTICLE_EXCERPT_MAX_CHARS = 1500
+
+
+@st.cache_data(ttl=60 * 60, show_spinner=False)
+def _fetch_article_excerpt(url: str) -> str:
+    """Best-effort plain-text excerpt of the actual article page — not
+    just the RSS <description>, which is often empty or unhelpful.
+    Session request: "make it look at the full story for a more
+    detailed headline." Strips script/style/nav/header/footer/aside/
+    form first, then joins visible <p> tag text (skipping short
+    fragments under 40 chars — nav labels, image captions, "read more"
+    links, not real article prose), truncated to
+    ARTICLE_EXCERPT_MAX_CHARS. The number a vague headline is missing
+    is almost always in the lede, well within a paywall's free preview
+    even on sites that gate the rest of a piece.
+
+    "" (never an exception) on any failure — a site block, timeout, or
+    genuinely thin page all just mean "no extra context available,"
+    treated exactly like an empty RSS description already was; this
+    must never be able to stall a batch over one slow or hostile site.
+    Cached an hour per URL — this app never asks about the same article
+    twice anyway (see _decided), but a batch that retries a fetch
+    failure on the next window shouldn't hit the same slow site again
+    within the hour."""
+    if not url:
+        return ""
+    try:
+        fetch_throttle.wait_turn()
+        resp = requests.get(url, timeout=ARTICLE_FETCH_TIMEOUT_SECONDS, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for tag in soup(["script", "style", "nav", "header", "footer", "aside", "form"]):
+            tag.decompose()
+        paragraphs = [p.get_text(" ", strip=True) for p in soup.find_all("p")]
+        text = " ".join(p for p in paragraphs if len(p) > 40)
+        return text[:ARTICLE_EXCERPT_MAX_CHARS]
+    except Exception:
+        return ""
+
+
 def _build_batch_prompt(items: list[dict]) -> str:
     """One prompt judging every item in `items` independently — same
     two-task judgment the old per-headline version asked (keep-or-
     reject + category; rewrite with real numbers when available), just
-    asked once for many headlines instead of once per headline. Numbers
-    are only ever pulled from each item's own `description` (the RSS
-    item's own summary, often empty or a bare duplicate of the title —
-    several of these feeds just don't carry one) and NEVER invented,
-    estimated, or recalled from the model's own training knowledge — a
-    confidently wrong figure would be worse than a vague headline on a
-    finance dashboard."""
+    asked once for many headlines instead of once per headline. Each
+    item may carry an "article_excerpt" (see _fetch_article_excerpt)
+    alongside its RSS "description" — both are offered as grounding,
+    but numbers are NEVER invented, estimated, or recalled from the
+    model's own training knowledge, and NEVER borrowed from a different
+    headline in the same batch — a confidently wrong figure would be
+    worse than a vague headline on a finance dashboard.
+
+    Session correction after that still let a genuinely data-free
+    headline through unchanged: "if they cant find anything to make
+    the headline unactionable then dont allow it... if you dont have a
+    number you better have a good reason for letting it through." A
+    headline with no number anywhere now only survives if its own core
+    claim is already a single, concrete, unambiguous event — otherwise
+    REJECT, even if it would have passed the relevance check on its
+    own."""
     lines = []
     for i, item in enumerate(items):
         entry = f"{i + 1}. HEADLINE: {item['headline']}"
         description = (item.get("description") or "").strip()
         if description and description != item["headline"].strip():
             entry += f"\n   SUMMARY: {description}"
+        excerpt = (item.get("article_excerpt") or "").strip()
+        if excerpt:
+            entry += f"\n   ARTICLE EXCERPT: {excerpt}"
         lines.append(entry)
     headline_block = "\n".join(lines)
     return (
@@ -413,15 +478,21 @@ def _build_batch_prompt(items: list[dict]) -> str:
         "event), MERGERS (a $1B+ announced deal), MILESTONE (a genuine record high/low), MARKET "
         "(real but routine financial news), or BREAKING (something else genuinely major that "
         "doesn't fit those).\n\n"
-        "Also tighten each headline: vague headlines that don't state the actual number ('shares "
-        "surge', 'CPI comes in cooler than expected', 'oil prices climb') are much less useful "
-        "than ones that do. If a headline's SUMMARY above contains a specific number, "
-        "percentage, or figure the bare headline is missing, rewrite it into one short, concise, "
-        "factual sentence that includes it. If no real number is available anywhere in that "
-        "headline's own text, do NOT invent, estimate, or guess one from your own general "
-        "knowledge — in that case just use the original headline, tightened for clarity if "
-        "needed but with no fabricated numbers. Never borrow a number from a DIFFERENT "
-        "headline in this list.\n\n"
+        "STRICT DATA REQUIREMENT — be strict here. Look at the headline, its SUMMARY, and its "
+        "ARTICLE EXCERPT (whichever are present) for a specific number, percentage, or figure. "
+        "If one exists, rewrite the headline into one short, concise, factual sentence that "
+        "includes it — never invent, estimate, or guess a number that isn't actually present in "
+        "that text, and never borrow a number from a DIFFERENT headline in this list.\n\n"
+        "If NO real number is available anywhere in the headline, summary, or article excerpt, "
+        "apply strict scrutiny before letting the headline through: is its own core claim "
+        "already a single, concrete, unambiguous event on its own — a specific decision, "
+        "acquisition, resignation, bankruptcy, ceasefire, or similarly definite fact — genuinely "
+        "meaningful even without a number attached? If yes, keep it as-is, unchanged, with no "
+        "fabricated data. If no — the headline is fundamentally vague with no specifics anywhere "
+        "about by how much, to what, or what exactly changed ('lowers forecast', 'warns of "
+        "headwinds', 'beats expectations' with nothing concrete attached anywhere) — its verdict "
+        "MUST be REJECT, even if it would otherwise pass the relevance check above. A vague, "
+        "unactionable headline is not worth showing regardless of topic.\n\n"
         f"{headline_block}\n\n"
         "Respond with ONLY a JSON array, no markdown code fences, no other text, exactly one "
         "object per headline above IN THE SAME ORDER, in exactly this shape (omit \"headline\" "
@@ -453,7 +524,13 @@ def _run_batch_decide() -> None:
     # against the cadence, so a rate-limit blip can't turn into a tight
     # retry loop; the next real attempt waits the full window regardless.
     _last_batch_at = now
-    prompt = _build_batch_prompt(pending)
+    # Full article text, not just the RSS description — session
+    # request: "make it look at the full story for a more detailed
+    # headline." One fetch per pending headline; a slow or blocked site
+    # just contributes "" for that one item (see _fetch_article_
+    # excerpt's own docstring) rather than derailing the whole batch.
+    enriched = [{**item, "article_excerpt": _fetch_article_excerpt(item.get("link", ""))} for item in pending]
+    prompt = _build_batch_prompt(enriched)
     # Low temperature — this is a judgment call that should be
     # consistent, not creative prose (see groq_client.generate's own
     # docstring: confirmed live that the default 0.7 made the exact
