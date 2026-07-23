@@ -266,9 +266,14 @@ except Exception:
 
 # The jumbotron owns the entire screen: no hero row, no morning
 # briefing, no rotation countdown, no pre-game headline (the board has
-# its own, much bigger countdown). The leave-for-work headline still
-# renders — a game is never a reason to miss a shift — and so do the
-# toast queue, ticker and Govee sync.
+# its own, much bigger countdown). The leave-for-work and breaking-news
+# headlines skip their render too now that they're pinned banners
+# (position: fixed, see theme.py) rather than in-flow text — session
+# request: "make it so red headlines dont stick up top when were in
+# game mode," reversing an earlier "a game is never a reason to miss a
+# shift" decision from back when the leave headline just flowed above
+# the hero row instead of overlaying the board. The toast queue, ticker
+# and Govee sync still run as normal.
 _jumbotron_active = page == "jumbotron" and _takeover is not None
 if not _jumbotron_active and page == "jumbotron":
     # Nothing to show (no game at all, e.g. both leagues in the
@@ -587,14 +592,21 @@ except Exception:
 # Fetched once per rerun and reused below both to update/render the
 # persistent top banner and to feed the bottom rotating alert bar —
 # get_new_alerts() marks headlines as seen as a side effect, so it must
-# only be called once per script run. Wrapped since a bug in either the
-# top-alert or weather-statement logic shouldn't stop the clock/hero row
-# and every page below it from rendering.
+# only be called once per script run, REGARDLESS of page — skipping it
+# during a takeover would stall the batch classifier and the seen-
+# headline tracking for as long as the game runs. Only the render
+# itself is skipped during game mode — session request: "make it so
+# red headlines dont stick up top when were in game mode" — the pinned
+# banner (see theme.py's .top-alert-bar, now position: fixed) would sit
+# right on top of the jumbotron's own board. Wrapped since a bug in
+# either the top-alert or weather-statement logic shouldn't stop the
+# clock/hero row and every page below it from rendering.
 new_alerts = []
 try:
     new_alerts = news.get_new_alerts()
     news.update_top_alert(new_alerts)
-    news.render_top_alert_bar()
+    if not _jumbotron_active:
+        news.render_top_alert_bar()
 except Exception:
     pass
 
@@ -787,10 +799,16 @@ if weather:
 # Directly above the clock, page-independent — see
 # commute_reminder.render_leave_headline for why (visible regardless of
 # which of the 6 rotating pages is up, unlike Today's own content).
-try:
-    commute_reminder.render_leave_headline(now)
-except Exception:
-    pass
+# Skipped during a takeover — session request: "make it so red
+# headlines dont stick up top when were in game mode" — same reasoning
+# as the top-alert bar and game-countdown headline just below: now that
+# it's position: fixed (see theme.py), it would pin itself right over
+# the jumbotron's own board instead of just flowing above it.
+if not _jumbotron_active:
+    try:
+        commute_reminder.render_leave_headline(now)
+    except Exception:
+        pass
 
 # Same treatment for the final hour before a Jays/Habs game — session
 # request: "First Pitch In, counting down from an hour, similar to the
