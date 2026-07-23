@@ -74,6 +74,7 @@ from astral import LocationInfo
 from astral.sun import sun
 
 import gemini_client
+import ntfy_client
 from config import TIMEZONE, WEATHER_LAT, WEATHER_LON
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
@@ -279,6 +280,44 @@ def ai_status() -> dict:
     if remaining_pct < 20:
         return {"label": "Low", "tone": "medium"}
     return {"label": "Active", "tone": "good"}
+
+
+# "Rate Limited" has to hold for this long before it's worth a push —
+# a single failed attempt (one transient network blip, one call that
+# happened to land right as the rolling budget was momentarily tight)
+# isn't a real outage, and every tier already retries on its own next
+# cycle regardless. Session request: "add meaningful outage alerts...
+# if [the AI] goes dark for a meaningful period of time" — this is that
+# "meaningful period" gate, the AI-outage equivalent of data_health's
+# own per-source THRESHOLDS_SECONDS.
+AI_OUTAGE_ALERT_AFTER_SECONDS = 20 * 60
+
+
+def notify_if_outage() -> None:
+    """Pushes a phone notification once per outage episode once "Rate
+    Limited" (see ai_status — every tier failed on the most recent real
+    attempt) has held continuously for AI_OUTAGE_ALERT_AFTER_SECONDS,
+    not on the first failed attempt. Tracks the episode's start time and
+    whether it's already been notified in session_state; any status
+    other than "Rate Limited" clears both, so a later, separate outage
+    gets its own fresh alert rather than being permanently suppressed
+    because one already fired once before."""
+    status = ai_status()
+    if status["label"] != "Rate Limited":
+        st.session_state.pop("ai_outage_since", None)
+        st.session_state.pop("ai_outage_notified", None)
+        return
+    now = time.time()
+    since = st.session_state.setdefault("ai_outage_since", now)
+    if now - since < AI_OUTAGE_ALERT_AFTER_SECONDS or st.session_state.get("ai_outage_notified"):
+        return
+    st.session_state["ai_outage_notified"] = True
+    ntfy_client.send(
+        title="AI outage",
+        message=f"Primary, failsafe, and Gemini have all been failing for over {AI_OUTAGE_ALERT_AFTER_SECONDS // 60} minutes.",
+        priority="high",
+        tags="warning",
+    )
 
 
 @st.cache_data(ttl=GENERATE_CACHE_TTL_SECONDS, show_spinner=False)

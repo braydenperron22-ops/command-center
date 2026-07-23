@@ -12,11 +12,18 @@ have gone quiet for longer than they reasonably should.
 Session-state only, not disk-persisted — a fresh redeploy/restart
 starts with a clean slate rather than immediately flagging every source
 as "stale" before it's had a chance to succeed even once.
+
+check() only ever reported this visually (the on-screen watchdog badge
+in app.py); notify_stale() below adds a phone push for the same
+condition — session request: "add meaningful outage alerts... if one
+of our sources go dark for a meaningful period of time."
 """
 
 import time
 
 import streamlit as st
+
+import ntfy_client
 
 # source_key -> max seconds of silence before it's worth flagging.
 # Deliberately generous — the point is "this has been broken for a
@@ -70,3 +77,33 @@ def check() -> list[dict]:
         if elapsed > threshold:
             stale.append({"key": key, "label": LABELS[key], "hours_stale": elapsed / 3600})
     return stale
+
+
+def notify_stale(stale: list[dict]) -> None:
+    """Pushes a phone notification once per source, per outage episode —
+    not every rerun for as long as it stays stale, which could be hours
+    or days once a source is genuinely down. Session request: "add
+    meaningful outage alerts... if one of our sources go dark for a
+    meaningful period of time" — THRESHOLDS_SECONDS above already is
+    that "meaningful period" gate (3-36h depending on the source, not a
+    few minutes' lateness), so nothing extra needed here beyond not
+    re-pinging every rerun for the same ongoing outage.
+
+    Tracks which source_keys have already been notified this episode in
+    session_state; a source dropping out of `stale` (i.e. it recovered)
+    clears its own flag, so a second, later outage on the same source
+    gets its own fresh alert rather than staying silently suppressed
+    forever because it already fired once months ago."""
+    notified = st.session_state.setdefault("data_health_notified", set())
+    stale_keys = {s["key"] for s in stale}
+    notified &= stale_keys  # drop any source that's since recovered
+    for s in stale:
+        if s["key"] in notified:
+            continue
+        notified.add(s["key"])
+        ntfy_client.send(
+            title="Data source down",
+            message=f"{s['label']} hasn't updated in {s['hours_stale']:.0f}h.",
+            priority="high",
+            tags="warning",
+        )

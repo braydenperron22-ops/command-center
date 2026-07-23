@@ -823,6 +823,18 @@ if not _jumbotron_active:
     except Exception:
         pass
 
+# AI outage push — page-independent and NOT gated on _jumbotron_active,
+# unlike the badge render below: an outage matters just as much during
+# a takeover as any other time, same reasoning as news.get_new_alerts()
+# running unconditionally every rerun. See groq_client.notify_if_outage
+# for the "meaningful period, not a single blip" gate and its own
+# per-episode dedup. Session request: "add meaningful outage alerts
+# like an AI outage."
+try:
+    groq_client.notify_if_outage()
+except Exception:
+    pass
+
 # Small bottom-right system-health glance — session request, after the
 # original percentage-based version's own blind spots caused real
 # confusion ("thought we rate limited main?? ... badge said 100%"):
@@ -868,6 +880,13 @@ try:
     _stale_sources = data_health.check()
 except Exception:
     _stale_sources = []
+# Push, unconditional (page-independent, not gated on _jumbotron_active
+# — same reasoning as the AI outage check above) — see
+# data_health.notify_stale for the per-source, per-episode dedup.
+try:
+    data_health.notify_stale(_stale_sources)
+except Exception:
+    pass
 if _stale_sources and not _jumbotron_active:
     _stale_tint = "rgba(255,105,97,0.22)"
     _stale_bg = f"linear-gradient({_stale_tint}, {_stale_tint}), rgba(12,12,16,0.72)"
