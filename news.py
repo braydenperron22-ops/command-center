@@ -72,6 +72,7 @@ from bs4 import BeautifulSoup
 import data_health
 import fetch_throttle
 import groq_client
+import ntfy_client
 from config import TOP_ALERT_HOLD_SECONDS
 
 # (feed URL, display name) — unlike the Conflicts page's Google News
@@ -754,10 +755,23 @@ def update_top_alert(new_alerts: list[dict]) -> None:
     over the persistent top banner, replacing whatever was there before —
     "the next red headline" is exactly the next call here where an alert
     has important=True. Call once per rerun with whatever `get_new_alerts`
-    just returned."""
+    just returned.
+
+    Also pushes a phone notification for the same event — session
+    request: "if it deems that a headline is truly breaking news... get
+    it to ping me." Safe to fire here with no extra dedup: `new_alerts`
+    only ever contains headlines get_new_alerts() has never handed back
+    before (its own seen_headlines tracking), so each important alert
+    reaches this loop exactly once, ever, for this process."""
     for alert in new_alerts:
         if alert.get("important"):
             st.session_state["top_alert"] = {**alert, "set_at": time.time()}
+            ntfy_client.send(
+                title=f"Breaking: {alert['category']}",
+                message=alert["headline"],
+                priority="urgent",
+                tags="rotating_light",
+            )
 
 
 def render_top_alert_bar() -> None:
