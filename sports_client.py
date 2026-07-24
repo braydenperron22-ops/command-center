@@ -867,6 +867,56 @@ def fetch_mlb_pregame_extra(game_id: int) -> dict | None:
     }
 
 
+@st.cache_data(ttl=LIVE_DETAIL_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_mlb_live_feed_raw(game_id: int) -> dict:
+    """A third independent poll of MLB_LIVE_FEED_URL, alongside this
+    module's own 5-min gameData-only pull above and sports_alerts.py's
+    15s scoring-play poll — not reused from either: gameData's own
+    cache is far too stale for a live play, and sports_alerts.py's own
+    fetch is private (leading underscore) to that module by this app's
+    own convention, so reaching into it from here would cross that
+    line rather than just accept one more cheap, unauthenticated
+    request to a free endpoint (see LIVE_DETAIL_CACHE_TTL_SECONDS's own
+    comment on why that's a non-issue for these particular APIs)."""
+    fetch_throttle.wait_turn()
+    resp = requests.get(MLB_LIVE_FEED_URL.format(game_id=game_id), timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fetch_mlb_last_play(game_id: int) -> dict | None:
+    """{"description", "away_score", "home_score"} for the most recent
+    COMPLETED play in this game — session request: "add a play badge
+    that shows the last play from the live game feed and situation...
+    directly from the live feed... below the batter pitcher matchup."
+    MLB's own feed already writes a real English sentence per play
+    ("Willson Contreras singles on a soft ground ball to second baseman
+    Luis Urías."), used verbatim, same reasoning as sports_alerts.py's
+    own scoring-play toasts. Walks allPlays from the end, skipping
+    anything whose about.isComplete isn't true yet — confirmed live
+    against a real in-progress game that the last entry in allPlays IS
+    the current at-bat mid-play, not a finished result, right up until
+    it resolves. Delayed the same wall-clock amount as the linescore/
+    matchup above it (own buffer key, since this is a different raw
+    payload) so the play text never gets ahead of the broadcast-synced
+    score sitting right next to it on the board. None on any fetch
+    failure or if the game genuinely has no completed plays yet (top of
+    the 1st, nobody's batted)."""
+    try:
+        data = _delayed(f"mlb_lastplay_{game_id}", _fetch_mlb_live_feed_raw(game_id))
+    except Exception:
+        return None
+    all_plays = data.get("liveData", {}).get("plays", {}).get("allPlays", [])
+    for p in reversed(all_plays):
+        if not p.get("about", {}).get("isComplete"):
+            continue
+        result = p.get("result", {})
+        description = result.get("description")
+        if description:
+            return {"description": description, "away_score": result.get("awayScore"), "home_score": result.get("homeScore")}
+    return None
+
+
 NHL_LANDING_URL = "https://api-web.nhle.com/v1/gamecenter/{game_id}/landing"
 
 

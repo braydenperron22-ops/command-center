@@ -422,6 +422,37 @@ def _current_matchup_html(game_id: int) -> str:
     )
 
 
+def _last_play_html(game_id: int, away: dict, home: dict) -> str:
+    """A compact "last play" strip below the Current Matchup card —
+    session request: "add a play badge that shows the last play from
+    the live game feed and situation TOR LOGO 0-1 BOS LOGO ie: ____
+    grounded out to first directly from the live feed... below the
+    batter pitcher matchup." The description is MLB's own real sentence
+    for the play, used verbatim (see sports_client.fetch_mlb_last_play's
+    own docstring), not paraphrased. "" whenever there's genuinely no
+    completed play yet (top of the 1st) or the fetch fails — no gap
+    left in the layout, same as _current_matchup_html's own between-
+    innings "" case just above."""
+    play = sports_client.fetch_mlb_last_play(game_id)
+    if not play:
+        return ""
+    # The score as of THIS play specifically (the live feed's own
+    # per-play result, not the board's separately-fetched current
+    # score) — self-consistent with the play description sitting right
+    # next to it, even in the rare rerun where the two would otherwise
+    # momentarily disagree.
+    away_score = play["away_score"] if play["away_score"] is not None else "–"
+    home_score = play["home_score"] if play["home_score"] is not None else "–"
+    return (
+        f'<div class="jumbo-lastplay">'
+        f'<div class="jumbo-lastplay-score">'
+        f'<img class="jumbo-lastplay-logo" src="{html.escape(away["logo"])}" />'
+        f'<span class="jumbo-lastplay-tally">{away_score}–{home_score}</span>'
+        f'<img class="jumbo-lastplay-logo" src="{html.escape(home["logo"])}" />'
+        f"</div>"
+        f'<div class="jumbo-lastplay-desc">{html.escape(play["description"])}</div>'
+        f"</div>"
+    )
 
 
 def _fmt_break_clock(seconds: float) -> str:
@@ -545,12 +576,14 @@ def _board_html(state: dict, now: datetime) -> str:
     match = _espn_match_for(sport, game)
     if phase == "live" and sport == "mlb":
         leaders_html = _current_matchup_html(game["game_id"])
+        last_play_html = _last_play_html(game["game_id"], away, home)
     else:
         # Season-long stat leaders, not per-game box score — confirmed
         # live ESPN's own scoreboard payload carries these regardless
         # of whether the game itself has started, so this shows well
         # before first pitch too, not just once the game goes live.
         leaders_html = _top_performers_html(match, time.time())
+        last_play_html = ""
 
     if phase == "pregame":
         kickoff = next((r["kickoff"] for r in _RAIL if r["sport"] == sport), "TO FIRST PITCH")
@@ -657,7 +690,7 @@ def _board_html(state: dict, now: datetime) -> str:
         f'<span class="jumbo-ph-right">{state_label}</span></div>'
         f'<div class="jumbo-board-body">'
         f'<div class="jumbo-matchup">{_side_html(away, dim_away)}{center}{_side_html(home, dim_home)}</div>'
-        f"{wp_html}{situation}{leaders_html}"
+        f"{wp_html}{situation}{leaders_html}{last_play_html}"
         f"</div></div>"
     )
 

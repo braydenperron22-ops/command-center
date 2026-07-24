@@ -2842,6 +2842,46 @@ html, body, [class*="css"] {
     margin-bottom: 7px;
 }
 
+/* Last-play strip under the Current Matchup card — session request:
+   "add a play badge that shows the last play from the live game feed
+   and situation TOR LOGO 0-1 BOS LOGO ie: ____ grounded out to first
+   directly from the live feed... below the batter pitcher matchup."
+   Same border-top-divider treatment as .jumbo-leaders itself, just one
+   size down since this is a supporting line, not its own section. */
+.jumbo-lastplay {
+    border-top: 1px solid var(--edge);
+    margin-top: 10px;
+    padding-top: 10px;
+    text-align: center;
+}
+.jumbo-lastplay-score {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+.jumbo-lastplay-logo {
+    width: 26px;
+    height: 26px;
+    object-fit: contain;
+}
+.jumbo-lastplay-tally {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--bone);
+    letter-spacing: 0.05em;
+}
+.jumbo-lastplay-desc {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--mut-2);
+    line-height: 1.4;
+    padding: 0 8px;
+}
+
 /* ---- Around the leagues ---- */
 .jumbo-around-body { flex: 1; min-height: 0; overflow: hidden; }
 .jumbo-around-league {
