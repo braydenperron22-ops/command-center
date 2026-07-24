@@ -327,7 +327,7 @@ def notify_if_outage() -> None:
 
 
 @st.cache_data(ttl=GENERATE_CACHE_TTL_SECONDS, show_spinner=False)
-def _generate_or_raise(account: str, prompt: str, temperature: float, max_output_tokens: int) -> str:
+def _generate_or_raise(account: str, prompt: str, temperature: float, max_output_tokens: int, model: str) -> str:
     """Real request against the given GROQ_ACCOUNTS entry, real
     exception on any failure — st.cache_data only ever caches a genuine
     successful return, never a raised exception, so a transient failure
@@ -335,7 +335,16 @@ def _generate_or_raise(account: str, prompt: str, temperature: float, max_output
     gets cached here. See generate() below for why that split matters,
     and for the overnight pause — that's checked once by the caller
     before either account is tried, not per-account here, since both
-    accounts share the same pause window."""
+    accounts share the same pause window.
+
+    `model` defaults to GROQ_MODEL for every existing caller (see
+    generate()'s own default) — only a caller that explicitly asks for
+    something else (see pages_conflicts.py's use of "openai/gpt-oss-
+    120b") pays attention to this at all. Only reads choices[0].message
+    ["content"], never "reasoning" — a reasoning-family model (like
+    that one) puts its actual answer in content and its hidden chain-
+    of-thought in a separate reasoning field this already ignores by
+    construction, no special-casing needed here for that."""
     api_key = st.secrets.get(_GROQ_SECRET_NAMES[account])
     if not api_key:
         raise RuntimeError(f"no {_GROQ_SECRET_NAMES[account]} configured")
@@ -349,7 +358,7 @@ def _generate_or_raise(account: str, prompt: str, temperature: float, max_output
             GROQ_URL,
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
-                "model": GROQ_MODEL,
+                "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": temperature,
                 "max_tokens": max_output_tokens,
@@ -371,15 +380,24 @@ def _generate_or_raise(account: str, prompt: str, temperature: float, max_output
     return text
 
 
-def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200) -> str | None:
+def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200, model: str = GROQ_MODEL) -> str | None:
     """One short piece of AI-written text for `prompt`, or None if the
     key's missing, the request fails, or the free tier's rate-limited
     right now — never raises. Cached by the exact prompt string AND
-    temperature/max_output_tokens, but ONLY on success (see
+    temperature/max_output_tokens/model, but ONLY on success (see
     _generate_or_raise) — same reasoning as gemini_client.generate's
     own docstring: a transient failure must be retried on the very next
     call, not stuck showing "unavailable" for the rest of the TTL
     window.
+
+    `model` defaults to GROQ_MODEL — only pass something else if a
+    feature specifically needs a different model's characteristics
+    (see pages_conflicts.py's use of "openai/gpt-oss-120b" for real
+    reasoning depth on a low-frequency call; session request: "Meta is
+    losing the AI race... is there a better... option through Grok").
+    Only ever applies to the two Groq accounts — if both fail and this
+    falls through to gemini_client, that's always Gemini's own model,
+    since Gemini doesn't host Groq's catalog.
 
     Build prompts from already-rounded/bucketed values (this
     dashboard's other templated text already does this — see morning_
@@ -416,7 +434,7 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
         return None
     for account in GROQ_ACCOUNTS:
         try:
-            result = _generate_or_raise(account, prompt, temperature, max_output_tokens)
+            result = _generate_or_raise(account, prompt, temperature, max_output_tokens, model)
             _last_served_by = account
             return result
         except Exception:
@@ -481,7 +499,7 @@ _periodic_cache: dict[str, tuple[float, str]] = _load_periodic_cache()
 _STARTUP_JITTER_SECONDS = 90
 
 
-def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, temperature: float = 0.7, max_output_tokens: int = 200) -> str | None:
+def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, temperature: float = 0.7, max_output_tokens: int = 200, model: str = GROQ_MODEL) -> str | None:
     """Same as generate(), but throttled by a caller-chosen cadence
     instead of by exact-prompt-text matching — see gemini_client.
     generate_periodic's own docstring for the full rationale (this is a
@@ -513,7 +531,7 @@ def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, tempe
         return None
     if now - cached[0] < refresh_seconds:
         return cached[1] or None
-    text = generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens)
+    text = generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens, model=model)
     if text is not None:
         _periodic_cache[feature_key] = (now, text)
         _save_periodic_cache()

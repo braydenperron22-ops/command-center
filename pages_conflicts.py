@@ -21,9 +21,9 @@ ceasefire / peace talks), and write a real overview covering what's
 happening, where it's headed, and its effect on the wider world.
 
 Important honesty note baked into the prompt itself: plain chat-
-completions calls (what gemini_client.generate uses, same as
-groq_client before it) do NOT have live web search — that's a
-different capability neither provider's plain chat endpoint offers as
+completions calls (what groq_client.generate uses, whichever provider
+it ends up serving from) do NOT have live web search — that's a
+different capability no provider's plain chat endpoint offers as
 called here, so this is NOT the model browsing the internet in real
 time. It's genuinely current in the parts that matter most — which
 headlines exist, what they say — because those are real headlines
@@ -39,22 +39,27 @@ declined in that literal form (no live search exists to actually do
 that) in favor of what this already does: real headlines for current
 state, the model's own knowledge only for background.
 
-Routed to gemini_client exclusively, not groq_client — session
-request: "since it's done through Grock, I need you to crack the whip
-a little bit on it. It's not giving me a whole lot" — same fix, and
-same reasoning, as morning_briefing.py's own provider switch earlier
-the same day: same prompt, meaningfully sharper output from Gemini. No
-Groq fallback for this one feature specifically; if Gemini fails, this
-still returns None and the page shows its existing empty state, not a
-second provider. Still respects the same overnight quiet-hours
-schedule as every Groq-routed call (see groq_client.ai_pulls_paused)
-even though the call itself bypasses groq_client entirely.
+Routed through groq_client with an explicit non-default `model` —
+session history: first switched to gemini_client entirely ("crack the
+whip... it's not giving me a whole lot"), then a live side-by-side
+test against a specific alternative found something sharper still —
+session request: "Meta is losing the AI race... is there a better...
+option through Grok" — openai/gpt-oss-120b, OpenAI's own open-weight
+model hosted on Groq, confirmed live to write noticeably more decisive
+overviews than both Llama and Gemini on this exact prompt. It's a
+REASONING model (see GPT_OSS_MODEL's own comment for the practical
+consequences of that — it needed real, deliberately-computed token
+headroom to actually finish instead of silently returning nothing).
+Still goes through groq_client's full primary -> failsafe -> gemini
+fallback chain (see groq_client.generate's own docstring) — a bad day
+on both Groq accounts degrades to Gemini's own model instead, not to
+nothing, since that's still meaningfully better than the empty state.
 
 No keyword fallback if the AI call fails (unlike news.py, which keeps
 its old keyword pipeline as a safety net) — that fallback is exactly
 what an earlier session asked to remove, not preserve as a shadow
 system. The page just doesn't render new content on a failure and
-effectively shows last-run's data via gemini_client.generate's own
+effectively shows last-run's data via groq_client.generate's own
 20-minute cache, or the empty state if there's truly nothing cached
 yet."""
 
@@ -64,7 +69,6 @@ import json
 import streamlit as st
 
 import conflict_news
-import gemini_client
 import groq_client
 from config import CONFLICT_WINDOW_DAYS, MAX_CONFLICTS_SHOWN
 from flags import flag_for
@@ -85,7 +89,26 @@ _STATUS_DISPLAY = {
 _SEVERITY_FILL_PCT = {"HIGH": 100, "MEDIUM": 65, "LOW": 35}
 
 HEADLINES_FED_TO_AI = 150  # comfortably covers a week's real pool without an unbounded prompt
-OVERVIEW_MAX_OUTPUT_TOKENS = 2200  # up to MAX_CONFLICTS_SHOWN entries, each a real paragraph
+# openai/gpt-oss-120b — see this module's own docstring for why this
+# specific model. It's a REASONING model: it spends real completion
+# tokens on hidden chain-of-thought before ever writing the visible
+# answer, and those reasoning tokens count against the SAME max_tokens
+# ceiling as the answer itself — confirmed live: at the old flat 2,200
+# cap it silently returned nothing (reasoning ate the whole budget
+# before reaching real output), and this model's own per-minute budget
+# (8,000 tokens — tighter than the 12,000 the other Groq model this
+# app uses gets) is tight enough that the ~2,600-token prompt plus a
+# fixed output cap can blow the limit outright depending on how many
+# headlines happen to be pending that day (real 413 hit during
+# testing: "Requested 8555... Limit 8000"). GPT_OSS_MAX_OUTPUT_TOKENS
+# below is computed per call from the ACTUAL prompt size instead of a
+# fixed number, so it scales down automatically on a heavy headline
+# day and up on a light one, always leaving real room for both
+# reasoning and the answer under the real ceiling.
+GPT_OSS_MODEL = "openai/gpt-oss-120b"
+GPT_OSS_TPM_LIMIT = 8_000
+GPT_OSS_SAFETY_MARGIN = 700  # slack for the input-token estimate being a rough len(prompt)//4, not an exact tokenization
+GPT_OSS_MIN_OUTPUT_TOKENS = 1_500  # floor — below this there isn't real room to both reason and write a useful answer
 # Session request history: "for conflicts I don't need second by
 # second updates... update that hourly" -> widened to 3h for cost
 # reasons -> "honestly, have it run once a day, but make it intentful."
@@ -103,9 +126,9 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
     limit, network, or a response that didn't come back as valid JSON)
     with nothing usable already cached. Real calls throttled to once
     per REFRESH_SECONDS regardless of how often this is called — see
-    gemini_client.generate_periodic. See this module's own docstring
+    groq_client.generate_periodic. See this module's own docstring
     for the full design rationale, including why this is routed to
-    Gemini specifically."""
+    gpt-oss-120b specifically."""
     texts = [h["headline"] for h in headlines[:HEADLINES_FED_TO_AI]]
     if not texts:
         return None
@@ -148,12 +171,22 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
         '[{"countries": [{"code": "ua", "name": "Ukraine"}, {"code": "ru", "name": "Russia"}], '
         '"status": "ACTIVE_WAR", "overview": "...", "severity": "HIGH", "headline_numbers": [3, 7]}]'
     )
-    if groq_client.ai_pulls_paused():
-        result = None
-    else:
-        result = gemini_client.generate_periodic(
-            "conflicts_overview", REFRESH_SECONDS, prompt, temperature=0.2, max_output_tokens=OVERVIEW_MAX_OUTPUT_TOKENS
-        )
+    # gpt-oss-120b is a reasoning model — hidden chain-of-thought tokens
+    # count against the same max_tokens budget as the visible answer, and
+    # this model's own per-minute limit (8,000) is tighter than the
+    # primary Llama model's (12,000). A fixed cap silently starves the
+    # visible output (confirmed live: 2,200 came back empty) or blows the
+    # per-minute ceiling outright (confirmed live: a 6,000 cap 413'd once
+    # input tokens were added in). Sizing this from the real prompt each
+    # call, instead of guessing a constant, is what keeps this correct as
+    # the headline pool (and therefore prompt length) drifts day to day.
+    estimated_input_tokens = len(prompt) // 4
+    max_output_tokens = max(
+        GPT_OSS_MIN_OUTPUT_TOKENS, GPT_OSS_TPM_LIMIT - GPT_OSS_SAFETY_MARGIN - estimated_input_tokens
+    )
+    result = groq_client.generate_periodic(
+        "conflicts_overview", REFRESH_SECONDS, prompt, temperature=0.2, max_output_tokens=max_output_tokens, model=GPT_OSS_MODEL
+    )
     if result is None:
         return None
 
