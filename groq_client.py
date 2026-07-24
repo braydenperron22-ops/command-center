@@ -242,6 +242,32 @@ def _reconcile_budget(entry: list, actual_tokens: int | None) -> None:
 # other statuses it may have."
 _last_served_by = "not_attempted"
 
+# model -> {"ok": bool, "via": "primary"|"failsafe"|None} for the last
+# real attempt on that specific model, across every caller — session
+# request, now that this app routes different features to genuinely
+# different models (news.py's default llama-3.3-70b-versatile,
+# pages_conflicts.py's openai/gpt-oss-120b): "since we have a bunch of
+# different models now... show what models are active and what ones
+# are not responding." The old single _last_served_by above only ever
+# reflected whichever call happened most recently, system-wide — a
+# gpt-oss success (once/day, see pages_conflicts' REFRESH_SECONDS)
+# could read "Active" while llama was actually failing every call that
+# hour, or vice versa. See ai_status_by_model below.
+_model_status: dict[str, dict] = {}
+
+# Display names + fixed slot order for the badge (ai_status_by_model).
+# Coupled to pages_conflicts.GPT_OSS_MODEL's actual string value by
+# convention, not by import (that module already imports this one;
+# importing back would be circular) — if that constant's model ever
+# changes, update the key here too. Fixed rather than "whatever's been
+# attempted so far this process" so the badge doesn't grow/shrink or
+# reorder itself as different features' own cadences happen to fire —
+# GPT-OSS in particular only runs once a day, so "only show what's
+# been attempted" would leave it missing from the badge most of the
+# time.
+MODEL_DISPLAY_NAMES = {GROQ_MODEL: "Llama", "openai/gpt-oss-120b": "GPT-OSS"}
+_MODEL_SLOTS = [GROQ_MODEL, "openai/gpt-oss-120b"]
+
 
 def ai_status() -> dict:
     """{"label": str, "tone": "good"|"medium"|"low"|"neutral"} for a
@@ -281,6 +307,57 @@ def ai_status() -> dict:
     if remaining_pct < 20:
         return {"label": "Low", "tone": "medium"}
     return {"label": "Active", "tone": "good"}
+
+
+def ai_status_by_model() -> list[dict]:
+    """{"label", "status", "tone"} for each model this app actually
+    uses — Llama and GPT-OSS on Groq (see _MODEL_SLOTS), plus Gemini —
+    so the badge shows each one's own real status instead of one line
+    for whichever happened to run most recently (see _model_status's
+    own comment for why that was misleading with more than one model
+    in play). notify_if_outage/ai_status above are untouched and still
+    drive the actual outage push — this is purely for the on-screen
+    glance.
+
+    Per slot, in priority order:
+    - "Asleep" (neutral): the overnight pause window, same as
+      ai_status() — nothing's being attempted for ANY model right now.
+    - "Idle" (neutral): this model hasn't had a real attempt yet this
+      process — a fresh redeploy, or, for GPT-OSS specifically given
+      its once-a-day cadence, simply hasn't been that model's turn yet
+      today. Not a failure, just nothing observed.
+    - "Rate Limited" (low): its last real attempt failed everywhere
+      available to it (both Groq accounts for Llama/GPT-OSS; Gemini
+      itself for Gemini).
+    - "Failsafe" (medium): Llama/GPT-OSS only — primary failed but the
+      failsafe account covered it.
+    - "Active" (good): last real attempt succeeded on the account/
+      provider it's actually supposed to run on."""
+    asleep = _in_pause_window(_local_now())
+    entries = []
+    for model in _MODEL_SLOTS:
+        label = MODEL_DISPLAY_NAMES.get(model, model)
+        info = _model_status.get(model)
+        if asleep:
+            entries.append({"label": label, "status": "Asleep", "tone": "neutral"})
+        elif info is None:
+            entries.append({"label": label, "status": "Idle", "tone": "neutral"})
+        elif not info["ok"]:
+            entries.append({"label": label, "status": "Rate Limited", "tone": "low"})
+        elif info["via"] == "failsafe":
+            entries.append({"label": label, "status": "Failsafe", "tone": "medium"})
+        else:
+            entries.append({"label": label, "status": "Active", "tone": "good"})
+    gemini_outcome = gemini_client.last_outcome()
+    if asleep:
+        entries.append({"label": "Gemini", "status": "Asleep", "tone": "neutral"})
+    elif gemini_outcome is None:
+        entries.append({"label": "Gemini", "status": "Idle", "tone": "neutral"})
+    elif gemini_outcome:
+        entries.append({"label": "Gemini", "status": "Active", "tone": "good"})
+    else:
+        entries.append({"label": "Gemini", "status": "Rate Limited", "tone": "low"})
+    return entries
 
 
 # "Rate Limited" has to hold for this long before it's worth a push —
@@ -436,9 +513,11 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
         try:
             result = _generate_or_raise(account, prompt, temperature, max_output_tokens, model)
             _last_served_by = account
+            _model_status[model] = {"ok": True, "via": account}
             return result
         except Exception:
             continue
+    _model_status[model] = {"ok": False, "via": None}
     result = gemini_client.generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens)
     _last_served_by = "gemini" if result is not None else "none"
     return result

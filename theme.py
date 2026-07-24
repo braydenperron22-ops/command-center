@@ -1888,15 +1888,18 @@ html, body, [class*="css"] {
    confusion (a fresh-process estimate reading "100%" right after a
    real rate limit had just been hit): "can you just change the badge
    to say AI: Active or AI: Rate Limited or any an all other statuses
-   it may have." See groq_client.ai_status for the full status list. */
+   it may have." Later widened from one line to one row per model —
+   session request: "since we have a bunch of different models now...
+   show what models are active and what ones are not responding." See
+   groq_client.ai_status_by_model for the full status list. */
 .ai-status-bar {
     position: fixed;
     bottom: 60px;
     right: 14px;
     z-index: 400;
     display: flex;
-    align-items: center;
-    gap: 0.4rem;
+    flex-direction: column;
+    gap: 0.22rem;
     padding: 0.32rem 0.65rem;
     border-radius: 10px;
     background: rgba(12,12,16,0.62);
@@ -1908,6 +1911,11 @@ html, body, [class*="css"] {
 }
 .ai-status-bar:hover {
     opacity: 1;
+}
+.ai-status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
 }
 .ai-status-dot {
     flex-shrink: 0;

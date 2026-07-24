@@ -853,21 +853,25 @@ except Exception:
 # original percentage-based version's own blind spots caused real
 # confusion ("thought we rate limited main?? ... badge said 100%"):
 # "can you just change the badge to say AI: Active or AI: Rate Limited
-# or any an all other statuses it may have." See groq_client.ai_status
-# for the full status list and what each one actually means.
-# Page-independent like the pinned headlines above; suppressed during a
-# takeover for the same reason they are.
+# or any an all other statuses it may have." Later widened to one row
+# per model — session request, once conflicts started pinning its own
+# model (gpt-oss-120b) separately from everything else's default
+# (llama-3.3-70b-versatile): "since we have a bunch of different
+# models now... show what models are active and what ones are not
+# responding." See groq_client.ai_status_by_model for the full status
+# list and what each one actually means. Page-independent like the
+# pinned headlines above; suppressed during a takeover for the same
+# reason they are.
 if not _jumbotron_active:
     try:
-        _ai_status = groq_client.ai_status()
-        _ai_dot_class = f"ai-status-dot-{_ai_status['tone']}"
-        st.markdown(
-            f"""<div class="ai-status-bar">
-                <span class="ai-status-dot {_ai_dot_class}"></span>
-                <span class="ai-status-text">AI: {_ai_status['label']}</span>
-            </div>""",
-            unsafe_allow_html=True,
+        _ai_rows_html = "".join(
+            f"""<div class="ai-status-row">
+                <span class="ai-status-dot ai-status-dot-{m['tone']}"></span>
+                <span class="ai-status-text">{m['label']}: {m['status']}</span>
+            </div>"""
+            for m in groq_client.ai_status_by_model()
         )
+        st.markdown(f'<div class="ai-status-bar">{_ai_rows_html}</div>', unsafe_allow_html=True)
     except Exception:
         pass
 

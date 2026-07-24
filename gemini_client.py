@@ -48,6 +48,17 @@ REQUEST_TIMEOUT_SECONDS = 20  # generous enough for a long structured response (
 # distinct prompt, not once per 5s rerun".
 GENERATE_CACHE_TTL_SECONDS = 20 * 60
 
+# Last real observed outcome for this process — True (succeeded),
+# False (failed), or None (never attempted yet) — across every caller,
+# direct (morning_briefing) or via groq_client's own fallback tier.
+# See groq_client.ai_status_by_model, which reads this through
+# last_outcome() below for its multi-model status badge.
+_last_outcome: bool | None = None
+
+
+def last_outcome() -> bool | None:
+    return _last_outcome
+
 
 @st.cache_data(ttl=GENERATE_CACHE_TTL_SECONDS, show_spinner=False)
 def _generate_or_raise(prompt: str, temperature: float, max_output_tokens: int) -> str:
@@ -114,9 +125,13 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
     short paragraph. A caller asking for something structurally bigger
     (pages_conflicts' multi-conflict JSON overview) needs to raise this
     explicitly, or the response silently truncates mid-output."""
+    global _last_outcome
     try:
-        return _generate_or_raise(prompt, temperature, max_output_tokens)
+        text = _generate_or_raise(prompt, temperature, max_output_tokens)
+        _last_outcome = True
+        return text
     except Exception:
+        _last_outcome = False
         return None
 
 
