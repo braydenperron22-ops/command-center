@@ -984,6 +984,15 @@ def _ai_sentence(picked: list[str]) -> str | None:
     pencil") — the constraints were a Groq patch, not a requirement of
     the format itself, so they don't travel with the provider switch.
 
+    Session request: "remove ethical limits on the daily brief and
+    allow profanity at Gemini's discretion" — the actual lever here is
+    the prompt's own tone instruction, not anything this app controls
+    on Gemini's side (a provider's own content filtering isn't
+    something a prompt can switch off). Added explicit permission to
+    swear when a line is genuinely sharper for it, left as a judgment
+    call rather than mandated per response — same "your own judgment,
+    no formula" spirit as the rest of this brief.
+
     Facts and their priority ordering are otherwise untouched (still
     decided entirely by the *_clause functions above); this only
     changes how they're phrased. Owns its own opening address now
@@ -1009,7 +1018,11 @@ def _ai_sentence(picked: list[str]) -> str | None:
         "Iron Man — sharp, hyper-competent, genuinely funny rather than just pleasant. Real wit, "
         "real edge: dry, cutting, deadpan, willing to roast "
         f"{USER_FIRST_NAME} directly and make it a "
-        "little dark — he doesn't need protecting from the joke, mean is fine, go there. Not "
+        "little dark — he doesn't need protecting from the joke, mean is fine, go there. Actual "
+        "profanity (shit, damn, hell, ass, and the like) is explicitly allowed, not just "
+        "euphemisms or 'edgy' insults — genuinely use a real swear when a line lands sharper with "
+        "one, your call on when. Don't force it into every line, but don't default away from it "
+        "either. Not "
         "corporate, not a stiff butler, not playing it safe. Use your own judgment on structure, "
         "pacing, and where the actual wit lands — you don't need a formula for this.\n\n"
         "You have no idea what day or date it actually is, so never reference, guess, or imply one "
