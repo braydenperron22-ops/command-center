@@ -492,27 +492,59 @@ COMMUTE_CLEAR_LINES = [
     "smooth as it gets, {duration} min to {destination}",
 ]
 
+# {agenda_list} carries every real event name/time up to AGENDA_LIST_
+# CAP (see _format_agenda_list) — session request: "gemini isnt
+# looking at my whole schedule in these morning briefs, ensure they
+# have the whole picture." Used to interpolate only {first_event} +
+# {count}, silently dropping every other event's name from the actual
+# fact string handed to the AI (not a Gemini reasoning gap — the AI
+# never saw them to begin with, so "that's really it for today" wasn't
+# an invented fact, it was following orders from an agenda clause that
+# had already thrown the rest of the day away).
 AGENDA_BUSY_LINES = [
-    "packed day, {count} things on the calendar, starting with {first_event} at {time}",
-    "busy one today, {count} on the books, kicking off with {first_event} at {time}",
-    "{count} things on the calendar today, first up is {first_event} at {time}",
-    "full schedule today — {count} events, starting with {first_event} at {time}",
-    "busy day ahead, {count} on the calendar, {first_event} first at {time}",
-    "lots on today, {count} things lined up, {first_event} kicks it off at {time}",
-    "{count} events on the books today, leading with {first_event} at {time}",
-    "today's stacked — {count} things, first one's {first_event} at {time}",
-    "a full plate today, {count} on the calendar, {first_event} at {time} to start",
-    "{count} things to get through today, starting with {first_event} at {time}",
-    "no quiet day today — {count} events, first is {first_event} at {time}",
-    "busy calendar today, {count} entries, opening with {first_event} at {time}",
-    "{count} things lined up today, {first_event} leads it off at {time}",
-    "a packed calendar — {count} events, starting with {first_event} at {time}",
-    "{count} on today's docket, {first_event} first at {time}",
-    "today's full, {count} things scheduled, {first_event} at {time} to open",
-    "{count} entries on the calendar, kicking off with {first_event} at {time}",
-    "lots going on — {count} events today, {first_event} at {time} first",
-    "{count} things to work through today, {first_event} at {time} starts it",
-    "a busy calendar today, {count} items, {first_event} leading at {time}",
+    "packed day, {count} things on the calendar: {agenda_list}",
+    "busy one today, {count} on the books: {agenda_list}",
+    "{count} things on the calendar today: {agenda_list}",
+    "full schedule today — {count} events: {agenda_list}",
+    "busy day ahead, {count} on the calendar: {agenda_list}",
+    "lots on today, {count} things lined up: {agenda_list}",
+    "{count} events on the books today: {agenda_list}",
+    "today's stacked — {count} things: {agenda_list}",
+    "a full plate today, {count} on the calendar: {agenda_list}",
+    "{count} things to get through today: {agenda_list}",
+    "no quiet day today — {count} events: {agenda_list}",
+    "busy calendar today, {count} entries: {agenda_list}",
+    "{count} things lined up today: {agenda_list}",
+    "a packed calendar — {count} events: {agenda_list}",
+    "{count} on today's docket: {agenda_list}",
+    "today's full, {count} things scheduled: {agenda_list}",
+    "{count} entries on the calendar: {agenda_list}",
+    "lots going on — {count} events today: {agenda_list}",
+    "{count} things to work through today: {agenda_list}",
+    "a busy calendar today, {count} items: {agenda_list}",
+]
+# Exactly 2 events — its own tier rather than falling into
+# AGENDA_LIGHT_LINES (which only ever named one event and explicitly
+# claimed exclusivity — "that's really it for today" — on a day that
+# actually had a second event sitting right after it) or AGENDA_BUSY_
+# LINES (whose "packed day" framing doesn't fit two things). Also uses
+# {agenda_list} so both names/times are real, not just the first.
+AGENDA_TWO_LINES = [
+    "two things today: {agenda_list}",
+    "a couple things on the calendar: {agenda_list}",
+    "just two on the books today: {agenda_list}",
+    "today's got two things on it: {agenda_list}",
+    "light day, just two things: {agenda_list}",
+    "two things to plan around today: {agenda_list}",
+    "the calendar's got two things today: {agenda_list}",
+    "not much, just two things: {agenda_list}",
+    "two on the docket today: {agenda_list}",
+    "a light one — two things today: {agenda_list}",
+    "today's fairly quiet, two things on it: {agenda_list}",
+    "just a pair of things today: {agenda_list}",
+    "two things scheduled today: {agenda_list}",
+    "the day's got two fixed points: {agenda_list}",
+    "two things on today's agenda: {agenda_list}",
 ]
 AGENDA_LIGHT_LINES = [
     "just {first_event} at {time} on the calendar today",
@@ -855,6 +887,21 @@ def _commute_clause(now: datetime) -> tuple[int, str] | None:
     return 2, text
 
 
+# Real event names/times fed into {agenda_list} above, capped so a
+# genuinely packed day doesn't turn the agenda fact into its own
+# essay — "plus N more" covers the rest honestly instead of just
+# silently dropping them the way the old first-event-only version did.
+AGENDA_LIST_CAP = 4
+
+
+def _format_agenda_list(events: list[dict]) -> str:
+    shown = events[:AGENDA_LIST_CAP]
+    parts = [f'{e["summary"]} at {e["start"].strftime("%I:%M %p").lstrip("0")}' for e in shown]
+    joined = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + f", and {parts[-1]}"
+    remaining = len(events) - len(shown)
+    return f"{joined}, plus {remaining} more" if remaining > 0 else joined
+
+
 def _agenda_clause(now: datetime) -> tuple[int, str] | None:
     calendars = st.secrets.get("CALENDARS")
     if not calendars:
@@ -863,15 +910,17 @@ def _agenda_clause(now: datetime) -> tuple[int, str] | None:
     if not events:
         return 1, _pick(AGENDA_EMPTY_LINES, now, "agenda")
     events.sort(key=lambda e: e["start"])
-    first = events[0]
-    time_text = first["start"].strftime("%I:%M %p").lstrip("0")
-    if len(events) >= 3:
-        text = _pick(AGENDA_BUSY_LINES, now, "agenda").format(
-            count=len(events), first_event=first["summary"], time=time_text
-        )
-        return 5, text
-    text = _pick(AGENDA_LIGHT_LINES, now, "agenda").format(first_event=first["summary"], time=time_text)
-    return 3, text
+    if len(events) == 1:
+        first = events[0]
+        time_text = first["start"].strftime("%I:%M %p").lstrip("0")
+        text = _pick(AGENDA_LIGHT_LINES, now, "agenda").format(first_event=first["summary"], time=time_text)
+        return 3, text
+    agenda_list = _format_agenda_list(events)
+    if len(events) == 2:
+        text = _pick(AGENDA_TWO_LINES, now, "agenda").format(agenda_list=agenda_list)
+        return 4, text
+    text = _pick(AGENDA_BUSY_LINES, now, "agenda").format(count=len(events), agenda_list=agenda_list)
+    return 5, text
 
 
 def _household_clause(now: datetime) -> tuple[int, str] | None:
