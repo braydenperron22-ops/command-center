@@ -122,10 +122,13 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
     """Up to MAX_CONFLICTS_SHOWN entries, each {"countries": [{"code",
     "name"}, ...], "status", "overview", "severity", "headlines": [...]}
     (headlines re-attached below, matched back from the AI's own
-    referenced numbers) — or None on any failure (missing key, rate
-    limit, network, or a response that didn't come back as valid JSON)
-    with nothing usable already cached. Real calls throttled to once
-    per REFRESH_SECONDS regardless of how often this is called — see
+    referenced numbers — kept on the returned entry even though render()
+    no longer displays them, see its own comment; still real, still fed
+    to the AI in full either way, this only changes what's shown on
+    screen) — or None on any failure (missing key, rate limit, network,
+    or a response that didn't come back as valid JSON) with nothing
+    usable already cached. Real calls throttled to once per
+    REFRESH_SECONDS regardless of how often this is called — see
     groq_client.generate_periodic. See this module's own docstring
     for the full design rationale, including why this is routed to
     gpt-oss-120b specifically."""
@@ -231,6 +234,14 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
 
 
 def render():
+    """Session request: "hide the rss feed but let the ai see them for
+    the conflict recap" — the raw sourced headlines used to be listed
+    under each tile's AI-written overview (see git history's
+    conflict-headlines markup); each tile is now just the AI's own
+    synthesis, no visible headline list. The underlying fetch and the
+    AI's own use of the full pool are both completely unchanged —
+    headline_pool below still goes into _ai_overview in full, this only
+    changes what render() puts on screen afterward."""
     st.markdown('<div class="page-title page-title-conflicts">Ongoing Conflicts — AI Overview</div>', unsafe_allow_html=True)
 
     headline_pool = conflict_news.fetch_conflict_headlines()
@@ -255,9 +266,6 @@ def render():
         country_label = " – ".join(c["name"] for c in entry["countries"])
 
         flags_html = "".join(f'<span class="conflict-flag">{flag_for(c["code"])}</span>' for c in entry["countries"])
-        headlines_html = "".join(
-            f'<div class="conflict-headline">{html.escape(h["headline"])}</div>' for h in entry["headlines"][:3]
-        )
 
         with cols[i]:
             st.markdown(
@@ -269,7 +277,6 @@ def render():
                         <div class="severity-fill {fill_class}" style="left: 0; width: {fill_pct}%;"></div>
                     </div>
                     <div class="conflict-ai-summary">{html.escape(entry["overview"])}</div>
-                    <div class="conflict-headlines">{headlines_html}</div>
                 </div>""",
                 unsafe_allow_html=True,
             )

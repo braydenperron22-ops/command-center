@@ -1667,18 +1667,13 @@ html, body, [class*="css"] {
     margin-bottom: 0.7rem;
 }
 
-.conflict-headlines {
-    margin-top: 0.7rem;
-    padding-top: 0.6rem;
-    border-top: 1px solid rgba(255,255,255,0.08);
-}
-
-.conflict-headline {
-    font-size: 0.82rem;
-    color: #D6D6DC;
-    line-height: 1.4;
-    margin-bottom: 0.4rem;
-}
+/* .conflict-headlines/.conflict-headline (the raw sourced-headline list
+   under each tile) were removed along with their markup in
+   pages_conflicts.render() — session request: "hide the rss feed but
+   let the ai see them for the conflict recap." .conflict-headline-
+   recent below was already unused before that (references a since-
+   removed _ai_summary function), left alone as pre-existing, unrelated
+   debt rather than folded into this change. */
 /* Same red as badge-bad/tile-accent-bad/the News page's breaking rows —
    consistent "this is fresh/urgent" language app-wide, not a one-off. */
 .conflict-headline-recent {
