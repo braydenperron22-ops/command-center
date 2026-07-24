@@ -74,7 +74,23 @@ STANDINGS_CACHE_TTL_SECONDS = 30 * 60  # standings only move once a game finishe
 # A live game's own count/base-runners/period-clock genuinely can change
 # every few seconds — polled far tighter than the 5-minute schedule
 # cache above, which only needs to catch state flipping to/from "live".
-LIVE_DETAIL_CACHE_TTL_SECONDS = 30
+# Was 30s; session request: "could we... make it so that the data
+# updates every five ish seconds during game time" — matches the app's
+# own global rerun cadence (app.py's st_autorefresh, also 5000ms) so a
+# live game's detail genuinely refetches on every rerun instead of
+# surviving 5 of every 6. That global interval itself is a hard floor
+# (confirmed live: the app crash-looped from container memory pressure
+# at 3000ms, a full-script-rerun cost that has nothing to do with any
+# one endpoint) — this only changes which cached value gets used on a
+# rerun that was already happening, not how often reruns happen. MLB's
+# and NHL's schedule/live-feed endpoints are free, unauthenticated,
+# and undocumented rate-limit-wise (no API key means no per-key quota
+# to check against, unlike Groq/Gemini) — 12 requests/minute during an
+# actual live game is well within what hobbyist trackers hit these same
+# endpoints with regularly, and only fires while phase == "live" to
+# begin with (see pages_jumbotron.py/pages_sports.py's own gating), so
+# there's no added load the rest of the time.
+LIVE_DETAIL_CACHE_TTL_SECONDS = 5
 # The live feeds above are close to real-time, but Brayden's actual TV
 # broadcast runs a beat behind that — session report: "the inning over
 # thing is being picked up before the live stream." Rather than just

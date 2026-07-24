@@ -572,10 +572,12 @@ def _board_html(state: dict, now: datetime) -> str:
         # game["team_score"]/["opp_score"] come from the schedule
         # endpoint, only refreshed every 5 minutes. The live-detail
         # endpoints (fetch_mlb_live_detail/fetch_nhl_live_detail) poll
-        # every 30s for the inning/clock situation below and carry the
-        # real live score too — this call is the same cached one
-        # _mlb_situation_html/_nhl_situation_html make right after, so
-        # it's not an extra request, just used here first.
+        # every LIVE_DETAIL_CACHE_TTL_SECONDS (sports_client.py — 5s,
+        # matching the app's own rerun cadence) for the inning/clock
+        # situation below and carry the real live score too — this call
+        # is the same cached one _mlb_situation_html/_nhl_situation_html
+        # make right after, so it's not an extra request, just used here
+        # first.
         if phase == "live":
             live_detail = (
                 sports_client.fetch_mlb_live_detail(game["game_id"])
