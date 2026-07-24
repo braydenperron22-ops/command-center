@@ -1081,6 +1081,11 @@ html, body, [class*="css"] {
 .severity-fill-good { background: #32D74B; }
 .severity-fill-neutral { background: #5AC8FA; }
 .severity-fill-inline { background: #AEAEB2; }
+/* Amber middle tier — added for pages_maintenance's Groq token-budget
+   bars (good/medium/low, matching ai-status-dot's own three-tone
+   language), a distinction the original bad/good/neutral set never
+   needed before. */
+.severity-fill-medium { background: #FF9F0A; }
 
 .severity-caption {
     margin-top: 0.4rem;
@@ -1161,6 +1166,61 @@ html, body, [class*="css"] {
     background: #A78BFA;
     box-shadow: 0 0 8px 1px rgba(167,139,250,0.5);
 }
+/* Deliberately muted grey rather than another vibrant page color —
+   this page isn't part of the normal rotation (see pages_maintenance's
+   own docstring), so its beacon reads as "utility/diagnostic," not
+   "just another content page." */
+.page-title-maintenance::before {
+    background: #8E8E93;
+    box-shadow: 0 0 8px 1px rgba(142,142,147,0.5);
+}
+
+/* pages_maintenance.py — session request: "add a maintenance tab...
+   that shows stats on how everything is updating... all colour coded
+   to show how the board is performing." Rows reuse the tile/tile-label
+   shape the rest of the app already uses (see .tile above) rather than
+   inventing a new card style, just with a compact label+pill+meta row
+   layout inside. */
+.maint-tile {
+    padding: 0.9rem 1rem;
+}
+.maint-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.maint-row:last-child {
+    border-bottom: none;
+}
+.maint-row-label {
+    font-size: 0.85rem;
+    color: #D6D6DC;
+    flex-shrink: 0;
+}
+.maint-row-meta {
+    font-size: 0.78rem;
+    color: #8E8E93;
+    text-align: right;
+    white-space: nowrap;
+}
+.maint-pill {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.15rem 0.55rem;
+    border-radius: 8px;
+    white-space: nowrap;
+}
+/* Same four-tone language as the AI status badge's own dots
+   (ai-status-dot-good/medium/low/neutral) — one shared color
+   vocabulary for "how healthy is this" everywhere in the app rather
+   than a page-specific palette. */
+.maint-pill-good { background: rgba(50,215,75,0.18); color: #32D74B; }
+.maint-pill-medium { background: rgba(255,159,10,0.18); color: #FF9F0A; }
+.maint-pill-low { background: rgba(255,105,97,0.18); color: #FF6961; }
+.maint-pill-neutral { background: rgba(90,200,250,0.14); color: #5AC8FA; }
 
 /* Team + opponent logos (sports_client.py — MLB's static logo CDN and
    NHL's, both free, no key, keyed by team id/abbrev with no API call
@@ -2114,6 +2174,7 @@ html, body, [class*="css"] {
 .mobile-nav-item-sports { color: #5E5CE6 !important; }
 .mobile-nav-item-scores { color: #30D5C8 !important; }
 .mobile-nav-item-portfolio { color: #A78BFA !important; }
+.mobile-nav-item-maintenance { color: #8E8E93 !important; }
 
 /* ============ JUMBOTRON (pages_jumbotron.py) ============
    A self-contained arena-scoreboard skin that only ever renders while

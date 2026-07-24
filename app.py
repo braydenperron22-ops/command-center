@@ -22,6 +22,7 @@ import pages_home
 import pages_household
 import pages_internals
 import pages_jumbotron
+import pages_maintenance
 import pages_markets
 import pages_news
 import pages_portfolio
@@ -57,10 +58,14 @@ from weather_client import fetch_weather
 st.set_page_config(page_title="Command Center", layout="wide")
 theme.inject()
 
-# Kiosk hotkey: press J to pull the jumbotron up on demand, J again to
+# Kiosk hotkeys: press J to pull the jumbotron up on demand, J again to
 # hand the screen back to the normal rotation — session request, for
 # watching a game outside the automatic takeover window (see
-# sports_alerts.takeover_state).
+# sports_alerts.takeover_state). Press D the same way for the
+# maintenance/diagnostics page (pages_maintenance.py) — session
+# request: "add a maintenance tab... on ours by pressing D." Both keys
+# share one toggle rule: set ?page= to that page, or clear it if that
+# page's already showing.
 #
 # Has to be a components iframe rather than st.markdown: Streamlit
 # strips <script> out of unsafe_allow_html entirely, so markdown can't
@@ -81,15 +86,17 @@ components.html(
       s.id = 'kiosk-hotkeys';
       s.textContent = [
         "document.addEventListener('keydown', function (e) {",
-        "  if (e.key !== 'j' && e.key !== 'J') return;",
+        "  var key = e.key.toLowerCase();",
+        "  var targetPage = key === 'j' ? 'jumbotron' : key === 'd' ? 'maintenance' : null;",
+        "  if (!targetPage) return;",
         "  if (e.metaKey || e.ctrlKey || e.altKey) return;",
         "  var t = e.target;",
         "  if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;",
         "  var url = new URL(window.location.href);",
-        "  if (url.searchParams.get('page') === 'jumbotron') {",
+        "  if (url.searchParams.get('page') === targetPage) {",
         "    url.searchParams.delete('page');",
         "  } else {",
-        "    url.searchParams.set('page', 'jumbotron');",
+        "    url.searchParams.set('page', targetPage);",
         "  }",
         "  window.location.replace(url.toString());",
         "});",
@@ -274,6 +281,12 @@ try:
         # can actually be looked at outside a real takeover.
         page = "jumbotron"
         _takeover = _takeover or sports_alerts.takeover_preview_state()
+    elif _requested_page == "maintenance":
+        # Not part of PAGES (config.py) — deliberately excluded from
+        # the normal rotation, same "hidden unless asked for" treatment
+        # as jumbotron. Session request: "add a maintenance tab... by
+        # pressing D." See pages_maintenance.py.
+        page = "maintenance"
     elif _requested_page in PAGES:
         page = _requested_page
     elif _takeover:
@@ -357,9 +370,14 @@ _nav_items = "".join(
     f'href="?page={key}">{_PAGE_LABELS[key]}</a>'
     for key in PAGES
 )
-_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES else ""
+_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES and _requested_page != "maintenance" else ""
+# Separate from the PAGES loop above (same reasoning as jumbotron —
+# not part of the normal rotation, so it doesn't belong in that list).
+# Session request: "add a maintenance tab for the mobile version."
+_maint_active = " mobile-nav-item-active" if page == "maintenance" else ""
 st.markdown(
-    f'<div class="mobile-nav"><a class="mobile-nav-item mobile-nav-item-auto{_auto_active}" href="?">Auto</a>{_nav_items}</div>',
+    f'<div class="mobile-nav"><a class="mobile-nav-item mobile-nav-item-auto{_auto_active}" href="?">Auto</a>{_nav_items}'
+    f'<a class="mobile-nav-item mobile-nav-item-maintenance{_maint_active}" href="?page=maintenance">Dev</a></div>',
     unsafe_allow_html=True,
 )
 
@@ -386,7 +404,7 @@ st.markdown(
 # animation-name always forces a real restart even on the same node,
 # which makes the freshly computed delay actually take effect each
 # time, while the browser still tweens smoothly in between reruns.
-if _requested_page not in PAGES and not _jumbotron_active:
+if _requested_page not in PAGES and not _jumbotron_active and page != "maintenance":
     _, _rotation_elapsed, _rotation_page_seconds = _scheduled_page(_rotation_epoch)
     st.session_state["_rotation_bar_tick"] = st.session_state.get("_rotation_bar_tick", 0) + 1
     _bar_variant = "a" if st.session_state["_rotation_bar_tick"] % 2 == 0 else "b"
@@ -1026,6 +1044,8 @@ with st.container(key="page_body"):
         _safe_render(pages_scores.render, _rotation_epoch)
     elif page == "portfolio":
         _safe_render(pages_portfolio.render)
+    elif page == "maintenance":
+        _safe_render(pages_maintenance.render)
     else:
         # Every other branch above has a fallback (a real page render,
         # or _safe_render's own error tile) — this is the one path with

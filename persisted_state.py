@@ -37,6 +37,7 @@ bounded recent-headline-hash list).
 
 import json
 import os
+import time
 
 import requests
 import streamlit as st
@@ -44,6 +45,29 @@ import streamlit as st
 _STATE_DIR = os.path.dirname(__file__)
 _UPSTASH_TIMEOUT_SECONDS = 5  # a key/value lookup, not an LLM call — should come back fast or not at all
 _KEY_PREFIX = "cc:"  # namespaced in case this Redis database is ever shared with something else
+
+# Reachability of the last real Upstash attempt (True/False), and when
+# it happened — a side effect of load()/save() calls that already
+# happen, not a new network call of its own. None means either not
+# configured at all, or genuinely never attempted yet this process.
+# Session request: the maintenance page ("D" hotkey/mobile tab) showing
+# cloud-cache health without spending an extra command just to check —
+# "be command conscious" ruled out a live probe inside a page that
+# could plausibly be left open on someone's phone all day.
+_last_upstash_ok: bool | None = None
+_last_upstash_at: float | None = None
+
+
+def upstash_status() -> dict:
+    """{"configured", "last_ok", "last_at"} — configured is just
+    whether the two secrets are present (no network call); last_ok/
+    last_at reflect whichever real load()/save() attempt happened most
+    recently anywhere in the app, if any yet this process."""
+    return {
+        "configured": _upstash_config() is not None,
+        "last_ok": _last_upstash_ok,
+        "last_at": _last_upstash_at,
+    }
 
 
 def _upstash_config() -> tuple[str, str] | None:
@@ -79,15 +103,18 @@ def load(key: str, default):
     configured and reachable, otherwise from the local file — or
     `default` if nothing has ever been saved anywhere (first run) or
     every read attempt fails."""
+    global _last_upstash_ok, _last_upstash_at
     config = _upstash_config()
     if config:
         url, token = config
+        _last_upstash_at = time.time()
         try:
             resp = requests.get(
                 f"{url}/get/{_KEY_PREFIX}{key}", headers={"Authorization": f"Bearer {token}"}, timeout=_UPSTASH_TIMEOUT_SECONDS
             )
             resp.raise_for_status()
             raw = resp.json().get("result")
+            _last_upstash_ok = True
             if raw is not None:
                 return json.loads(raw)
             # A real, reachable Upstash with genuinely no value for this
@@ -96,7 +123,7 @@ def load(key: str, default):
             # authoritative answer once the cloud is actually up.
             return default
         except Exception:
-            pass  # Upstash unreachable/misconfigured/malformed reply — fall back to local
+            _last_upstash_ok = False  # Upstash unreachable/misconfigured/malformed reply — fall back to local
     return _load_local(key, default)
 
 
@@ -108,11 +135,13 @@ def save(key: str, value) -> None:
     writes the local file (cheap, and it's load()'s own fallback path),
     then also writes to Upstash when configured — a failed cloud write
     never raises, same reasoning as the local-only write it used to be."""
+    global _last_upstash_ok, _last_upstash_at
     _save_local(key, value)
     config = _upstash_config()
     if not config:
         return
     url, token = config
+    _last_upstash_at = time.time()
     try:
         requests.post(
             f"{url}/set/{_KEY_PREFIX}{key}",
@@ -120,5 +149,6 @@ def save(key: str, value) -> None:
             data=json.dumps(value),
             timeout=_UPSTASH_TIMEOUT_SECONDS,
         )
+        _last_upstash_ok = True
     except Exception:
-        pass
+        _last_upstash_ok = False

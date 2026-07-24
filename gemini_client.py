@@ -54,12 +54,20 @@ GENERATE_CACHE_TTL_SECONDS = 20 * 60
 # False (failed), or None (never attempted yet) — across every caller,
 # direct (morning_briefing) or via groq_client's own fallback tier.
 # See groq_client.ai_status_by_model, which reads this through
-# last_outcome() below for its multi-model status badge.
+# last_outcome() below for its multi-model status badge. _last_attempt_at
+# is the matching epoch-seconds timestamp — session request: the
+# maintenance page ("D" hotkey/mobile tab) showing "when their last
+# answer was" per model, not just whether it's currently healthy.
 _last_outcome: bool | None = None
+_last_attempt_at: float | None = None
 
 
 def last_outcome() -> bool | None:
     return _last_outcome
+
+
+def last_attempt_at() -> float | None:
+    return _last_attempt_at
 
 
 @st.cache_data(ttl=GENERATE_CACHE_TTL_SECONDS, show_spinner=False)
@@ -127,7 +135,8 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
     short paragraph. A caller asking for something structurally bigger
     (pages_conflicts' multi-conflict JSON overview) needs to raise this
     explicitly, or the response silently truncates mid-output."""
-    global _last_outcome
+    global _last_outcome, _last_attempt_at
+    _last_attempt_at = time.time()
     try:
         text = _generate_or_raise(prompt, temperature, max_output_tokens)
         _last_outcome = True
@@ -164,6 +173,14 @@ def _load_periodic_cache() -> dict[str, tuple[float, str]]:
 
 
 _periodic_cache: dict[str, tuple[float, str]] = _load_periodic_cache()
+
+
+def periodic_cache_status() -> dict[str, float]:
+    """feature_key -> generated_at (epoch seconds) for every feature
+    that's ever produced a real result through generate_periodic — see
+    groq_client.periodic_cache_status, the same idea for the other
+    provider's periodic cache."""
+    return {key: entry[0] for key, entry in _periodic_cache.items()}
 
 
 def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, temperature: float = 0.7, max_output_tokens: int = 200) -> str | None:

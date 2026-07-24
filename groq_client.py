@@ -308,14 +308,17 @@ def ai_status() -> dict:
 
 
 def ai_status_by_model() -> list[dict]:
-    """{"label", "status", "tone"} for each model this app actually
-    uses — Llama and GPT-OSS on Groq (see _MODEL_SLOTS), plus Gemini —
-    so the badge shows each one's own real status instead of one line
-    for whichever happened to run most recently (see _model_status's
-    own comment for why that was misleading with more than one model
-    in play). notify_if_outage/ai_status above are untouched and still
-    drive the actual outage push — this is purely for the on-screen
-    glance.
+    """{"label", "status", "tone", "at"} for each model this app
+    actually uses — Llama and GPT-OSS on Groq (see _MODEL_SLOTS), plus
+    Gemini — so the badge shows each one's own real status instead of
+    one line for whichever happened to run most recently (see
+    _model_status's own comment for why that was misleading with more
+    than one model in play). notify_if_outage/ai_status above are
+    untouched and still drive the actual outage push — this is purely
+    for the on-screen glance. `at` is the epoch-seconds timestamp of
+    that model's last real attempt (None for Asleep/Idle, where there
+    wasn't one) — session request: the maintenance page ("D" hotkey/
+    mobile tab) showing "when their last answer was" per model.
 
     Per slot, in priority order:
     - "Asleep" (neutral): the overnight pause window, same as
@@ -336,26 +339,58 @@ def ai_status_by_model() -> list[dict]:
     for model in _MODEL_SLOTS:
         label = MODEL_DISPLAY_NAMES.get(model, model)
         info = _model_status.get(model)
+        at = info["at"] if info else None
         if asleep:
-            entries.append({"label": label, "status": "Asleep", "tone": "neutral"})
+            entries.append({"label": label, "status": "Asleep", "tone": "neutral", "at": at})
         elif info is None:
-            entries.append({"label": label, "status": "Idle", "tone": "neutral"})
+            entries.append({"label": label, "status": "Idle", "tone": "neutral", "at": None})
         elif not info["ok"]:
-            entries.append({"label": label, "status": "Rate Limited", "tone": "low"})
+            entries.append({"label": label, "status": "Rate Limited", "tone": "low", "at": at})
         elif info["via"] == "failsafe":
-            entries.append({"label": label, "status": "Failsafe", "tone": "medium"})
+            entries.append({"label": label, "status": "Failsafe", "tone": "medium", "at": at})
         else:
-            entries.append({"label": label, "status": "Active", "tone": "good"})
+            entries.append({"label": label, "status": "Active", "tone": "good", "at": at})
     gemini_outcome = gemini_client.last_outcome()
+    gemini_at = gemini_client.last_attempt_at()
     if asleep:
-        entries.append({"label": "Gemini", "status": "Asleep", "tone": "neutral"})
+        entries.append({"label": "Gemini", "status": "Asleep", "tone": "neutral", "at": gemini_at})
     elif gemini_outcome is None:
-        entries.append({"label": "Gemini", "status": "Idle", "tone": "neutral"})
+        entries.append({"label": "Gemini", "status": "Idle", "tone": "neutral", "at": None})
     elif gemini_outcome:
-        entries.append({"label": "Gemini", "status": "Active", "tone": "good"})
+        entries.append({"label": "Gemini", "status": "Active", "tone": "good", "at": gemini_at})
     else:
-        entries.append({"label": "Gemini", "status": "Rate Limited", "tone": "low"})
+        entries.append({"label": "Gemini", "status": "Rate Limited", "tone": "low", "at": gemini_at})
     return entries
+
+
+def account_budgets() -> list[dict]:
+    """{"account", "used", "budget", "remaining_pct"} for each Groq
+    account's real rolling-24h token usage — the same numbers ai_status
+    above already computes for "primary" alone, exposed per-account for
+    the maintenance page ("D" hotkey/mobile tab). No network call, no
+    extra cost — DAILY_TOKEN_BUDGET/_rolling_used are already
+    maintained on every real request regardless of whether anything
+    ever reads this."""
+    now_ts = _local_now().timestamp()
+    budgets = []
+    for account in GROQ_ACCOUNTS:
+        used = max(0, min(_rolling_used(account, now_ts), DAILY_TOKEN_BUDGET))
+        budgets.append({
+            "account": account,
+            "used": used,
+            "budget": DAILY_TOKEN_BUDGET,
+            "remaining_pct": 100.0 * (DAILY_TOKEN_BUDGET - used) / DAILY_TOKEN_BUDGET,
+        })
+    return budgets
+
+
+def periodic_cache_status() -> dict[str, float]:
+    """feature_key -> generated_at (epoch seconds) for every feature
+    that's ever produced a real result through generate_periodic —
+    just the timestamps, not the cached text itself (the maintenance
+    page wants "how fresh is this," not to display AI-written content
+    a second time)."""
+    return {key: entry[0] for key, entry in _periodic_cache.items()}
 
 
 # "Rate Limited" has to hold for this long before it's worth a push —
@@ -385,6 +420,13 @@ AI_OUTAGE_ALERT_AFTER_SECONDS = 20 * 60
 # real events), cuts that same call site down to one load per process
 # start plus a handful of saves a month.
 _outage_episode: dict = persisted_state.load("ai_outage", {"since": None, "notified": False})
+
+
+def outage_episode() -> dict:
+    """A copy of the current outage-episode state ({"since", "notified"})
+    for the maintenance page — read-only, callers must not mutate the
+    real module state through it."""
+    return dict(_outage_episode)
 
 
 def notify_if_outage() -> None:
@@ -533,11 +575,11 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
         try:
             result = _generate_or_raise(account, prompt, temperature, max_output_tokens, model)
             _last_served_by = account
-            _model_status[model] = {"ok": True, "via": account}
+            _model_status[model] = {"ok": True, "via": account, "at": time.time()}
             return result
         except Exception:
             continue
-    _model_status[model] = {"ok": False, "via": None}
+    _model_status[model] = {"ok": False, "via": None, "at": time.time()}
     result = gemini_client.generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens)
     _last_served_by = "gemini" if result is not None else "none"
     return result
