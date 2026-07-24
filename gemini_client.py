@@ -38,6 +38,8 @@ import time
 import requests
 import streamlit as st
 
+import persisted_state
+
 GEMINI_MODEL = "gemini-flash-lite-latest"
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 REQUEST_TIMEOUT_SECONDS = 20  # generous enough for a long structured response (see max_output_tokens); short calls finish well under this anyway
@@ -136,11 +138,32 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
 
 
 # feature_key -> (generated_at, text) — see generate_periodic below.
-# Plain module state (same convention as sports_client.py's own
-# _last_good_* / _delay_buffers) rather than st.session_state: the free
-# tier's rate limit is shared across every browser session hitting this
-# one server process, so the throttle has to be too, not per-tab.
-_periodic_cache: dict[str, tuple[float, str]] = {}
+# Module state rather than st.session_state: the free tier's rate
+# limit is shared across every browser session hitting this one server
+# process, so the throttle has to be too, not per-tab. Disk-backed via
+# persisted_state (not just a plain dict) so a redeploy/restart doesn't
+# wipe out the last good value — session report: "the ai brief isnt
+# working... as soon as i send that it starts working again... but it
+# reverts back to the stale computer like version." A transient Gemini
+# failure right after a fresh process start had nothing to fall back to
+# (this was a plain empty dict on every restart), so morning_briefing's
+# render() dropped straight to its own mechanical semicolon-joined
+# fallback instead of showing whatever AI sentence last actually
+# worked, sometimes just seconds before the restart. groq_client's own
+# periodic cache already got this exact fix earlier — "can you improve
+# the cache so that conflicts cant fail during an outage" — this brings
+# gemini_client's separate cache up to the same guarantee via
+# persisted_state (which post-dates and formalizes what groq_client's
+# own bespoke .periodic_cache.json file already did by hand).
+def _load_periodic_cache() -> dict[str, tuple[float, str]]:
+    raw = persisted_state.load("gemini_periodic_cache", {})
+    try:
+        return {str(k): (float(v[0]), str(v[1])) for k, v in raw.items() if isinstance(v, list) and len(v) == 2}
+    except Exception:
+        return {}
+
+
+_periodic_cache: dict[str, tuple[float, str]] = _load_periodic_cache()
 
 
 def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, temperature: float = 0.7, max_output_tokens: int = 200) -> str | None:
@@ -170,7 +193,12 @@ def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, tempe
     On a failed real attempt, falls back to the last good value for
     this key if there is one (rather than flashing "unavailable" for a
     feature that was working moments ago), and only returns None if
-    there's truly nothing cached yet at all."""
+    there's truly nothing cached yet at all — which the on-disk
+    persistence above (see _load_periodic_cache) makes much rarer: a
+    feature that's ever succeeded once, on any past run this filesystem
+    has seen, already has real fallback content from the moment this
+    process starts, not just from whenever its next real success
+    happens to land."""
     now = time.time()
     cached = _periodic_cache.get(feature_key)
     if cached and now - cached[0] < refresh_seconds:
@@ -178,5 +206,6 @@ def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, tempe
     text = generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens)
     if text is not None:
         _periodic_cache[feature_key] = (now, text)
+        persisted_state.save("gemini_periodic_cache", _periodic_cache)
         return text
     return cached[1] if cached else None
