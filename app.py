@@ -566,6 +566,21 @@ try:
     if _jumbotron_active:
         night_dim = 0.0
 
+    # Session request: an early shift's leave-in countdown can start
+    # ticking well before the phase/quiet-hours fade naturally
+    # brightens things (e.g. an 8am appointment pulls the 2-hour
+    # headline window back to ~5:30am) — force full brightness while
+    # that headline is actually up so the countdown is readable, not
+    # sitting under the sleep-dim overlay. Capped to before 7am
+    # specifically: past that, phase is already "day" and the normal
+    # morning brightening has it covered on its own.
+    if now.hour < 7:
+        try:
+            if commute_reminder.leave_headline_active(now):
+                night_dim = 0.0
+        except Exception:
+            pass
+
     if night_dim > 0:
         # This runs 24/7 in a bedroom — night needs to be genuinely dim
         # enough to sleep next to, not just "a bit darker." Used to be a

@@ -270,6 +270,28 @@ def _format_clock(remaining_seconds: float) -> str:
     return f"{minutes}:{seconds:02d}"
 
 
+def _remaining_until_leave(now: datetime) -> float | None:
+    """Seconds until leave-by time for whichever shift is currently
+    tracked (see _current_shift), or None if there's nothing to track
+    today — shared by render_leave_headline and leave_headline_active
+    so the two can never quietly drift apart on what "active" means."""
+    leave_by = leave_by_time(now)
+    if leave_by is None:
+        return None
+    now_aware = now.replace(tzinfo=leave_by.tzinfo)
+    return (leave_by - now_aware).total_seconds()
+
+
+def leave_headline_active(now: datetime) -> bool:
+    """Whether render_leave_headline would show anything right now —
+    app.py calls this ahead of its own night-dim decision (session
+    request: force the display bright while the leave-in countdown is
+    up and it's still before 7am, rather than sitting dimmed through an
+    early-morning appointment's countdown)."""
+    remaining = _remaining_until_leave(now)
+    return remaining is not None and -HEADLINE_GRACE_MINUTES * 60 <= remaining <= HEADLINE_WINDOW_MINUTES * 60
+
+
 def render_leave_headline(now: datetime) -> None:
     """A standalone red headline above the hero clock/weather row —
     page-independent (renders regardless of which of the 6 rotating
@@ -290,9 +312,8 @@ def render_leave_headline(now: datetime) -> None:
     leave_by = leave_by_time(now)
     if leave_by is None:
         return
-    now_aware = now.replace(tzinfo=leave_by.tzinfo)
-    remaining = (leave_by - now_aware).total_seconds()
-    if not (-HEADLINE_GRACE_MINUTES * 60 <= remaining <= HEADLINE_WINDOW_MINUTES * 60):
+    remaining = _remaining_until_leave(now)
+    if remaining is None or not (-HEADLINE_GRACE_MINUTES * 60 <= remaining <= HEADLINE_WINDOW_MINUTES * 60):
         return
     target_ms = int(leave_by.timestamp() * 1000)
     text = "Leave now" if remaining <= 0 else f"Leave in {_format_clock(remaining)}"
