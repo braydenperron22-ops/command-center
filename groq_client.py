@@ -327,13 +327,17 @@ def ai_status_by_model() -> list[dict]:
       process — a fresh redeploy, or, for GPT-OSS specifically given
       its once-a-day cadence, simply hasn't been that model's turn yet
       today. Not a failure, just nothing observed.
-    - "Rate Limited" (low): its last real attempt failed everywhere
-      available to it (both Groq accounts for Llama/GPT-OSS; Gemini
-      itself for Gemini).
-    - "Failsafe" (medium): Llama/GPT-OSS only — primary failed but the
-      failsafe account covered it.
-    - "Active" (good): last real attempt succeeded on the account/
-      provider it's actually supposed to run on."""
+    - "Rate Limited" (low): primary failed on its last real attempt —
+      whether or not the failsafe account then covered it. Session
+      request: "make it so when llama fails it just shows rate limited
+      instead of fail safe" — this used to split into a separate
+      "Failsafe" (medium) status when the second account picked up the
+      slack, but that read as healthier than what's actually
+      happening: primary being rate limited. Collapsing the distinction
+      trades away "is real output still flowing right now" (that part's
+      still true whenever this shows up, same as before) for a badge
+      that says plainly when primary itself is degraded.
+    - "Active" (good): last real attempt succeeded on primary."""
     asleep = _in_pause_window(_local_now())
     entries = []
     for model in _MODEL_SLOTS:
@@ -344,10 +348,8 @@ def ai_status_by_model() -> list[dict]:
             entries.append({"label": label, "status": "Asleep", "tone": "neutral", "at": at})
         elif info is None:
             entries.append({"label": label, "status": "Idle", "tone": "neutral", "at": None})
-        elif not info["ok"]:
+        elif not info["ok"] or info["via"] == "failsafe":
             entries.append({"label": label, "status": "Rate Limited", "tone": "low", "at": at})
-        elif info["via"] == "failsafe":
-            entries.append({"label": label, "status": "Failsafe", "tone": "medium", "at": at})
         else:
             entries.append({"label": label, "status": "Active", "tone": "good", "at": at})
     gemini_outcome = gemini_client.last_outcome()
