@@ -1,53 +1,124 @@
-"""Tiny JSON-file-backed persistence for small pieces of state that
-must survive an actual process restart (a redeploy, a Streamlit Cloud
-sleep/wake) — not just multiple browser sessions within one running
-process, which module-level globals alone already solve. Session
-discovery: "I also got my morning brief twice" and a duplicate Brent
-oil push — earlier today's fix moved push-notification dedup from
-st.session_state (scoped per browser connection) to plain module-level
-globals (scoped per process), which fixed duplicate pushes across
-reconnects within one running app, but this session's own several
-redeploys in a row kept resetting those globals right back to "nothing
-sent yet," reproducing the same symptom from a different cause.
+"""Small pieces of state that must survive an actual process restart (a
+redeploy, a Streamlit Cloud sleep/wake) — not just multiple browser
+sessions within one running process, which module-level globals alone
+already solve. Session discovery: "I also got my morning brief twice"
+and a duplicate Brent oil push — an earlier fix moved push-notification
+dedup from st.session_state (scoped per browser connection) to plain
+module-level globals (scoped per process), which fixed duplicate pushes
+across reconnects within one running app, but several redeploys in a
+row kept resetting those globals right back to "nothing sent yet,"
+reproducing the same symptom from a different cause.
 
-One JSON file per key, not one shared file — matches this app's
-existing convention of small standalone state files (todo.json,
-commute_history.json, groq_client's own .periodic_cache.json) rather
-than one shared blob every module reaches into.
+Backed by Upstash Redis (a free-tier REST-based key/value store) when
+UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN are configured in
+st.secrets — session request: "make it so the cache is stored on the
+cloud and accessible on different devices and make it more
+bulletproof." A local JSON file (the original design) survives an
+ordinary restart, but not a platform handing this app a genuinely
+fresh filesystem on redeploy, and it's only ever readable from the one
+container that wrote it — real gaps the user explicitly asked to close.
+Every read/write tries Upstash first when configured, and always keeps
+the local file in sync too — not for redundancy's own sake, but because
+load() falls back to the local file on any Upstash failure (missing
+secrets, network blip, Upstash itself down), so that fallback file has
+to actually be current or it'd hand back stale data instead of the
+real thing. Same "must never take a page down" rule every other client
+in this app already follows: a degraded (local-only) cache the app can
+still start on beats a hard dependency on one more external service.
+
+One key per JSON file/Redis key, not one shared blob — matches this
+app's existing convention of small standalone state files (todo.json,
+commute_history.json).
 
 Deliberately NOT a general-purpose cache — no TTL, no size limits,
 callers own their own value shape and any pruning it needs (e.g. a
-bounded recent-headline-hash list). Best-effort: a failed read/write
-never raises, same "must never take a page down" rule every other
-client in this app already follows.
+bounded recent-headline-hash list).
 """
 
 import json
 import os
 
+import requests
+import streamlit as st
+
 _STATE_DIR = os.path.dirname(__file__)
+_UPSTASH_TIMEOUT_SECONDS = 5  # a key/value lookup, not an LLM call — should come back fast or not at all
+_KEY_PREFIX = "cc:"  # namespaced in case this Redis database is ever shared with something else
 
 
-def load(key: str, default):
-    """Whatever was last saved under `key`, or `default` if nothing has
-    ever been saved (first run on this filesystem) or the read fails
-    for any reason (corrupt file, permissions, whatever)."""
-    path = os.path.join(_STATE_DIR, f".notify_{key}.json")
+def _upstash_config() -> tuple[str, str] | None:
+    url = st.secrets.get("UPSTASH_REDIS_REST_URL")
+    token = st.secrets.get("UPSTASH_REDIS_REST_TOKEN")
+    if not url or not token:
+        return None
+    return url, token
+
+
+def _local_path(key: str) -> str:
+    return os.path.join(_STATE_DIR, f".notify_{key}.json")
+
+
+def _load_local(key: str, default):
     try:
-        with open(path) as f:
+        with open(_local_path(key)) as f:
             return json.load(f)
     except Exception:
         return default
 
 
+def _save_local(key: str, value) -> None:
+    try:
+        with open(_local_path(key), "w") as f:
+            json.dump(value, f)
+    except Exception:
+        pass  # best-effort — see save()'s own docstring
+
+
+def load(key: str, default):
+    """Whatever was last saved under `key` — from Upstash if it's
+    configured and reachable, otherwise from the local file — or
+    `default` if nothing has ever been saved anywhere (first run) or
+    every read attempt fails."""
+    config = _upstash_config()
+    if config:
+        url, token = config
+        try:
+            resp = requests.get(
+                f"{url}/get/{_KEY_PREFIX}{key}", headers={"Authorization": f"Bearer {token}"}, timeout=_UPSTASH_TIMEOUT_SECONDS
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("result")
+            if raw is not None:
+                return json.loads(raw)
+            # A real, reachable Upstash with genuinely no value for this
+            # key yet — not a failure, so don't fall through to
+            # (possibly stale) local state; an empty cloud is still the
+            # authoritative answer once the cloud is actually up.
+            return default
+        except Exception:
+            pass  # Upstash unreachable/misconfigured/malformed reply — fall back to local
+    return _load_local(key, default)
+
+
 def save(key: str, value) -> None:
     """Best-effort — a failed write just means this particular update
-    doesn't survive the next restart, not a crash. `value` must be
-    JSON-serializable as-is; callers own converting anything else
-    (dates, sets) to/from a JSON-friendly shape themselves."""
-    path = os.path.join(_STATE_DIR, f".notify_{key}.json")
+    doesn't survive the next restart/device, not a crash. `value` must
+    be JSON-serializable as-is; callers own converting anything else
+    (dates, sets) to/from a JSON-friendly shape themselves. Always
+    writes the local file (cheap, and it's load()'s own fallback path),
+    then also writes to Upstash when configured — a failed cloud write
+    never raises, same reasoning as the local-only write it used to be."""
+    _save_local(key, value)
+    config = _upstash_config()
+    if not config:
+        return
+    url, token = config
     try:
-        with open(path, "w") as f:
-            json.dump(value, f)
+        requests.post(
+            f"{url}/set/{_KEY_PREFIX}{key}",
+            headers={"Authorization": f"Bearer {token}"},
+            data=json.dumps(value),
+            timeout=_UPSTASH_TIMEOUT_SECONDS,
+        )
     except Exception:
         pass

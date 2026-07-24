@@ -63,8 +63,6 @@ third copy of Groq's guardrails.
 """
 
 import datetime
-import json
-import os
 import time
 from zoneinfo import ZoneInfo
 
@@ -536,34 +534,28 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
 # docstring) — the actual gap is a fresh process: a redeploy wipes this
 # dict back to empty, so the very first call for each feature has
 # nothing to fall back to if Groq happens to be down right then. Below
-# persists every successful result to a small local JSON file and
-# reloads it at import time, so a restart starts from "whatever last
-# worked" instead of from nothing. Best-effort, not a guarantee — a
-# platform that gives this app a genuinely fresh filesystem on every
-# deploy (not just every restart) would still start empty; there's no
-# external database here to survive that, only this local file.
-_PERIODIC_CACHE_PATH = os.path.join(os.path.dirname(__file__), ".periodic_cache.json")
-
-
+# persists every successful result through persisted_state and reloads
+# it at import time, so a restart starts from "whatever last worked"
+# instead of from nothing. Originally its own bespoke local JSON file —
+# folded into persisted_state so this gets the same cloud backing
+# (Upstash Redis, when configured) that module now provides — session
+# request: "make it so the cache is stored on the cloud and accessible
+# on different devices and make it more bulletproof." A local-only file
+# survives an ordinary restart but not a platform handing this app a
+# genuinely fresh filesystem, and isn't readable from any other device;
+# persisted_state.load/save fall back to that same local-file behavior
+# on their own when Upstash isn't configured or unreachable, so this is
+# strictly an upgrade, never a new failure mode.
 def _load_periodic_cache() -> dict[str, tuple[float, str]]:
+    raw = persisted_state.load("groq_periodic_cache", {})
     try:
-        with open(_PERIODIC_CACHE_PATH) as f:
-            raw = json.load(f)
-        return {
-            str(k): (float(v[0]), str(v[1]))
-            for k, v in raw.items()
-            if isinstance(v, list) and len(v) == 2
-        }
+        return {str(k): (float(v[0]), str(v[1])) for k, v in raw.items() if isinstance(v, list) and len(v) == 2}
     except Exception:
         return {}
 
 
 def _save_periodic_cache() -> None:
-    try:
-        with open(_PERIODIC_CACHE_PATH, "w") as f:
-            json.dump(_periodic_cache, f)
-    except Exception:
-        pass  # best-effort — a failed write just means no persistence this time, never a crash
+    persisted_state.save("groq_periodic_cache", _periodic_cache)
 
 
 _periodic_cache: dict[str, tuple[float, str]] = _load_periodic_cache()
