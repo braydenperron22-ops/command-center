@@ -117,6 +117,12 @@ components.html(
 #   data-format       "clock" (H:MM:SS, default) or "words" (e.g. "1h 26m"/"45 min")
 #   data-template     optional wrapper with a "{}" placeholder for the ticking token (default "{}")
 #   data-zero-text    optional full replacement text once the target's passed (e.g. "Leave now")
+#   data-intensity    optional — escalating urgency tiers (intensity-calm through intensity-overdue,
+#                     see theme.py's .leave-headline rules) toggled on the closest .leave-headline
+#                     ancestor. Session request: "make the leave in timer chill and it progressively
+#                     gets more intense... the closer we are to the leave time." Only elements that
+#                     set this attribute are touched — the jumbotron/sports countdowns sharing this
+#                     same ticker don't set it, so they're unaffected.
 # Re-queries .live-countdown fresh every tick rather than caching
 # element references, so it keeps finding the right nodes even though
 # Streamlit replaces them underneath it on its own 5s cycle.
@@ -149,6 +155,18 @@ components.html(
         "    var targetMs = parseInt(el.getAttribute('data-target-ms'), 10);",
         "    if (!targetMs) return;",
         "    var remainingSeconds = (targetMs - now) / 1000;",
+        "    if (el.hasAttribute('data-intensity')) {",
+        "      var wrapper = el.closest('.leave-headline') || el;",
+        "      var tier = 'calm';",
+        "      if (remainingSeconds <= 0) tier = 'overdue';",
+        "      else if (remainingSeconds <= 600) tier = 'critical';",
+        "      else if (remainingSeconds <= 1800) tier = 'urgent';",
+        "      else if (remainingSeconds <= 3600) tier = 'aware';",
+        "      ['calm', 'aware', 'urgent', 'critical', 'overdue'].forEach(function (t) {",
+        "        wrapper.classList.remove('intensity-' + t);",
+        "      });",
+        "      wrapper.classList.add('intensity-' + tier);",
+        "    }",
         "    var zeroText = el.getAttribute('data-zero-text');",
         "    if (zeroText && remainingSeconds <= 0) {",
         "      el.textContent = zeroText;",

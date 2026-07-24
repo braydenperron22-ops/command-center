@@ -1807,25 +1807,80 @@ html, body, [class*="css"] {
     text-align: center;
     font-size: 2.6rem;
     font-weight: 800;
-    color: #FF453A;
     letter-spacing: -0.01em;
-    text-shadow: 0 0 22px rgba(255,69,58,0.45);
     background: rgba(12,12,16,0.72);
     backdrop-filter: blur(24px) saturate(160%);
     -webkit-backdrop-filter: blur(24px) saturate(160%);
     border: 1px solid rgba(255,69,58,0.25);
     border-radius: 20px;
     padding: 0.5rem 1.6rem;
-    /* Slow breathing glow, not a strobe — this only shows up in a
-       genuinely time-critical window (see commute_reminder.
-       render_leave_headline), so it earns pulling more attention than
-       the market tiles' static accent strip does, without reading as
-       cheap/busy the way a fast blink would. */
-    animation: leave-headline-pulse 2s ease-in-out infinite;
+    /* Color/glow/pulse are all set per intensity-* tier below, not
+       here — this is just the structural fallback in case JS hasn't
+       applied a tier class yet (Python always sets one server-side on
+       first paint, see commute_reminder.render_leave_headline, so this
+       should only ever be visible for a flash). */
+    color: #FF453A;
+}
+
+/* Escalating urgency as leave-by approaches — session request: "make
+   the leave in timer chill and it progressively gets more intense and
+   alerting the closer we are to the leave time." Used to be the same
+   red pulse for the whole HEADLINE_WINDOW_MINUTES window regardless of
+   how far out it was, which read as maximally urgent the instant it
+   appeared — two hours out is advance notice, not a deadline. Tier
+   thresholds live in commute_reminder.py's _intensity_tier (first
+   frame) and are mirrored in app.py's live-countdown ticker (every
+   second after); see that ticker's own comment for why this only
+   touches the leave headline and not the jumbotron/sports countdowns
+   sharing the same script. */
+.leave-headline.intensity-calm {
+    color: #5AC8FA;
+    text-shadow: 0 0 14px rgba(90,200,250,0.3);
+    border-color: rgba(90,200,250,0.2);
+    animation: none;
+}
+.leave-headline.intensity-aware {
+    color: #FF9F0A;
+    border-color: rgba(255,159,10,0.22);
+    animation: leave-headline-pulse-amber 3s ease-in-out infinite;
+}
+.leave-headline.intensity-urgent {
+    color: #FF6961;
+    border-color: rgba(255,105,97,0.25);
+    animation: leave-headline-pulse-red 2s ease-in-out infinite;
+}
+.leave-headline.intensity-critical {
+    color: #FF453A;
+    border-color: rgba(255,69,58,0.3);
+    /* The original always-on pulse, now correctly reserved for the
+       final INTENSITY_CRITICAL_SECONDS (10 min) instead of the whole
+       2-hour window. */
+    animation: leave-headline-pulse 1.2s ease-in-out infinite;
+}
+.leave-headline.intensity-overdue {
+    color: #FF453A;
+    border-color: rgba(255,69,58,0.35);
+    animation: leave-headline-pulse-overdue 0.7s ease-in-out infinite;
+}
+@keyframes leave-headline-pulse-amber {
+    0%, 100% { text-shadow: 0 0 18px rgba(255,159,10,0.4); }
+    50% { text-shadow: 0 0 28px rgba(255,159,10,0.7); }
+}
+@keyframes leave-headline-pulse-red {
+    0%, 100% { text-shadow: 0 0 20px rgba(255,105,97,0.45); }
+    50% { text-shadow: 0 0 32px rgba(255,105,97,0.8); }
 }
 @keyframes leave-headline-pulse {
     0%, 100% { text-shadow: 0 0 22px rgba(255,69,58,0.45); }
     50% { text-shadow: 0 0 36px rgba(255,69,58,0.85), 0 0 60px rgba(255,69,58,0.35); }
+}
+@keyframes leave-headline-pulse-overdue {
+    /* Only tier that also scales — the translateX(-50%) has to be
+       repeated in every keyframe step since this element is centered
+       via that same transform property (see .leave-headline above);
+       dropping it here would snap the headline off-center mid-pulse. */
+    0%, 100% { text-shadow: 0 0 22px rgba(255,69,58,0.5); transform: translateX(-50%) scale(1); }
+    50% { text-shadow: 0 0 40px rgba(255,69,58,0.9), 0 0 70px rgba(255,69,58,0.4); transform: translateX(-50%) scale(1.03); }
 }
 
 /* Same page-independent headline treatment for the final hour before a

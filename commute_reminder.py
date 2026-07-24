@@ -282,6 +282,36 @@ def _remaining_until_leave(now: datetime) -> float | None:
     return (leave_by - now_aware).total_seconds()
 
 
+# Escalating visual intensity as leave-by approaches — session
+# request: "make the leave in timer chill and it progressively gets
+# more intense and alerting the closer we are to the leave time." It
+# used to be the same red pulse for the entire HEADLINE_WINDOW_MINUTES
+# window, which read as maximally urgent from the moment it first
+# appeared — two hours out is advance notice, not a deadline. These
+# thresholds must stay in sync with the matching ones in app.py's
+# live-countdown ticker script (JS can't call back into Python, so
+# that's the two places' agreed contract — same "kept in sync"
+# convention as this file's own STRETCH_END/SLIDE_END, mirrored in
+# news.py). This copy only decides the very first frame's tier, same
+# as _format_clock below; the JS ticker recomputes it for real every
+# second from there, independent of Streamlit's 5s rerun cadence.
+INTENSITY_AWARE_SECONDS = 60 * 60
+INTENSITY_URGENT_SECONDS = 30 * 60
+INTENSITY_CRITICAL_SECONDS = 10 * 60
+
+
+def _intensity_tier(remaining_seconds: float) -> str:
+    if remaining_seconds <= 0:
+        return "overdue"
+    if remaining_seconds <= INTENSITY_CRITICAL_SECONDS:
+        return "critical"
+    if remaining_seconds <= INTENSITY_URGENT_SECONDS:
+        return "urgent"
+    if remaining_seconds <= INTENSITY_AWARE_SECONDS:
+        return "aware"
+    return "calm"
+
+
 def leave_headline_active(now: datetime) -> bool:
     """Whether render_leave_headline would show anything right now —
     app.py calls this ahead of its own night-dim decision (session
@@ -308,7 +338,11 @@ def render_leave_headline(now: datetime) -> None:
     specifically the big red leave in timer") — the text below is only
     ever the first frame's value; data-target-ms/data-template/
     data-zero-text drive everything from here on, independent of
-    Streamlit's own 5s rerun cadence."""
+    Streamlit's own 5s rerun cadence. The intensity tier (see
+    _intensity_tier above) rides the same per-second tick via the
+    data-intensity marker — the ticker script only manages elements
+    that carry it, so the jumbotron/sports countdowns sharing that same
+    global ticker are untouched."""
     leave_by = leave_by_time(now)
     if leave_by is None:
         return
@@ -316,10 +350,12 @@ def render_leave_headline(now: datetime) -> None:
     if remaining is None or not (-HEADLINE_GRACE_MINUTES * 60 <= remaining <= HEADLINE_WINDOW_MINUTES * 60):
         return
     target_ms = int(leave_by.timestamp() * 1000)
+    tier = _intensity_tier(remaining)
     text = "Leave now" if remaining <= 0 else f"Leave in {_format_clock(remaining)}"
     st.markdown(
-        f'<div class="leave-headline"><span class="live-countdown" data-target-ms="{target_ms}" '
-        f'data-format="clock" data-template="Leave in {{}}" data-zero-text="Leave now">{text}</span></div>',
+        f'<div class="leave-headline intensity-{tier}"><span class="live-countdown" data-intensity '
+        f'data-target-ms="{target_ms}" data-format="clock" data-template="Leave in {{}}" '
+        f'data-zero-text="Leave now">{text}</span></div>',
         unsafe_allow_html=True,
     )
 
