@@ -368,31 +368,53 @@ def ai_status_by_model() -> list[dict]:
 # own per-source THRESHOLDS_SECONDS.
 AI_OUTAGE_ALERT_AFTER_SECONDS = 20 * 60
 
+# Loaded once at import, not re-fetched from persisted_state on every
+# call — notify_if_outage() runs unconditionally every 5s rerun (app.py
+# calls it with no gating), and with persisted_state now backed by
+# Upstash Redis (see that module's own docstring), "reload from the
+# cloud every rerun just to check" would burn roughly 17,280 GET
+# commands a day from this one call site alone — over 500k/month by
+# itself, before counting the other two sites with the same shape
+# (data_health.notify_stale, news.update_top_alert). Session question:
+# "will this handle our volume ok?" — the honest answer with the
+# original per-rerun-reload pattern was no (traced and computed live:
+# ~3.3x over the free tier's 500k/month just from these three call
+# sites' GETs). This module-level cache, mutated in place and only
+# ever re-saved to persisted_state on a genuine state change (an
+# outage starting, ending, or crossing the alert threshold — all rare,
+# real events), cuts that same call site down to one load per process
+# start plus a handful of saves a month.
+_outage_episode: dict = persisted_state.load("ai_outage", {"since": None, "notified": False})
+
+
 def notify_if_outage() -> None:
     """Pushes a phone notification once per outage episode once "Rate
     Limited" (see ai_status — every tier failed on the most recent real
     attempt) has held continuously for AI_OUTAGE_ALERT_AFTER_SECONDS,
     not on the first failed attempt. Tracks the episode's start time and
-    whether it's already been notified via persisted_state, not
-    st.session_state or a plain module global — a session reset or a
-    process restart (a redeploy, a Cloud sleep/wake) must never look
-    like "nothing sent yet" for an outage still genuinely in progress.
-    Any status other than "Rate Limited" clears the episode, so a
-    later, separate outage gets its own fresh alert rather than being
-    permanently suppressed because one already fired once before."""
+    whether it's already been notified via persisted_state (see
+    _outage_episode above), not st.session_state or a plain
+    process-local-only global — a session reset or a process restart
+    (a redeploy, a Cloud sleep/wake) must never look like "nothing sent
+    yet" for an outage still genuinely in progress. Any status other
+    than "Rate Limited" clears the episode, so a later, separate
+    outage gets its own fresh alert rather than being permanently
+    suppressed because one already fired once before."""
+    global _outage_episode
     status = ai_status()
-    episode = persisted_state.load("ai_outage", {"since": None, "notified": False})
     if status["label"] != "Rate Limited":
-        if episode["since"] is not None:
-            persisted_state.save("ai_outage", {"since": None, "notified": False})
+        if _outage_episode["since"] is not None:
+            _outage_episode = {"since": None, "notified": False}
+            persisted_state.save("ai_outage", _outage_episode)
         return
     now = time.time()
-    if episode["since"] is None:
-        episode = {"since": now, "notified": False}
-        persisted_state.save("ai_outage", episode)
-    if now - episode["since"] < AI_OUTAGE_ALERT_AFTER_SECONDS or episode["notified"]:
+    if _outage_episode["since"] is None:
+        _outage_episode = {"since": now, "notified": False}
+        persisted_state.save("ai_outage", _outage_episode)
+    if now - _outage_episode["since"] < AI_OUTAGE_ALERT_AFTER_SECONDS or _outage_episode["notified"]:
         return
-    persisted_state.save("ai_outage", {"since": episode["since"], "notified": True})
+    _outage_episode = {"since": _outage_episode["since"], "notified": True}
+    persisted_state.save("ai_outage", _outage_episode)
     ntfy_client.send(
         title="AI outage",
         message=f"Primary, failsafe, and Gemini have all been failing for over {AI_OUTAGE_ALERT_AFTER_SECONDS // 60} minutes.",

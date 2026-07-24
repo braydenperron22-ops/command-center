@@ -875,6 +875,20 @@ def render_alert_bar(alert: dict, elapsed: float, variant: str = "a"):
 # feed's own window, so they'd never come back around as "new" anyway).
 PUSHED_HEADLINES_MAX = 200
 
+# Loaded once at import, not re-fetched from persisted_state on every
+# call — update_top_alert() runs unconditionally every 5s rerun (app.py
+# calls it with no gating), and with persisted_state now backed by
+# Upstash Redis, "reload from the cloud every rerun just to check"
+# would burn roughly 17,280 GET commands a day from this one call site
+# alone. Same fix, same root cause, as groq_client.py's
+# _outage_episode and data_health.py's _stale_notified — session
+# question "will this handle our volume ok?" traced live to ~3.3x over
+# the free tier's 500k/month across these three call sites combined.
+# Mutated in place, only ever re-saved on a genuine new push (a real
+# breaking headline going out — bounded by actual news volume, not
+# rerun cadence).
+_pushed_headlines: list = list(persisted_state.load("pushed_headlines", []))
+
 
 def update_top_alert(new_alerts: list[dict]) -> None:
     """Whenever a fresh important (red) headline comes through, it takes
@@ -894,9 +908,11 @@ def update_top_alert(new_alerts: list[dict]) -> None:
     and can hand the exact same headline back as "new" a second time.
     The on-screen top banner isn't re-gated here, only the push — a
     banner re-appearing after a rare reconnect was never reported as a
-    problem the way a duplicate phone buzz was."""
-    pushed = persisted_state.load("pushed_headlines", [])
-    pushed_set = set(pushed)
+    problem the way a duplicate phone buzz was. Dedup state lives in
+    _pushed_headlines above (loaded once, not re-fetched here every
+    call — see its own comment)."""
+    global _pushed_headlines
+    pushed_set = set(_pushed_headlines)
     changed = False
     for alert in new_alerts:
         if alert.get("important"):
@@ -905,7 +921,7 @@ def update_top_alert(new_alerts: list[dict]) -> None:
             if h in pushed_set:
                 continue
             pushed_set.add(h)
-            pushed.append(h)
+            _pushed_headlines.append(h)
             changed = True
             ntfy_client.send(
                 title=f"Breaking: {alert['category']}",
@@ -914,9 +930,9 @@ def update_top_alert(new_alerts: list[dict]) -> None:
                 tags="rotating_light",
             )
     if changed:
-        if len(pushed) > PUSHED_HEADLINES_MAX:
-            pushed = pushed[-PUSHED_HEADLINES_MAX:]
-        persisted_state.save("pushed_headlines", pushed)
+        if len(_pushed_headlines) > PUSHED_HEADLINES_MAX:
+            _pushed_headlines = _pushed_headlines[-PUSHED_HEADLINES_MAX:]
+        persisted_state.save("pushed_headlines", _pushed_headlines)
 
 
 def render_top_alert_bar() -> None:

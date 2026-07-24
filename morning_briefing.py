@@ -1136,6 +1136,17 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     st.markdown(f'<div class="morning-briefing">{sentence}</div>', unsafe_allow_html=True)
 
 
+# Loaded once at import, not re-fetched from persisted_state on every
+# call — render() (and therefore _notify_new_brief) runs unconditionally
+# every 5s rerun for the whole MORNING_WINDOW_START_HOUR-END_HOUR
+# window, and with persisted_state now backed by Upstash Redis,
+# "reload from the cloud every rerun just to check" would burn ~3,600
+# GET commands a day from this one call site alone (smaller than the
+# three fully-24/7 sites — see groq_client.py's _outage_episode — but
+# the same root cause, so fixed the same way while auditing it).
+_last_brief_date: str | None = persisted_state.load("morning_brief_date", None)
+
+
 def _notify_new_brief(sentence: str, now: datetime) -> None:
     """Pushes the morning brief to the phone once per calendar day — the
     first time render() produces a real brief that day (AI-written or
@@ -1146,14 +1157,17 @@ def _notify_new_brief(sentence: str, now: datetime) -> None:
     than once: "I don't want an alert every fifteen minutes basically
     saying the same thing... pick one time each day."
 
-    Persisted to disk (persisted_state), not just a module-level
-    global — a plain global survives across browser sessions but not
-    across an actual process restart, and this session's own several
-    redeploys in a row kept resetting an in-memory version of this
-    right back to "nothing sent yet," reproducing the exact same
-    symptom (a duplicate real push) from a different cause than the
-    first fix addressed."""
-    if persisted_state.load("morning_brief_date", None) == now.date().isoformat():
+    Persisted to disk/cloud (persisted_state, see _last_brief_date
+    above), not just a plain process-local global — a plain global
+    survives across browser sessions but not across an actual process
+    restart, and this session's own several redeploys in a row kept
+    resetting an in-memory version of this right back to "nothing sent
+    yet," reproducing the exact same symptom (a duplicate real push)
+    from a different cause than the first fix addressed."""
+    global _last_brief_date
+    today = now.date().isoformat()
+    if _last_brief_date == today:
         return
-    persisted_state.save("morning_brief_date", now.date().isoformat())
+    _last_brief_date = today
+    persisted_state.save("morning_brief_date", today)
     ntfy_client.send(title="Morning Brief", message=sentence, priority="default", tags="sunny")

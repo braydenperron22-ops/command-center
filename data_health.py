@@ -80,6 +80,20 @@ def check() -> list[dict]:
     return stale
 
 
+# Loaded once at import, not re-fetched from persisted_state on every
+# call — notify_stale() runs unconditionally every 5s rerun (app.py
+# calls it with no gating), and with persisted_state now backed by
+# Upstash Redis, "reload from the cloud every rerun just to check"
+# would burn roughly 17,280 GET commands a day from this one call site
+# alone. See groq_client.py's own _outage_episode for the twin of this
+# same fix (same shape, same root cause: "will this handle our
+# volume ok?" traced live to ~3.3x over the free tier's 500k/month
+# across the three call sites with this pattern). Mutated in place,
+# only ever re-saved on a genuine change (a source going stale or
+# recovering — rare, real events).
+_stale_notified: set = set(persisted_state.load("data_health_stale", []))
+
+
 def notify_stale(stale: list[dict]) -> None:
     """Pushes a phone notification once per source, per outage episode —
     not every rerun for as long as it stays stale, which could be hours
@@ -91,15 +105,16 @@ def notify_stale(stale: list[dict]) -> None:
     re-pinging every rerun for the same ongoing outage.
 
     Tracks which source_keys have already been notified this episode via
-    persisted_state, not st.session_state or a plain module global — a
-    session reset or a process restart (a redeploy, a Cloud sleep/wake)
-    must never look like "nothing sent yet" for an outage still
-    genuinely in progress. A source dropping out of `stale` (i.e. it
-    recovered) clears its own flag, so a second, later outage on the
-    same source gets its own fresh alert rather than staying silently
-    suppressed forever because it already fired once months ago."""
-    original = set(persisted_state.load("data_health_stale", []))
-    notified = original & {s["key"] for s in stale}  # drop any source that's since recovered
+    persisted_state (see _stale_notified above), not st.session_state or
+    a plain process-local-only global — a session reset or a process
+    restart (a redeploy, a Cloud sleep/wake) must never look like
+    "nothing sent yet" for an outage still genuinely in progress. A
+    source dropping out of `stale` (i.e. it recovered) clears its own
+    flag, so a second, later outage on the same source gets its own
+    fresh alert rather than staying silently suppressed forever because
+    it already fired once months ago."""
+    global _stale_notified
+    notified = _stale_notified & {s["key"] for s in stale}  # drop any source that's since recovered
     for s in stale:
         if s["key"] in notified:
             continue
@@ -110,5 +125,6 @@ def notify_stale(stale: list[dict]) -> None:
             priority="high",
             tags="warning",
         )
-    if notified != original:
+    if notified != _stale_notified:
+        _stale_notified = notified
         persisted_state.save("data_health_stale", sorted(notified))
