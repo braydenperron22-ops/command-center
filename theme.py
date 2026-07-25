@@ -3152,9 +3152,15 @@ html, body, [class*="css"] {
    cluster (9999, both true top-level UI that should never be
    obscured). pointer-events: none since this is purely informational —
    never blocks the End Session button underneath, even before it
-   fades. Hold-then-fade timing mirrors .jumbo-transition-hold-fade
-   above, just shorter (this is a quick per-play flash, not a scene
-   change) so it's fully gone well within one 5s rerun cycle. */
+   fades.
+
+   animation-duration here is just the fallback — pages_jumbotron.
+   _play_result_overlay_html always sets it (and animation-delay)
+   inline from PLAY_RESULT_HOLD_SECONDS, so this holds for as many
+   reruns as it takes to fill that many seconds rather than being
+   capped at whatever survives one 5s rerun cycle (session request:
+   "can the animation be longer than 3 seconds?" — that's what the old
+   fixed 3s version was actually bumping into). */
 .jumbo-play-overlay {
     position: fixed;
     inset: 0;
@@ -3164,7 +3170,7 @@ html, body, [class*="css"] {
     justify-content: center;
     pointer-events: none;
     background: rgba(5,7,12,0.85);
-    animation: jumbo-play-hold-fade 3s cubic-bezier(.4,0,.2,1) forwards;
+    animation: jumbo-play-hold-fade 5s cubic-bezier(.4,0,.2,1) forwards;
 }
 @keyframes jumbo-play-hold-fade {
     0% { opacity: 1; }

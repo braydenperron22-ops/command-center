@@ -644,34 +644,62 @@ _OUT_EVENTS = {
 }
 
 
-def _play_result_overlay_html(game_id: int, play: dict | None) -> str:
-    """Full-screen, self-dismissing announcement of what the last play
-    actually was — session request: "add an animation that takes up
-    the screen after every play. Single, Double, Triple, Home Run,
-    Lineout, Strikout, Pop Out etc so i can tell what happened. this
-    alert should be based on the last play bar." Reuses the exact same
-    data sports_client.fetch_mlb_last_play already hands the last-play
-    badge (see its own docstring) — no extra request, and "based on the
-    last play bar" is literally true, not just similar.
+# Session request: "can the animation be longer than 3 seconds?" — the
+# first version was a genuine single-shot CSS animation, which capped
+# out at how long its own DOM node survives before the next 5s rerun
+# replaces it (the same hard ceiling the out-of-town overlay and the
+# postgame win-burst already live within). To hold for longer than one
+# rerun cycle, _play_result_overlay_html now tracks WHEN a play was
+# first detected (not just whether it's been shown once) and keeps
+# re-rendering it across as many reruns as it takes to fill this many
+# seconds, with a negative animation-delay computed fresh each time so
+# the CSS hold/fade timeline picks up exactly where real elapsed time
+# says it should — same technique app.py's own rotation-timer-fill bar
+# already uses for a countdown that has to survive multiple reruns
+# without visibly restarting.
+PLAY_RESULT_HOLD_SECONDS = 5
 
-    Session-guarded per (game_id, this specific play) so it renders for
-    exactly the one rerun where a genuinely NEW play was detected, same
-    one-shot pattern the postgame win-burst and the game-mode
-    transition curtain (app.py) already use — a play already shown
-    doesn't replay every rerun until the next new one lands. "" if
-    there's no play yet, or nothing new since last shown."""
+
+def _play_result_overlay_html(game_id: int, play: dict | None) -> str:
+    """Full-screen announcement of what the last play actually was,
+    held for PLAY_RESULT_HOLD_SECONDS — session request: "add an
+    animation that takes up the screen after every play. Single,
+    Double, Triple, Home Run, Lineout, Strikout, Pop Out etc so i can
+    tell what happened. this alert should be based on the last play
+    bar." Reuses the exact same data sports_client.fetch_mlb_last_play
+    already hands the last-play badge (see its own docstring) — no
+    extra request, and "based on the last play bar" is literally true,
+    not just similar.
+
+    Session-guarded per (game_id, this specific play's identity): a
+    genuinely new play resets the hold window's start time; the same
+    play re-detected on a later rerun keeps counting from when it was
+    first seen, not restarting the clock. "" once PLAY_RESULT_HOLD_
+    SECONDS has genuinely elapsed, or if there's no play yet."""
     if not play or not play.get("event"):
         return ""
     identity = f'{play.get("description")}|{play["away_score"]}|{play["home_score"]}'
     key = f"jumbotron_last_play_shown_{game_id}"
-    if st.session_state.get(key) == identity:
+    now_ts = time.time()
+    tracked = st.session_state.get(key)
+    if not tracked or tracked.get("identity") != identity:
+        tracked = {"identity": identity, "started_at": now_ts}
+        st.session_state[key] = tracked
+    elapsed = now_ts - tracked["started_at"]
+    if elapsed >= PLAY_RESULT_HOLD_SECONDS:
         return ""
-    st.session_state[key] = identity
     event = play["event"]
     tone = "hit" if event in _HIT_EVENTS else "out" if event in _OUT_EVENTS else "neutral"
+    # Both animations get the same negative delay so a rerun landing
+    # mid-hold picks up exactly where it should — the text's own 0.5s
+    # pop-in has long since "finished" and just sits settled, and the
+    # outer hold-fade is wherever real elapsed time says it should be,
+    # not restarted from 0% the way a fresh DOM node normally would be.
+    delay_style = f"animation-delay: -{elapsed:.2f}s;"
+    overlay_style = f"{delay_style} animation-duration: {PLAY_RESULT_HOLD_SECONDS}s;"
     return (
-        f'<div class="jumbo-play-overlay jumbo-play-overlay-{tone}">'
-        f'<div class="jumbo-play-text">{html.escape(event.upper())}</div>'
+        f'<div class="jumbo-play-overlay jumbo-play-overlay-{tone}" style="{overlay_style}">'
+        f'<div class="jumbo-play-text" style="{delay_style}">{html.escape(event.upper())}</div>'
         f"</div>"
     )
 
