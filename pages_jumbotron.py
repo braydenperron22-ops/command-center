@@ -584,6 +584,15 @@ def _between_play_overlay_html(state: dict, now: datetime) -> str:
         target_ts = _mlb_between_innings_target(game_id, detail, now_ts)
         if target_ts is None:
             return ""
+        # Session request: "make the out of town scoreboard end the
+        # second the timer is over" — MLB_BREAK_SECONDS is an estimate
+        # (a real break can run long — a pitching change, a replay
+        # review), so the real inning_state can still say "still
+        # between innings" for a while after this countdown already
+        # hit 0:00. Ending on the timer itself, not on the game
+        # actually resuming, means it never sits on a stalled "0:00".
+        if target_ts - now_ts <= 0:
+            return ""
         marker = f'{detail.get("inning_state")}:{detail.get("current_inning")}'
         if not _overlay_delay_elapsed(game_id, marker, now_ts):
             return ""
@@ -595,13 +604,16 @@ def _between_play_overlay_html(state: dict, now: datetime) -> str:
         detail = sports_client.fetch_nhl_live_detail(game_id)
         if not detail or not detail.get("in_intermission"):
             return ""
+        secs = detail.get("intermission_seconds_remaining")
+        # Same reasoning as the MLB branch above — NHL's own clock is
+        # real (not an estimate), but polling lag can still leave
+        # in_intermission true for a tick or two after it hits 0.
+        if secs is None or secs <= 0:
+            return ""
         marker = f'intermission:{detail.get("period_label")}'
         if not _overlay_delay_elapsed(game_id, marker, now_ts):
             return ""
         headline = "INTERMISSION"
-        secs = detail.get("intermission_seconds_remaining")
-        if secs is None:
-            return ""
         target_ms = int((now_ts + secs) * 1000)
         timer_span = f'<div class="jumbo-otc-timer live-countdown" data-target-ms="{target_ms}" data-format="clock">{html.escape(_fmt_break_clock(secs))}</div>'
         timer_label = "UNTIL PUCK DROP"
