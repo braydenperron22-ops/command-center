@@ -3143,6 +3143,56 @@ html, body, [class*="css"] {
 .jumbo-otc-grid .jumbo-mini-status { font-size: 13px; }
 .jumbo-otc-grid .jumbo-mini-leader { font-size: 12px; }
 
+/* Full-screen play-result announcement — session request: "add an
+   animation that takes up the screen after every play. Single,
+   Double, Triple, Home Run, Lineout, Strikout, Pop Out etc so i can
+   tell what happened." z-index sits above the out-of-town overlay
+   (9997, so a play result always wins if the two ever land on the
+   same rerun) but below the game-mode transition curtain and control
+   cluster (9999, both true top-level UI that should never be
+   obscured). pointer-events: none since this is purely informational —
+   never blocks the End Session button underneath, even before it
+   fades. Hold-then-fade timing mirrors .jumbo-transition-hold-fade
+   above, just shorter (this is a quick per-play flash, not a scene
+   change) so it's fully gone well within one 5s rerun cycle. */
+.jumbo-play-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    background: rgba(5,7,12,0.85);
+    animation: jumbo-play-hold-fade 3s cubic-bezier(.4,0,.2,1) forwards;
+}
+@keyframes jumbo-play-hold-fade {
+    0% { opacity: 1; }
+    70% { opacity: 1; }
+    100% { opacity: 0; visibility: hidden; }
+}
+.jumbo-play-text {
+    font-family: 'Bebas Neue', 'Oswald', Impact, sans-serif;
+    font-size: 96px;
+    letter-spacing: 0.08em;
+    text-align: center;
+    line-height: 1.05;
+    max-width: 90%;
+    animation: jumbo-play-pop 0.5s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes jumbo-play-pop {
+    0% { transform: scale(0.6); opacity: 0; }
+    60% { transform: scale(1.08); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+}
+/* Hit/out/neutral — same three-tone idea as the ball/strike flashes
+   above (green for offense succeeding, red for an out, neutral white
+   for anything not classified either way — a walk-off review, a wild
+   pitch, etc.). */
+.jumbo-play-overlay-hit .jumbo-play-text { color: #32D74B; text-shadow: 0 0 40px rgba(50,215,75,0.7), 0 0 8px rgba(50,215,75,0.9); }
+.jumbo-play-overlay-out .jumbo-play-text { color: #FF453A; text-shadow: 0 0 40px rgba(255,69,58,0.7), 0 0 8px rgba(255,69,58,0.9); }
+.jumbo-play-overlay-neutral .jumbo-play-text { color: var(--bone); text-shadow: 0 0 40px rgba(255,255,255,0.4); }
+
 /* Bottom-left control cluster — End Session button (session request:
    "an end session button... that closes out the game session therefore
    closing the jumbotron") plus the live-data delay stepper (session

@@ -885,23 +885,28 @@ def _fetch_mlb_live_feed_raw(game_id: int) -> dict:
 
 
 def fetch_mlb_last_play(game_id: int) -> dict | None:
-    """{"description", "away_score", "home_score"} for the most recent
-    COMPLETED play in this game — session request: "add a play badge
-    that shows the last play from the live game feed and situation...
-    directly from the live feed... below the batter pitcher matchup."
-    MLB's own feed already writes a real English sentence per play
-    ("Willson Contreras singles on a soft ground ball to second baseman
-    Luis Urías."), used verbatim, same reasoning as sports_alerts.py's
-    own scoring-play toasts. Walks allPlays from the end, skipping
-    anything whose about.isComplete isn't true yet — confirmed live
-    against a real in-progress game that the last entry in allPlays IS
-    the current at-bat mid-play, not a finished result, right up until
-    it resolves. Delayed the same wall-clock amount as the linescore/
-    matchup above it (own buffer key, since this is a different raw
-    payload) so the play text never gets ahead of the broadcast-synced
-    score sitting right next to it on the board. None on any fetch
-    failure or if the game genuinely has no completed plays yet (top of
-    the 1st, nobody's batted)."""
+    """{"description", "event", "away_score", "home_score"} for the most
+    recent COMPLETED play in this game — session request: "add a play
+    badge that shows the last play from the live game feed and
+    situation... directly from the live feed... below the batter
+    pitcher matchup." MLB's own feed already writes a real English
+    sentence per play ("Willson Contreras singles on a soft ground ball
+    to second baseman Luis Urías."), used verbatim, same reasoning as
+    sports_alerts.py's own scoring-play toasts. "event" is MLB's own
+    short classification for the same play ("Single", "Strikeout", "Pop
+    Out", ...) — session request: "add an animation... Single, Double,
+    Triple, Home Run, Lineout, Strikout, Pop Out etc so i can tell what
+    happened" — used as-is rather than guessed from the description
+    text, same "verbatim, not re-synthesized" reasoning. Walks allPlays
+    from the end, skipping anything whose about.isComplete isn't true
+    yet — confirmed live against a real in-progress game that the last
+    entry in allPlays IS the current at-bat mid-play, not a finished
+    result, right up until it resolves. Delayed the same wall-clock
+    amount as the linescore/matchup above it (own buffer key, since
+    this is a different raw payload) so the play text never gets ahead
+    of the broadcast-synced score sitting right next to it on the
+    board. None on any fetch failure or if the game genuinely has no
+    completed plays yet (top of the 1st, nobody's batted)."""
     try:
         data = _delayed(f"mlb_lastplay_{game_id}", _fetch_mlb_live_feed_raw(game_id))
     except Exception:
@@ -913,7 +918,12 @@ def fetch_mlb_last_play(game_id: int) -> dict | None:
         result = p.get("result", {})
         description = result.get("description")
         if description:
-            return {"description": description, "away_score": result.get("awayScore"), "home_score": result.get("homeScore")}
+            return {
+                "description": description,
+                "event": result.get("event"),
+                "away_score": result.get("awayScore"),
+                "home_score": result.get("homeScore"),
+            }
     return None
 
 

@@ -520,12 +520,38 @@ def _mlb_between_innings_target(game_id: int, detail: dict, now_ts: float) -> fl
     return tracked["started_at"] + MLB_BREAK_SECONDS
 
 
+# Session request: "delay the out of town scoreboard by like 15
+# seconds so i can actually see the last play of the inning" — the
+# overlay used to take the whole screen the instant a break started,
+# covering the very play (and the last-play badge) that just ended it
+# before there was any real chance to read it. Tracks when THIS
+# specific break/intermission first became true (keyed by game_id plus
+# a marker, so a new break always gets its own fresh window rather
+# than inheriting one from whatever break happened before it) — a
+# separate concern from MLB_BREAK_SECONDS/NHL's own clock above, which
+# are about "when does the game resume," not "how long to keep showing
+# the featured board before switching away from it."
+OVERLAY_DELAY_SECONDS = 15
+
+
+def _overlay_delay_elapsed(game_id: int, marker: str, now_ts: float) -> bool:
+    key = f"jumbotron_overlay_delay_{game_id}"
+    tracked = st.session_state.get(key)
+    if not tracked or tracked.get("marker") != marker:
+        tracked = {"marker": marker, "started_at": now_ts}
+        st.session_state[key] = tracked
+    return now_ts - tracked["started_at"] >= OVERLAY_DELAY_SECONDS
+
+
 def _between_play_overlay_html(state: dict, now: datetime) -> str:
     """Full-screen "out of town scoreboard" during a natural break in
     the featured game — session request: "between innings / periods
     can we go to a full screen out of town scoreboard. with a timer
     till the game resumes again." Qualifies on MLB half-inning breaks
     (inning_state Middle/End) and NHL intermissions (in_intermission).
+    Held back OVERLAY_DELAY_SECONDS from when the break actually
+    started (see _overlay_delay_elapsed above) before actually taking
+    over the screen.
 
     Unlike the fixed-duration new-pitcher overlay, this isn't a timed
     toast — it's re-evaluated fresh every rerun and stays up for
@@ -558,6 +584,9 @@ def _between_play_overlay_html(state: dict, now: datetime) -> str:
         target_ts = _mlb_between_innings_target(game_id, detail, now_ts)
         if target_ts is None:
             return ""
+        marker = f'{detail.get("inning_state")}:{detail.get("current_inning")}'
+        if not _overlay_delay_elapsed(game_id, marker, now_ts):
+            return ""
         headline = f'{(detail.get("inning_state") or "").upper()} OF {detail.get("current_inning") or ""}'.strip()
         target_ms = int(target_ts * 1000)
         timer_span = f'<div class="jumbo-otc-timer live-countdown" data-target-ms="{target_ms}" data-format="clock">{html.escape(_fmt_break_clock(target_ts - now_ts))}</div>'
@@ -565,6 +594,9 @@ def _between_play_overlay_html(state: dict, now: datetime) -> str:
     elif sport == "nhl":
         detail = sports_client.fetch_nhl_live_detail(game_id)
         if not detail or not detail.get("in_intermission"):
+            return ""
+        marker = f'intermission:{detail.get("period_label")}'
+        if not _overlay_delay_elapsed(game_id, marker, now_ts):
             return ""
         headline = "INTERMISSION"
         secs = detail.get("intermission_seconds_remaining")
@@ -596,6 +628,51 @@ def _between_play_overlay_html(state: dict, now: datetime) -> str:
         f'<div class="jumbo-otc-timer-block">{timer_span}<div class="jumbo-otc-timer-label">{html.escape(timer_label)}</div></div>'
         f'<div class="jumbo-otc-grid">{"".join(rows)}</div>'
         "</div></div>"
+    )
+
+
+# MLB's own short classification for a play (result.event) — grouped
+# just enough to color the takeover by what actually happened, not
+# re-derived from the free-text description (same "use the API's own
+# field, don't guess" reasoning as the description text itself). Not
+# exhaustive — anything not listed here still shows (via event.upper()
+# in _play_result_overlay_html), just in the neutral tone.
+_HIT_EVENTS = {"Single", "Double", "Triple", "Home Run", "Walk", "Intent Walk", "Hit By Pitch"}
+_OUT_EVENTS = {
+    "Strikeout", "Groundout", "Flyout", "Lineout", "Pop Out", "Double Play", "Triple Play",
+    "Sac Fly", "Sac Bunt", "Field Out", "Force Out", "Grounded Into DP", "Fielders Choice Out",
+}
+
+
+def _play_result_overlay_html(game_id: int, play: dict | None) -> str:
+    """Full-screen, self-dismissing announcement of what the last play
+    actually was — session request: "add an animation that takes up
+    the screen after every play. Single, Double, Triple, Home Run,
+    Lineout, Strikout, Pop Out etc so i can tell what happened. this
+    alert should be based on the last play bar." Reuses the exact same
+    data sports_client.fetch_mlb_last_play already hands the last-play
+    badge (see its own docstring) — no extra request, and "based on the
+    last play bar" is literally true, not just similar.
+
+    Session-guarded per (game_id, this specific play) so it renders for
+    exactly the one rerun where a genuinely NEW play was detected, same
+    one-shot pattern the postgame win-burst and the game-mode
+    transition curtain (app.py) already use — a play already shown
+    doesn't replay every rerun until the next new one lands. "" if
+    there's no play yet, or nothing new since last shown."""
+    if not play or not play.get("event"):
+        return ""
+    identity = f'{play.get("description")}|{play["away_score"]}|{play["home_score"]}'
+    key = f"jumbotron_last_play_shown_{game_id}"
+    if st.session_state.get(key) == identity:
+        return ""
+    st.session_state[key] = identity
+    event = play["event"]
+    tone = "hit" if event in _HIT_EVENTS else "out" if event in _OUT_EVENTS else "neutral"
+    return (
+        f'<div class="jumbo-play-overlay jumbo-play-overlay-{tone}">'
+        f'<div class="jumbo-play-text">{html.escape(event.upper())}</div>'
+        f"</div>"
     )
 
 
@@ -971,6 +1048,15 @@ def render(now: datetime, state: dict, weather: dict | None) -> None:
     # featured game (see _between_play_overlay_html's own docstring).
     between_play_overlay = _between_play_overlay_html(state, now)
 
+    # Full-screen play-result announcement (see _play_result_overlay_html's
+    # own docstring) — MLB-live only, same gating _current_matchup_html
+    # already uses; NHL has no per-play "event" classification to key off.
+    play_result_overlay = ""
+    if state.get("phase") == "live" and state.get("game") and state["league"]["sport"] == "mlb":
+        play_result_overlay = _play_result_overlay_html(
+            state["game"]["game_id"], sports_client.fetch_mlb_last_play(state["game"]["game_id"])
+        )
+
     st.markdown(
         f'<div class="jumbo">'
         f'<div class="jumbo-marquee">'
@@ -986,7 +1072,7 @@ def render(now: datetime, state: dict, weather: dict | None) -> None:
         f"</div>"
         f"{_board_html(state, now)}"
         f"{around_block}"
-        f"</div>{between_play_overlay}</div>",
+        f"</div>{play_result_overlay}{between_play_overlay}</div>",
         unsafe_allow_html=True,
     )
 
