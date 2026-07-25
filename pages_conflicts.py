@@ -241,16 +241,20 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
         temperature=0.2,
         max_output_tokens=max_output_tokens,
         model=GPT_OSS_MODEL,
-        # Session report: "make sure GPT doesn't run out of credits
-        # halfway through" — confirmed live even after tightening the
-        # prompt (see HEADLINES_FED_TO_AI/scaffolding above) and with
-        # max_output_tokens computed to leave real headroom: the model's
-        # own hidden reasoning at Groq's default effort ("medium") was
-        # still eating enough of that headroom that the visible JSON
-        # answer got cut off mid-sentence. "low" trims that reasoning
-        # overhead directly — the actual lever, not a bigger ceiling to
-        # raise it into (already near GPT_OSS_TPM_LIMIT).
-        reasoning_effort="low",
+        # Explicit, not just relying on Groq's own default (also
+        # "medium") — this was a real, considered choice, not an
+        # oversight. Session request: "make sure GPT doesn't run out of
+        # credits halfway through" led to trying "low" here first — it
+        # never truncates, but a live side-by-side on the same headline
+        # pool showed it isn't just terser, it under-scans: "low" found
+        # 1 conflict where "medium" correctly separated out 3 distinct
+        # ones (US-Iran, Yemen-Saudi, Ukraine-Russia) from the exact
+        # same headlines. Asked directly which mattered more given that
+        # tradeoff — kept "medium" for the real analytical coverage,
+        # since the `validate` retry-on-invalid fix below already turns
+        # an occasional truncation into a same-day retry instead of a
+        # broken page for the rest of the 24h window.
+        reasoning_effort="medium",
         # Session report: "generated eleven hours ago, yet no conflict
         # overview available right now" — see generate_periodic's own
         # comment on `validate`. A malformed/truncated response (a real
