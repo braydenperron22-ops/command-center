@@ -660,7 +660,17 @@ html, body, [class*="css"] {
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 15;
+    /* Session report: a Red Sox sac fly scored and "their alert did not
+       fire" — it had, but z-index 15 sat well below the jumbotron's own
+       full-screen overlays (out-of-town scoreboard 9997, play-result
+       9998, transition curtain 9999, all inset:0 and effectively
+       opaque). A sac fly very often ends the half-inning too, so the
+       between-innings overlay was covering the whole screen right as
+       the toast tried to show. This (and .commute-alert-bar/
+       .sports-alert-bar-mlb/-nhl below, which share this same bottom
+       strip) now sits above all of them — a real alert should never be
+       able to render invisibly. */
+    z-index: 10000;
     display: flex;
     align-items: center;
     gap: 1.1rem;
@@ -689,7 +699,7 @@ html, body, [class*="css"] {
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 15;
+    z-index: 10000;  /* see .news-alert-bar's own comment above */
     display: flex;
     align-items: center;
     gap: 1.1rem;
@@ -710,7 +720,7 @@ html, body, [class*="css"] {
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 15;
+    z-index: 10000;  /* see .news-alert-bar's own comment in theme.py */
     display: flex;
     align-items: center;
     gap: 1.1rem;
