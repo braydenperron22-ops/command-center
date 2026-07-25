@@ -115,6 +115,30 @@ EVENING_RAMP_MINUTES = (DAY_BRIGHTNESS - MIN_DAY_BRIGHTNESS) // BRIGHTNESS_STEP_
 FALLBACK_EVENING_RAMP_END_HOUR = 21  # 9:30pm
 FALLBACK_EVENING_RAMP_END_MINUTE = 30
 
+# "What did we last tell the physical light/plug to do" — module-level,
+# not st.session_state. Session report: "my gov lights are completely
+# off... they're kinda just all over the place tonight," while the Jays
+# game was genuinely live. Root cause: this kiosk isn't the only
+# session ever connected (a phone checking the score, a second tab —
+# see toast_queue.py's own docstring for the same shape of problem with
+# breaking-news alerts) and every one of the state vars below lived in
+# st.session_state, so each connected session kept its own independent
+# belief about the light's current color/brightness/power and about
+# `_jumbotron_active` (itself derived partly from that session's own
+# page/query-param routing). Two sessions disagreeing even slightly
+# meant two independent callers issuing conflicting commands to the
+# same physical bulb throughout the night. One shared copy here means
+# every session agrees on what was last sent and only the one that's
+# actually due sends anything.
+_light_powered_on: bool | None = None
+_light_color_applied: tuple[int, int, int] | None = None
+_light_brightness_applied: int | None = None
+_light_last_call_ts: float = 0.0
+_brightness_step_ts: float = 0.0
+_market_significant: bool = False
+_plug_applied: bool | None = None
+_plug_last_call_ts: float = 0.0
+
 
 def _brightness_envelope(now: datetime, base_brightness: int, sunset: datetime | None) -> int:
     morning_start = now.replace(hour=MORNING_RAMP_START_HOUR, minute=0, second=0, microsecond=0)
@@ -151,10 +175,10 @@ def _desired_base_state(
     >=MARKET_SIGNIFICANT_MOVE check, so a move sitting right at the
     threshold on a choppy session doesn't flip the light back and forth
     every time it nudges a hair either side."""
-    was_significant = st.session_state.get("govee_market_significant", False)
-    threshold = MARKET_SIGNIFICANT_RELEASE if was_significant else MARKET_SIGNIFICANT_MOVE
+    global _market_significant
+    threshold = MARKET_SIGNIFICANT_RELEASE if _market_significant else MARKET_SIGNIFICANT_MOVE
     is_significant = market_intraday_pct is not None and abs(market_intraday_pct) >= threshold
-    st.session_state["govee_market_significant"] = is_significant
+    _market_significant = is_significant
 
     if is_significant:
         color = MARKET_UP_COLOR if market_intraday_pct > 0 else MARKET_DOWN_COLOR
@@ -168,27 +192,29 @@ def _apply_power(on: bool) -> bool:
     either just sent, or already matching cache. sync_lights only moves
     on to color/brightness once this is True, so a still-throttled power
     call can't be raced by a color call that assumes power is already up."""
-    if st.session_state.get("govee_light_powered_on") == on:
+    global _light_powered_on, _light_last_call_ts, _light_color_applied, _light_brightness_applied
+    if _light_powered_on == on:
         return True
-    if time.time() - st.session_state.get("govee_last_call_ts", 0) < MIN_CALL_GAP_SECONDS:
+    if time.time() - _light_last_call_ts < MIN_CALL_GAP_SECONDS:
         return False
     if govee_client.set_power(GOVEE_LIGHT, on):
-        st.session_state["govee_light_powered_on"] = on
-        st.session_state["govee_last_call_ts"] = time.time()
+        _light_powered_on = on
+        _light_last_call_ts = time.time()
         if not on:
             # Force a fresh color/brightness send next time it powers back
             # on (snapping to the correct values, not creeping into them
             # from scratch), rather than trusting whatever it powers on with.
-            st.session_state["govee_light_color_applied"] = None
-            st.session_state["govee_light_brightness_applied"] = None
+            _light_color_applied = None
+            _light_brightness_applied = None
         return True
     return False
 
 
 def _apply_color(color: tuple[int, int, int], min_gap: float = MIN_CALL_GAP_SECONDS) -> None:
-    if st.session_state.get("govee_light_color_applied") == color:
+    global _light_color_applied, _light_last_call_ts
+    if _light_color_applied == color:
         return
-    if time.time() - st.session_state.get("govee_last_call_ts", 0) < min_gap:
+    if time.time() - _light_last_call_ts < min_gap:
         return
     # Gated on the actual API result (same pattern as _apply_power below)
     # — a failed call (rate limit, WiFi hiccup, momentary Govee outage,
@@ -202,8 +228,8 @@ def _apply_color(color: tuple[int, int, int], min_gap: float = MIN_CALL_GAP_SECO
     # min_gap once something's actually wrong, not wait out a normal
     # cooldown for a call that never went through.
     if govee_client.set_color(GOVEE_LIGHT, color):
-        st.session_state["govee_light_color_applied"] = color
-        st.session_state["govee_last_call_ts"] = time.time()
+        _light_color_applied = color
+        _light_last_call_ts = time.time()
 
 
 def _apply_brightness_immediate(value: int, min_gap: float = MIN_CALL_GAP_SECONDS) -> None:
@@ -214,14 +240,15 @@ def _apply_brightness_immediate(value: int, min_gap: float = MIN_CALL_GAP_SECOND
     fresh from wherever this just landed rather than firing again
     immediately. Gated on the API result — see _apply_color's comment
     on why an unconditional write here was a real bug."""
-    if st.session_state.get("govee_light_brightness_applied") == value:
+    global _light_brightness_applied, _light_last_call_ts, _brightness_step_ts
+    if _light_brightness_applied == value:
         return
-    if time.time() - st.session_state.get("govee_last_call_ts", 0) < min_gap:
+    if time.time() - _light_last_call_ts < min_gap:
         return
     if govee_client.set_brightness(GOVEE_LIGHT, value):
-        st.session_state["govee_light_brightness_applied"] = value
-        st.session_state["govee_brightness_step_ts"] = time.time()
-        st.session_state["govee_last_call_ts"] = time.time()
+        _light_brightness_applied = value
+        _brightness_step_ts = time.time()
+        _light_last_call_ts = time.time()
 
 
 def _creep_brightness(target: int) -> None:
@@ -230,13 +257,14 @@ def _creep_brightness(target: int) -> None:
     there. First-ever call (nothing applied yet this session) snaps
     instead, so a fresh app start shows the correct brightness right
     away rather than creeping up from scratch for the next hour."""
-    current = st.session_state.get("govee_light_brightness_applied")
+    global _light_brightness_applied, _brightness_step_ts
+    current = _light_brightness_applied
     if current is None:
         _apply_brightness_immediate(target)
         return
     if current == target:
         return
-    if time.time() - st.session_state.get("govee_brightness_step_ts", 0) < BRIGHTNESS_STEP_INTERVAL_SECONDS:
+    if time.time() - _brightness_step_ts < BRIGHTNESS_STEP_INTERVAL_SECONDS:
         return
     step = BRIGHTNESS_STEP_SIZE if target > current else -BRIGHTNESS_STEP_SIZE
     next_value = current + step
@@ -247,8 +275,8 @@ def _creep_brightness(target: int) -> None:
     # every subsequent step in this creep from where the light actually
     # is.
     if govee_client.set_brightness(GOVEE_LIGHT, next_value):
-        st.session_state["govee_light_brightness_applied"] = next_value
-        st.session_state["govee_brightness_step_ts"] = time.time()
+        _light_brightness_applied = next_value
+        _brightness_step_ts = time.time()
 
 
 def sync_lights(
@@ -315,15 +343,27 @@ def sync_lights(
 
     `jumbotron_active` — session request: "same rule with the lights"
     (as app.py's own night_dim exemption for the screen, right after
-    it: "make it so the screen does not dim in game mode"). Same
-    narrow scope as that one: only while the jumbotron takeover is
-    actually on screen, not for the whole time some tracked game
-    happens to be live in the background. Bypasses the night power-off
-    gate, but not into DAY_BRIGHTNESS or the market/condition color
-    that'd normally apply — session feedback right after: "make it a
-    more dim warmer neutral colour so its easier on the eyes." Settles
-    on GAME_MODE_COLOR/GAME_MODE_BRIGHTNESS instead, a plain warm white
-    dim enough to watch a bright screen by in an otherwise dark room.
+    it: "make it so the screen does not dim in game mode"). Narrow
+    scope, same as that one: only within the takeover's actual
+    pregame/live/postgame window, not for the whole rest of the day
+    just because a game is on today's schedule somewhere. app.py passes
+    a page-INDEPENDENT flag here though (`_takeover is not None`, not
+    its own page-gated `_jumbotron_active`) — this light is one shared
+    real-world device, not tied to any one connected session's screen,
+    so it needs to track "is the game actually live" the same way
+    sync_plug's own `game_live` already does, not "is THIS particular
+    session currently looking at the board." Session report: "my gov
+    lights are completely off... all over the place" while a game was
+    genuinely live, traced to exactly that mismatch — a phone checking
+    the score from any other page believed jumbotron_active was False
+    and kept pushing the shared light back to its normal state, fighting
+    the kiosk's own session every few reruns. Bypasses the night
+    power-off gate, but not into DAY_BRIGHTNESS or the market/condition
+    color that'd normally apply — session feedback right after: "make
+    it a more dim warmer neutral colour so its easier on the eyes."
+    Settles on GAME_MODE_COLOR/GAME_MODE_BRIGHTNESS instead, a plain
+    warm white dim enough to watch a bright screen by in an otherwise
+    dark room.
 
     Checked ahead of the sunrise/sunset tint and the market/condition
     base state (both of which change on their own timer/values) —
@@ -421,13 +461,14 @@ def sync_plug(
     every rerun, so it reverts to the normal daylight window as soon as
     that hold ends — or immediately, if the recap's dismissed early via
     the jumbotron's own End Session button."""
+    global _plug_applied, _plug_last_call_ts
     if not st.secrets.get("GOVEE_API_KEY") or first_light is None or last_light is None:
         return
     want_on = game_live or (first_light <= now < last_light)
-    if st.session_state.get("govee_plug_applied") == want_on:
+    if _plug_applied == want_on:
         return
-    if time.time() - st.session_state.get("govee_plug_last_call_ts", 0) < MIN_CALL_GAP_SECONDS:
+    if time.time() - _plug_last_call_ts < MIN_CALL_GAP_SECONDS:
         return
     if govee_client.set_power(GOVEE_PLUG, want_on):
-        st.session_state["govee_plug_applied"] = want_on
-        st.session_state["govee_plug_last_call_ts"] = time.time()
+        _plug_applied = want_on
+        _plug_last_call_ts = time.time()

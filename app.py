@@ -308,6 +308,23 @@ except Exception:
 # the hero row instead of overlaying the board. The toast queue, ticker
 # and Govee sync still run as normal.
 _jumbotron_active = page == "jumbotron" and _takeover is not None
+# Separate from _jumbotron_active above on purpose — that one is "is
+# THIS session's screen currently showing the board," which is exactly
+# what the screen-dimming/top-alert suppression above needs, but wrong
+# for the physical Govee light: the light is one shared real-world
+# device, not per-session, and it should track "is a Jays/Habs game
+# actually live/in its takeover window right now" regardless of which
+# page any particular connected session (kiosk, a phone checking the
+# score) happens to be routed to. sync_plug already gets this right via
+# plug_should_stay_on(_takeover) below; sync_lights was wrongly wired
+# to page-gated _jumbotron_active instead — session report: "my gov
+# lights are completely off... all over the place tonight" while the
+# Jays game was genuinely live, traced to exactly this: any session not
+# currently on the jumbotron page (e.g. a phone on the news page) would
+# compute _jumbotron_active=False and push the shared light straight to
+# its normal (here, night-off) state on its own next rerun, fighting
+# whatever the kiosk's own session had just set.
+_game_takeover_live = _takeover is not None
 if not _jumbotron_active and page == "jumbotron":
     # Nothing to show (no game at all, e.g. both leagues in the
     # offseason) — fall back rather than rendering an empty board.
@@ -1237,7 +1254,7 @@ try:
     # night_dim override above, just not the light).
     govee_lighting.sync_lights(
         phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
-        aqi_for_lights, category, score_flash, _jumbotron_active,
+        aqi_for_lights, category, score_flash, _game_takeover_live,
     )
     govee_lighting.sync_plug(
         now, weather["first_light"] if weather else None, weather["last_light"] if weather else None, game_live
