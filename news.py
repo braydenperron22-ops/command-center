@@ -425,23 +425,28 @@ _last_tick_at: float = 0.0
 
 # get_new_alerts()'s own "already alerted" tracking — same module-level
 # reasoning as _decided above, not st.session_state. Session request:
-# "make sure they dont get toast triggered on refresh" — this module's
-# own docstring already flagged the gap this closes: "get_new_alerts()'s
-# own seen_headlines tracking living in st.session_state, which resets
-# on a reconnect... and can hand the exact same headline back as 'new'
-# a second time. The on-screen top banner isn't re-gated here, only the
-# push — a banner re-appearing after a rare reconnect was never
-# reported as a problem the way a duplicate phone buzz was." It's being
-# reported now. Not persisted_state-backed (unlike most of this app's
-# other dedup trackers) — this function runs on literally every rerun
-# regardless of page (see its own docstring), so a real Upstash round
-# trip here would reintroduce the exact per-rerun command cost this
-# session already found and fixed for groq_client's outage tracker and
-# its siblings. A plain restart already can't cause a false alert storm
-# either way: _news_baseline_done starting over just re-quiets the very
-# first post-restart tick, the same bootstrap behavior a genuinely first
-# ever process start already relies on.
-_seen_headlines: dict[str, bool] = {}
+# "make sure they dont get toast triggered on refresh" fixed the
+# session-scoping half of this. But it kept re-happening after that fix
+# shipped ("I'm still seeing the same headline... all night"), traced to
+# a second, separate gap: a real process restart (this app has
+# crash-looped from memory pressure before) wipes this plain dict too,
+# and _decided (the classifier cache) right along with it. The
+# classifier only ever rates one headline per INDIVIDUAL_REFRESH_SECONDS
+# (60s) — with dozens of headlines in the current pool, a full pass
+# takes over an hour. A process that keeps restarting every few minutes
+# therefore never gets past re-classifying (and, without this fix,
+# re-alerting) whatever's earliest in fetch_headlines()'s own order —
+# always the same few headlines — while everything later in the list
+# rarely gets reached at all. Persisted now (same shape as
+# _pushed_headlines below: loaded once at import, saved only on a
+# genuine new headline — bounded by real news volume, not rerun
+# cadence, so this doesn't reintroduce the per-rerun Upstash cost this
+# session already found and fixed elsewhere) specifically so the "seen"
+# half survives a restart even though _decided doesn't have to: the
+# `h in seen` check below runs before the baseline gate, so a headline
+# re-classified after a restart still gets caught and skipped once its
+# hash is already on record from before.
+_seen_headlines: dict = dict(persisted_state.load("news_seen_headlines", {}))
 _news_baseline_done: bool = False
 
 
@@ -835,6 +840,7 @@ def get_new_alerts() -> list[dict]:
     seen = _seen_headlines
 
     alerts = []
+    seen_changed = False
     for item in fetch_headlines():
         # decide() is a plain cache lookup now (no network call), so
         # checking it before "seen" costs nothing — a still-pending or
@@ -847,11 +853,14 @@ def get_new_alerts() -> list[dict]:
         if h in seen:
             continue
         seen[h] = True
+        seen_changed = True
         if len(seen) > MAX_SEEN_HEADLINES:
             seen.pop(next(iter(seen)))
         if _news_baseline_done:
             alerts.append({**item, **decision})
 
+    if seen_changed:
+        persisted_state.save("news_seen_headlines", seen)
     _news_baseline_done = True
     # Session request: when several headlines qualify as new in the
     # same batch (e.g. a feed recovering from an outage and surfacing
