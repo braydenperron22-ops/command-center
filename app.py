@@ -34,6 +34,7 @@ import pages_weather
 import payday_schedule
 import sports_alerts
 import theme
+import toast_queue
 import waste_schedule
 import weather_alerts_bar
 import weather_records_client
@@ -1136,23 +1137,20 @@ def _alert_priority(alert: dict) -> int:
 
 current_alert, elapsed = None, None
 try:
-    news_queue = st.session_state.setdefault("news_queue", [])
     new_alerts.sort(key=_alert_priority)
     if len(new_alerts) > MAX_BURST_ALERTS:
         overflow = len(new_alerts) - MAX_BURST_ALERTS
         news_only = [a for a in new_alerts if _alert_priority(a) == 10]
         keep_news = news_only[overflow:] if overflow < len(news_only) else []
         new_alerts = [a for a in new_alerts if _alert_priority(a) < 10] + keep_news
-    news_queue.extend(new_alerts)
+    toast_queue.extend(new_alerts)
 
     now_ts = time.time()
-    if news_queue:
-        current_alert = news_queue[0]
-        if "shown_at" not in current_alert:
-            current_alert["shown_at"] = now_ts
+    current_alert = toast_queue.current(now_ts)
+    if current_alert:
         elapsed = now_ts - current_alert["shown_at"]
         if elapsed > news.TOAST_SECONDS:
-            news_queue.pop(0)
+            toast_queue.advance()
             current_alert, elapsed = None, None
 
     if current_alert:

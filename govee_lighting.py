@@ -74,11 +74,17 @@ SUNSET_COLOR = (248, 194, 122)  # scenery._SKY_STOPS["sunset"][3], #f8c27a
 # Game-mode night lighting (sync_lights' own jumbotron_active branch) —
 # session feedback: "make it a more dim warmer neutral colour so its
 # easier on the eyes." A plain warm white rather than whatever
-# condition color happened to be on screen, and well below
-# DAY_BRIGHTNESS — comfortable ambient light to watch by in an
-# otherwise dark room, not full daytime brightness.
+# condition color happened to be on screen. Was 30 — session report:
+# "my govy lights are stuck between lower brightness and higher
+# brightness... quite disorienting to watch the game... make idle
+# lights during a game literally like one percent brightness." Real
+# root cause was sync_lights checking this branch too late (after the
+# sunrise/sunset tint and market/condition base state, both of which
+# ramp/change on their own) — see the reordering below — but the
+# brightness itself is also just genuinely lower now, floor-dark for
+# watching a bright screen in an otherwise dark room.
 GAME_MODE_COLOR = (255, 209, 163)
-GAME_MODE_BRIGHTNESS = 30
+GAME_MODE_BRIGHTNESS = 1
 
 # Gentle wake-up/wind-down curve, layered under the sunset/sunrise on/off
 # gate below — the light already powers on as early as real sunrise, well
@@ -318,6 +324,19 @@ def sync_lights(
     more dim warmer neutral colour so its easier on the eyes." Settles
     on GAME_MODE_COLOR/GAME_MODE_BRIGHTNESS instead, a plain warm white
     dim enough to watch a bright screen by in an otherwise dark room.
+
+    Checked ahead of the sunrise/sunset tint and the market/condition
+    base state (both of which change on their own timer/values) —
+    session report: "my govy lights are stuck between lower brightness
+    and higher brightness... disorienting to watch the game... no
+    other force except breaking news alerts, bluejays alerts, or other
+    team alerts can impact the lights [during a game]... oh, severe
+    weather too." score_flash/breaking_alert_elapsed/AQI-smoke above
+    still take priority (that's the "severe weather too" exception),
+    but nothing below this check can touch the light while a game's
+    actually on screen — no longer gated on `phase == "night"` either,
+    since the point is "a game is on," not "a game is on AND it's
+    already dark."
     """
     if not st.secrets.get("GOVEE_API_KEY"):
         return
@@ -343,13 +362,26 @@ def sync_lights(
         _apply_color(SMOKE_COLOR)
         _creep_brightness(_brightness_envelope(now, DAY_BRIGHTNESS, sunset))
         return
+    # Session report: "my govy lights are stuck between lower
+    # brightness and higher brightness... disorienting to watch the
+    # game... make it so no other force except breaking news alerts,
+    # bluejays alerts, or other team alerts can impact the lights." Was
+    # checked below the sunrise/sunset tint and (implicitly, by falling
+    # through) the market/condition base state — both of which change
+    # on their own timers/values — so a game spanning the evening
+    # transition, or any market wobble, could pull brightness back and
+    # forth against the steady game-mode floor above it. Moved ahead of
+    # both (score_flash/breaking_alert_elapsed/AQI-smoke above still
+    # win first, matching the same request's own "oh, severe weather
+    # too" exception), and dropped the `phase == "night"` requirement —
+    # this is "a game is on," not "a game is on AND it's already dark."
+    if jumbotron_active:
+        _apply_color(GAME_MODE_COLOR)
+        _creep_brightness(GAME_MODE_BRIGHTNESS)
+        return
     if phase in ("sunrise", "sunset"):
         _apply_color(SUNRISE_COLOR if phase == "sunrise" else SUNSET_COLOR)
         _creep_brightness(_brightness_envelope(now, DAY_BRIGHTNESS, sunset))
-        return
-    if phase == "night" and jumbotron_active:
-        _apply_color(GAME_MODE_COLOR)
-        _creep_brightness(GAME_MODE_BRIGHTNESS)
         return
     color, brightness = _desired_base_state(market_intraday_pct, category, now, sunset)
     _apply_color(color)
