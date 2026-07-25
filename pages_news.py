@@ -18,9 +18,28 @@ import streamlit as st
 import headline_tickers
 import news
 import news_market_reaction
+import persisted_state
 
 WINDOW_SECONDS = 24 * 60 * 60
 MAX_SHOWN = 10
+
+# Module-level, persisted_state-backed — not st.session_state. Session
+# request: "make sure all of our headlines are being uploaded to the
+# cache and make sure the most recent ones show up in news." Root
+# cause: this page's own "when did I first see this headline" tracker
+# was session-scoped, so a browser reconnect reset it to empty — the
+# very next render then re-registered EVERY currently-decided headline
+# with the SAME "first_seen = now" timestamp all at once, destroying
+# the real chronological order the "most recent first" sort below
+# depends on, and permanently losing any headline the underlying RSS
+# feed had already rolled off its own results by the time of the
+# reconnect. Loaded once at import (not on every render — this page's
+# own render() only runs while News happens to be the active rotating
+# page, but still often enough that a live Upstash read per render
+# would be wasteful) and saved only when a genuinely new headline is
+# recorded, same "be command conscious" pattern as this app's other
+# persisted_state callers.
+_seen_at: dict = persisted_state.load("news_feed_seen_at", {})
 
 
 def _relative_time(seconds_ago: float) -> str:
@@ -40,14 +59,15 @@ def _meta_text(entry: dict, now_ts: float) -> str:
 
 
 def render():
+    global _seen_at
     st.markdown('<div class="page-title page-title-news">Market News — Last 24 Hours</div>', unsafe_allow_html=True)
 
-    seen_at = st.session_state.setdefault("news_feed_seen_at", {})
     now_ts = time.time()
+    changed = False
 
     for item in news.fetch_headlines():
         h = hashlib.sha1(item["headline"].encode()).hexdigest()
-        if h in seen_at:
+        if h in _seen_at:
             continue
         decision = news.decide(item["headline"])
         if decision is None:
@@ -66,7 +86,7 @@ def render():
             if decision["category"] in news_market_reaction.REACTION_CATEGORIES
             else None
         )
-        seen_at[h] = {
+        _seen_at[h] = {
             "headline": decision["headline"],
             "first_seen": now_ts,
             "category": decision["category"],
@@ -78,6 +98,7 @@ def render():
             "reaction_symbol": reaction_symbol,
             "baseline_spx": news_market_reaction.price_for(reaction_symbol) if reaction_symbol else None,
         }
+        changed = True
 
     # Age out entries past their 24h window. Used to also re-check every
     # remaining one against a live filter call in case a keyword-list
@@ -85,10 +106,14 @@ def render():
     # trusted as final once made (see its own docstring), so there's
     # nothing left to re-validate here, and re-asking would mean a real
     # AI call for every stored entry, every render.
-    for h in [h for h, entry in seen_at.items() if now_ts - entry["first_seen"] > WINDOW_SECONDS]:
-        del seen_at[h]
+    for h in [h for h, entry in _seen_at.items() if now_ts - entry["first_seen"] > WINDOW_SECONDS]:
+        del _seen_at[h]
+        changed = True
 
-    entries = sorted(seen_at.values(), key=lambda e: e["first_seen"], reverse=True)[:MAX_SHOWN]
+    if changed:
+        persisted_state.save("news_feed_seen_at", _seen_at)
+
+    entries = sorted(_seen_at.values(), key=lambda e: e["first_seen"], reverse=True)[:MAX_SHOWN]
 
     if not entries:
         st.markdown(

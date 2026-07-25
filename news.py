@@ -423,6 +423,27 @@ INDIVIDUAL_MAX_OUTPUT_TOKENS = 150
 _decided: dict[str, dict | None] = {}
 _last_tick_at: float = 0.0
 
+# get_new_alerts()'s own "already alerted" tracking — same module-level
+# reasoning as _decided above, not st.session_state. Session request:
+# "make sure they dont get toast triggered on refresh" — this module's
+# own docstring already flagged the gap this closes: "get_new_alerts()'s
+# own seen_headlines tracking living in st.session_state, which resets
+# on a reconnect... and can hand the exact same headline back as 'new'
+# a second time. The on-screen top banner isn't re-gated here, only the
+# push — a banner re-appearing after a rare reconnect was never
+# reported as a problem the way a duplicate phone buzz was." It's being
+# reported now. Not persisted_state-backed (unlike most of this app's
+# other dedup trackers) — this function runs on literally every rerun
+# regardless of page (see its own docstring), so a real Upstash round
+# trip here would reintroduce the exact per-rerun command cost this
+# session already found and fixed for groq_client's outage tracker and
+# its siblings. A plain restart already can't cause a false alert storm
+# either way: _news_baseline_done starting over just re-quiets the very
+# first post-restart tick, the same bootstrap behavior a genuinely first
+# ever process start already relies on.
+_seen_headlines: dict[str, bool] = {}
+_news_baseline_done: bool = False
+
 
 def _hash(headline: str) -> str:
     return hashlib.sha1(headline.encode()).hexdigest()
@@ -782,9 +803,12 @@ def fetch_headlines() -> list[dict]:
 
 def get_new_alerts() -> list[dict]:
     """Flags fresh headlines that qualify for the News page; only returns
-    ones not already seen this session. Uses the same `decide()` verdict
-    as the News page itself so the breaking-news bar is just the News
-    page's feed, surfaced the moment each headline first appears.
+    ones not already alerted on, for the life of this process — not just
+    this browser session (see _seen_headlines/_news_baseline_done's own
+    comment for why a refresh must not be able to re-trigger the same
+    toast). Uses the same `decide()` verdict as the News page itself so
+    the breaking-news bar is just the News page's feed, surfaced the
+    moment each headline first appears.
 
     Calls _run_individual_decide() first — this is the one call site
     that runs every rerun regardless of which page is up, so it's what
@@ -793,10 +817,12 @@ def get_new_alerts() -> list[dict]:
     already run earlier in the same script execution and just calls
     decide() itself.
 
-    The very first call establishes a baseline (marks whatever already
-    qualifies as "seen" without alerting) so opening the dashboard doesn't
-    immediately flood every historical headline as if it just broke.
+    The very first call this process makes establishes a baseline (marks
+    whatever already qualifies as "seen" without alerting) so a fresh
+    process doesn't immediately flood every historical headline as if it
+    just broke.
     """
+    global _news_baseline_done
     _run_individual_decide()
     # A plain set only ever grew — fine for a normal Streamlit session,
     # but this kiosk's one browser tab can stay open for weeks without a
@@ -806,8 +832,7 @@ def get_new_alerts() -> list[dict]:
     # the oldest hash can be evicted once the cap's hit — headlines this
     # old have long since rolled off every RSS feed's own window anyway,
     # so they'd never need to be recognized as "seen" again regardless.
-    seen = st.session_state.setdefault("seen_headlines", {})
-    baseline_done = st.session_state.get("news_baseline_done", False)
+    seen = _seen_headlines
 
     alerts = []
     for item in fetch_headlines():
@@ -824,10 +849,10 @@ def get_new_alerts() -> list[dict]:
         seen[h] = True
         if len(seen) > MAX_SEEN_HEADLINES:
             seen.pop(next(iter(seen)))
-        if baseline_done:
+        if _news_baseline_done:
             alerts.append({**item, **decision})
 
-    st.session_state["news_baseline_done"] = True
+    _news_baseline_done = True
     # Session request: when several headlines qualify as new in the
     # same batch (e.g. a feed recovering from an outage and surfacing
     # everything it missed at once), line them up in the toast queue in
