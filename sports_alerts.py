@@ -9,6 +9,18 @@ score_flash param) — this is just a genuinely new source feeding that
 same pipeline: each league's own live play-by-play feed, not RSS
 headlines.
 
+Flash color is dynamic per play, not just per league — session
+request: "team that we're playing against updates that dynamically
+change based on what team we're playing with their team colors on the
+govy lights." _annotate_scored_by figures out which side actually
+scored on a given play (comparing that play's own recorded score to
+the previous one — no extra field needed); a play the opponent scored
+flashes their own real color via ESPN (scores_client.team_color,
+confirmed live to hand back genuine per-team hex, not something
+guessed or hand-maintained), while our own scoring, streak events
+(Jays-only by definition), and anything scored_by couldn't attribute
+keep the existing fixed FLASH_BLUE/FLASH_RED below.
+
 MLB's own live game feed already writes a real English sentence per
 scoring play ("Cedric Mullins homers (12) on a fly ball to center
 field.") — used verbatim rather than re-synthesized, both simpler and
@@ -47,6 +59,7 @@ import requests
 import streamlit as st
 
 import fetch_throttle
+import scores_client
 import sports_client
 from config import TIMEZONE
 
@@ -298,6 +311,51 @@ def _nhl_scoring_plays(game_id: int) -> list[dict]:
 _SCORING_PLAY_FETCHERS = {"mlb": _mlb_scoring_plays, "nhl": _nhl_scoring_plays}
 
 
+def _annotate_scored_by(plays: list[dict]) -> list[dict]:
+    """Adds "scored_by" ("away"/"home"/None) to each entry in a
+    chronological scoring-play list, inferred by comparing each play's
+    own recorded away/home score to the previous play's — the exact
+    same awayScore/homeScore fields already extracted, no extra field
+    or request needed. Session request: "team that we're playing
+    against updates that dynamically change based on what team we're
+    playing with their team colors on the govy lights" — this is what
+    makes "which side actually just scored" knowable per play, not
+    just the game's overall score."""
+    prev_away, prev_home = 0, 0
+    for play in plays:
+        away, home = play.get("away_score"), play.get("home_score")
+        if away is not None and away > prev_away:
+            play["scored_by"] = "away"
+        elif home is not None and home > prev_home:
+            play["scored_by"] = "home"
+        else:
+            play["scored_by"] = None
+        prev_away = away if away is not None else prev_away
+        prev_home = home if home is not None else prev_home
+    return plays
+
+
+def _opponent_flash_color(sport: str, game: dict, fallback: tuple[int, int, int]) -> tuple[int, int, int]:
+    """The opponent's own real team color, straight from ESPN (see
+    scores_client.team_color) — `fallback` (this league's fixed
+    FLASH_BLUE/FLASH_RED) whenever ESPN doesn't have today's game, or
+    genuinely has no color for this particular team. Looked up fresh
+    per call rather than cached alongside the play itself — cheap
+    (scores_client.find_espn_competition is already st.cache_data'd on
+    its own real request), and means a mid-game ESPN hiccup only ever
+    costs one alert falling back to the fixed color, not a wrong color
+    stuck for the rest of the game."""
+    try:
+        team_name = sports_client.MLB_TEAM_NAME if sport == "mlb" else sports_client.NHL_TEAM_NAME
+        match = scores_client.find_espn_competition(sport, game["opponent"], team_name)
+        if not match:
+            return fallback
+        color = scores_client.team_color(match["competition"], game["opponent"])
+        return color or fallback
+    except Exception:
+        return fallback
+
+
 def _due_pregame_milestone(minutes_until: float, shown: set) -> int | None:
     """The largest not-yet-shown pregame milestone reached — same
     skip-and-mark-passed-ones-shown logic as commute_reminder.
@@ -445,7 +503,8 @@ def get_new_alerts(now: datetime) -> list[dict]:
             elif not baseline_done:
                 start_alerted[game_id] = True
 
-            plays = [(p, "score") for p in _SCORING_PLAY_FETCHERS[league["sport"]](game_id)]
+            scoring_plays = _annotate_scored_by(_SCORING_PLAY_FETCHERS[league["sport"]](game_id))
+            plays = [(p, "score") for p in scoring_plays]
             if league["sport"] == "mlb":
                 plays += [(p, "streak") for p in _mlb_streak_events(game_id, game["is_home"])]
             for play, play_type in plays:
@@ -460,6 +519,22 @@ def get_new_alerts(now: datetime) -> list[dict]:
                 opp_score = play["away_score"] if game["is_home"] else play["home_score"]
                 if team_score is None or opp_score is None:
                     continue
+                # Session request: "team that we're playing against
+                # updates that dynamically change based on what team
+                # we're playing with their team colors on the govy
+                # lights." A play attributable to the OPPONENT (the
+                # side that scored isn't us) flashes their own real
+                # ESPN-sourced color instead of our fixed one; our own
+                # plays, streaks (Jays-only by definition — see
+                # _mlb_streak_events), and anything scored_by couldn't
+                # attribute keep the existing fixed league color.
+                scored_by = play.get("scored_by")
+                is_opponent_play = play_type == "score" and scored_by is not None and (scored_by == "home") != game["is_home"]
+                flash_color = (
+                    _opponent_flash_color(league["sport"], game, league["flash_color"])
+                    if is_opponent_play
+                    else league["flash_color"]
+                )
                 alerts.append(
                     {
                         "kind": "sports",
@@ -471,7 +546,7 @@ def get_new_alerts(now: datetime) -> list[dict]:
                         "team_score": team_score,
                         "opp_score": opp_score,
                         "description": play["description"],
-                        "flash_color": league["flash_color"],
+                        "flash_color": flash_color,
                     }
                 )
                 # More in-game alerts (session request): a genuine lead

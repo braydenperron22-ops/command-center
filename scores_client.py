@@ -174,6 +174,30 @@ def find_espn_competition(league_key: str, away_name: str, home_name: str, today
     return None
 
 
+def team_color(competition: dict, team_name: str) -> tuple[int, int, int] | None:
+    """This team's real primary color as (r, g, b), straight from
+    ESPN's own scoreboard payload (each competitor's "color" field,
+    already sitting in a `find_espn_competition` result — no extra
+    request) — session request: "team that we're playing against
+    updates that dynamically change based on what team we're playing
+    with their team colors on the govy lights." Confirmed live: ESPN's
+    scoreboard hands back a real hex color per team (e.g. Brewers
+    "13294b") rather than something that needs guessing or a
+    hand-maintained table. None if this team isn't in the competition,
+    or ESPN genuinely has no color for it (a small handful of
+    lower-profile teams have come back blank in the past)."""
+    for c in competition.get("competitors", []):
+        if (c.get("team", {}).get("displayName") or "").lower() == team_name.lower():
+            hex_color = c.get("team", {}).get("color")
+            if not hex_color or len(hex_color) != 6:
+                return None
+            try:
+                return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+            except ValueError:
+                return None
+    return None
+
+
 @st.cache_data(ttl=GAME_CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_summary_raw(sport: str, league: str, event_id: str) -> dict:
     fetch_throttle.wait_turn()
