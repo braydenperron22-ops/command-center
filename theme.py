@@ -2812,8 +2812,25 @@ html, body, [class*="css"] {
     flex: 0 0 auto;
 }
 .jumbo-diamond { width: 62px; height: 62px; display: inline-block; vertical-align: -18px; margin: 0 18px; }
-.jumbo-diamond rect { fill: #1A2230; stroke: var(--edge-hi); stroke-width: 1.5; }
+/* Session request: "make the bases react when someone gets on with a
+   smooth lighting up animation" — the plain transition covers every
+   state change (a runner forced out fades back to dark, same as
+   lighting up fades bright), and .jumbo-base-flash layers a one-shot
+   brighter pulse on top specifically for the moment a base goes from
+   empty to occupied (pages_jumbotron._mlb_situation_html only adds
+   that class on a genuine off->on transition, not on every rerun a
+   base happens to still be on). Default animation-fill-mode (none)
+   means once the 0.7s flash finishes, this rect falls back to
+   whatever the plain rect.on rule below says — already the same
+   var(--led) color the flash itself ends on, so there's no visible
+   snap at the handoff. */
+.jumbo-diamond rect { fill: #1A2230; stroke: var(--edge-hi); stroke-width: 1.5; transition: fill 0.4s ease, stroke 0.4s ease; }
 .jumbo-diamond rect.on { fill: var(--led); stroke: var(--led); }
+.jumbo-diamond rect.jumbo-base-flash { animation: jumbo-base-flash 0.7s ease-out; }
+@keyframes jumbo-base-flash {
+    0% { fill: #FFFFFF; stroke: #FFFFFF; filter: drop-shadow(0 0 6px var(--led)); }
+    100% { fill: var(--led); stroke: var(--led); filter: none; }
+}
 /* Session request: "make counts and outs actual numbers instead of
    dots" — replaces the old ball/strike/out dot rows. */
 .jumbo-situ-count, .jumbo-situ-outs {
@@ -2831,6 +2848,26 @@ html, body, [class*="css"] {
 @keyframes jumbo-situ-pulse {
     0% { transform: scale(1.35); text-shadow: 0 0 16px var(--led); }
     100% { transform: scale(1); text-shadow: none; }
+}
+/* Ball and strike digits get their own color and their own flash —
+   session request: "make it so a ball is green and a strike is red
+   and make it flash when a strike comes through and when a ball comes
+   through." Same scale+glow shape as .jumbo-situ-pulse above, just
+   colored per digit instead of one shared neutral pulse, so which of
+   the two just happened reads at a glance. display:inline-block is a
+   base rule here (not just set alongside the animation like
+   .jumbo-situ-pulse does) since .jumbo-count-digit needs a stable
+   layout whether or not it's actively flashing. */
+.jumbo-count-digit { display: inline-block; }
+.jumbo-ball-flash { animation: jumbo-ball-flash 0.6s ease-out; }
+.jumbo-strike-flash { animation: jumbo-strike-flash 0.6s ease-out; }
+@keyframes jumbo-ball-flash {
+    0% { transform: scale(1.35); color: #32D74B; text-shadow: 0 0 16px rgba(50,215,75,0.85); }
+    100% { transform: scale(1); color: var(--bone); text-shadow: none; }
+}
+@keyframes jumbo-strike-flash {
+    0% { transform: scale(1.35); color: #FF453A; text-shadow: 0 0 16px rgba(255,69,58,0.85); }
+    100% { transform: scale(1); color: var(--bone); text-shadow: none; }
 }
 
 .jumbo-sl {

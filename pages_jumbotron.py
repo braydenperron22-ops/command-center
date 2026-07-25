@@ -142,11 +142,32 @@ def _mlb_situation_html(game_id: int) -> str:
     if not detail:
         return ""
     bases = detail.get("bases") or {}
+
+    # Session request: "make the bases react when someone gets on with
+    # a smooth lighting up animation" — same before/after comparison as
+    # the count/outs pulse below, keyed by game_id so a different
+    # game's own bases never inherit this one's "just lit up" moment.
+    # Only the newly-occupied transition gets the one-shot flash (see
+    # .jumbo-base-flash, theme.py) — a base that was already on, or one
+    # that just cleared, doesn't replay it every rerun. The steady on/
+    # off look itself (.jumbo-diamond rect.on) now also has a plain CSS
+    # transition, so even a non-flash change (a runner forced out, say)
+    # fades rather than snapping.
+    prev_bases = st.session_state.get(f"jumbotron_mlb_bases_{game_id}", {})
+    st.session_state[f"jumbotron_mlb_bases_{game_id}"] = dict(bases)
+
+    def base_class(key: str) -> str:
+        on = bool(bases.get(key))
+        classes = "on" if on else ""
+        if on and not prev_bases.get(key):
+            classes = f"{classes} jumbo-base-flash".strip()
+        return classes
+
     diamond = (
         '<svg class="jumbo-diamond" viewBox="0 0 34 34"><g transform="rotate(45 17 17)">'
-        f'<rect x="21" y="9" width="8" height="8" class="{"on" if bases.get("first") else ""}"></rect>'
-        f'<rect x="9" y="9" width="8" height="8" class="{"on" if bases.get("second") else ""}"></rect>'
-        f'<rect x="9" y="21" width="8" height="8" class="{"on" if bases.get("third") else ""}"></rect>'
+        f'<rect x="21" y="9" width="8" height="8" class="{base_class("first")}"></rect>'
+        f'<rect x="9" y="9" width="8" height="8" class="{base_class("second")}"></rect>'
+        f'<rect x="9" y="21" width="8" height="8" class="{base_class("third")}"></rect>'
         "</g></svg>"
     )
 
@@ -159,10 +180,16 @@ def _mlb_situation_html(game_id: int) -> str:
     # just animating the number itself now instead of lighting up one
     # more dot. A new at-bat resetting the count to 0 never falsely
     # pulses anything: nothing to compare up against on the way down.
+    # Session request: "make it so a ball is green and a strike is red
+    # and make it flash when [one] comes through" — ball and strike now
+    # get their own digit and their own color/flash instead of sharing
+    # one plain "B-S" pulse, so which one just happened is readable at
+    # a glance, not just that the count changed.
     balls, strikes, outs = detail.get("balls") or 0, detail.get("strikes") or 0, detail.get("outs") or 0
     prev_counts = st.session_state.get(f"jumbotron_mlb_counts_{game_id}", {})
     st.session_state[f"jumbotron_mlb_counts_{game_id}"] = {"b": balls, "s": strikes, "o": outs}
-    count_pulse = " jumbo-situ-pulse" if balls > prev_counts.get("b", 0) or strikes > prev_counts.get("s", 0) else ""
+    ball_flash = " jumbo-ball-flash" if balls > prev_counts.get("b", 0) else ""
+    strike_flash = " jumbo-strike-flash" if strikes > prev_counts.get("s", 0) else ""
     outs_pulse = " jumbo-situ-pulse" if outs > prev_counts.get("o", 0) else ""
 
     # Session request: "put an up or down arrow beside inning instead
@@ -176,7 +203,10 @@ def _mlb_situation_html(game_id: int) -> str:
 
     parts = [f'<span class="jumbo-situ-hot">{html.escape(inning)}</span>'] if inning else []
     parts.append(diamond)
-    parts.append(f'<span class="jumbo-situ-count{count_pulse}"><span class="jumbo-dim">COUNT</span> {balls}-{strikes}</span>')
+    parts.append(
+        f'<span class="jumbo-situ-count"><span class="jumbo-dim">COUNT</span> '
+        f'<span class="jumbo-count-digit{ball_flash}">{balls}</span>-<span class="jumbo-count-digit{strike_flash}">{strikes}</span></span>'
+    )
     parts.append(f'<span class="jumbo-situ-outs{outs_pulse}">{outs} OUT</span>')
     line = "".join(parts)
     # Session feedback: "get rid of the at bat and pitching thing below
