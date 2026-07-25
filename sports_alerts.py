@@ -77,6 +77,34 @@ LIVE_FEED_CACHE_TTL_SECONDS = 15
 # much smaller universe of events per session.
 MAX_SEEN_PLAYS = 200
 
+# get_new_alerts()'s own dedup/baseline trackers — module-level, not
+# st.session_state. Session report: "opposing team toast still not
+# firing on score updates," while a live-simulated run of
+# get_new_alerts() against the exact same real game correctly produced
+# the alert — same root cause just found and fixed in
+# govee_lighting.py: this kiosk isn't the only session ever connected
+# (a phone checking the score), and every one of these trackers lived
+# in st.session_state, so each connected session kept its own
+# independent "have I already alerted on this play" state and its own
+# independent per-game baseline_done flag. A session that reconnects or
+# opens mid-game re-quiets its own view of the whole backlog on its
+# first tick (the same harmless bootstrap news.py's own baseline uses),
+# but with session-scoped state that first-tick reset can happen at any
+# point in the game, on any connected session, independent of whether
+# the kiosk's own long-running session already has a perfectly good
+# baseline — and since toast_queue (already module-level, see its own
+# docstring) is the one shared destination every session pushes into,
+# it's whichever session runs next that determines whether a given real
+# play ever reaches it. One shared copy here means every session agrees
+# on what's already been alerted.
+_seen_scoring_plays: dict[str, bool] = {}
+_pregame_milestones_shown: dict[int, set] = {}
+_warmup_alerted: dict[int, bool] = {}
+_last_leader: dict[int, str] = {}
+_start_alerted: dict[int, bool] = {}
+_final_alerted: dict[int, bool] = {}
+_baseline_done: dict[str, bool] = {}
+
 FLASH_BLUE = (0, 70, 255)  # Blue Jays' own game — a clean, unmistakable blue on a light bulb
 FLASH_RED = (255, 0, 0)  # Canadiens' own game — same red govee_lighting's breaking-news flash already uses
 
@@ -396,21 +424,21 @@ def get_new_alerts(now: datetime) -> list[dict]:
     blips alongside render_game_countdown's own persistent headline —
     that headline is the one clock in the corner of the screen; these
     are the "ding, heads up" moments."""
-    seen = st.session_state.setdefault("seen_scoring_plays", {})
+    seen = _seen_scoring_plays
     # game_id -> set of pregame milestone minutes already fired.
-    pregame_shown = st.session_state.setdefault("sports_alert_pregame_milestones", {})
+    pregame_shown = _pregame_milestones_shown
     # game_id -> True once the "warmups underway" toast has fired (MLB only).
-    warmup_alerted = st.session_state.setdefault("sports_alert_warmup_alerted", {})
+    warmup_alerted = _warmup_alerted
     # game_id -> the last-known score leader ("us"/"opp"/"tied"), for
     # detecting a genuine lead change rather than just any score move.
-    last_leader = st.session_state.setdefault("sports_alert_last_leader", {})
+    last_leader = _last_leader
     # game_id -> True once the "first pitch!"/"puck drop!" toast fired.
-    start_alerted = st.session_state.setdefault("sports_alert_start_alerted", {})
+    start_alerted = _start_alerted
     # game_id -> True once the end-of-game alert has fired for it, so a
     # game sitting as _pick_current_game's own "today's game" pick for
     # the rest of the day (see sports_client._pick_current_game) doesn't
     # re-alert on every later rerun.
-    final_alerted = st.session_state.setdefault("sports_alert_final_alerted", {})
+    final_alerted = _final_alerted
     alerts = []
 
     for league in _LEAGUES:
@@ -420,13 +448,13 @@ def get_new_alerts(now: datetime) -> list[dict]:
             continue
 
         game_id = game["game_id"]
-        # Doubles as "was this game ever actually observed live this
-        # session" — the end-of-game alert below only fires for a game
-        # that reached this True at some point, so a game that was
-        # already final by the time the kiosk started watching (or
-        # before a fresh deploy) doesn't get a stale "it just ended"
-        # alert for something that happened before this session existed.
-        baseline_key = f"sports_alert_baseline_{league['sport']}_{game_id}"
+        # Doubles as "was this game ever actually observed live" — the
+        # end-of-game alert below only fires for a game that reached
+        # this True at some point, so a game that was already final by
+        # the time this process started watching (or before a fresh
+        # deploy) doesn't get a stale "it just ended" alert for
+        # something that happened before this process existed.
+        baseline_key = f"{league['sport']}_{game_id}"
 
         if game["state"] == "upcoming":
             minutes_until = (game["start_time"] - now).total_seconds() / 60
@@ -474,7 +502,7 @@ def get_new_alerts(now: datetime) -> list[dict]:
                 )
 
         elif game["state"] == "live":
-            baseline_done = st.session_state.get(baseline_key, False)
+            baseline_done = _baseline_done.get(baseline_key, False)
             # First live sighting: the "first pitch!"/"puck drop!" toast
             # — only within COUNTDOWN_GRACE_MINUTES of the scheduled
             # start, same staleness guard render_game_countdown uses, so
@@ -598,11 +626,11 @@ def get_new_alerts(now: datetime) -> list[dict]:
                 elif play_type == "score":
                     leader = "us" if team_score > opp_score else "opp" if opp_score > team_score else "tied"
                     last_leader[game_id] = leader
-            st.session_state[baseline_key] = True
+            _baseline_done[baseline_key] = True
 
         elif (
             game["state"] == "final"
-            and st.session_state.get(baseline_key)
+            and _baseline_done.get(baseline_key)
             and not final_alerted.get(game_id)
             and game["team_score"] is not None
             and game["opp_score"] is not None
