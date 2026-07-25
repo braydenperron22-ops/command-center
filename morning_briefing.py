@@ -1000,7 +1000,7 @@ def _daylight_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
 AI_REFRESH_SECONDS = 15 * 60  # widened from the original 5 min — session request: "make everything cheaper by lowering how often theyre pulled"; see groq_client's module docstring for the daily-budget guarantee this contributes to
 
 
-def _ai_sentence(picked: list[str]) -> str | None:
+def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     """Same picked clause texts, woven into one or two flowing
     sentences instead of the mechanical semicolon-join below — session
     request: "revamp the morning brief" with "a jarvis type energy from
@@ -1152,7 +1152,7 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     clauses.sort(key=lambda c: c[0], reverse=True)
     picked = [text for _, text in clauses[:MAX_CLAUSES]]
     try:
-        sentence = _ai_sentence(picked)
+        sentence = _ai_sentence(picked, now)
     except Exception:
         sentence = None
     if sentence is None:
