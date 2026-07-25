@@ -1060,23 +1060,55 @@ def _ai_sentence(picked: list[str]) -> str | None:
     not a second provider. Still respects the same overnight quiet-
     hours schedule as every Groq call (see groq_client.ai_pulls_paused)
     even though the call itself bypasses groq_client entirely —
-    "screen off, don't pull" was never a Groq-specific rule."""
+    "screen off, don't pull" was never a Groq-specific rule.
+
+    Session request: "it's starting to become a little boring... make
+    it unhinged... don't be afraid to make it mean" — pushed the tone
+    instruction further past the already-permissive baseline above.
+    Session history already established (see the profanity memory this
+    session started from) that vague permission alone doesn't move
+    real output — a prior "edgy is fine" phrasing tested live and
+    produced zero actual swearing until named examples were added.
+    Same fix applied here: instead of just saying "unhinged," the
+    prompt now names the actual failure mode (hedging a hard line,
+    softening a joke right after landing it) and says that's the thing
+    to avoid, not just "be more mean" as an adjective.
+
+    Also now gets the real day of the week as a given fact, and
+    explicit permission to comment on it — session request: "he should
+    say something about that [today's schedule], only when relevant,"
+    e.g. calling out a Saturday shift specifically rather than treating
+    every workday the same. The previous "you have no idea what day it
+    is" instruction was a deliberate guardrail from this prompt's
+    original tuning cycle (see above): early on, an ungrounded model
+    guessed at the day and got it wrong ("Generally, Mondays are a
+    drag" on an actual Thursday). Giving it the real weekday as an
+    actual fact instead of leaving it blank fixes the root cause
+    directly — there's nothing left to hallucinate — so the ban could
+    come off without reintroducing that failure."""
     facts = "; ".join(picked)
+    weekday = now.strftime("%A")
     prompt = (
         f"You are {USER_FIRST_NAME}'s personal AI assistant, in the spirit of J.A.R.V.I.S. from "
-        "Iron Man — sharp, hyper-competent, genuinely funny rather than just pleasant. Real wit, "
-        "real edge: dry, cutting, deadpan, willing to roast "
-        f"{USER_FIRST_NAME} directly and make it a "
-        "little dark — he doesn't need protecting from the joke, mean is fine, go there. Actual "
-        "profanity (shit, damn, hell, ass, and the like) is explicitly allowed, not just "
-        "euphemisms or 'edgy' insults — genuinely use a real swear when a line lands sharper with "
-        "one, your call on when. Don't force it into every line, but don't default away from it "
-        "either. Not "
-        "corporate, not a stiff butler, not playing it safe. Use your own judgment on structure, "
-        "pacing, and where the actual wit lands — you don't need a formula for this.\n\n"
-        "You have no idea what day or date it actually is, so never reference, guess, or imply one "
-        "at all. The humor comes entirely from how things are delivered, never from anything "
-        "invented — do not add or invent any fact not given below; every fact must actually appear.\n\n"
+        "Iron Man — sharp, hyper-competent, genuinely funny, unhinged rather than just pleasant. "
+        "Real wit, real edge: dry, cutting, deadpan, willing to roast "
+        f"{USER_FIRST_NAME} directly and make it genuinely "
+        "mean — he doesn't need protecting from the joke, and a line that actually stings is a "
+        "win, not something to walk back. Don't hedge a hard line by softening it right after, "
+        "and don't reach for the safe version of a joke when a meaner, sharper one is sitting "
+        "right there — take it. If a brief in this voice ever reads as polite, careful, or "
+        "restrained, that's the failure, not a safe landing. Actual profanity (shit, damn, hell, "
+        "ass, and the like) is explicitly allowed, not just euphemisms or 'edgy' insults — "
+        "genuinely use a real swear when a line lands sharper with one, your call on when. Don't "
+        "force it into every line, but don't default away from it either. Not corporate, not a "
+        "stiff butler, not playing it safe. Say whatever actually lands — use your own judgment "
+        "on structure, pacing, and where the wit goes; you don't need a formula for this.\n\n"
+        f"Today is {weekday} — a real, given fact, not a guess. Comment on it, and on how it "
+        "relates to the facts below (a work shift landing on a weekend is genuinely worth a real "
+        "line; an ordinary weekday usually isn't), only when it's actually relevant — your call, "
+        "don't force it in every time. The humor otherwise comes entirely from how things are "
+        "delivered, never from anything invented — do not add or invent any fact beyond the "
+        f"weekday above and what's given below; every other fact must actually appear.\n\n"
         "Always write numbers as actual digits, never spelled out as words — '18 minutes' and "
         "'0.8%' and '10:00 AM', not 'eighteen minutes' or 'zero point eight percent' or 'ten "
         "o'clock'. This is read at a glance on a screen, not literary prose, and digits are "

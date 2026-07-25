@@ -27,18 +27,22 @@ CACHE_TTL_SECONDS = 15 * 60
 # The shift calendar's titles are the raw bulk-imported job title
 # ("Customer Experience Associate - Central, Sales"), not something
 # worth reading verbatim on a dashboard every morning — normalized to
-# "Work" for display, matched case-insensitively so a stray punctuation
-# difference between imported instances doesn't slip through. Nothing
-# else about the event (start/end/location) is touched.
-_SUMMARY_ALIASES = {
-    "customer experience associate - central, sales": "Work",
-    "cea central - sales": "Work",
-    "cea - central, sales": "Work",
-}
+# "Work" for display. Session request: was an exact-string alias list
+# (three near-duplicate spellings — "Customer Experience Associate -
+# Central, Sales", "CEA Central - Sales", "CEA - Central, Sales" — that
+# needed a new entry every time the calendar import produced yet
+# another punctuation/wording variant); now a substring match instead,
+# so any shift title containing either phrase gets caught regardless of
+# how it's otherwise punctuated or abbreviated. Nothing else about the
+# event (start/end/location) is touched.
+_WORK_KEYWORDS = ("customer experience associate", "sales")
 
 
 def _normalize_summary(raw: str) -> str:
-    return _SUMMARY_ALIASES.get(raw.strip().lower(), raw)
+    lowered = raw.strip().lower()
+    if any(keyword in lowered for keyword in _WORK_KEYWORDS):
+        return "Work"
+    return raw
 
 # Same reasoning as every other data client in this app: never let a
 # transient fetch/parse failure blank the page, fall back to the last
