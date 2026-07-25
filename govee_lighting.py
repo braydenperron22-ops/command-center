@@ -377,7 +377,18 @@ def sync_lights(
     # this is "a game is on," not "a game is on AND it's already dark."
     if jumbotron_active:
         _apply_color(GAME_MODE_COLOR)
-        _creep_brightness(GAME_MODE_BRIGHTNESS)
+        # Immediate, not _creep_brightness — session report: "I got an
+        # alert, and now I'm being blinded by one hundred percent...
+        # white." A score_flash snaps brightness straight to
+        # FLASH_BRIGHTNESS (100) for punch, then goes back to None once
+        # its own hold ends, falling through to here — but creeping is
+        # paced for the day/night ramp's own slowly-moving envelope
+        # (BRIGHTNESS_STEP_SIZE/minute), not for recovering from a
+        # deliberate 100-point spike. GAME_MODE_BRIGHTNESS is a fixed
+        # floor, not a moving target, so there's nothing to ease
+        # into — every scoring play during a game would otherwise leave
+        # the room stuck near full brightness for up to 99 minutes.
+        _apply_brightness_immediate(GAME_MODE_BRIGHTNESS)
         return
     if phase in ("sunrise", "sunset"):
         _apply_color(SUNRISE_COLOR if phase == "sunrise" else SUNSET_COLOR)
