@@ -241,6 +241,16 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
         temperature=0.2,
         max_output_tokens=max_output_tokens,
         model=GPT_OSS_MODEL,
+        # Session report: "make sure GPT doesn't run out of credits
+        # halfway through" — confirmed live even after tightening the
+        # prompt (see HEADLINES_FED_TO_AI/scaffolding above) and with
+        # max_output_tokens computed to leave real headroom: the model's
+        # own hidden reasoning at Groq's default effort ("medium") was
+        # still eating enough of that headroom that the visible JSON
+        # answer got cut off mid-sentence. "low" trims that reasoning
+        # overhead directly — the actual lever, not a bigger ceiling to
+        # raise it into (already near GPT_OSS_TPM_LIMIT).
+        reasoning_effort="low",
         # Session report: "generated eleven hours ago, yet no conflict
         # overview available right now" — see generate_periodic's own
         # comment on `validate`. A malformed/truncated response (a real

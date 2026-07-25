@@ -468,7 +468,9 @@ def notify_if_outage() -> None:
 
 
 @st.cache_data(ttl=GENERATE_CACHE_TTL_SECONDS, show_spinner=False)
-def _generate_or_raise(account: str, prompt: str, temperature: float, max_output_tokens: int, model: str) -> str:
+def _generate_or_raise(
+    account: str, prompt: str, temperature: float, max_output_tokens: int, model: str, reasoning_effort: str | None = None
+) -> str:
     """Real request against the given GROQ_ACCOUNTS entry, real
     exception on any failure — st.cache_data only ever caches a genuine
     successful return, never a raised exception, so a transient failure
@@ -485,7 +487,20 @@ def _generate_or_raise(account: str, prompt: str, temperature: float, max_output
     ["content"], never "reasoning" — a reasoning-family model (like
     that one) puts its actual answer in content and its hidden chain-
     of-thought in a separate reasoning field this already ignores by
-    construction, no special-casing needed here for that."""
+    construction, no special-casing needed here for that.
+
+    `reasoning_effort` ("low"/"medium"/"high") — Groq-specific, only
+    meaningful for gpt-oss models; only sent when a caller passes it
+    explicitly, since a model that doesn't recognize the field might
+    reject the whole request rather than silently ignore it. Session
+    report: "make sure GPT doesn't run out of credits halfway through"
+    — confirmed live even after tightening the prompt and raising
+    max_output_tokens' own headroom: gpt-oss-120b's hidden chain-of-
+    thought (default reasoning_effort, "medium") ate enough of the
+    completion budget on its own that the visible JSON answer still got
+    cut off mid-sentence. This is the actual lever for that — less
+    reasoning overhead per call, not more output ceiling (already near
+    GPT_OSS_TPM_LIMIT, see pages_conflicts.py) to raise it into."""
     api_key = st.secrets.get(_GROQ_SECRET_NAMES[account])
     if not api_key:
         raise RuntimeError(f"no {_GROQ_SECRET_NAMES[account]} configured")
@@ -494,16 +509,19 @@ def _generate_or_raise(account: str, prompt: str, temperature: float, max_output
     reservation = _reserve_budget(account, now, estimated_tokens)
     if reservation is None:
         raise RuntimeError(f"{account} Groq account's daily token budget exhausted for today")
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+        "max_tokens": max_output_tokens,
+    }
+    if reasoning_effort is not None:
+        payload["reasoning_effort"] = reasoning_effort
     try:
         resp = requests.post(
             GROQ_URL,
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": temperature,
-                "max_tokens": max_output_tokens,
-            },
+            json=payload,
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
         resp.raise_for_status()
@@ -521,7 +539,13 @@ def _generate_or_raise(account: str, prompt: str, temperature: float, max_output
     return text
 
 
-def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200, model: str = GROQ_MODEL) -> str | None:
+def generate(
+    prompt: str,
+    temperature: float = 0.7,
+    max_output_tokens: int = 200,
+    model: str = GROQ_MODEL,
+    reasoning_effort: str | None = None,
+) -> str | None:
     """One short piece of AI-written text for `prompt`, or None if the
     key's missing, the request fails, or the free tier's rate-limited
     right now — never raises. Cached by the exact prompt string AND
@@ -560,6 +584,11 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
     (pages_conflicts' multi-conflict JSON overview) needs to raise this
     explicitly, or the response silently truncates mid-output.
 
+    `reasoning_effort` — see _generate_or_raise's own comment. Only
+    forwarded to Groq (and only matters at all) for a gpt-oss model;
+    left as None for every other caller/model, unchanged from before
+    this existed.
+
     During the overnight pause, returns None immediately without
     attempting anything — neither Groq account nor gemini_client, since
     the pause is a deliberate quiet period, not a capacity problem (see
@@ -575,7 +604,7 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
         return None
     for account in GROQ_ACCOUNTS:
         try:
-            result = _generate_or_raise(account, prompt, temperature, max_output_tokens, model)
+            result = _generate_or_raise(account, prompt, temperature, max_output_tokens, model, reasoning_effort)
             _last_served_by = account
             _model_status[model] = {"ok": True, "via": account, "at": time.time()}
             return result
@@ -644,6 +673,7 @@ def generate_periodic(
     max_output_tokens: int = 200,
     model: str = GROQ_MODEL,
     validate=None,
+    reasoning_effort: str | None = None,
 ) -> str | None:
     """Same as generate(), but throttled by a caller-chosen cadence
     instead of by exact-prompt-text matching — see gemini_client.
@@ -683,7 +713,10 @@ def generate_periodic(
     fails validation is never written to the cache (so a transient bad
     response can't overwrite a still-good older one, and the next call
     tries again rather than getting stuck on the bad one for a full
-    cycle)."""
+    cycle).
+
+    `reasoning_effort` — passed straight through to generate(); see its
+    own comment and _generate_or_raise's."""
     now = time.time()
     cached = _periodic_cache.get(feature_key)
     if cached is None:
@@ -696,7 +729,9 @@ def generate_periodic(
     cached_ok = bool(cached[1]) and (validate is None or validate(cached[1]))
     if cached_ok and now - cached[0] < refresh_seconds:
         return cached[1]
-    text = generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens, model=model)
+    text = generate(
+        prompt, temperature=temperature, max_output_tokens=max_output_tokens, model=model, reasoning_effort=reasoning_effort
+    )
     if text is not None and (validate is None or validate(text)):
         _periodic_cache[feature_key] = (now, text)
         _save_periodic_cache()
