@@ -416,11 +416,24 @@ INDIVIDUAL_MAX_OUTPUT_TOKENS = 150
 # hash -> decision dict (kept) or None (AI rejected). A key's absence
 # means "not yet classified" — decide() and _run_individual_decide()
 # both rely on that three-way distinction (see their own docstrings).
-# Plain module state (same convention as sports_client.py's own
-# _last_good_*/_delay_buffers, groq_client's _periodic_cache) rather
-# than st.session_state: classification is shared across every browser
-# session hitting this one server process, not per-tab.
-_decided: dict[str, dict | None] = {}
+# Persisted (same Upstash-backed pattern as _pushed_headlines/
+# news_seen_headlines below: loaded once at import, saved only on a
+# genuine new verdict — INDIVIDUAL_MAX_PER_TICK caps that to at most
+# once a minute, nowhere near the per-rerun cost this app already
+# avoids elsewhere). Session report: "please streamline the system so
+# the same headline does not get fed to the AI over and over again...
+# check Redis to make sure this headline wasn't already shown." Before
+# this, only news_seen_headlines (below) survived a restart — enough to
+# stop a re-alert, but _decided itself came back empty, so
+# _run_individual_decide's own pending-filter (`_hash not in _decided`)
+# saw every headline in the current feed window as fresh and spent a
+# real Groq call re-classifying each one it hadn't gotten back around
+# to yet, one per minute, exactly the churn a crash-loop-heavy night
+# produces. Bounded the same shape as MAX_SEEN_HEADLINES below, just
+# sized larger — this is a superset (every rejected headline lives here
+# too, not just the ones that ever got shown).
+MAX_DECIDED = 1500
+_decided: dict[str, dict | None] = dict(persisted_state.load("news_decided", {}))
 _last_tick_at: float = 0.0
 
 # get_new_alerts()'s own "already alerted" tracking — same module-level
@@ -655,12 +668,15 @@ def _apply_verdict(item: dict, verdict_obj) -> None:
     verdict = str(verdict_obj.get("verdict", "")).strip().upper()
     if verdict not in _AI_VALID_VERDICTS or verdict == "REJECT":
         _decided[h] = None
-        return
-    display_headline = (verdict_obj.get("headline") or "").strip() or item["headline"]
-    if verdict == "MARKET":
-        _decided[h] = {"headline": display_headline, "category": "Market News", "important": False}
     else:
-        _decided[h] = {"headline": display_headline, "category": _AI_VERDICT_LABELS[verdict], "important": True}
+        display_headline = (verdict_obj.get("headline") or "").strip() or item["headline"]
+        if verdict == "MARKET":
+            _decided[h] = {"headline": display_headline, "category": "Market News", "important": False}
+        else:
+            _decided[h] = {"headline": display_headline, "category": _AI_VERDICT_LABELS[verdict], "important": True}
+    if len(_decided) > MAX_DECIDED:
+        _decided.pop(next(iter(_decided)))
+    persisted_state.save("news_decided", _decided)
 
 
 def _run_individual_decide() -> None:
