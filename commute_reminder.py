@@ -15,6 +15,7 @@ shift, and nothing fires hours late if the dashboard happened to be
 asleep through the whole window.
 """
 
+import html
 from datetime import datetime, timedelta
 
 import streamlit as st
@@ -71,6 +72,25 @@ def _leave_text(minutes: int) -> str:
         hours = minutes // 60
         return "Leave in an hour" if hours == 1 else f"Leave in {hours} hours"
     return f"Leave in {minutes} min"
+
+
+def _alert_label(shift: dict) -> str:
+    """The toast label / push title for this shift's leave reminder —
+    session request: "make it say work when it's, like, sales or
+    customer experience associate or a mix of both... for everything
+    else, make it, like, leave soon and then the event." Both push
+    ("Leave for work") and the on-screen toast label ("LEAVE SOON")
+    used to be hardcoded regardless of which calendar event this
+    actually was, even though _current_shift already tracks non-shift
+    appointments too (see this module's own docstring). Reuses
+    calendar_client's own normalization here rather than re-matching
+    "sales"/"customer experience associate"/etc. a second time — a
+    real work shift's summary is already collapsed to exactly "Work"
+    by the time it reaches this module (see _SUMMARY_ALIASES), so
+    checking for that string is checking "is this actually a shift"."""
+    if shift["summary"] == "Work":
+        return "Work"
+    return f"Leave soon: {shift['summary']}"
 
 
 def _todays_shift_events(now: datetime) -> list[dict]:
@@ -247,12 +267,13 @@ def check(now: datetime) -> dict | None:
     if pushed["date"] != now.date().isoformat():
         pushed = {"date": now.date().isoformat(), "keys": []}
     push_key = f"{event_key}|{milestone}"
+    label = _alert_label(shift)
     if push_key not in pushed["keys"]:
         pushed["keys"].append(push_key)
         persisted_state.save("commute_milestones", pushed)
-        ntfy_client.send(title="Leave for work", message=_leave_text(milestone), priority="high", tags="clock3")
+        ntfy_client.send(title=label, message=_leave_text(milestone), priority="high", tags="clock3")
 
-    return {"headline": _leave_text(milestone), "category": "Commute", "important": False, "kind": "commute"}
+    return {"headline": _leave_text(milestone), "category": "Commute", "important": False, "kind": "commute", "label": label}
 
 
 def _format_clock(remaining_seconds: float) -> str:
@@ -367,11 +388,17 @@ def render_bar(alert: dict, elapsed: float, variant: str = "a") -> None:
     shouldn't grow that module's scope to accommodate them).
 
     `variant` — see news.render_alert_bar's docstring; same reason,
-    same fix."""
+    same fix. `alert["label"]` — see _alert_label — falls back to the
+    old fixed text only for a caller that predates that key (there
+    isn't one left in this codebase, but check()'s own contract doesn't
+    guarantee it either); escaped since a non-"Work" label carries a
+    real calendar event's summary, external text same as any other
+    unsafe_allow_html interpolation in this app."""
     delay = f"animation-delay: -{elapsed:.2f}s;"
+    label = html.escape(alert.get("label", "Leave soon"))
     st.markdown(
         f"""<div class="commute-alert-bar">
-            <span class="news-breaking-label toast-label-anim-{variant}" style="{delay}">LEAVE SOON</span>
+            <span class="news-breaking-label toast-label-anim-{variant}" style="{delay}">{label}</span>
             <span class="news-alert-headline toast-headline-anim-{variant}" style="{delay}">{alert['headline']}</span>
         </div>""",
         unsafe_allow_html=True,
