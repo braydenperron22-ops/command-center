@@ -636,11 +636,19 @@ _periodic_cache: dict[str, tuple[float, str]] = _load_periodic_cache()
 _STARTUP_JITTER_SECONDS = 90
 
 
-def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, temperature: float = 0.7, max_output_tokens: int = 200, model: str = GROQ_MODEL) -> str | None:
+def generate_periodic(
+    feature_key: str,
+    refresh_seconds: int,
+    prompt: str,
+    temperature: float = 0.7,
+    max_output_tokens: int = 200,
+    model: str = GROQ_MODEL,
+    validate=None,
+) -> str | None:
     """Same as generate(), but throttled by a caller-chosen cadence
     instead of by exact-prompt-text matching — see gemini_client.
     generate_periodic's own docstring for the full rationale (this is a
-    straight port, same behavior, same signature).
+    straight port, same behavior, same signature, plus `validate` below).
 
     Pass a stable `feature_key` unique to that feature (not derived
     from the prompt) and the cadence it actually needs. Whatever was
@@ -656,7 +664,26 @@ def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, tempe
     a feature that's ever succeeded once, on any past run this
     filesystem has seen, skips the startup jitter below entirely and
     already has real fallback content from the moment this process
-    starts."""
+    starts.
+
+    `validate` (optional): str -> bool, checking that a piece of text is
+    actually usable by the caller, not just present. Session report:
+    "Conflicts overview was generated eleven hours ago, yet no conflict
+    overview available right now" — the timestamp alone said the cached
+    text was fresh (11h under conflicts' own 24h refresh), but
+    pages_conflicts._ai_overview couldn't parse it (this feature's
+    model is a reasoning one with a tight token budget — a truncated or
+    malformed response is a real, documented risk, see that module's
+    own docstring) and this function had no way to know that: it only
+    ever tracked staleness by time, so a single bad generation left the
+    page broken for the entire rest of the 24h window with no retry.
+    Without `validate`, behavior is unchanged. With it, a cached value
+    that fails validation is treated the same as one that's timed out —
+    worth a real retry now — and a freshly-generated value that also
+    fails validation is never written to the cache (so a transient bad
+    response can't overwrite a still-good older one, and the next call
+    tries again rather than getting stuck on the bad one for a full
+    cycle)."""
     now = time.time()
     cached = _periodic_cache.get(feature_key)
     if cached is None:
@@ -666,10 +693,11 @@ def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, tempe
         jitter = hash(feature_key) % _STARTUP_JITTER_SECONDS
         _periodic_cache[feature_key] = (now - refresh_seconds + jitter, "")
         return None
-    if now - cached[0] < refresh_seconds:
-        return cached[1] or None
+    cached_ok = bool(cached[1]) and (validate is None or validate(cached[1]))
+    if cached_ok and now - cached[0] < refresh_seconds:
+        return cached[1]
     text = generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens, model=model)
-    if text is not None:
+    if text is not None and (validate is None or validate(text)):
         _periodic_cache[feature_key] = (now, text)
         _save_periodic_cache()
         return text

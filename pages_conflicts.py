@@ -187,50 +187,70 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
     max_output_tokens = max(
         GPT_OSS_MIN_OUTPUT_TOKENS, GPT_OSS_TPM_LIMIT - GPT_OSS_SAFETY_MARGIN - estimated_input_tokens
     )
+    def _parse(raw_text: str) -> list[dict] | None:
+        """Turns one raw AI response into real entries, or None if it's
+        not usable — shared by the validate= callback below (which only
+        cares whether this succeeds) and the real parse after a
+        generate_periodic call returns, so there's exactly one place
+        that knows what a valid response looks like."""
+        raw = raw_text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw
+            raw = raw.rsplit("```", 1)[0]
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(parsed, list):
+            return None
+
+        entries = []
+        for item in parsed:
+            try:
+                countries = [
+                    {"code": str(c["code"]).lower(), "name": str(c["name"])}
+                    for c in item["countries"]
+                    if c.get("code") and c.get("name")
+                ]
+                status = str(item["status"]).upper()
+                overview = str(item["overview"]).strip()
+                severity = str(item.get("severity", "MEDIUM")).upper()
+                numbers = item.get("headline_numbers") or []
+            except (KeyError, TypeError):
+                continue
+            if not countries or status not in _STATUS_DISPLAY or not overview:
+                continue
+            matched = [headlines[n - 1] for n in numbers if isinstance(n, int) and 1 <= n <= len(texts)]
+            entries.append(
+                {
+                    "countries": countries,
+                    "status": status,
+                    "overview": overview,
+                    "severity": severity if severity in _SEVERITY_FILL_PCT else "MEDIUM",
+                    "headlines": matched,
+                }
+            )
+        return entries or None
+
     result = groq_client.generate_periodic(
-        "conflicts_overview", REFRESH_SECONDS, prompt, temperature=0.2, max_output_tokens=max_output_tokens, model=GPT_OSS_MODEL
+        "conflicts_overview",
+        REFRESH_SECONDS,
+        prompt,
+        temperature=0.2,
+        max_output_tokens=max_output_tokens,
+        model=GPT_OSS_MODEL,
+        # Session report: "generated eleven hours ago, yet no conflict
+        # overview available right now" — see generate_periodic's own
+        # comment on `validate`. A malformed/truncated response (a real
+        # risk for this reasoning model under a tight token budget, see
+        # this module's own docstring) used to sit in the cache reading
+        # as "fresh" for the entire 24h window with nothing to show for
+        # it; this makes "fresh" also mean "actually parses."
+        validate=lambda text: _parse(text) is not None,
     )
     if result is None:
         return None
-
-    raw = result.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1] if "\n" in raw else raw
-        raw = raw.rsplit("```", 1)[0]
-    try:
-        parsed = json.loads(raw)
-    except (ValueError, TypeError):
-        return None
-    if not isinstance(parsed, list):
-        return None
-
-    entries = []
-    for item in parsed:
-        try:
-            countries = [
-                {"code": str(c["code"]).lower(), "name": str(c["name"])}
-                for c in item["countries"]
-                if c.get("code") and c.get("name")
-            ]
-            status = str(item["status"]).upper()
-            overview = str(item["overview"]).strip()
-            severity = str(item.get("severity", "MEDIUM")).upper()
-            numbers = item.get("headline_numbers") or []
-        except (KeyError, TypeError):
-            continue
-        if not countries or status not in _STATUS_DISPLAY or not overview:
-            continue
-        matched = [headlines[n - 1] for n in numbers if isinstance(n, int) and 1 <= n <= len(texts)]
-        entries.append(
-            {
-                "countries": countries,
-                "status": status,
-                "overview": overview,
-                "severity": severity if severity in _SEVERITY_FILL_PCT else "MEDIUM",
-                "headlines": matched,
-            }
-        )
-    return entries or None
+    return _parse(result)
 
 
 def render():
