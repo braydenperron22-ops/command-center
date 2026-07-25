@@ -88,7 +88,14 @@ _STATUS_DISPLAY = {
 }
 _SEVERITY_FILL_PCT = {"HIGH": 100, "MEDIUM": 65, "LOW": 35}
 
-HEADLINES_FED_TO_AI = 150  # comfortably covers a week's real pool without an unbounded prompt
+# Session request: "make the prompt lighter on tokens" — was 150.
+# Real volume checked live: 94 headlines for a typical 7-day window, so
+# 100 still comfortably covers a normal week and only trims the
+# worst-case (a genuinely heavy news week) rather than typical days —
+# directly shrinks input tokens, which is also what determines how much
+# of GPT_OSS_TPM_LIMIT is left over for the model's own reasoning +
+# answer (see max_output_tokens' own comment below).
+HEADLINES_FED_TO_AI = 100
 # openai/gpt-oss-120b — see this module's own docstring for why this
 # specific model. It's a REASONING model: it spends real completion
 # tokens on hidden chain-of-thought before ever writing the visible
@@ -136,40 +143,35 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
     if not texts:
         return None
     headline_block = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(texts))
+    # Session request: "make the prompt lighter on tokens" — same
+    # instructions, same output contract, just said in fewer words.
+    # Cut the scaffolding (everything except the headline block itself)
+    # from ~2,170 chars to ~1,270, roughly 225 fewer estimated input
+    # tokens — real headroom back for the model's own reasoning + answer
+    # under GPT_OSS_TPM_LIMIT (see max_output_tokens' own comment
+    # below), on top of the HEADLINES_FED_TO_AI cut above.
     prompt = (
-        "You are a sharp, decisive geopolitical analyst building one tile-based overview for a "
-        f"home dashboard. Below are {len(texts)} real news headlines from the last "
-        f"{CONFLICT_WINDOW_DAYS} days (numbered; many will be unrelated to conflicts at all — "
-        "ignore those).\n\n"
-        "From these, identify the most significant distinct ongoing armed conflicts, wars, or "
-        f"serious military/civil crises currently active in the world — up to {MAX_CONFLICTS_SHOWN} "
-        "of them, ranked by how significant/active each currently is. If fewer than "
-        f"{MAX_CONFLICTS_SHOWN} genuine conflicts are actually represented in the headlines, "
-        "return fewer — don't pad the list with minor or borderline cases just to fill it.\n\n"
-        "For each conflict, determine:\n"
-        "- countries: the real ISO 3166-1 alpha-2 lowercase country codes and English names for "
-        "each side/party involved (a country, not an organization — e.g. for Gaza use 'ps'/"
-        "'Gaza/Palestine', not 'Hamas')\n"
-        "- status: exactly one of ACTIVE_WAR, ESCALATING, STALEMATE, DEESCALATING, CEASEFIRE, "
-        "PEACE_TALKS\n"
-        "- overview: a real 2-4 sentence overview covering what's actually happening right now, "
-        "whether it's escalating, holding steady, or winding down, whether there are peace "
-        "negotiations underway, and what effect it's having on the wider world (markets, "
-        "refugees, regional stability, energy/food prices, etc. — only mention a global effect "
-        "if there genuinely is one, don't force it). Write with real analytical judgment — a "
-        "clear, specific, intentful read on where this is actually headed, not a vague, hedgy "
-        "summary that could describe any conflict\n"
-        "- severity: HIGH, MEDIUM, or LOW\n"
-        "- headline_numbers: which of the numbered headlines above (list the numbers) actually "
-        "relate to this specific conflict\n\n"
-        "You may use your own general knowledge for background/historical context on a conflict "
-        "you recognize, but your assessment of its CURRENT status and trajectory must be "
-        "grounded in the headlines above, not assumed from memory — your training knowledge may "
-        "be outdated about how a given conflict has evolved since then; the headlines above are "
-        "genuinely current and take priority whenever they conflict with what you'd otherwise "
-        "assume.\n\n"
+        "You are a sharp, decisive geopolitical analyst building a tile-based overview for a "
+        f"home dashboard. Below are {len(texts)} real headlines from the last "
+        f"{CONFLICT_WINDOW_DAYS} days (numbered; many are unrelated to conflicts — ignore "
+        "those).\n\n"
+        "Identify the most significant distinct ongoing armed conflicts/wars/serious military "
+        f"or civil crises represented, up to {MAX_CONFLICTS_SHOWN}, ranked by how active each "
+        "currently is. Return fewer if fewer genuinely qualify — don't pad with minor/"
+        "borderline cases.\n\n"
+        "For each, give:\n"
+        "- countries: real ISO 3166-1 alpha-2 codes + English names for each side (a country, "
+        "not an organization — Gaza is 'ps'/'Gaza/Palestine', not 'Hamas')\n"
+        "- status: ACTIVE_WAR | ESCALATING | STALEMATE | DEESCALATING | CEASEFIRE | PEACE_TALKS\n"
+        "- overview: 2-4 decisive, specific sentences — what's happening now, its trajectory, "
+        "any peace talks, and real effects on markets/refugees/regional stability/prices only "
+        "where genuine. No vague hedging that could describe any conflict.\n"
+        "- severity: HIGH | MEDIUM | LOW\n"
+        "- headline_numbers: which numbers above relate to this conflict\n\n"
+        "Use your own knowledge for historical background, but trust the headlines over memory "
+        "for current status/trajectory — your training may be outdated.\n\n"
         f"{headline_block}\n\n"
-        "Respond with ONLY a JSON array, no markdown code fences, no other text, in exactly this "
+        "Respond with ONLY a JSON array, no markdown fences, no other text, in exactly this "
         "shape:\n"
         '[{"countries": [{"code": "ua", "name": "Ukraine"}, {"code": "ru", "name": "Russia"}], '
         '"status": "ACTIVE_WAR", "overview": "...", "severity": "HIGH", "headline_numbers": [3, 7]}]'
