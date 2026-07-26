@@ -886,29 +886,81 @@ PEOPLE_URL = "https://statsapi.mlb.com/api/v1/people/{player_id}"
 @st.cache_data(ttl=LIVE_DETAIL_CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_mlb_player_raw(player_id: int, group: str) -> dict:
     """This one player's full /people payload — bio fields (name,
-    number, height/weight, age, throws/bats hand, ...) plus their
-    season stat splits for `group` ("hitting"/"pitching") — {} if the
-    API genuinely has nothing for this id. Used via
-    _fetch_mlb_player_season_stat_raw for the Current Matchup card's
-    stat line."""
+    number, height/weight, age, throws/bats hand, ...) plus both their
+    season AND career stat splits for `group` ("hitting"/"pitching") —
+    {} if the API genuinely has nothing for this id. Both types come
+    back in this one hydrate call (confirmed live), so pulling career
+    too (session request: "compare season ops to career average") costs
+    no extra request over season alone. Used via
+    _fetch_mlb_player_stat_raw for the Current Matchup card's stat
+    line."""
     fetch_throttle.wait_turn()
-    resp = requests.get(PEOPLE_URL.format(player_id=player_id), params={"hydrate": f"stats(group=[{group}],type=[season])"}, timeout=10)
+    resp = requests.get(
+        PEOPLE_URL.format(player_id=player_id), params={"hydrate": f"stats(group=[{group}],type=[season,career])"}, timeout=10
+    )
     resp.raise_for_status()
     people = resp.json().get("people") or []
     return people[0] if people else {}
 
 
-def _fetch_mlb_player_season_stat_raw(player_id: int, group: str) -> dict:
-    """This one player's own season-total stat line for `group`
-    ("hitting"/"pitching") — {} if the API genuinely has none yet (a
-    two-way player with no innings pitched this season, a September
-    call-up, etc.), not just on a fetch failure."""
+def _fetch_mlb_player_stat_raw(player_id: int, group: str, stat_type: str) -> dict:
+    """This one player's own stat line for `group` ("hitting"/
+    "pitching") and `stat_type` ("season"/"career") — {} if the API
+    genuinely has none yet (a two-way player with no innings pitched
+    this season, a rookie with no prior career line distinct from this
+    season, etc.), not just on a fetch failure. Looked up by the type's
+    own displayName rather than assuming list order, since both season
+    and career come back in the same _fetch_mlb_player_raw payload."""
     person = _fetch_mlb_player_raw(player_id, group)
-    stats = person.get("stats") or []
-    if not stats:
-        return {}
-    splits = stats[0].get("splits") or []
-    return splits[0].get("stat", {}) if splits else {}
+    for s in person.get("stats") or []:
+        if (s.get("type") or {}).get("displayName") == stat_type:
+            splits = s.get("splits") or []
+            return splits[0].get("stat", {}) if splits else {}
+    return {}
+
+
+def _fetch_mlb_player_season_stat_raw(player_id: int, group: str) -> dict:
+    return _fetch_mlb_player_stat_raw(player_id, group, "season")
+
+
+# Session request: "do the same thing with the players season ops
+# compared to his career average... same with pitchers but opposite
+# rules lower = hot." A delta off the player's OWN career line (not a
+# fixed threshold like L15_OPS_HOT above) — "hot" here means "better
+# than his own normal," which a flat threshold can't tell you (an
+# already-great hitter having a merely-average year would falsely read
+# "hot" under a fixed cutoff).
+SEASON_OPS_DELTA_HOT = 0.060
+SEASON_OPS_DELTA_COLD = 0.060
+SEASON_ERA_DELTA_HOT = 0.50
+SEASON_ERA_DELTA_COLD = 0.50
+
+
+def _batter_season_heat(season_ops, career_ops) -> str | None:
+    """Higher season OPS than career = hot, lower = cold."""
+    try:
+        delta = float(season_ops) - float(career_ops)
+    except (TypeError, ValueError):
+        return None
+    if delta >= SEASON_OPS_DELTA_HOT:
+        return "hot"
+    if delta <= -SEASON_OPS_DELTA_COLD:
+        return "cold"
+    return None
+
+
+def _pitcher_season_heat(season_era, career_era) -> str | None:
+    """Inverted from the batter case: a LOWER season ERA than career is
+    the good direction, so it's "hot," not "cold."""
+    try:
+        delta = float(season_era) - float(career_era)
+    except (TypeError, ValueError):
+        return None
+    if delta <= -SEASON_ERA_DELTA_HOT:
+        return "hot"
+    if delta >= SEASON_ERA_DELTA_COLD:
+        return "cold"
+    return None
 
 
 # MLB's own headshot CDN, keyed by player id — no API call, same idea
@@ -1048,35 +1100,43 @@ def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
 
 
 def fetch_mlb_live_matchup(game_id: int) -> dict | None:
-    """{"batter": {"id", "name", "ops", "last15_ops", "last15_heat",
-    "vs_pitcher", "vs_pitcher_heat", "photo"}, "pitcher": {"id", "name",
-    "era", "pitches", "balls", "strikes", "photo"}} for whoever's
-    actually at the plate/on the mound right now — session request:
-    "during the game can you make the top performers tab show current
-    pitcher and batter and their stats... ideally add the pitcher and
-    batter pics," later refined to "for pitchers add number of pitches
-    below ERA" (briefly swapped the batter stat to AVG in the same
-    request, then "keep ops, screw avg" put it right back) and then
-    "how many of the pitches have been balls and how many have been
-    strikes over the entire outing." "last15_ops"/"vs_pitcher" added for
-    a later session request ("does espn show hot streaks or anything?")
-    — see _fetch_mlb_player_last15_raw/_fetch_mlb_vs_pitcher_raw for why
-    those two and not a literal hitting-streak count. The "_heat"
-    fields ("hot"/"cold"/None, see _ops_heat/_vs_pitcher_heat) came from
-    the immediate follow-up request to color-pulse those two
-    specifically when they're running hot or cold — computed here
-    rather than in pages_jumbotron so the thresholds live next to the
-    stats they're judging. Reuses the same cached linescore
-    fetch_mlb_live_detail already pulls this rerun (no extra request for
-    the matchup itself), one small extra request each for the two
-    players' own season stat lines, the batter's last-15 line, the
-    batter's vs-pitcher history, plus one boxscore request for the
-    pitcher's game-total pitch/ball/strike counts. None on any fetch
-    failure or once there's genuinely no one at the plate/mound to name
-    (the linescore payload omits offense/defense between innings). Uses
-    the same _mlb_linescore_delayed snapshot as fetch_mlb_live_detail
-    (see its own docstring) so the matchup shown here never gets ahead
-    of the situation strip above it."""
+    """{"batter": {"id", "name", "ops", "season_ops_heat", "last15_ops",
+    "last15_heat", "vs_pitcher", "vs_pitcher_heat", "photo"}, "pitcher":
+    {"id", "name", "era", "season_era_heat", "pitches", "balls",
+    "strikes", "photo"}} for whoever's actually at the plate/on the
+    mound right now — session request: "during the game can you make
+    the top performers tab show current pitcher and batter and their
+    stats... ideally add the pitcher and batter pics," later refined to
+    "for pitchers add number of pitches below ERA" (briefly swapped the
+    batter stat to AVG in the same request, then "keep ops, screw avg"
+    put it right back) and then "how many of the pitches have been
+    balls and how many have been strikes over the entire outing."
+    "last15_ops"/"vs_pitcher" added for a later session request ("does
+    espn show hot streaks or anything?") — see
+    _fetch_mlb_player_last15_raw/_fetch_mlb_vs_pitcher_raw for why those
+    two and not a literal hitting-streak count. All four "_heat" fields
+    ("hot"/"cold"/None) came from two back-to-back follow-up requests to
+    color-pulse the ones running hot or cold — computed here rather
+    than in pages_jumbotron so the thresholds/deltas live next to the
+    stats they're judging. "season_ops_heat"/"season_era_heat" (the
+    second request: "same thing with the players season ops compared to
+    his career average... same with pitchers but opposite rules lower =
+    hot") are a DELTA off the player's own career line
+    (_batter_season_heat/_pitcher_season_heat), not a fixed threshold
+    like last15's — "hot" means "better than his own normal," which is
+    a different question than last15/vs_pitcher's absolute cutoffs.
+    Reuses the same cached linescore fetch_mlb_live_detail already
+    pulls this rerun (no extra request for the matchup itself), one
+    small extra request each for the two players' own season+career
+    stat lines (both come back in the same hydrate call — see
+    _fetch_mlb_player_raw), the batter's last-15 line, the batter's
+    vs-pitcher history, plus one boxscore request for the pitcher's
+    game-total pitch/ball/strike counts. None on any fetch failure or
+    once there's genuinely no one at the plate/mound to name (the
+    linescore payload omits offense/defense between innings). Uses the
+    same _mlb_linescore_delayed snapshot as fetch_mlb_live_detail (see
+    its own docstring) so the matchup shown here never gets ahead of
+    the situation strip above it."""
     try:
         data = _mlb_linescore_delayed(game_id)
     except Exception:
@@ -1088,6 +1148,11 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     batter_stat = _fetch_mlb_player_season_stat_raw(batter["id"], "hitting")
     pitcher_stat = _fetch_mlb_player_season_stat_raw(pitcher["id"], "pitching")
     pitcher_totals = _mlb_game_pitching_totals(game_id, pitcher["id"])
+    # Same cached /people payload _fetch_mlb_player_season_stat_raw just
+    # pulled (it hydrates both season and career in one request), so
+    # asking for the career line too costs no extra HTTP call.
+    batter_career = _fetch_mlb_player_stat_raw(batter["id"], "hitting", "career")
+    pitcher_career = _fetch_mlb_player_stat_raw(pitcher["id"], "pitching", "career")
     last15 = _fetch_mlb_player_last15_raw(batter["id"])
     vs_pitcher = _fetch_mlb_vs_pitcher_raw(batter["id"], pitcher["id"])
     # "0-0" (no career at-bats vs this pitcher) reads as a real stat, not
@@ -1098,6 +1163,7 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
             "id": batter["id"],
             "name": batter["fullName"],
             "ops": batter_stat.get("ops"),
+            "season_ops_heat": _batter_season_heat(batter_stat.get("ops"), batter_career.get("ops")),
             "last15_ops": last15.get("ops"),
             "last15_heat": _ops_heat(last15.get("ops")),
             "vs_pitcher": vs_pitcher_line,
@@ -1108,6 +1174,7 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
             "id": pitcher["id"],
             "name": pitcher["fullName"],
             "era": pitcher_stat.get("era"),
+            "season_era_heat": _pitcher_season_heat(pitcher_stat.get("era"), pitcher_career.get("era")),
             "pitches": pitcher_totals.get("pitches"),
             "balls": pitcher_totals.get("balls"),
             "strikes": pitcher_totals.get("strikes"),

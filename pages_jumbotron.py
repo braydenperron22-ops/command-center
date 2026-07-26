@@ -473,11 +473,14 @@ def _current_matchup_html(game_id: int) -> str:
     # at-bats vs this exact pitcher — each already None'd out by
     # sports_client when there's no last-15 sample or no history vs
     # this pitcher, so `stats` filtering them out here is enough, no
-    # extra branch needed. Immediate follow-up request added `heat`
-    # ("hot"/"cold"/None from sports_client's _ops_heat/
-    # _vs_pitcher_heat) — None for every stat that isn't judged hot/cold
-    # (season OPS, ERA, pitches, B-S all just pass None and render plain
-    # white, same as before).
+    # extra branch needed. Follow-up request added `heat` ("hot"/
+    # "cold"/None from sports_client's _ops_heat/_vs_pitcher_heat) —
+    # None for pitches/B-S, which aren't judged hot/cold at all. A
+    # second follow-up request extended heat to season OPS/ERA too
+    # (sports_client's _batter_season_heat/_pitcher_season_heat, a
+    # delta off the player's own career line rather than a fixed
+    # threshold), so those two now pass a real heat value instead of
+    # None — everything else is unaffected.
     def col(tag: str, player: dict, stat_rows: list[list[tuple]]) -> str:
         photo = (
             f'<img class="jumbo-live-matchup-photo" src="{html.escape(player["photo"])}" onerror="this.style.display=\'none\'" />'
@@ -507,14 +510,14 @@ def _current_matchup_html(game_id: int) -> str:
         )
 
     batter_rows = [
-        [(batter.get("ops"), "OPS", None)],
+        [(batter.get("ops"), "OPS", batter.get("season_ops_heat"))],
         [
             (batter.get("last15_ops"), "L15 OPS", batter.get("last15_heat")),
             (batter.get("vs_pitcher"), "VS PITCHER", batter.get("vs_pitcher_heat")),
         ],
     ]
     pitcher_rows = [
-        [(pitcher.get("era"), "ERA", None), (pitcher.get("pitches"), "PITCHES", None)],
+        [(pitcher.get("era"), "ERA", pitcher.get("season_era_heat")), (pitcher.get("pitches"), "PITCHES", None)],
         [(pitch_split, "B-S", None)],
     ]
     return (
