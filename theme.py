@@ -1936,7 +1936,15 @@ html, body, [class*="css"] {
    covers the market ticker. Same intensity-tier colors as
    .leave-headline above, just laid out as a slim full-width bar
    instead of a floating pill — this needs to fit where the ticker
-   normally sits, not compete with the jumbotron board above it. */
+   normally sits, not compete with the jumbotron board above it.
+
+   Session request: "make the leave in timer in the bottom bar...
+   visible from across the room... without losing its boundaries" —
+   sized up from the ticker-matching 1.35rem to something actually
+   readable at kiosk viewing distance, closer to .leave-headline's own
+   2.6rem. overflow:hidden + nowrap keep it clipped to this exact bar
+   (the "boundaries" — same fixed footprint as before, just bigger
+   text inside it) rather than ever spilling into the board above. */
 .jumbo-leave-ticker {
     position: fixed;
     left: 0;
@@ -1945,12 +1953,14 @@ html, body, [class*="css"] {
     z-index: 10;
     background: rgba(8,8,11,0.92);
     border-top: 1px solid rgba(255,255,255,0.08);
-    padding: 0.85rem 0;
+    padding: 1.1rem 0;
     text-align: center;
-    font-size: 1.35rem;
+    font-size: 2.6rem;
     font-weight: 800;
     letter-spacing: 0.01em;
     color: #5AC8FA;
+    overflow: hidden;
+    white-space: nowrap;
 }
 .jumbo-leave-ticker.intensity-calm { color: #5AC8FA; }
 .jumbo-leave-ticker.intensity-aware {
