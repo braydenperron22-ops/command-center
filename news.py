@@ -373,6 +373,15 @@ def is_clickbait(headline: str) -> bool:
 # CSS mapping and as the actual category shown. BREAKING is a catch-all
 # for something genuinely major that doesn't fit any named category, and
 # gets its own small theme.py addition.
+#
+# TARIFFS added — session report: a real tariff headline wasn't getting
+# treated as breaking news when it should have been. There was no named
+# category for it, so a genuinely major tariff/trade-restriction story
+# had nowhere to land except MACRO_SHOCK (worded around crashes/halts,
+# not trade policy) or MARKET (routine, not important) — the model
+# defaulted to the safe/routine bucket rather than reaching for the
+# vague BREAKING catch-all. A named category with its own criteria (see
+# _CLASSIFICATION_CRITERIA) gives it somewhere real to go instead.
 _AI_VERDICT_LABELS = {
     "FED_BOC": "Fed/BoC",
     "DATA_SURPRISE": "Data Surprise",
@@ -380,6 +389,7 @@ _AI_VERDICT_LABELS = {
     "MACRO_SHOCK": "Macro Shock",
     "MERGERS": "Mergers",
     "MILESTONE": "Milestone",
+    "TARIFFS": "Tariffs",
     "BREAKING": "Breaking News",
 }
 _AI_VALID_VERDICTS = {"REJECT", "MARKET"} | set(_AI_VERDICT_LABELS)
@@ -543,8 +553,19 @@ _CLASSIFICATION_CRITERIA = (
     "(a major economic data release meaningfully above/below expectations), EARNINGS (a "
     "company's actual reported results that meaningfully BEAT or MISSED expectations — not "
     "a routine 'reports Q2 results' headline with no real surprise attached), MACRO_SHOCK (a "
-    "crash/crisis/systemic event, or a real trading halt/circuit breaker), MERGERS (a $1B+ "
-    "announced deal), MILESTONE (a genuine record high/low), MARKET "
+    "crash/crisis/systemic event, or a real trading halt/circuit breaker), MERGERS (a "
+    "genuinely major, DEFINITIVE $10B+ deal — a signed agreement, board-approved deal, or "
+    "completed acquisition; NOT a company merely 'exploring' a sale, in informal/preliminary "
+    "talks, 'reportedly interested', or a deal under $10B — be strict here specifically, this "
+    "category over-fires more than any other), MILESTONE (a genuine record high/low), TARIFFS "
+    "(a government imposing significant tariffs/export controls/trade restrictions, OR a real, "
+    "on-record threat of them from an actual head of state or government official with the "
+    "authority to impose them — a direct quote or attributed statement naming the target "
+    "country/sector/goods, e.g. 'President threatens China with new tariffs over...'. This "
+    "counts even without a numeric rate attached — the threat itself, from someone who can "
+    "actually act on it, is the concrete event, not something to wait on a number for. Does NOT "
+    "include vague 'trade tension' scene-setting, unnamed 'officials discuss/consider' framing, "
+    "or third-party/analyst speculation about what a government might do), MARKET "
     "(real but routine financial news), or BREAKING (something else genuinely major that "
     "doesn't fit those).\n\n"
     "STRICT DATA REQUIREMENT — be strict here. Look at the headline, its SUMMARY, and its "
@@ -555,7 +576,9 @@ _CLASSIFICATION_CRITERIA = (
     "If NO real number is available anywhere in the headline, summary, or article excerpt, "
     "apply strict scrutiny before letting the headline through: is its own core claim "
     "already a single, concrete, unambiguous event on its own — a specific decision, "
-    "acquisition, resignation, bankruptcy, ceasefire, or similarly definite fact — genuinely "
+    "acquisition, resignation, bankruptcy, ceasefire, a named/attributed tariff threat from an "
+    "actual government decision-maker (see TARIFFS above — this one specifically does NOT need "
+    "a number to count as concrete), or similarly definite fact — genuinely "
     "meaningful even without a number attached? If yes, keep it as-is, unchanged, with no "
     "fabricated data. If no — the headline is fundamentally vague with no specifics anywhere "
     "about by how much, to what, or what exactly changed ('lowers forecast', 'warns of "
