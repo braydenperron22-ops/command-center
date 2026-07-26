@@ -186,7 +186,14 @@ def _mlb_scoring_plays(game_id: int) -> list[dict]:
     "description", "away_score", "home_score"}. [] on any fetch
     failure (no last-good fallback needed: the caller's own "seen"
     tracking means a transient miss here is just caught on the very
-    next poll a few seconds later, not lost)."""
+    next poll a few seconds later, not lost). Session report: "just got
+    an alert way before the actual play happened" — this used to read
+    the live feed straight through, ignoring the jumbotron's own
+    broadcast-delay setting every other live value already respects
+    (sports_client.get_live_delay_seconds). Wrapped the OUTPUT list (not
+    the raw feed) through sports_client.delayed() instead of the raw
+    payload — cheaper to buffer (a handful of small play dicts, not the
+    whole growing play-by-play) for the exact same delayed result."""
     try:
         data = _fetch_mlb_live_feed_raw(game_id)
     except Exception:
@@ -210,7 +217,7 @@ def _mlb_scoring_plays(game_id: int) -> list[dict]:
                 "home_score": result.get("homeScore"),
             }
         )
-    return out
+    return sports_client.delayed(f"mlb_alert_scoring_{game_id}", out)
 
 
 def _mlb_streak_events(game_id: int, is_home: bool) -> list[dict]:
@@ -231,7 +238,9 @@ def _mlb_streak_events(game_id: int, is_home: bool) -> list[dict]:
 
     Built from the same cached live feed the scoring plays use — no
     extra network cost. Only completed at-bats count; the in-progress
-    one at the end of allPlays isn't a result yet."""
+    one at the end of allPlays isn't a result yet. Delayed the same way
+    as _mlb_scoring_plays (see its own comment) and for the same
+    reason — a streak alert is still a toast off the live feed."""
     try:
         data = _fetch_mlb_live_feed_raw(game_id)
     except Exception:
@@ -295,7 +304,7 @@ def _mlb_streak_events(game_id: int, is_home: bool) -> list[dict]:
             else:
                 k_streak = []
 
-    return events
+    return sports_client.delayed(f"mlb_alert_streak_{game_id}", events)
 
 
 @st.cache_data(ttl=LIVE_FEED_CACHE_TTL_SECONDS, show_spinner=False)
@@ -321,7 +330,9 @@ def _nhl_scoring_plays(game_id: int) -> list[dict]:
     """Same shape as _mlb_scoring_plays — built from the landing
     endpoint's own per-period goal list (see sports_client's earlier
     use of this same endpoint for period-by-period line score), since
-    unlike MLB there's no ready-made sentence to reuse verbatim here."""
+    unlike MLB there's no ready-made sentence to reuse verbatim here.
+    Delayed the same way and for the same reason as _mlb_scoring_plays
+    — see its own comment."""
     try:
         data = _fetch_nhl_landing_raw(game_id)
     except Exception:
@@ -341,7 +352,7 @@ def _nhl_scoring_plays(game_id: int) -> list[dict]:
                     "home_score": goal.get("homeScore"),
                 }
             )
-    return out
+    return sports_client.delayed(f"nhl_alert_scoring_{game_id}", out)
 
 
 def _nfl_scoring_plays(game_id: int) -> list[dict]:

@@ -161,7 +161,7 @@ _last_good_nhl_standings: list[dict] | None = None
 _last_good_nfl_games: list[dict] | None = None
 _last_good_nfl_standings: list[dict] | None = None
 # {buffer_key: [(fetched_at, payload), ...]}, oldest first — backs
-# _delayed() below. Plain module state like _last_good_* above rather
+# delayed() below. Plain module state like _last_good_* above rather
 # than session_state: this is about trailing the real-world event by a
 # fixed wall-clock amount, not anything session-specific.
 _delay_buffers: dict[str, list] = {}
@@ -190,13 +190,20 @@ def set_live_delay_seconds(seconds: int) -> None:
     persisted_state.save("jumbotron_live_delay_seconds", seconds)
 
 
-def _delayed(key: str, value):
+def delayed(key: str, value):
     """Returns whatever `value` was for this key as of the current delay
     setting ago (get_live_delay_seconds(), DEFAULT_LIVE_DATA_DELAY_SECONDS
     until the jumbotron's own stepper changes it), buffering the fresh
     value in first. Falls back to `value` itself until the buffer's
     been running long enough to have anything older (start of a
-    game/app) — briefly live, rather than blocking display entirely."""
+    game/app) — briefly live, rather than blocking display entirely.
+    Public (not just an internal helper) — session report: sports_alerts'
+    scoring-play toasts were firing off the true real-time feed,
+    ignoring the same delay setting the rest of the jumbotron respects,
+    so a play could toast well before the broadcast actually showed it.
+    sports_alerts.py calls this directly on its own scoring-play/streak
+    lists for the same reason this module already wraps the linescore/
+    boxscore payloads in it."""
     now = time.time()
     delay_seconds = get_live_delay_seconds()
     buf = _delay_buffers.setdefault(key, [])
@@ -861,7 +868,7 @@ def _mlb_linescore_delayed(game_id: int) -> dict:
     fetch_mlb_live_detail and fetch_mlb_live_matchup so the inning/count
     state and the batter/pitcher on it stay in lockstep at the same
     delayed instant, rather than each drifting against its own buffer."""
-    return _delayed(f"mlb_linescore_{game_id}", _fetch_mlb_linescore_raw(game_id))
+    return delayed(f"mlb_linescore_{game_id}", _fetch_mlb_linescore_raw(game_id))
 
 
 def fetch_mlb_live_detail(game_id: int) -> dict | None:
@@ -1109,7 +1116,7 @@ def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
     amount as the linescore feed, so this pitcher's count doesn't tick
     up before the pitch it reflects has aired."""
     try:
-        data = _delayed(f"mlb_boxscore_{game_id}", _fetch_mlb_boxscore_raw(game_id))
+        data = delayed(f"mlb_boxscore_{game_id}", _fetch_mlb_boxscore_raw(game_id))
     except Exception:
         return {}
     for side in ("home", "away"):
@@ -1234,7 +1241,7 @@ def fetch_nhl_live_detail(game_id: int) -> dict | None:
     countdown targets when the broadcast shows puck drop, not the true
     (slightly earlier) instant."""
     try:
-        box = _delayed(f"nhl_boxscore_{game_id}", _fetch_nhl_boxscore_raw(game_id))
+        box = delayed(f"nhl_boxscore_{game_id}", _fetch_nhl_boxscore_raw(game_id))
     except Exception:
         return None
 
@@ -1340,7 +1347,7 @@ def fetch_mlb_last_play(game_id: int) -> dict | None:
     board. None on any fetch failure or if the game genuinely has no
     completed plays yet (top of the 1st, nobody's batted)."""
     try:
-        data = _delayed(f"mlb_lastplay_{game_id}", _fetch_mlb_live_feed_raw(game_id))
+        data = delayed(f"mlb_lastplay_{game_id}", _fetch_mlb_live_feed_raw(game_id))
     except Exception:
         return None
     all_plays = data.get("liveData", {}).get("plays", {}).get("allPlays", [])

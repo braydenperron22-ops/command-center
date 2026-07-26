@@ -133,7 +133,20 @@ FALLBACK_EVENING_RAMP_END_MINUTE = 30
 _light_powered_on: bool | None = None
 _light_color_applied: tuple[int, int, int] | None = None
 _light_brightness_applied: int | None = None
-_light_last_call_ts: float = 0.0
+# Session report: "the lights arent flashing to 100% for any game
+# alerts." Root cause — one shared _light_last_call_ts used to gate
+# power/color/brightness alike, even though they're three independent
+# Govee API calls. sync_lights's flash path calls _apply_color right
+# before _apply_brightness_immediate, so the color call's own success
+# stamped this shared timestamp microseconds before the brightness
+# call checked it against min_gap — always reading as "just called,"
+# so the brightness call was silently skipped almost every single
+# rerun of a flash. Split into one timestamp per endpoint so a color
+# call can no longer block the very next brightness call (or vice
+# versa) in the same invocation.
+_light_power_last_call_ts: float = 0.0
+_light_color_last_call_ts: float = 0.0
+_light_brightness_last_call_ts: float = 0.0
 _brightness_step_ts: float = 0.0
 _market_significant: bool = False
 _plug_applied: bool | None = None
@@ -192,14 +205,14 @@ def _apply_power(on: bool) -> bool:
     either just sent, or already matching cache. sync_lights only moves
     on to color/brightness once this is True, so a still-throttled power
     call can't be raced by a color call that assumes power is already up."""
-    global _light_powered_on, _light_last_call_ts, _light_color_applied, _light_brightness_applied
+    global _light_powered_on, _light_power_last_call_ts, _light_color_applied, _light_brightness_applied
     if _light_powered_on == on:
         return True
-    if time.time() - _light_last_call_ts < MIN_CALL_GAP_SECONDS:
+    if time.time() - _light_power_last_call_ts < MIN_CALL_GAP_SECONDS:
         return False
     if govee_client.set_power(GOVEE_LIGHT, on):
         _light_powered_on = on
-        _light_last_call_ts = time.time()
+        _light_power_last_call_ts = time.time()
         if not on:
             # Force a fresh color/brightness send next time it powers back
             # on (snapping to the correct values, not creeping into them
@@ -211,10 +224,10 @@ def _apply_power(on: bool) -> bool:
 
 
 def _apply_color(color: tuple[int, int, int], min_gap: float = MIN_CALL_GAP_SECONDS) -> None:
-    global _light_color_applied, _light_last_call_ts
+    global _light_color_applied, _light_color_last_call_ts
     if _light_color_applied == color:
         return
-    if time.time() - _light_last_call_ts < min_gap:
+    if time.time() - _light_color_last_call_ts < min_gap:
         return
     # Gated on the actual API result (same pattern as _apply_power below)
     # — a failed call (rate limit, WiFi hiccup, momentary Govee outage,
@@ -229,7 +242,7 @@ def _apply_color(color: tuple[int, int, int], min_gap: float = MIN_CALL_GAP_SECO
     # cooldown for a call that never went through.
     if govee_client.set_color(GOVEE_LIGHT, color):
         _light_color_applied = color
-        _light_last_call_ts = time.time()
+        _light_color_last_call_ts = time.time()
 
 
 def _apply_brightness_immediate(value: int, min_gap: float = MIN_CALL_GAP_SECONDS) -> None:
@@ -240,15 +253,15 @@ def _apply_brightness_immediate(value: int, min_gap: float = MIN_CALL_GAP_SECOND
     fresh from wherever this just landed rather than firing again
     immediately. Gated on the API result — see _apply_color's comment
     on why an unconditional write here was a real bug."""
-    global _light_brightness_applied, _light_last_call_ts, _brightness_step_ts
+    global _light_brightness_applied, _light_brightness_last_call_ts, _brightness_step_ts
     if _light_brightness_applied == value:
         return
-    if time.time() - _light_last_call_ts < min_gap:
+    if time.time() - _light_brightness_last_call_ts < min_gap:
         return
     if govee_client.set_brightness(GOVEE_LIGHT, value):
         _light_brightness_applied = value
         _brightness_step_ts = time.time()
-        _light_last_call_ts = time.time()
+        _light_brightness_last_call_ts = time.time()
 
 
 def _creep_brightness(target: int) -> None:
