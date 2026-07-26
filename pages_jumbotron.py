@@ -467,6 +467,12 @@ def _current_matchup_html(game_id: int) -> str:
     # — `stat_rows` is a list of rows, each a list of (value, label)
     # pairs, so a pitcher can get ERA/PITCHES on one row and B-S on its
     # own row underneath, while a batter's single-row OPS is unaffected.
+    # Later session request ("does espn show hot streaks or anything?
+    # yes please") added the batter's own second row: rolling last-10
+    # OPS (the "hot/cold right now" proxy) beside career at-bats vs
+    # this exact pitcher — each already None'd out by sports_client
+    # when there's no last-10 sample or no history vs this pitcher, so
+    # `stats` filtering them out here is enough, no extra branch needed.
     def col(tag: str, player: dict, stat_rows: list[list[tuple]]) -> str:
         photo = (
             f'<img class="jumbo-live-matchup-photo" src="{html.escape(player["photo"])}" onerror="this.style.display=\'none\'" />'
@@ -498,7 +504,7 @@ def _current_matchup_html(game_id: int) -> str:
     return (
         f'<div class="jumbo-leaders"><div class="jumbo-sl">Current Matchup</div>'
         f'<div class="jumbo-live-matchup">'
-        f'{col("At Bat", batter, [[(batter.get("ops"), "OPS")]])}'
+        f'{col("At Bat", batter, [[(batter.get("ops"), "OPS")], [(batter.get("last10_ops"), "L10 OPS"), (batter.get("vs_pitcher"), "VS PITCHER")]])}'
         f'<div class="jumbo-live-matchup-vs">VS</div>'
         f'{col("Pitching", pitcher, [[(pitcher.get("era"), "ERA"), (pitcher.get("pitches"), "PITCHES")], [(pitch_split, "B-S")]])}'
         f"</div></div>"
