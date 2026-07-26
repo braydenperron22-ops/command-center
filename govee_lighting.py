@@ -440,7 +440,11 @@ def sync_lights(
 
 
 def sync_plug(
-    now: datetime, first_light: datetime | None, last_light: datetime | None, game_live: bool = False
+    now: datetime,
+    first_light: datetime | None,
+    last_light: datetime | None,
+    game_live: bool = False,
+    leave_timer_active: bool = False,
 ) -> None:
     """Off at last light, on at first light — deliberately real civil-
     twilight bounds (dawn/dusk, sun 6° below the horizon), not the same
@@ -460,11 +464,23 @@ def sync_plug(
     shouldn't have happened for at least 5 mins"). Re-checked fresh
     every rerun, so it reverts to the normal daylight window as soon as
     that hold ends — or immediately, if the recap's dismissed early via
-    the jumbotron's own End Session button."""
+    the jumbotron's own End Session button.
+
+    `leave_timer_active` (see commute_reminder.leave_headline_active) —
+    same kind of override, for the same reason: an early shift's 2-hour
+    leave countdown can start well before first_light in the darker
+    months, and app.py already forces the SCREEN to full brightness
+    while that countdown is up (see its own night_dim override) — but
+    none of that matters if the monitor has no power yet. Session
+    report: "my girlfriend worked at 6am this morning and I had to
+    manually turn on the plug so she could see the leave in timer."
+    Same re-checked-every-rerun behavior as game_live: reverts to the
+    normal daylight window the instant the countdown ends, not held
+    open any longer than the timer itself needs."""
     global _plug_applied, _plug_last_call_ts
     if not st.secrets.get("GOVEE_API_KEY") or first_light is None or last_light is None:
         return
-    want_on = game_live or (first_light <= now < last_light)
+    want_on = game_live or leave_timer_active or (first_light <= now < last_light)
     if _plug_applied == want_on:
         return
     if time.time() - _plug_last_call_ts < MIN_CALL_GAP_SECONDS:

@@ -1256,8 +1256,16 @@ try:
         phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
         aqi_for_lights, category, score_flash, _game_takeover_live,
     )
+    try:
+        leave_timer_active = commute_reminder.leave_headline_active(now)
+    except Exception:
+        leave_timer_active = False
     govee_lighting.sync_plug(
-        now, weather["first_light"] if weather else None, weather["last_light"] if weather else None, game_live
+        now,
+        weather["first_light"] if weather else None,
+        weather["last_light"] if weather else None,
+        game_live,
+        leave_timer_active,
     )
 except Exception:
     pass
