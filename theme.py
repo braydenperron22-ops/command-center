@@ -2421,7 +2421,9 @@ html, body, [class*="css"] {
 /* ---- My Teams rail ---- */
 .jumbo-rail-body { flex: 1; min-height: 0; overflow: hidden; }
 .jumbo-hero {
-    padding: 20px 20px 22px;
+    /* Was 20px 20px 22px — trimmed for a third team (the Saints) now
+       routinely sharing this rail; see .jumbo-rail-col's own comment. */
+    padding: 13px 20px 14px;
     border-bottom: 1px solid rgba(30,38,52,0.55);
     position: relative;
 }
@@ -2452,21 +2454,23 @@ html, body, [class*="css"] {
 .jumbo-hero-rec { margin-left: auto; text-align: right; flex: 0 0 auto; padding-left: 10px; }
 .jumbo-hero-rec-v { font-family: var(--num); font-size: 30px; line-height: 1; white-space: nowrap; }
 .jumbo-hero-rec-l { font-size: 10px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.3em; white-space: nowrap; }
-.jumbo-form { display: flex; gap: 7px; align-items: center; margin-top: 13px; }
+.jumbo-form { display: flex; gap: 7px; align-items: center; margin-top: 9px; }  /* was 13px — see .jumbo-rail-col's own comment */
 .jumbo-form-label { font-size: 12px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.24em; margin-right: 3px; }
 .jumbo-form i { width: 13px; height: 13px; border-radius: 50%; display: inline-block; }
 .jumbo-form-w { background: var(--ok); box-shadow: 0 0 6px rgba(50,213,131,0.5); }
 .jumbo-form-l { background: rgba(255,69,58,0.35); border: 1px solid rgba(255,69,58,0.5); }
 .jumbo-gameline {
-    margin-top: 14px;
+    /* margin-top/padding trimmed from 14px/12px 15px — see
+       .jumbo-rail-col's own comment on why this rail got tighter. */
+    margin-top: 9px;
     border: 1px solid var(--edge);
     border-radius: 10px;
     background: rgba(8,11,17,0.7);
-    padding: 12px 15px;
+    padding: 9px 15px;
     font-family: var(--mono);
     font-size: 16px;
     color: var(--mut);
-    line-height: 1.7;
+    line-height: 1.6;
 }
 .jumbo-gameline b { color: var(--bone); font-weight: 600; }
 .jumbo-gl-score { color: var(--led); font-weight: 800; font-size: 19px; }
@@ -2488,7 +2492,18 @@ html, body, [class*="css"] {
 /* My Teams + Division Standings share the left column as two stacked
    panels — session request moved standings out of each hero card into
    its own rotating panel at the bottom. My Teams sizes to its own
-   content (1-2 compact hero cards); standings takes whatever's left. */
+   content; standings takes whatever's left. Session report adding a
+   third team (the Saints): "the standings are kinda cut off because
+   we added the saints to the left bar" — with 3 hero cards (one of
+   them potentially a full live/pregame card, not just a compact
+   OFFSEASON line) My Teams' own natural height can genuinely exceed
+   what's left for standings once flex: 0 0 auto (fixed, never shrinks)
+   met a column that's now consistently tighter than it was designed
+   for at 1-2 teams. My Teams can now shrink (flex-shrink: 1, was 0) if
+   it truly has to, clipping its own lowest-priority (bottom-most, per
+   COUNTDOWN_PRIORITY) card rather than starving standings entirely;
+   standings gets a real min-height floor so it's never squeezed to
+   the ~6px "may as well not exist" state this report was about. */
 .jumbo-rail-col { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .jumbo-rail-col .jumbo-rail { flex: 0 0 auto; }
 .jumbo-rail-col .jumbo-standings-panel { flex: 1; min-height: 0; }
