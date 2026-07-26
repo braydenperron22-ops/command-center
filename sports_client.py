@@ -574,8 +574,12 @@ def fetch_habs() -> dict | None:
             "rank": t["divisionSequence"],
             "team": f"{t['teamName']['default']}",
             "wins": t["wins"],
-            "losses": t["losses"],
-            "extra": f"{t['otLosses']} OTL",
+            # W-L-OTL as plain numbers (session request: drop the "OTL"
+            # text label) — folded into "losses" so both standings-row
+            # templates (jumbo + regular Sports page) render it for free
+            # via their existing "{wins}-{losses}" format string.
+            "losses": f"{t['losses']}-{t['otLosses']}",
+            "extra": "",
             "is_team": t["teamAbbrev"]["default"] == NHL_TEAM_ABBR,
             "logo": _nhl_logo_url(t["teamAbbrev"]["default"]),
         }
@@ -621,8 +625,9 @@ def fetch_all_nhl_standings() -> list[dict]:
                 "rank": t["divisionSequence"],
                 "team": t["teamName"]["default"],
                 "wins": t["wins"],
-                "losses": t["losses"],
-                "extra": f"{t['otLosses']} OTL",
+                # W-L-OTL as plain numbers, same as fetch_habs() above.
+                "losses": f"{t['losses']}-{t['otLosses']}",
+                "extra": "",
                 "is_team": t["teamAbbrev"]["default"] == NHL_TEAM_ABBR,
                 "logo": _nhl_logo_url(t["teamAbbrev"]["default"]),
             }
