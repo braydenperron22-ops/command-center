@@ -1929,6 +1929,46 @@ html, body, [class*="css"] {
     border-color: rgba(255,69,58,0.35);
     animation: leave-headline-pulse-overdue 0.7s ease-in-out infinite;
 }
+
+/* commute_reminder.render_ticker_leave_bar — same slot as .ticker-bar
+   (position/left/right/bottom/z-index all match exactly) so a real
+   toast still covers it the instant one fires, same as it already
+   covers the market ticker. Same intensity-tier colors as
+   .leave-headline above, just laid out as a slim full-width bar
+   instead of a floating pill — this needs to fit where the ticker
+   normally sits, not compete with the jumbotron board above it. */
+.jumbo-leave-ticker {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    background: rgba(8,8,11,0.92);
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding: 0.85rem 0;
+    text-align: center;
+    font-size: 1.35rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    color: #5AC8FA;
+}
+.jumbo-leave-ticker.intensity-calm { color: #5AC8FA; }
+.jumbo-leave-ticker.intensity-aware {
+    color: #FF9F0A;
+    animation: leave-headline-pulse-amber 3s ease-in-out infinite;
+}
+.jumbo-leave-ticker.intensity-urgent {
+    color: #FF6961;
+    animation: leave-headline-pulse-red 2s ease-in-out infinite;
+}
+.jumbo-leave-ticker.intensity-critical {
+    color: #FF453A;
+    animation: leave-headline-pulse 1.2s ease-in-out infinite;
+}
+.jumbo-leave-ticker.intensity-overdue {
+    color: #FF453A;
+    animation: leave-headline-pulse-overdue 0.7s ease-in-out infinite;
+}
 @keyframes leave-headline-pulse-amber {
     0%, 100% { text-shadow: 0 0 18px rgba(255,159,10,0.4); }
     50% { text-shadow: 0 0 28px rgba(255,159,10,0.7); }

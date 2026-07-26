@@ -1187,6 +1187,22 @@ try:
             sports_alerts.render_alert_bar(current_alert, elapsed, _toast_variant)
         else:
             news.render_alert_bar(current_alert, elapsed, _toast_variant)
+    elif _jumbotron_active and commute_reminder.leave_headline_active(now):
+        # Session report: a golf tee time's leave-in window landing
+        # during a Jays game — "that space is crucial for the
+        # jumbotron... replace the bottom scroll bar with a timer...
+        # game alerts and breaking news is allowed to trump the timer
+        # but at least its still there." render_leave_headline (the big
+        # red banner) already skips itself entirely during a takeover —
+        # no room for it on that board — so without this, an early
+        # commitment during game time only ever showed up as scattered
+        # milestone toasts, not something continuously visible. Same
+        # slot as the market ticker below (position/z-index match
+        # exactly, see .jumbo-leave-ticker in theme.py), so this branch
+        # only ever runs when current_alert is empty — a real toast
+        # still covers it the instant one fires, same as it already
+        # covers the market ticker.
+        commute_reminder.render_ticker_leave_bar(now)
     else:
         # A pure live-stat ticker (session request: "remove the dates
         # for data... just not [as] informational and as good as the

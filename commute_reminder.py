@@ -364,17 +364,65 @@ def render_leave_headline(now: datetime) -> None:
     data-intensity marker — the ticker script only manages elements
     that carry it, so the jumbotron/sports countdowns sharing that same
     global ticker are untouched."""
+    info = _countdown_info(now)
+    if info is None:
+        return
+    target_ms, tier, text = info
+    st.markdown(
+        f'<div class="leave-headline intensity-{tier}"><span class="live-countdown" data-intensity '
+        f'data-target-ms="{target_ms}" data-format="clock" data-template="Leave in {{}}" '
+        f'data-zero-text="Leave now">{text}</span></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _countdown_info(now: datetime) -> tuple[int, str, str] | None:
+    """(target_ms, intensity tier, first-frame text) shared by
+    render_leave_headline and render_ticker_leave_bar below — same
+    window/gating logic, just two different places it ends up on
+    screen."""
     leave_by = leave_by_time(now)
     if leave_by is None:
-        return
+        return None
     remaining = _remaining_until_leave(now)
     if remaining is None or not (-HEADLINE_GRACE_MINUTES * 60 <= remaining <= HEADLINE_WINDOW_MINUTES * 60):
-        return
+        return None
     target_ms = int(leave_by.timestamp() * 1000)
     tier = _intensity_tier(remaining)
     text = "Leave now" if remaining <= 0 else f"Leave in {_format_clock(remaining)}"
+    return target_ms, tier, text
+
+
+def render_ticker_leave_bar(now: datetime) -> None:
+    """Compact countdown for the bottom ticker-bar slot (see ticker.py's
+    own .ticker-bar) — session report: today's the exact conflict this
+    was built for, a golf tee time (leave-in window) landing during a
+    Jays game: "can we format it differently so it doesn't take up the
+    same space since that space is crucial for the jumbotron... replace
+    the bottom scroll bar with a timer... game alerts and breaking news
+    is allowed to trump the timer but at least its still there." The
+    big red .leave-headline (render_leave_headline above) already skips
+    itself during a jumbotron takeover entirely — there's no room for it
+    on that board — which meant an early-shift countdown during game
+    time only ever surfaced as a handful of one-off milestone toasts,
+    not something continuously visible.
+
+    app.py calls this instead of ticker.py's market/crypto ticker only
+    while BOTH _jumbotron_active and this is true (see
+    leave_headline_active) AND the toast queue is empty — same slot
+    (position/z-index match .ticker-bar exactly), so a real toast
+    (a scoring play, breaking news, even this same countdown's own
+    milestone toasts) still visually covers it the instant one fires,
+    same as it already covers the market ticker today. Nothing here
+    duplicates that toast behavior; this only fills the gap between
+    toasts instead of showing crypto prices no one's looking at during
+    a game."""
+    info = _countdown_info(now)
+    if info is None:
+        return
+    target_ms, tier, text = info
     st.markdown(
-        f'<div class="leave-headline intensity-{tier}"><span class="live-countdown" data-intensity '
+        f'<div class="jumbo-leave-ticker intensity-{tier}"><span class="live-countdown" data-intensity '
         f'data-target-ms="{target_ms}" data-format="clock" data-template="Leave in {{}}" '
         f'data-zero-text="Leave now">{text}</span></div>',
         unsafe_allow_html=True,
