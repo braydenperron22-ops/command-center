@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+import game_blurb
 import sports_client
 from config import TIMEZONE
 
@@ -32,6 +33,38 @@ from config import TIMEZONE
 # shows up — 2 hours is a reasonable "worth knowing about" window
 # without flagging every game the moment it's merely today.
 STARTING_SOON_MINUTES = 120
+
+# Session request: "where's the playoff odds on both pages and the ai
+# blurb on the main page" — both features (originally jumbotron-only)
+# now also live here. Only mlb/nhl — this page has never covered the
+# Saints/NFL (a jumbotron-only, deliberately lighter integration; see
+# sports_client.py's own comment on why).
+_TEAM_FULL_NAME = {"mlb": sports_client.MLB_TEAM_NAME, "nhl": sports_client.NHL_TEAM_NAME}
+
+
+def _odds_suffix_html(status: dict) -> str:
+    odds = status.get("playoff_odds") or {}
+    return f' <span class="sports-odds-badge">· {html.escape(odds["display"])} PO</span>' if odds.get("display") else ""
+
+
+def _blurb_html(sport: str, game: dict, team_label: str) -> str:
+    """Pre/postgame AI blurb (see game_blurb.py's own docstring for the
+    one-shot-per-game caching and where the ESPN facts come from) — ""
+    while the game is live (no blurb for that state — the live
+    situation panel already covers it), once ESPN doesn't have this
+    game, or before the AI call has landed."""
+    if game["state"] not in ("upcoming", "final"):
+        return ""
+    postgame = game["state"] == "final"
+    our_name = _TEAM_FULL_NAME[sport]
+    away_name = our_name if not game["is_home"] else game["opponent"]
+    home_name = game["opponent"] if not game["is_home"] else our_name
+    get_blurb = game_blurb.get_postgame_blurb if postgame else game_blurb.get_pregame_blurb
+    text = get_blurb(sport, game["game_id"], team_label, away_name, home_name, game["opponent"])
+    if not text:
+        return ""
+    label = "AI Recap" if postgame else "AI Preview"
+    return f'<div class="sports-blurb"><div class="sports-blurb-label">{html.escape(label)}</div><div class="sports-blurb-text">{html.escape(text)}</div></div>'
 
 
 def _format_countdown(total_minutes: float) -> str:
@@ -120,13 +153,23 @@ def _wildcard_html(status: dict) -> str:
 
 def _standings_table(status: dict) -> str:
     # Flattened to one line per row, same reasoning as _game_html above.
+    # "odds" (session request: "playoff odds for each of my teams" —
+    # "where's the playoff odds on both pages") only ever carries a
+    # value on our own team's row (see sports_client's own comment on
+    # fetch_all_mlb_standings/fetch_all_nhl_standings), so every other
+    # row's "" leaves this otherwise untouched.
     rows = "".join(
         f'<div class="sports-standings-row{" sports-standings-row-team" if r["is_team"] else ""}">'
         f'<span class="sports-standings-rank">{r["rank"]}</span>'
         f'<span class="sports-standings-team">{html.escape(r["team"])}</span>'
         f'<span class="sports-standings-record">{r["wins"]}-{r["losses"]}</span>'
         f'<span class="sports-standings-extra">{r["extra"]}</span>'
-        f"</div>"
+        + (
+            f'<span class="sports-standings-odds">{html.escape((r.get("odds") or {})["display"])} PO</span>'
+            if (r.get("odds") or {}).get("display")
+            else ""
+        )
+        + "</div>"
         for r in status["standings"]
     )
     return f'<div class="sports-standings">{rows}</div>' if rows else ""
@@ -143,19 +186,22 @@ def _form_strip_html(status: dict) -> str:
     return f'<div class="form-strip"><span class="form-strip-label">Last {len(form)}</span>{dots}</div>'
 
 
-def _compact_tile_html(label: str, status: dict | None, kickoff_label: str, now: datetime) -> str:
+def _compact_tile_html(label: str, status: dict | None, kickoff_label: str, now: datetime, sport: str) -> str:
     if status is None:
         return (
             f'<div class="tile"><div class="tile-label">{label}</div>'
             f'<div class="tile-prev">Out of season.</div></div>'
         )
+    game = status["game"]
+    blurb_html = _blurb_html(sport, game, label.title()) if game else ""
     return (
         f'<div class="tile">'
         f'<div class="sports-team-header">'
         f'<img class="sports-team-logo" src="{status["team_logo"]}" />'
-        f'<div class="tile-label">{label} · {status["division_name"].upper()}</div>'
+        f'<div class="tile-label">{label} · {status["division_name"].upper()}{_odds_suffix_html(status)}</div>'
         f"</div>"
         f"{_game_html(status, kickoff_label, now)}"
+        f"{blurb_html}"
         f"{_form_strip_html(status)}"
         f"{_wildcard_html(status)}"
         f"{_standings_table(status)}"
@@ -241,7 +287,7 @@ def _render_live_tile(label: str, status: dict, sport: str) -> None:
         f'<div class="live-scoreboard-header">'
         f'<div class="sports-team-header">'
         f'<img class="sports-team-logo" src="{status["team_logo"]}" />'
-        f'<div class="tile-label">{label} · {opponent_word} {opponent}</div>'
+        f'<div class="tile-label">{label} · {opponent_word} {opponent}{_odds_suffix_html(status)}</div>'
         f"</div>"
         f'<div class="live-scoreboard-badge">LIVE</div>'
         f"</div>"
@@ -282,7 +328,7 @@ def render() -> None:
         for col, entry in zip(st.columns(2), entries):
             with col:
                 st.markdown(
-                    _compact_tile_html(entry["label"], entry["status"], entry["kickoff_label"], now),
+                    _compact_tile_html(entry["label"], entry["status"], entry["kickoff_label"], now, entry["sport"]),
                     unsafe_allow_html=True,
                 )
         return
@@ -298,6 +344,6 @@ def render() -> None:
         if entry in live:
             continue
         st.markdown(
-            _compact_tile_html(entry["label"], entry["status"], entry["kickoff_label"], now),
+            _compact_tile_html(entry["label"], entry["status"], entry["kickoff_label"], now, entry["sport"]),
             unsafe_allow_html=True,
         )

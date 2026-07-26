@@ -1338,6 +1338,33 @@ html, body, [class*="css"] {
     text-align: right;
     color: #8E8E93;
 }
+/* Session request: "playoff odds for each of my teams... where's the
+   playoff odds on both pages" — only ever present on our own team's
+   row (see _standings_table's own comment), never competing with
+   .sports-standings-extra on every other row in the division. */
+.sports-standings-odds { flex-shrink: 0; text-align: right; color: #64D2FF; font-weight: 700; }
+/* Compact suffix on the team header line (division / vs opponent) —
+   same idea as the standings row above, just for the tile header. */
+.sports-odds-badge { color: #64D2FF; font-weight: 700; }
+
+/* Session request: "make a pre and postgame ai overview... use gemini"
+   then "where's... the ai blurb on the main page" — same feature as
+   the jumbotron's own .jumbo-blurb, restyled for this page's plain
+   tile look instead of the jumbotron's bordered-panel one. */
+.sports-blurb {
+    margin-top: 0.7rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+.sports-blurb-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #8E8E93;
+    margin-bottom: 0.3rem;
+}
+.sports-blurb-text { font-size: 0.95rem; line-height: 1.5; color: #F5F5F7; }
 
 /* Scores page — a whole league's slate can run to 15 games (MLB), too
    many for st.columns to lay out sensibly at kiosk width, so this is a
