@@ -107,6 +107,7 @@ _baseline_done: dict[str, bool] = {}
 
 FLASH_BLUE = (0, 70, 255)  # Blue Jays' own game — a clean, unmistakable blue on a light bulb
 FLASH_RED = (255, 0, 0)  # Canadiens' own game — same red govee_lighting's breaking-news flash already uses
+FLASH_GOLD = (255, 176, 0)  # Saints' own game — real team gold (ESPN's own color is a duller #d3bc8d), hand-brightened for a bulb same reasoning as scores_client._boost_for_bulb applies to a dim-but-real ESPN color
 
 # How close to first pitch/puck drop the countdown headline starts
 # showing — session request: "First Pitch In, and then we start
@@ -151,7 +152,10 @@ TAKEOVER_POSTGAME_MINUTES = 15
 # the Habs-then-Jays half, shared by render_game_countdown's stacking
 # order and app.py's toast-queue priority sort (commute itself is
 # ranked there, since commute alerts aren't this module's to order).
-COUNTDOWN_PRIORITY = ["nhl", "mlb"]
+# Session request adding the Saints: "Saints should have the lowest
+# gameday priority... habs -> jays -> saints" — appended last, since
+# _takeover_priority ranks by position in this list (lower index wins).
+COUNTDOWN_PRIORITY = ["nhl", "mlb", "nfl"]
 
 _LEAGUES = [
     {
@@ -161,6 +165,10 @@ _LEAGUES = [
     {
         "sport": "nhl", "label": "CANADIENS", "fetch_status": sports_client.fetch_habs,
         "flash_color": FLASH_RED, "kickoff_label": "Puck drop",
+    },
+    {
+        "sport": "nfl", "label": "SAINTS", "fetch_status": sports_client.fetch_saints,
+        "flash_color": FLASH_GOLD, "kickoff_label": "Kickoff",
     },
 ]
 
@@ -336,7 +344,22 @@ def _nhl_scoring_plays(game_id: int) -> list[dict]:
     return out
 
 
-_SCORING_PLAY_FETCHERS = {"mlb": _mlb_scoring_plays, "nhl": _nhl_scoring_plays}
+def _nfl_scoring_plays(game_id: int) -> list[dict]:
+    """Deliberately, permanently a no-op — the Saints' own jumbotron
+    integration is a lighter tier by design (see sports_client.py's own
+    comment above NFL_TEAM_SCHEDULE_URL): there's no equally rich free
+    NFL play-by-play source the way MLB Stats API's live feed and the
+    NHL API's landing endpoint are, so no live scoring-play toasts/Govee
+    flashes for Saints games. Still needs a real entry in
+    _SCORING_PLAY_FETCHERS below (get_new_alerts calls it unconditionally
+    for every live game in _LEAGUES) — an always-empty list means that
+    loop simply never has anything to report for football, while
+    pregame/start/final alerts (which don't go through this) still
+    fire normally."""
+    return []
+
+
+_SCORING_PLAY_FETCHERS = {"mlb": _mlb_scoring_plays, "nhl": _nhl_scoring_plays, "nfl": _nfl_scoring_plays}
 
 
 def _annotate_scored_by(plays: list[dict]) -> list[dict]:
@@ -781,15 +804,21 @@ def plug_should_stay_on(takeover: dict | None) -> bool:
 def render_alert_bar(alert: dict, elapsed: float, variant: str = "a") -> None:
     """Same stretch/slide toast intro as news.render_alert_bar (see its
     own comment + theme.py's toast-*-intro keyframes) — a per-team
-    color bar (Jays blue / Habs red) carrying both team logos and the
-    score, plus the play/streak/lead-change that just happened, the
-    final result (session request: "make an end of game alert"), or a
-    pregame moment (session request: "expand the blue jays / habs toast
-    alerts... pre game stuff") instead of a plain text headline. A
-    pregame or game-start alert has no real score yet (team_score/
-    opp_score are None) — shown as just the two logos, no score chip,
-    rather than a misleading "0–0"."""
-    bar_class = "sports-alert-bar-mlb" if alert["sport"] == "mlb" else "sports-alert-bar-nhl"
+    color bar (Jays blue / Habs red / Saints gold) carrying both team
+    logos and the score, plus the play/streak/lead-change that just
+    happened, the final result (session request: "make an end of game
+    alert"), or a pregame moment (session request: "expand the blue
+    jays / habs toast alerts... pre game stuff") instead of a plain
+    text headline. A pregame or game-start alert has no real score yet
+    (team_score/opp_score are None) — shown as just the two logos, no
+    score chip, rather than a misleading "0–0".
+
+    `bar_class` built from `alert["sport"]` directly (not a hardcoded
+    mlb/nhl binary, which is what this was before the Saints) — needs
+    a matching `.sports-alert-bar-{sport}` rule in theme.py for every
+    sport in _LEAGUES, same convention `.jumbo-hero-{sport}`/
+    `.game-countdown-{sport}` already use elsewhere."""
+    bar_class = f"sports-alert-bar-{alert['sport']}"
     delay = f"animation-delay: -{elapsed:.2f}s;"
     description = html.escape(alert["description"])
     suffix = {"final": "FINAL", "streak": "STREAK", "pregame": "PREGAME", "start": "LIVE", "lead_change": "LEAD CHANGE"}.get(

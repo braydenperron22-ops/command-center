@@ -715,7 +715,7 @@ html, body, [class*="css"] {
    Habs red (session request: "make it red i guess," same red the
    breaking-news bar already uses since that's genuinely the Canadiens'
    own color too). */
-.sports-alert-bar-mlb, .sports-alert-bar-nhl {
+.sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl {
     position: fixed;
     left: 0;
     right: 0;
@@ -735,6 +735,13 @@ html, body, [class*="css"] {
 .sports-alert-bar-nhl {
     background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
     box-shadow: 0 -4px 24px rgba(179,20,20,0.35);
+}
+/* Saints' own gold — real team color (ESPN's #d3bc8d), not the fixed
+   FLASH_BLUE/FLASH_RED shared by every other team's non-opponent
+   scoring play, since this one already IS a genuine team color. */
+.sports-alert-bar-nfl {
+    background: linear-gradient(90deg, #7a6a3f 0%, #b3993f 50%, #7a6a3f 100%);
+    box-shadow: 0 -4px 24px rgba(179,153,63,0.35);
 }
 .sports-alert-score {
     display: flex;
@@ -2037,6 +2044,10 @@ html, body, [class*="css"] {
     color: #FF5A5F;
     text-shadow: 0 0 22px rgba(255,90,95,0.4);
 }
+.game-countdown-nfl {
+    color: #D3BC8D;
+    text-shadow: 0 0 22px rgba(211,188,141,0.4);
+}
 
 /* Small, deliberately unobtrusive — session request: "a little ai
    usage bar... in a small space on the dashboard probs like bottom
@@ -2425,6 +2436,7 @@ html, body, [class*="css"] {
 }
 .jumbo-hero-nhl { --tc: #D8323F; }
 .jumbo-hero-mlb { --tc: #3E7CC9; }
+.jumbo-hero-nfl { --tc: #D3BC8D; }
 .jumbo-hero-head { display: flex; align-items: center; gap: 14px; }
 .jumbo-hero-head img { width: 58px; height: 58px; object-fit: contain; flex: 0 0 auto; }
 .jumbo-hero-id { min-width: 0; white-space: nowrap; }
@@ -3401,7 +3413,7 @@ html, body, [class*="css"] {
         padding: 0.6rem 1rem;
     }
     .news-alert-bar, .news-alert-bar-market, .commute-alert-bar,
-    .sports-alert-bar-mlb, .sports-alert-bar-nhl {
+    .sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl {
         padding: 0.7rem 1rem;
     }
     .news-alert-headline, .top-alert-headline { font-size: 0.95rem; }

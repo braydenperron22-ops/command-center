@@ -61,6 +61,53 @@ _NHL_LOGO_URL = "https://assets.nhle.com/logos/nhl/svg/{abbrev}_light.svg"
 def _nhl_logo_url(abbrev: str) -> str:
     return _NHL_LOGO_URL.format(abbrev=abbrev)
 
+
+# Session request: "add the new orleans saints as a team in our
+# jumbotron... Saints should have the lowest gameday priority." No free
+# "team schedule" API exists for the Saints the way MLB Stats API/NHL's
+# own API give the other two teams, so this uses ESPN's free public
+# scoreboard/team endpoints instead — already this app's own source for
+# scores_client.py's league-wide rotation, just narrowed to one team's
+# schedule here. Lighter-weight than the Jays/Habs integration on
+# purpose (session decision after being asked "isnt that just like the
+# habs/jays board" — no): no live play-by-play/scoring-play detection,
+# since there's no equally rich free NFL play-by-play source the way
+# MLB Stats API's live feed and the NHL API's landing endpoint are —
+# see sports_alerts.py's own _nfl_scoring_plays for where that's a
+# deliberate, permanent no-op rather than a gap to fill in later.
+NFL_TEAM_SCHEDULE_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{team_id}/schedule"
+NFL_STANDINGS_URL = "https://site.api.espn.com/apis/v2/sports/football/nfl/standings"
+NFL_TEAM_ID = 18  # New Orleans Saints
+NFL_TEAM_NAME = "New Orleans Saints"  # see MLB_TEAM_NAME's own comment above for why this exists
+NFL_TEAM_ABBR = "NO"
+NFL_DIVISION_NAME = "NFC South"
+# ESPN's schedule/standings responses carry no "division" field per team
+# (confirmed live) — divisions are static league structure that doesn't
+# change season to season, same reasoning MLB_DIVISION_NAMES elsewhere
+# in this file is hand-filled for the same gap in MLB's own standings
+# payload. All 8 divisions defined here (not just the Saints' own NFC
+# South) since fetch_all_nfl_standings() needs the full breakdown for
+# its own rotation anyway — one shared source rather than two.
+NFL_DIVISIONS = {
+    "AFC East": {2, 15, 17, 20},  # Bills, Dolphins, Patriots, Jets
+    "AFC North": {33, 4, 5, 23},  # Ravens, Bengals, Browns, Steelers
+    "AFC South": {34, 11, 30, 10},  # Texans, Colts, Jaguars, Titans
+    "AFC West": {7, 12, 13, 24},  # Broncos, Chiefs, Raiders, Chargers
+    "NFC East": {6, 19, 21, 28},  # Cowboys, Giants, Eagles, Commanders
+    "NFC North": {3, 8, 9, 16},  # Bears, Lions, Packers, Vikings
+    "NFC South": {1, 29, 18, 27},  # Falcons, Panthers, Saints, Buccaneers
+    "NFC West": {22, 14, 25, 26},  # Cardinals, Rams, 49ers, Seahawks
+}
+NFL_DIVISION_ORDER = ["AFC East", "AFC North", "AFC South", "AFC West", "NFC East", "NFC North", "NFC South", "NFC West"]
+# ESPN's own static logo CDN, keyed by lowercase team abbreviation —
+# confirmed live this returns a real PNG for every team abbreviation
+# tried, same "no API call needed" shape as MLB/NHL's own logo URLs above.
+_NFL_LOGO_URL = "https://a.espncdn.com/i/teamlogos/nfl/500/{abbrev}.png"
+
+
+def _nfl_logo_url(abbrev: str) -> str:
+    return _NFL_LOGO_URL.format(abbrev=abbrev.lower())
+
 SEASON_WINDOW_DAYS = 10  # no games at all in this wide a window either side of now => offseason
 # MLB's own schedule endpoint needs an explicit date range (unlike
 # NHL's club-schedule-season/now, which already returns the whole
@@ -111,6 +158,8 @@ _last_good_mlb_standings: list[dict] | None = None
 _last_good_mlb_wildcard: dict | None = None
 _last_good_nhl_games: list[dict] | None = None
 _last_good_nhl_standings: list[dict] | None = None
+_last_good_nfl_games: list[dict] | None = None
+_last_good_nfl_standings: list[dict] | None = None
 # {buffer_key: [(fetched_at, payload), ...]}, oldest first — backs
 # _delayed() below. Plain module state like _last_good_* above rather
 # than session_state: this is about trailing the real-world event by a
@@ -580,6 +629,187 @@ def fetch_all_nhl_standings() -> list[dict]:
             for t in group
         ]
         out.append({"league": "NHL", "division_name": group[0].get("divisionName") or abbrev, "rows": rows})
+    return out
+
+
+def _normalize_nfl_game(e: dict) -> dict:
+    comp = e["competitions"][0]
+    home = next(c for c in comp["competitors"] if c["homeAway"] == "home")
+    away = next(c for c in comp["competitors"] if c["homeAway"] == "away")
+    is_home = home["team"]["id"] == str(NFL_TEAM_ID)
+    us, opp = (home, away) if is_home else (away, home)
+    state = {"pre": "upcoming", "in": "live", "post": "final"}.get(comp["status"]["type"]["state"], "upcoming")
+
+    def score(competitor: dict) -> int | None:
+        if state == "upcoming":
+            return None
+        raw = competitor.get("score")
+        # ESPN's own score field has been a bare string in every
+        # response checked live ("24", not 24) — cast defensively
+        # rather than assume, since a string would silently break
+        # every W/L and score comparison downstream (_recent_form,
+        # the "W"/"L" final-result check) via lexicographic rather
+        # than numeric comparison.
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+
+    return {
+        "game_id": e["id"],
+        "opponent": opp["team"]["displayName"],
+        "opponent_logo": _nfl_logo_url(opp["team"]["abbreviation"]),
+        "is_home": is_home,
+        "team_score": score(us),
+        "opp_score": score(opp),
+        "state": state,
+        "start_time": _to_local(e["date"]),
+    }
+
+
+@st.cache_data(ttl=GAME_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_nfl_games_raw() -> list[dict]:
+    fetch_throttle.wait_turn()
+    resp = requests.get(NFL_TEAM_SCHEDULE_URL.format(team_id=NFL_TEAM_ID), timeout=10)
+    resp.raise_for_status()
+    # Confirmed live: this endpoint's default response only ever
+    # contains Regular Season events (seasonType.type == 2) — no
+    # preseason mixed in the way MLB/NHL's own raw schedules need
+    # filtering for, so nothing further to exclude here. Real
+    # limitation, not yet resolved: postseason (playoff) games haven't
+    # been confirmed to appear here either, since ESPN's own
+    # query-parameter convention for that wasn't chased down for this
+    # lighter-tier integration — see this module's own comment above
+    # NFL_TEAM_SCHEDULE_URL.
+    return resp.json().get("events", [])
+
+
+def _fetch_nfl_games() -> list[dict] | None:
+    global _last_good_nfl_games
+    try:
+        result = _fetch_nfl_games_raw()
+    except Exception:
+        return _last_good_nfl_games
+    _last_good_nfl_games = result
+    data_health.record_success("sports_schedule")
+    return result
+
+
+def _nfl_stat(entry: dict, name: str) -> str | None:
+    for s in entry.get("stats", []):
+        if s.get("name") == name:
+            return s.get("displayValue")
+    return None
+
+
+@st.cache_data(ttl=STANDINGS_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_nfl_standings_raw_all() -> list[dict]:
+    """Every NFL team, both conferences, one request — the Saints' own
+    NFC South view and fetch_all_nfl_standings()'s full-league rotation
+    both filter from this single shared call. No "division" field per
+    entry (see NFL_DIVISIONS' own comment) and no ready-made division
+    rank stat either (unlike MLB's divisionRank) — rank is computed
+    here by win percentage instead (see _nfl_division_rows)."""
+    fetch_throttle.wait_turn()
+    resp = requests.get(NFL_STANDINGS_URL, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    teams = []
+    for conf in data.get("children", []):
+        teams.extend(conf.get("standings", {}).get("entries", []))
+    return teams
+
+
+def _fetch_nfl_standings() -> list[dict] | None:
+    global _last_good_nfl_standings
+    try:
+        result = _fetch_nfl_standings_raw_all()
+    except Exception:
+        return _last_good_nfl_standings
+    _last_good_nfl_standings = result
+    return result
+
+
+def _nfl_division_rows(entries: list[dict], team_ids: set) -> list[dict]:
+    """{"rank","team","wins","losses","extra","is_team","logo"} rows for
+    one division's worth of standings entries, ranked by win percentage
+    (no ready-made division-rank stat in ESPN's own payload — see
+    _fetch_nfl_standings_raw_all's own comment)."""
+
+    def win_pct(e: dict) -> float:
+        try:
+            return float(_nfl_stat(e, "winPercent") or 0)
+        except ValueError:
+            return 0.0
+
+    division = sorted((e for e in entries if int(e["team"]["id"]) in team_ids), key=win_pct, reverse=True)
+    rows = []
+    for i, e in enumerate(division):
+        team = e["team"]
+        try:
+            wins = int(float(_nfl_stat(e, "wins") or 0))
+            losses = int(float(_nfl_stat(e, "losses") or 0))
+        except ValueError:
+            wins, losses = 0, 0
+        ties = _nfl_stat(e, "ties") or "0"
+        extra = f"{ties} T" if ties not in ("0", "0.0", None) else "-"
+        rows.append(
+            {
+                "rank": i + 1,
+                "team": team["displayName"],
+                "wins": wins,
+                "losses": losses,
+                "extra": extra,
+                "is_team": int(team["id"]) == NFL_TEAM_ID,
+                "logo": _nfl_logo_url(team["abbreviation"]),
+            }
+        )
+    return rows
+
+
+def fetch_saints() -> dict | None:
+    """Same shape as fetch_jays()/fetch_habs() — None entirely outside
+    the NFL season. "wildcard" is always None here — NFL's own playoff-
+    seed math is a genuinely separate, more involved calculation than
+    MLB/NHL's own wild-card context, and this is deliberately the
+    lighter-weight integration (see this module's own comment above
+    NFL_TEAM_SCHEDULE_URL)."""
+    now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
+    raw_games = _fetch_nfl_games()
+    if raw_games is None:
+        return None
+    in_window = [g for g in raw_games if abs((_to_local(g["date"]) - now).total_seconds()) <= SEASON_WINDOW_DAYS * 86400]
+    if not in_window:
+        return None
+
+    normalized = [_normalize_nfl_game(g) for g in raw_games]
+    game = _pick_current_game(normalized, now)
+
+    all_teams = _fetch_nfl_standings() or []
+    return {
+        "game": game,
+        "standings": _nfl_division_rows(all_teams, NFL_DIVISIONS[NFL_DIVISION_NAME]),
+        "division_name": NFL_DIVISION_NAME,
+        "wildcard": None,
+        "team_logo": _nfl_logo_url(NFL_TEAM_ABBR),
+        "recent_form": _recent_form(normalized, now),
+    }
+
+
+def fetch_all_nfl_standings() -> list[dict]:
+    """[{"league": "NFL", "division_name", "rows": [...]}, ...] for every
+    NFL division — same session request and same row shape as
+    fetch_all_mlb_standings()/fetch_all_nhl_standings() above. []
+    only if the standings request itself fails outright."""
+    try:
+        all_teams = _fetch_nfl_standings_raw_all()
+    except Exception:
+        return []
+    out = []
+    for division_name in NFL_DIVISION_ORDER:
+        rows = _nfl_division_rows(all_teams, NFL_DIVISIONS[division_name])
+        if rows:
+            out.append({"league": "NFL", "division_name": division_name, "rows": rows})
     return out
 
 

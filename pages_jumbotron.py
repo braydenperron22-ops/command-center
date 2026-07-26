@@ -32,11 +32,14 @@ import sports_alerts
 import sports_client
 from config import TIMEZONE
 
-# Both teams always appear in the My Teams rail, Habs first — the same
-# priority order the toast queue and countdown headlines use.
+# All three teams always appear in the My Teams rail, in the same
+# priority order the toast queue and countdown headlines use — session
+# request adding the Saints: "habs -> jays -> saints," lowest priority
+# last (see sports_alerts.COUNTDOWN_PRIORITY, same ordering).
 _RAIL = [
     {"sport": "nhl", "label": "CANADIENS", "fetch_status": sports_client.fetch_habs, "kickoff": "TO PUCK DROP"},
     {"sport": "mlb", "label": "BLUE JAYS", "fetch_status": sports_client.fetch_jays, "kickoff": "TO FIRST PITCH"},
+    {"sport": "nfl", "label": "SAINTS", "fetch_status": sports_client.fetch_saints, "kickoff": "TO KICKOFF"},
 ]
 # Around-the-leagues rail: session feedback — a real MLB slate is
 # regularly 12-15 games, and capping to a handful was silently hiding
@@ -232,8 +235,52 @@ def _nhl_situation_html(game_id: int) -> str:
     return f'<div class="jumbo-situ">{"".join(parts)}</div>' if parts else ""
 
 
-_TEAM_ESPN_NAME = {"mlb": sports_client.MLB_TEAM_NAME, "nhl": sports_client.NHL_TEAM_NAME}
-_TEAM_COLOR = {"mlb": "#3E7CC9", "nhl": "#D8323F"}  # matches the rail hero's own --tc values
+_NFL_ORDINALS = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
+
+
+def _nfl_situation_html(match: dict | None) -> str:
+    """Quarter + game clock, plus down & distance when ESPN's own
+    "situation" field carries it — lighter than the MLB/NHL situation
+    strips above (no dedicated live-detail endpoint built for the
+    Saints, see sports_client.py's own comment above
+    NFL_TEAM_SCHEDULE_URL for why), built from the same ESPN
+    competition object _win_probability_html/_top_performers_html
+    already fetch via _espn_match_for, so this costs nothing extra.
+    Best-effort: down/distance field names/shapes haven't been
+    confirmed against a real live game yet — this was built during the
+    NFL offseason with no live game to check the actual payload
+    against — so every field is read defensively rather than trusted,
+    same "never crash on an unexpected shape" posture the rest of this
+    module already uses for genuinely verified data."""
+    if not match:
+        return ""
+    status = match.get("status") or {}
+    period = status.get("period")
+    clock = status.get("displayClock")
+    parts = []
+    if isinstance(period, int) and period > 0:
+        label = f"{_NFL_ORDINALS.get(period, f'{period}th')} QUARTER" if period <= 4 else "OVERTIME"
+        parts.append(f'<span class="jumbo-situ-hot">{html.escape(label)}</span>')
+    if clock:
+        parts.append(f'<span class="jumbo-clockbig">{html.escape(str(clock))}</span>')
+    situation = match.get("situation") or {}
+    down, distance = situation.get("down"), situation.get("distance")
+    if isinstance(down, int) and isinstance(distance, int) and 1 <= down <= 4:
+        down_text = f"{_NFL_ORDINALS.get(down, f'{down}th')} & {distance}"
+        parts.append(f'<span class="jumbo-situ-count">{html.escape(down_text)}</span>')
+    return f'<div class="jumbo-situ">{"".join(parts)}</div>' if parts else ""
+
+
+_TEAM_ESPN_NAME = {
+    "mlb": sports_client.MLB_TEAM_NAME,
+    "nhl": sports_client.NHL_TEAM_NAME,
+    "nfl": sports_client.NFL_TEAM_NAME,
+}
+_TEAM_COLOR = {"mlb": "#3E7CC9", "nhl": "#D8323F", "nfl": "#D3BC8D"}  # matches the rail hero's own --tc values
+# Pregame situation-strip label, per sport — was a hardcoded "FIRST
+# PITCH"/"PUCK DROP" binary ternary before the Saints, which would have
+# wrongly shown "PUCK DROP" for a football game.
+_PREGAME_SITUATION_LABEL = {"mlb": "FIRST PITCH", "nhl": "PUCK DROP", "nfl": "KICKOFF"}
 
 
 def _espn_match_for(sport: str, game: dict) -> dict | None:
@@ -253,7 +300,11 @@ def _pregame_extra_html(sport: str, game_id: int) -> str:
     just the arena name (NHL — no probable-goalie field, and every
     rink is indoor) — session request, all from data already fetched
     elsewhere in this app (see sports_client.fetch_mlb_pregame_extra/
-    fetch_nhl_venue's own docstrings)."""
+    fetch_nhl_venue's own docstrings). "" for NFL — no equivalent venue/
+    weather fetch built for the Saints' own lighter-tier integration
+    (see sports_client.py's own comment on why); was falling through to
+    the NHL branch unconditionally before this got an explicit check,
+    which would have called fetch_nhl_venue for a football game."""
     if sport == "mlb":
         extra = sports_client.fetch_mlb_pregame_extra(game_id)
         if not extra:
@@ -272,8 +323,10 @@ def _pregame_extra_html(sport: str, game_id: int) -> str:
             probables.append("</div>")
             parts.append("".join(probables))
         return "".join(parts)
-    venue = sports_client.fetch_nhl_venue(game_id)
-    return f'<div class="jumbo-pregame-venue">{html.escape(venue)}</div>' if venue else ""
+    if sport == "nhl":
+        venue = sports_client.fetch_nhl_venue(game_id)
+        return f'<div class="jumbo-pregame-venue">{html.escape(venue)}</div>' if venue else ""
+    return ""
 
 
 def _win_probability_html(sport: str, match: dict | None, away: dict, home: dict) -> str:
@@ -740,7 +793,8 @@ def _board_html(state: dict, now: datetime) -> str:
             f'<div class="jumbo-cd-label">{html.escape(kickoff)}</div></div>'
         )
         start_text = game["start_time"].strftime("%-I:%M %p")
-        situation = f'<div class="jumbo-situ"><span class="jumbo-situ-hot">FIRST PITCH {html.escape(start_text)}</span></div>' if sport == "mlb" else f'<div class="jumbo-situ"><span class="jumbo-situ-hot">PUCK DROP {html.escape(start_text)}</span></div>'
+        start_label = _PREGAME_SITUATION_LABEL.get(sport, "START")
+        situation = f'<div class="jumbo-situ"><span class="jumbo-situ-hot">{html.escape(start_label)} {html.escape(start_text)}</span></div>'
         situation += _pregame_extra_html(sport, game["game_id"])
         wp_html = ""
         dim_away = dim_home = False
@@ -757,8 +811,11 @@ def _board_html(state: dict, now: datetime) -> str:
         # situation below and carry the real live score too — this call
         # is the same cached one _mlb_situation_html/_nhl_situation_html
         # make right after, so it's not an extra request, just used here
-        # first.
-        if phase == "live":
+        # first. No equivalent live-detail endpoint exists for the
+        # Saints (see sports_client.py's own comment on why) — NFL just
+        # keeps the schedule-level score, a 5-minute-stale worst case
+        # rather than the sub-5s one MLB/NHL get.
+        if phase == "live" and sport in ("mlb", "nhl"):
             live_detail = (
                 sports_client.fetch_mlb_live_detail(game["game_id"])
                 if sport == "mlb"
@@ -800,7 +857,12 @@ def _board_html(state: dict, now: datetime) -> str:
             f"</div>{final_badge}</div>"
         )
         if phase == "live":
-            situation = _mlb_situation_html(game["game_id"]) if sport == "mlb" else _nhl_situation_html(game["game_id"])
+            if sport == "mlb":
+                situation = _mlb_situation_html(game["game_id"])
+            elif sport == "nhl":
+                situation = _nhl_situation_html(game["game_id"])
+            else:
+                situation = _nfl_situation_html(match)
         else:
             situation = ""
         wp_html = _win_probability_html(sport, match, away, home) if phase == "live" else ""
@@ -868,15 +930,24 @@ def _standings_rows_html(rows: list[dict]) -> str:
 def _rotating_standings_html(now_ts: float) -> str:
     """Bottom-left rotating division standings — session request: "make
     the standings rotate between all divisions and all leagues so i can
-    get a full deep dive on sports while in game mode." Every MLB and
-    NHL division (sports_client.fetch_all_mlb_standings/
-    fetch_all_nhl_standings — the Jays' and Habs' own team-specific
-    fetches underneath _RAIL are unrelated and keep the "My Teams" rail
-    unchanged), not just the two divisions the Jays/Habs themselves sit
-    in. NHL divisions still show even in the Habs' own offseason — see
+    get a full deep dive on sports while in game mode." Every MLB, NHL,
+    and NFL division (sports_client.fetch_all_mlb_standings/
+    fetch_all_nhl_standings/fetch_all_nfl_standings — the Jays'/Habs'/
+    Saints' own team-specific fetches underneath _RAIL are unrelated
+    and keep the "My Teams" rail unchanged), not just the three
+    divisions those teams themselves sit in. NHL/NFL divisions still
+    show even in the Habs'/Saints' own offseason — see
     fetch_all_nhl_standings's own docstring for why that's a deliberate
-    choice rather than an oversight."""
-    candidates = sports_client.fetch_all_mlb_standings() + sports_client.fetch_all_nhl_standings()
+    choice rather than an oversight; the same reasoning applies to NFL.
+    Session request adding the Saints: "NFL as a whole... league-wide
+    NFL scores" — this is the standings half of that; the Around The
+    Leagues panel (_around_html below) already covers the scores half,
+    unchanged, since NFL was already in its own _AROUND_LEAGUES list."""
+    candidates = (
+        sports_client.fetch_all_mlb_standings()
+        + sports_client.fetch_all_nhl_standings()
+        + sports_client.fetch_all_nfl_standings()
+    )
     if not candidates:
         return ""
 
