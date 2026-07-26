@@ -47,13 +47,15 @@ session request: "Meta is losing the AI race... is there a better...
 option through Grok" — openai/gpt-oss-120b, OpenAI's own open-weight
 model hosted on Groq, confirmed live to write noticeably more decisive
 overviews than both Llama and Gemini on this exact prompt. It's a
-REASONING model (see GPT_OSS_MODEL's own comment for the practical
-consequences of that — it needed real, deliberately-computed token
-headroom to actually finish instead of silently returning nothing).
-Still goes through groq_client's full primary -> failsafe -> gemini
-fallback chain (see groq_client.generate's own docstring) — a bad day
-on both Groq accounts degrades to Gemini's own model instead, not to
-nothing, since that's still meaningfully better than the empty state.
+REASONING model (see groq_client.GPT_OSS_MODEL's own comment for the
+practical consequences of that — it needed real, deliberately-computed
+token headroom to actually finish instead of silently returning
+nothing). Routed through its own dedicated Groq account (see
+groq_client's _MODEL_ACCOUNT — a separate account from the one Llama
+uses, not a shared pair to fall back between), falling to Gemini's own
+model if that account fails — a bad day on it degrades to Gemini
+instead of nothing, since that's still meaningfully better than the
+empty state.
 
 No keyword fallback if the AI call fails (unlike news.py, which keeps
 its old keyword pipeline as a safety net) — that fallback is exactly
@@ -112,7 +114,11 @@ HEADLINES_FED_TO_AI = 100
 # fixed number, so it scales down automatically on a heavy headline
 # day and up on a light one, always leaving real room for both
 # reasoning and the answer under the real ceiling.
-GPT_OSS_MODEL = "openai/gpt-oss-120b"
+# The model string itself now lives in groq_client.py (GPT_OSS_MODEL)
+# — it needs it regardless to route a gpt-oss call to its own
+# dedicated account (see that module's docstring: "primary" only runs
+# Llama, a separate account is dedicated to this one). Referenced from
+# there instead of kept as a second copy here.
 GPT_OSS_TPM_LIMIT = 8_000
 GPT_OSS_SAFETY_MARGIN = 700  # slack for the input-token estimate being a rough len(prompt)//4, not an exact tokenization
 GPT_OSS_MIN_OUTPUT_TOKENS = 1_500  # floor — below this there isn't real room to both reason and write a useful answer
@@ -240,7 +246,7 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
         prompt,
         temperature=0.2,
         max_output_tokens=max_output_tokens,
-        model=GPT_OSS_MODEL,
+        model=groq_client.GPT_OSS_MODEL,
         # Explicit, not just relying on Groq's own default (also
         # "medium") — this was a real, considered choice, not an
         # oversight. Session request: "make sure GPT doesn't run out of

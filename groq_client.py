@@ -40,21 +40,30 @@ app's control), so the daily budget is the actual guarantee; the pause
 window and slower cadences just keep usage smooth across the day
 instead of front-loaded.
 
-generate() now tries two independent Groq accounts before giving up —
-see GROQ_ACCOUNTS ("primary" then "failsafe", each its own real key and
-its own real 100k/day quota, tracked as two separate rolling ledgers).
-Session request: "what if i use my burner gmail account to make a
-second unrelated groq key that acts as our failsafe, same exact
-instructions same model no hiccups." Only after both are exhausted does
-it fall back to gemini_client (same public interface by design — see
-that module's own docstring). Session request: "can we handoff and
-delegate to a shittier model elsewhere when we hit the quota."
+Two genuinely separate Groq accounts (see GROQ_ACCOUNTS), each its own
+real key and its own real 100k/day quota — but NOT a redundant pair
+anymore. Originally built as "primary" plus a same-model "failsafe" for
+when primary got rate limited (session request: "what if i use my
+burner gmail account to make a second unrelated groq key that acts as
+our failsafe, same exact instructions same model no hiccups"). Session
+correction once this app started routing different features to
+genuinely different models: "we don't have a failsafe anymore... one
+API key is connected to Llama, the other one is connected to ChatGPT
+[openai/gpt-oss-120b]... they all serve different purposes." Each
+account is now DEDICATED to exactly one model (see _MODEL_ACCOUNT) —
+"primary" only ever runs Llama (news.py), "chatgpt" only ever runs
+gpt-oss-120b (pages_conflicts.py). Neither one is a backup for the
+other: if a model's own dedicated account fails, generate() falls
+straight through to gemini_client (same public interface by design —
+see that module's own docstring), never to the OTHER Groq account.
+Session request behind that fallback existing at all: "can we handoff
+and delegate to a shittier model elsewhere when we hit the quota."
 Deliberately NOT triggered by the overnight pause — that's checked once
-up front and short-circuits before either Groq account or gemini_client
-is even tried, since the pause is a chosen quiet period to conserve
-budget, not a capacity problem to route around; a real None during
-those hours, not a shifted call. Gemini has no equivalent daily-budget
-guard of its own here — a full day of both Groq accounts being
+up front and short-circuits before either Groq or gemini_client is even
+tried, since the pause is a chosen quiet period to conserve budget, not
+a capacity problem to route around; a real None during those hours,
+not a shifted call. Gemini has no equivalent daily-budget guard of its
+own here — a full day of a model's dedicated Groq account being
 genuinely exhausted would mean every one of those calls lands on
 Gemini's quota instead, which could exhaust that too. Acceptable for
 now since the failure mode is still graceful either way (a caller never
@@ -77,6 +86,13 @@ import persisted_state
 from config import TIMEZONE, WEATHER_LAT, WEATHER_LON
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
+# OpenAI's open-weight model, hosted on Groq — pages_conflicts.py's own
+# reasoning model (see its docstring for why). Defined here, not there,
+# now that it has its own dedicated account (see _MODEL_ACCOUNT below):
+# this module needs the string regardless to route a gpt-oss call to
+# the right account, so pages_conflicts.py imports this one instead of
+# keeping its own separate copy.
+GPT_OSS_MODEL = "openai/gpt-oss-120b"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 REQUEST_TIMEOUT_SECONDS = 20  # generous enough for a long structured response (see max_output_tokens); short calls finish well under this anyway
 # Groq's free tier is far less tight than Gemini's turned out to be in
@@ -130,17 +146,23 @@ def _first_last_light(day: datetime.date) -> tuple[datetime.datetime, datetime.d
     s = sun(_LOCATION.observer, date=day, tzinfo=ZoneInfo(TIMEZONE))
     return s["dawn"].replace(tzinfo=None), s["dusk"].replace(tzinfo=None)
 
-# Two genuinely separate Groq accounts, tried in order — session
-# request: "what if i use my burner gmail account to make a second
-# unrelated groq key that acts as our failsafe, same exact
-# instructions same model no hiccups... small risk small reward." Each
-# has its own real 100k/day quota, so each gets its own independent
-# rolling ledger below — "primary" being exhausted says nothing about
-# "failsafe"'s own budget. Tried before gemini_client since same-model
-# Groq output is the real thing, not a step down in quality the way
-# Gemini is.
-GROQ_ACCOUNTS = ("primary", "failsafe")
-_GROQ_SECRET_NAMES = {"primary": "GROQ_API_KEY", "failsafe": "GROQ_API_KEY_FAILSAFE"}
+# Two genuinely separate Groq accounts — no longer a redundant pair
+# (see this module's own docstring for how that changed). Each has its
+# own real 100k/day quota, so each gets its own independent rolling
+# ledger below, and each is DEDICATED to exactly one model: "primary"
+# only ever runs GROQ_MODEL (Llama), "chatgpt" only ever runs
+# GPT_OSS_MODEL. The secret name for the second account is unchanged
+# (still the same real key/account this app has always had — session
+# confirmed live it still exists, it just isn't Llama's backup anymore)
+# even though its role/label is.
+GROQ_ACCOUNTS = ("primary", "chatgpt")
+_GROQ_SECRET_NAMES = {"primary": "GROQ_API_KEY", "chatgpt": "GROQ_API_KEY_FAILSAFE"}
+# model -> the one Groq account dedicated to it — generate() looks this
+# up and only ever tries that single account before falling to Gemini,
+# never the other one. A model with no entry here (there isn't one
+# currently) skips the Groq attempt entirely and goes straight to
+# Gemini.
+_MODEL_ACCOUNT = {GROQ_MODEL: "primary", GPT_OSS_MODEL: "chatgpt"}
 # account -> list of mutable [timestamp, tokens] pairs for that
 # account's own real calls — a list, not a tuple, so _reconcile_budget
 # can update a call's token count in place once the real usage is
@@ -240,7 +262,7 @@ def _reconcile_budget(entry: list, actual_tokens: int | None) -> None:
 # other statuses it may have."
 _last_served_by = "not_attempted"
 
-# model -> {"ok": bool, "via": "primary"|"failsafe"|None} for the last
+# model -> {"ok": bool, "via": "primary"|"chatgpt"|None} for the last
 # real attempt on that specific model, across every caller — session
 # request, now that this app routes different features to genuinely
 # different models (news.py's default llama-3.3-70b-versatile,
@@ -254,17 +276,13 @@ _last_served_by = "not_attempted"
 _model_status: dict[str, dict] = {}
 
 # Display names + fixed slot order for the badge (ai_status_by_model).
-# Coupled to pages_conflicts.GPT_OSS_MODEL's actual string value by
-# convention, not by import (that module already imports this one;
-# importing back would be circular) — if that constant's model ever
-# changes, update the key here too. Fixed rather than "whatever's been
-# attempted so far this process" so the badge doesn't grow/shrink or
-# reorder itself as different features' own cadences happen to fire —
-# GPT-OSS in particular only runs once a day, so "only show what's
-# been attempted" would leave it missing from the badge most of the
-# time.
-MODEL_DISPLAY_NAMES = {GROQ_MODEL: "Llama", "openai/gpt-oss-120b": "GPT-OSS"}
-_MODEL_SLOTS = [GROQ_MODEL, "openai/gpt-oss-120b"]
+# Fixed rather than "whatever's been attempted so far this process" so
+# the badge doesn't grow/shrink or reorder itself as different
+# features' own cadences happen to fire — GPT-OSS in particular only
+# runs once a day, so "only show what's been attempted" would leave it
+# missing from the badge most of the time.
+MODEL_DISPLAY_NAMES = {GROQ_MODEL: "Llama", GPT_OSS_MODEL: "GPT-OSS"}
+_MODEL_SLOTS = [GROQ_MODEL, GPT_OSS_MODEL]
 
 
 def ai_status() -> dict:
@@ -278,28 +296,31 @@ def ai_status() -> dict:
     - "Asleep" (neutral): the overnight pause window — deliberately not
       attempting anything, not a failure.
     - "Rate Limited" (low): the most recent real attempt failed on
-      every tier — primary, failsafe, AND gemini. Nothing is currently
-      getting through.
-    - "On Failsafe" / "On Gemini" (medium): primary's most recent real
-      attempt failed, but a fallback tier covered it — output is still
-      flowing, just not from the primary account.
+      every tier available to it. Nothing is currently getting through.
+    - "On Gemini" (medium): a model's own dedicated Groq account just
+      failed, but Gemini covered it — output is still flowing, just
+      not from Groq.
     - "Low" (medium): primary's own rolling budget has under 20%
       remaining, even though its last real attempt succeeded (or
       nothing's been attempted yet this process) — a heads-up that
       Rate Limited may be coming.
-    - "Active" (good): primary healthy, most recent attempt (if any)
-      succeeded on primary."""
+    - "Active" (good): the most recent real attempt succeeded on its
+      own dedicated Groq account — "primary" (Llama) or "chatgpt"
+      (GPT-OSS) both count; neither is a fallback for the other
+      anymore (see this module's own docstring), so there's no
+      degraded-but-working state to call out separately between them
+      the way "On Failsafe" used to."""
     now = _local_now()
     if _in_pause_window(now):
         return {"label": "Asleep", "tone": "neutral"}
     if _last_served_by == "none":
         return {"label": "Rate Limited", "tone": "low"}
-    if _last_served_by == "failsafe":
-        return {"label": "On Failsafe", "tone": "medium"}
     if _last_served_by == "gemini":
         return {"label": "On Gemini", "tone": "medium"}
-    # _last_served_by is "primary" or "not_attempted" — primary's own
-    # remaining budget still decides between a Low warning and Active.
+    # _last_served_by is "primary", "chatgpt", or "not_attempted" —
+    # primary's own remaining budget still decides between a Low
+    # warning and Active, since that's the high-frequency feature
+    # (news.py) this system-wide badge is really watching.
     used = max(0, min(_rolling_used("primary", now.timestamp()), DAILY_TOKEN_BUDGET))
     remaining_pct = 100.0 * (DAILY_TOKEN_BUDGET - used) / DAILY_TOKEN_BUDGET
     if remaining_pct < 20:
@@ -327,17 +348,18 @@ def ai_status_by_model() -> list[dict]:
       process — a fresh redeploy, or, for GPT-OSS specifically given
       its once-a-day cadence, simply hasn't been that model's turn yet
       today. Not a failure, just nothing observed.
-    - "Rate Limited" (low): primary failed on its last real attempt —
-      whether or not the failsafe account then covered it. Session
-      request: "make it so when llama fails it just shows rate limited
-      instead of fail safe" — this used to split into a separate
-      "Failsafe" (medium) status when the second account picked up the
-      slack, but that read as healthier than what's actually
-      happening: primary being rate limited. Collapsing the distinction
-      trades away "is real output still flowing right now" (that part's
-      still true whenever this shows up, same as before) for a badge
-      that says plainly when primary itself is degraded.
-    - "Active" (good): last real attempt succeeded on primary."""
+    - "Rate Limited" (low): this model's own dedicated Groq account
+      (see _MODEL_ACCOUNT) failed on its last real attempt. Used to
+      also fire this whenever a shared second account covered for
+      primary — session request: "make it so when llama fails it just
+      shows rate limited instead of fail safe," since a split-out
+      "Failsafe" status read as healthier than what was actually
+      happening. That distinction is moot now anyway: each model has
+      exactly one dedicated Groq account (no shared backup between
+      them to speak of), so "not ok" here plainly means that one
+      account failed, full stop.
+    - "Active" (good): last real attempt succeeded on this model's own
+      dedicated account."""
     asleep = _in_pause_window(_local_now())
     entries = []
     for model in _MODEL_SLOTS:
@@ -348,7 +370,7 @@ def ai_status_by_model() -> list[dict]:
             entries.append({"label": label, "status": "Asleep", "tone": "neutral", "at": at})
         elif info is None:
             entries.append({"label": label, "status": "Idle", "tone": "neutral", "at": None})
-        elif not info["ok"] or info["via"] == "failsafe":
+        elif not info["ok"]:
             entries.append({"label": label, "status": "Rate Limited", "tone": "low", "at": at})
         else:
             entries.append({"label": label, "status": "Active", "tone": "good", "at": at})
@@ -461,7 +483,7 @@ def notify_if_outage() -> None:
     persisted_state.save("ai_outage", _outage_episode)
     ntfy_client.send(
         title="AI outage",
-        message=f"Primary, failsafe, and Gemini have all been failing for over {AI_OUTAGE_ALERT_AFTER_SECONDS // 60} minutes.",
+        message=f"The AI providers have all been failing for over {AI_OUTAGE_ALERT_AFTER_SECONDS // 60} minutes.",
         priority="high",
         tags="warning",
     )
@@ -590,26 +612,29 @@ def generate(
     this existed.
 
     During the overnight pause, returns None immediately without
-    attempting anything — neither Groq account nor gemini_client, since
-    the pause is a deliberate quiet period, not a capacity problem (see
-    this module's own docstring). Otherwise tries "primary", then
-    "failsafe" (see GROQ_ACCOUNTS — two genuinely separate Groq
-    accounts/quotas), then falls back to gemini_client before finally
-    giving up and returning None. Records which tier actually served
-    this call (or that none did) in _last_served_by for ai_status() —
-    left untouched during the pause itself, since that's a separate
-    status, not a failure to record."""
+    attempting anything — neither Groq nor gemini_client, since the
+    pause is a deliberate quiet period, not a capacity problem (see
+    this module's own docstring). Otherwise looks up the ONE Groq
+    account dedicated to `model` (see _MODEL_ACCOUNT — "primary" for
+    Llama, "chatgpt" for gpt-oss; NOT tried against each other, these
+    are two separate accounts for two separate purposes now), and
+    falls back to gemini_client if that account fails or if `model`
+    isn't a Groq model this app has dedicated an account to. Records
+    which tier actually served this call (or that none did) in
+    _last_served_by for ai_status() — left untouched during the pause
+    itself, since that's a separate status, not a failure to record."""
     global _last_served_by
     if _in_pause_window(_local_now()):
         return None
-    for account in GROQ_ACCOUNTS:
+    account = _MODEL_ACCOUNT.get(model)
+    if account is not None:
         try:
             result = _generate_or_raise(account, prompt, temperature, max_output_tokens, model, reasoning_effort)
             _last_served_by = account
             _model_status[model] = {"ok": True, "via": account, "at": time.time()}
             return result
         except Exception:
-            continue
+            pass
     _model_status[model] = {"ok": False, "via": None, "at": time.time()}
     result = gemini_client.generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens)
     _last_served_by = "gemini" if result is not None else "none"

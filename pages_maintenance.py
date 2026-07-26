@@ -93,13 +93,20 @@ def _ai_features_rows() -> str:
     )
 
 
+# account identifier -> display label — plain .title() renders the
+# "chatgpt" account (see groq_client._MODEL_ACCOUNT) as "Chatgpt", not
+# the name it's actually known by.
+_ACCOUNT_DISPLAY_NAMES = {"chatgpt": "ChatGPT"}
+
+
 def _budget_rows() -> str:
     rows = []
     for b in groq_client.account_budgets():
         pct_used = 100.0 - b["remaining_pct"]
         tone = "good" if b["remaining_pct"] >= 50 else "medium" if b["remaining_pct"] >= 20 else "low"
+        label = _ACCOUNT_DISPLAY_NAMES.get(b["account"], b["account"].title())
         rows.append(
-            f'<div class="maint-row"><span class="maint-row-label">{b["account"].title()}</span>'
+            f'<div class="maint-row"><span class="maint-row-label">{label}</span>'
             f'<span class="maint-row-meta">{b["used"]:,}/{b["budget"]:,} (24h)</span></div>'
             f'<div class="severity-track"><div class="severity-fill severity-fill-{tone}" '
             f'style="left:0;width:{pct_used:.0f}%;"></div></div>'
