@@ -17,6 +17,7 @@ import streamlit as st
 
 import data_health
 import fetch_throttle
+import persisted_state
 from config import TIMEZONE
 
 MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
@@ -147,8 +148,7 @@ LIVE_DETAIL_CACHE_TTL_SECONDS = 5
 # Broadcast lag isn't constant (cable vs. streaming, mid-game provider
 # hiccups), so this is only the starting point — the jumbotron's own
 # delay stepper (pages_jumbotron.render) lets it be tuned mid-game via
-# st.session_state["jumbotron_live_delay_seconds"], read in _delayed
-# below.
+# get_live_delay_seconds()/set_live_delay_seconds() below.
 DEFAULT_LIVE_DATA_DELAY_SECONDS = 10
 
 MLB_LINESCORE_URL = "https://statsapi.mlb.com/api/v1/game/{game_id}/linescore"
@@ -166,17 +166,39 @@ _last_good_nfl_standings: list[dict] | None = None
 # fixed wall-clock amount, not anything session-specific.
 _delay_buffers: dict[str, list] = {}
 
+# Session report: the delay stepper used to live in
+# st.session_state["jumbotron_live_delay_seconds"], which resets to
+# DEFAULT_LIVE_DATA_DELAY_SECONDS on every brand-new browser session —
+# including the kiosk's own periodic browser refresh, not just an
+# actual app redeploy. Loaded once at import (same pattern as
+# morning_briefing.py's _last_brief_date) rather than re-read from
+# persisted_state on every rerun — this app reruns every 5s
+# (st_autorefresh) all day, and "reload from the cloud just to check"
+# would burn a real chunk of Upstash's monthly command budget for a
+# value that only ever changes from one place (the stepper's own
+# button clicks, which already call set_live_delay_seconds below).
+_live_delay_seconds: int = persisted_state.load("jumbotron_live_delay_seconds", DEFAULT_LIVE_DATA_DELAY_SECONDS)
+
+
+def get_live_delay_seconds() -> int:
+    return _live_delay_seconds
+
+
+def set_live_delay_seconds(seconds: int) -> None:
+    global _live_delay_seconds
+    _live_delay_seconds = seconds
+    persisted_state.save("jumbotron_live_delay_seconds", seconds)
+
 
 def _delayed(key: str, value):
     """Returns whatever `value` was for this key as of the current delay
-    setting ago (st.session_state["jumbotron_live_delay_seconds"],
-    DEFAULT_LIVE_DATA_DELAY_SECONDS until the jumbotron's own stepper
-    changes it), buffering the fresh value in first. Falls back to
-    `value` itself until the buffer's been running long enough to have
-    anything older (start of a game/app) — briefly live, rather than
-    blocking display entirely."""
+    setting ago (get_live_delay_seconds(), DEFAULT_LIVE_DATA_DELAY_SECONDS
+    until the jumbotron's own stepper changes it), buffering the fresh
+    value in first. Falls back to `value` itself until the buffer's
+    been running long enough to have anything older (start of a
+    game/app) — briefly live, rather than blocking display entirely."""
     now = time.time()
-    delay_seconds = st.session_state.get("jumbotron_live_delay_seconds", DEFAULT_LIVE_DATA_DELAY_SECONDS)
+    delay_seconds = get_live_delay_seconds()
     buf = _delay_buffers.setdefault(key, [])
     buf.append((now, value))
     cutoff = now - delay_seconds

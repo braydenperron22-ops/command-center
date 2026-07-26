@@ -1150,6 +1150,29 @@ def _around_html(now_ts: float) -> str:
     return f'<div class="jumbo-around-page{fade_class}"><div class="jumbo-around-league">{label}</div>{rows_html}</div>'
 
 
+@st.fragment
+def _delay_stepper() -> None:
+    """The −/DELAY Xs/+ trio, split into its own fragment — session
+    report: tapping +/- felt unresponsive, "only updates when the page
+    updates after the 5 second pause." A plain st.button here reruns
+    the WHOLE jumbotron page (every sports/weather fetch, every HTML
+    block) before the click's own effect shows up, and a tap that lands
+    mid-rerun (the rest of the page is still catching up from the
+    previous click) gets silently dropped — with the rest of the page
+    this heavy, that's a real, repeated wait, not a one-off. A
+    fragment's own rerun only re-executes this function, so the label
+    updates as fast as Streamlit can redraw one small widget, regardless
+    of how long the surrounding page takes."""
+    delay = sports_client.get_live_delay_seconds()
+    if st.button("−", key="jumbotron_delay_minus"):
+        sports_client.set_live_delay_seconds(max(0, delay - 5))
+        st.rerun(scope="fragment")
+    st.markdown(f'<div class="jumbo-delay-label">DELAY {delay}s</div>', unsafe_allow_html=True)
+    if st.button("+", key="jumbotron_delay_plus"):
+        sports_client.set_live_delay_seconds(min(60, delay + 5))
+        st.rerun(scope="fragment")
+
+
 def render(now: datetime, state: dict, weather: dict | None) -> None:
     """`state` is sports_alerts.takeover_state()'s own return value —
     passed in rather than re-derived here so app.py's routing decision
@@ -1230,11 +1253,4 @@ def render(now: datetime, state: dict, weather: dict | None) -> None:
                 st.session_state["jumbotron_dismissed_game_id"] = state["game"]["game_id"]
                 st.rerun()
 
-            delay = st.session_state.get("jumbotron_live_delay_seconds", sports_client.DEFAULT_LIVE_DATA_DELAY_SECONDS)
-            if st.button("−", key="jumbotron_delay_minus"):
-                st.session_state["jumbotron_live_delay_seconds"] = max(0, delay - 5)
-                st.rerun()
-            st.markdown(f'<div class="jumbo-delay-label">DELAY {delay}s</div>', unsafe_allow_html=True)
-            if st.button("+", key="jumbotron_delay_plus"):
-                st.session_state["jumbotron_live_delay_seconds"] = min(60, delay + 5)
-                st.rerun()
+            _delay_stepper()

@@ -3353,6 +3353,25 @@ html, body, [class*="css"] {
     width: auto !important;
     flex: 0 0 auto;
 }
+/* The delay stepper (−/DELAY Xs/+) became its own st.fragment (see
+   pages_jumbotron._delay_stepper's own comment — instant, page-
+   independent responsiveness) after this cluster's layout was first
+   built. Streamlit wraps a fragment's own content in an extra
+   stLayoutWrapper > stVerticalBlock pair that didn't exist before and
+   defaults to the same column layout the outer container's own rule
+   above already had to override — confirmed live: without this, the
+   stepper dropped onto its own vertical column below End Session
+   instead of sitting in the same row. */
+.st-key-jumbotron_controls div[data-testid="stLayoutWrapper"] {
+    width: auto !important;
+    flex: 0 0 auto;
+}
+.st-key-jumbotron_controls div[data-testid="stVerticalBlock"] {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 10px;
+}
 .st-key-jumbotron_controls div[data-testid="stButton"] button {
     background: rgba(16,22,32,0.82);
     border: 1px solid var(--edge);
@@ -3369,9 +3388,16 @@ html, body, [class*="css"] {
     border-color: var(--led);
     color: var(--bone);
 }
+/* Session report: "make it easier to click up/down on it" — the
+   generic 12px/8px-16px button rule above was sized for a text label
+   like "End Session," not a fast-repeat +/- tap target on a kiosk
+   touchscreen. Bigger box, bigger glyph, same visual family. */
 .st-key-jumbotron_delay_minus div[data-testid="stButton"] button,
 .st-key-jumbotron_delay_plus div[data-testid="stButton"] button {
-    padding: 8px 14px;
+    padding: 14px 22px;
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1;
 }
 .jumbo-delay-label {
     font-family: var(--mono);
