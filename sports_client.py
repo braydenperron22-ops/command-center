@@ -926,18 +926,18 @@ def _mlb_headshot_url(player_id: int) -> str:
 
 
 @st.cache_data(ttl=LIVE_DETAIL_CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_mlb_player_last10_raw(player_id: int) -> dict:
-    """This batter's rolling last-10-games hitting line — session
+def _fetch_mlb_player_last15_raw(player_id: int) -> dict:
+    """This batter's rolling last-15-games hitting line — session
     request ("does espn show hot streaks or anything?"): MLB Stats API
     has no literal hitting-streak field, but "lastXGames" is the same
     rolling-window proxy real broadcasts show ("hitting .350 over his
-    last 10"). {} if the API genuinely has none yet (a
-    September call-up with fewer than 10 games played, all-star break
+    last 15"). {} if the API genuinely has none yet (a
+    September call-up with fewer than 15 games played, all-star break
     with none recent, etc.), not just on a fetch failure."""
     fetch_throttle.wait_turn()
     resp = requests.get(
         PEOPLE_URL.format(player_id=player_id),
-        params={"hydrate": "stats(group=[hitting],type=[lastXGames],limit=10)"},
+        params={"hydrate": "stats(group=[hitting],type=[lastXGames],limit=15)"},
         timeout=10,
     )
     resp.raise_for_status()
@@ -951,7 +951,7 @@ def _fetch_mlb_player_last10_raw(player_id: int) -> dict:
 def _fetch_mlb_vs_pitcher_raw(batter_id: int, pitcher_id: int) -> dict:
     """This batter's career at-bats against this exact pitcher (MLB
     Stats API's "vsPlayer" split) — session request alongside the
-    last-10 hot/cold line above. {} the large majority of the time (most
+    last-15 hot/cold line above. {} the large majority of the time (most
     batter/pitcher pairs have never faced each other — confirmed live
     against an unrelated id pair, which comes back with an empty splits
     list rather than an error), which the Current Matchup card just
@@ -968,6 +968,45 @@ def _fetch_mlb_vs_pitcher_raw(batter_id: int, pitcher_id: int) -> dict:
     totals = next((s for s in stats if (s.get("type") or {}).get("displayName") == "vsPlayerTotal"), None)
     splits = totals.get("splits") if totals else []
     return splits[0].get("stat", {}) if splits else {}
+
+
+# Session request: "make those stats fire coloured or ice coloured if
+# theyve been hot or cold lately... if its in normal range just make it
+# white." Thresholds picked around a real everyday-regular's OPS
+# (~.720-ish league average) with a wide dead zone in between so normal
+# variance doesn't flicker orange/blue — only a real, sustained
+# stretch. "hot"/"cold"/None (None = plain white, no animation).
+L15_OPS_HOT = 0.900
+L15_OPS_COLD = 0.600
+# vs-pitcher runs on far fewer at-bats than a 15-game rolling line, so
+# it gets its own (wider) thresholds plus a minimum sample size — a
+# single 1-for-1 shouldn't read as "on fire."
+VS_PITCHER_HOT_AVG = 0.350
+VS_PITCHER_COLD_AVG = 0.150
+VS_PITCHER_MIN_AB = 5
+
+
+def _ops_heat(ops_str) -> str | None:
+    try:
+        ops = float(ops_str)
+    except (TypeError, ValueError):
+        return None
+    if ops >= L15_OPS_HOT:
+        return "hot"
+    if ops <= L15_OPS_COLD:
+        return "cold"
+    return None
+
+
+def _vs_pitcher_heat(hits, at_bats) -> str | None:
+    if not at_bats or at_bats < VS_PITCHER_MIN_AB:
+        return None
+    avg = hits / at_bats
+    if avg >= VS_PITCHER_HOT_AVG:
+        return "hot"
+    if avg <= VS_PITCHER_COLD_AVG:
+        return "cold"
+    return None
 
 
 MLB_BOXSCORE_URL = "https://statsapi.mlb.com/api/v1/game/{game_id}/boxscore"
@@ -1009,24 +1048,29 @@ def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
 
 
 def fetch_mlb_live_matchup(game_id: int) -> dict | None:
-    """{"batter": {"id", "name", "ops", "last10_ops", "vs_pitcher",
-    "photo"}, "pitcher": {"id", "name", "era", "pitches", "balls",
-    "strikes", "photo"}} for whoever's actually at the plate/on the
-    mound right now — session request: "during the game can you make
-    the top performers tab show current pitcher and batter and their
-    stats... ideally add the pitcher and batter pics," later refined to
-    "for pitchers add number of pitches below ERA" (briefly swapped the
-    batter stat to AVG in the same request, then "keep ops, screw avg"
-    put it right back) and then "how many of the pitches have been
-    balls and how many have been strikes over the entire outing."
-    "last10_ops"/"vs_pitcher" added for a later session request ("does
-    espn show hot streaks or anything?") — see
-    _fetch_mlb_player_last10_raw/_fetch_mlb_vs_pitcher_raw for why those
-    two and not a literal hitting-streak count. Reuses the same cached
-    linescore fetch_mlb_live_detail already pulls this rerun (no extra
-    request for the matchup itself), one small extra request each for
-    the two players' own season stat lines, the batter's last-10 line,
-    the batter's vs-pitcher history, plus one boxscore request for the
+    """{"batter": {"id", "name", "ops", "last15_ops", "last15_heat",
+    "vs_pitcher", "vs_pitcher_heat", "photo"}, "pitcher": {"id", "name",
+    "era", "pitches", "balls", "strikes", "photo"}} for whoever's
+    actually at the plate/on the mound right now — session request:
+    "during the game can you make the top performers tab show current
+    pitcher and batter and their stats... ideally add the pitcher and
+    batter pics," later refined to "for pitchers add number of pitches
+    below ERA" (briefly swapped the batter stat to AVG in the same
+    request, then "keep ops, screw avg" put it right back) and then
+    "how many of the pitches have been balls and how many have been
+    strikes over the entire outing." "last15_ops"/"vs_pitcher" added for
+    a later session request ("does espn show hot streaks or anything?")
+    — see _fetch_mlb_player_last15_raw/_fetch_mlb_vs_pitcher_raw for why
+    those two and not a literal hitting-streak count. The "_heat"
+    fields ("hot"/"cold"/None, see _ops_heat/_vs_pitcher_heat) came from
+    the immediate follow-up request to color-pulse those two
+    specifically when they're running hot or cold — computed here
+    rather than in pages_jumbotron so the thresholds live next to the
+    stats they're judging. Reuses the same cached linescore
+    fetch_mlb_live_detail already pulls this rerun (no extra request for
+    the matchup itself), one small extra request each for the two
+    players' own season stat lines, the batter's last-15 line, the
+    batter's vs-pitcher history, plus one boxscore request for the
     pitcher's game-total pitch/ball/strike counts. None on any fetch
     failure or once there's genuinely no one at the plate/mound to name
     (the linescore payload omits offense/defense between innings). Uses
@@ -1044,7 +1088,7 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     batter_stat = _fetch_mlb_player_season_stat_raw(batter["id"], "hitting")
     pitcher_stat = _fetch_mlb_player_season_stat_raw(pitcher["id"], "pitching")
     pitcher_totals = _mlb_game_pitching_totals(game_id, pitcher["id"])
-    last10 = _fetch_mlb_player_last10_raw(batter["id"])
+    last15 = _fetch_mlb_player_last15_raw(batter["id"])
     vs_pitcher = _fetch_mlb_vs_pitcher_raw(batter["id"], pitcher["id"])
     # "0-0" (no career at-bats vs this pitcher) reads as a real stat, not
     # "no history yet" — only show it once there's an actual at-bat on record.
@@ -1054,8 +1098,10 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
             "id": batter["id"],
             "name": batter["fullName"],
             "ops": batter_stat.get("ops"),
-            "last10_ops": last10.get("ops"),
+            "last15_ops": last15.get("ops"),
+            "last15_heat": _ops_heat(last15.get("ops")),
             "vs_pitcher": vs_pitcher_line,
+            "vs_pitcher_heat": _vs_pitcher_heat(vs_pitcher.get("hits"), vs_pitcher.get("atBats")),
             "photo": _mlb_headshot_url(batter["id"]),
         },
         "pitcher": {

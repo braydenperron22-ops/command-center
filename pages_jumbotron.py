@@ -464,15 +464,20 @@ def _current_matchup_html(game_id: int) -> str:
     # by side, a batter just the one; `stats` takes however many
     # (value, label) pairs apply, skipping any that came back None.
     # Session request: "move that count below the other pitcher stats"
-    # — `stat_rows` is a list of rows, each a list of (value, label)
-    # pairs, so a pitcher can get ERA/PITCHES on one row and B-S on its
-    # own row underneath, while a batter's single-row OPS is unaffected.
-    # Later session request ("does espn show hot streaks or anything?
-    # yes please") added the batter's own second row: rolling last-10
-    # OPS (the "hot/cold right now" proxy) beside career at-bats vs
-    # this exact pitcher — each already None'd out by sports_client
-    # when there's no last-10 sample or no history vs this pitcher, so
-    # `stats` filtering them out here is enough, no extra branch needed.
+    # — `stat_rows` is a list of rows, each a list of (value, label,
+    # heat) triples, so a pitcher can get ERA/PITCHES on one row and B-S
+    # on its own row underneath, while a batter's single-row OPS is
+    # unaffected. Later session request ("does espn show hot streaks or
+    # anything? yes please") added the batter's own second row: rolling
+    # last-15 OPS (the "hot/cold right now" proxy) beside career
+    # at-bats vs this exact pitcher — each already None'd out by
+    # sports_client when there's no last-15 sample or no history vs
+    # this pitcher, so `stats` filtering them out here is enough, no
+    # extra branch needed. Immediate follow-up request added `heat`
+    # ("hot"/"cold"/None from sports_client's _ops_heat/
+    # _vs_pitcher_heat) — None for every stat that isn't judged hot/cold
+    # (season OPS, ERA, pitches, B-S all just pass None and render plain
+    # white, same as before).
     def col(tag: str, player: dict, stat_rows: list[list[tuple]]) -> str:
         photo = (
             f'<img class="jumbo-live-matchup-photo" src="{html.escape(player["photo"])}" onerror="this.style.display=\'none\'" />'
@@ -483,10 +488,10 @@ def _current_matchup_html(game_id: int) -> str:
         for stats in stat_rows:
             blocks = "".join(
                 f'<div class="jumbo-live-matchup-stat-block">'
-                f'<div class="jumbo-live-matchup-stat">{html.escape(str(value))}</div>'
+                f'<div class="jumbo-live-matchup-stat{" jumbo-live-matchup-stat-" + heat if heat else ""}">{html.escape(str(value))}</div>'
                 f'<div class="jumbo-live-matchup-stat-label">{html.escape(label)}</div>'
                 f"</div>"
-                for value, label in stats
+                for value, label, heat in stats
                 if value is not None
             )
             if blocks:
@@ -501,12 +506,23 @@ def _current_matchup_html(game_id: int) -> str:
             f"</div>"
         )
 
+    batter_rows = [
+        [(batter.get("ops"), "OPS", None)],
+        [
+            (batter.get("last15_ops"), "L15 OPS", batter.get("last15_heat")),
+            (batter.get("vs_pitcher"), "VS PITCHER", batter.get("vs_pitcher_heat")),
+        ],
+    ]
+    pitcher_rows = [
+        [(pitcher.get("era"), "ERA", None), (pitcher.get("pitches"), "PITCHES", None)],
+        [(pitch_split, "B-S", None)],
+    ]
     return (
         f'<div class="jumbo-leaders"><div class="jumbo-sl">Current Matchup</div>'
         f'<div class="jumbo-live-matchup">'
-        f'{col("At Bat", batter, [[(batter.get("ops"), "OPS")], [(batter.get("last10_ops"), "L10 OPS"), (batter.get("vs_pitcher"), "VS PITCHER")]])}'
+        f'{col("At Bat", batter, batter_rows)}'
         f'<div class="jumbo-live-matchup-vs">VS</div>'
-        f'{col("Pitching", pitcher, [[(pitcher.get("era"), "ERA"), (pitcher.get("pitches"), "PITCHES")], [(pitch_split, "B-S")]])}'
+        f'{col("Pitching", pitcher, pitcher_rows)}'
         f"</div></div>"
     )
 

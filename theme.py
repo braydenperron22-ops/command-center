@@ -2884,6 +2884,30 @@ html, body, [class*="css"] {
     color: var(--bone);
     line-height: 1.1;
 }
+/* Session request: "make those stats fire coloured or ice coloured if
+   theyve been hot or cold lately... pulsing fire or pulsing ice
+   colour. if its in normal range just make it white." Applies to L15
+   OPS and the vs-pitcher line only (sports_client's _ops_heat/
+   _vs_pitcher_heat) — everything else on this card stays the plain
+   .jumbo-live-matchup-stat white above. Same text-shadow-pulse pattern
+   as .leave-headline's intensity tiers, just fire/ice instead of
+   amber/red. */
+.jumbo-live-matchup-stat-hot {
+    color: #FF7A1A;
+    animation: jumbo-matchup-pulse-hot 1.3s ease-in-out infinite;
+}
+.jumbo-live-matchup-stat-cold {
+    color: #5AC8FA;
+    animation: jumbo-matchup-pulse-cold 1.3s ease-in-out infinite;
+}
+@keyframes jumbo-matchup-pulse-hot {
+    0%, 100% { text-shadow: 0 0 10px rgba(255,122,26,0.45); }
+    50% { text-shadow: 0 0 22px rgba(255,122,26,0.9), 0 0 36px rgba(255,80,0,0.4); }
+}
+@keyframes jumbo-matchup-pulse-cold {
+    0%, 100% { text-shadow: 0 0 10px rgba(90,200,250,0.45); }
+    50% { text-shadow: 0 0 22px rgba(90,200,250,0.9), 0 0 36px rgba(90,200,250,0.4); }
+}
 .jumbo-live-matchup-stat-label {
     font-family: var(--mono);
     font-size: 12px;
