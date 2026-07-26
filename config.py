@@ -4,6 +4,22 @@
 # briefing (morning_briefing._ai_sentence) address him by name.
 USER_FIRST_NAME = "Brayden"
 
+# Standing personal context fed into the morning briefing's own prompt
+# (morning_briefing._ai_sentence) — session question: "would it benefit
+# to train the ai on who i am?" Fine-tuning isn't the right lever for
+# facts that don't change call to call (see that discussion) — this is
+# just a richer, persistent context block the same prompt already
+# draws on for genuine connections, not a model retrain. Hand-maintained
+# here; update by hand if anything in it changes.
+USER_PROFILE = (
+    "Personal Banking Associate at TD Bank in North Bay, Ontario. Born September 22, 2006. "
+    "Drives a 2014 Honda Civic LX. Long-term relationship with girlfriend Chloe. Lives with "
+    "parents; has a Golden Retriever (Auggie) and a cat (Wicket). Plays goaltender in hockey, "
+    "1st base in co-ed softball and on TD's own corporate team, and golf (scramble format). "
+    "Manages the Halifax Huskies in a virtual hockey sim league and follows the UFC. Tracks a "
+    "personal loan payoff target for October 1, 2026."
+)
+
 # Corbeil, Ontario
 WEATHER_LAT = 46.2616
 WEATHER_LON = -79.2920

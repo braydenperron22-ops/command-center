@@ -36,6 +36,18 @@ CACHE_TTL_SECONDS = 15 * 60
 # how it's otherwise punctuated or abbreviated. Nothing else about the
 # event (start/end/location) is touched.
 _WORK_KEYWORDS = ("customer experience associate", "sales")
+# Narrower than _WORK_KEYWORDS above on purpose — session context:
+# "when you see customer experience associate central [on the
+# calendar], that basically means I have to be a teller for like a
+# couple hours during the day to cover lunch and stuff... make sure the
+# AI knows that." A plain "sales" shift doesn't carry this same real
+# annoyance; only the CEA/teller-coverage title does, so this is its
+# own check, not folded into the generic Work normalization above.
+# Includes the bare "cea" abbreviation too — real calendar imports have
+# used both the spelled-out title and "CEA Central - Sales"/"CEA -
+# Central, Sales" for the exact same shift (see _WORK_KEYWORDS' own
+# comment on that history).
+_TELLER_COVERAGE_KEYWORDS = ("customer experience associate", "cea")
 
 
 def _normalize_summary(raw: str) -> str:
@@ -43,6 +55,11 @@ def _normalize_summary(raw: str) -> str:
     if any(keyword in lowered for keyword in _WORK_KEYWORDS):
         return "Work"
     return raw
+
+
+def _is_teller_coverage(raw: str) -> bool:
+    lowered = raw.strip().lower()
+    return any(keyword in lowered for keyword in _TELLER_COVERAGE_KEYWORDS)
 
 # Same reasoning as every other data client in this app: never let a
 # transient fetch/parse failure blank the page, fall back to the last
@@ -94,8 +111,10 @@ def _events_from_one(calendar: dict, today: date) -> list[dict]:
                 start = start.replace(tzinfo=ZoneInfo(TIMEZONE))
             if isinstance(end, datetime) and end.tzinfo is None:
                 end = end.replace(tzinfo=ZoneInfo(TIMEZONE))
+        raw_summary = str(e.get("SUMMARY", "Untitled"))
         events.append({
-            "summary": _normalize_summary(str(e.get("SUMMARY", "Untitled"))),
+            "summary": _normalize_summary(raw_summary),
+            "is_teller_coverage": _is_teller_coverage(raw_summary),
             "start": start,
             "end": end,
             "location": str(e.get("LOCATION")) if e.get("LOCATION") else None,

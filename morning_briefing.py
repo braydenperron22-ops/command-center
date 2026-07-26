@@ -49,7 +49,7 @@ import payday_schedule
 import persisted_state
 import waste_schedule
 import wildfire_client
-from config import AQI_SHOW_THRESHOLD, COMMUTE_DESTINATION, TIMEZONE, USER_FIRST_NAME, WEATHER_LAT, WEATHER_LON
+from config import AQI_SHOW_THRESHOLD, COMMUTE_DESTINATION, TIMEZONE, USER_FIRST_NAME, USER_PROFILE, WEATHER_LAT, WEATHER_LON
 
 MORNING_WINDOW_START_HOUR = 5
 MORNING_WINDOW_END_HOUR = 10
@@ -923,6 +923,39 @@ def _agenda_clause(now: datetime) -> tuple[int, str] | None:
     return 5, text
 
 
+# Session context: "when you see customer experience associate central
+# [on the calendar], that basically means I have to be a teller for
+# like a couple hours during the day to cover lunch and stuff... make
+# sure the AI knows that, and it's like 'your fuck ass manager has you
+# doing CEA time today.'" A separate clause from _agenda_clause above,
+# not folded into it — the agenda clause already shows "Work at 9:00
+# AM" for this same event (calendar_client normalizes the real title
+# down to plain "Work" for display), which gives the AI no way to know
+# THIS specific shift is teller coverage specifically, or that it's
+# something Brayden genuinely resents. Priority 9 — above every other
+# clause (max elsewhere is 8) — since this should reliably make the cut
+# whenever it's actually on today's calendar, not get crowded out by a
+# routine weather/market fact.
+TELLER_COVERAGE_PRIORITY = 9
+
+
+def _teller_coverage_clause(now: datetime) -> tuple[int, str] | None:
+    calendars = st.secrets.get("CALENDARS")
+    if not calendars:
+        return None
+    events = [e for e in calendar_client.todays_events(calendars, now.date()) if not e["all_day"]]
+    coverage = [e for e in events if e.get("is_teller_coverage")]
+    if not coverage:
+        return None
+    times = ", ".join(e["start"].strftime("%I:%M %p").lstrip("0") for e in sorted(coverage, key=lambda e: e["start"]))
+    # Plain, neutral fact text — this also doubles as the mechanical
+    # fallback sentence if the AI call fails (see render()), so it has
+    # to read fine as-is, not like a note addressed to the AI. The
+    # "he genuinely hates this" framing lives in _ai_sentence's own
+    # prompt instructions instead, not folded in here.
+    return TELLER_COVERAGE_PRIORITY, f"scheduled for teller/CEA coverage today at {times}"
+
+
 def _household_clause(now: datetime) -> tuple[int, str] | None:
     # Payday today outranks everything else in this clause — genuinely
     # the best household news any of these branches can carry, same
@@ -1085,9 +1118,40 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     drag" on an actual Thursday). Giving it the real weekday as an
     actual fact instead of leaving it blank fixes the root cause
     directly — there's nothing left to hallucinate — so the ban could
-    come off without reintroducing that failure."""
+    come off without reintroducing that failure.
+
+    Session question: "would it benefit to train the ai on who i am?"
+    — fine-tuning was the wrong lever (facts here change daily; a
+    retrained model can't track that, and iterating on it is slow).
+    The actual answer was a richer, persistent context block instead:
+    USER_PROFILE (config.py, hand-maintained) gives it real specifics
+    to build genuine jokes from instead of generic ones, and
+    _recent_history_block gives it the last few days' own facts so it
+    can notice an actual pattern (a stretch of early shifts, several
+    rough-weather days in a row) instead of only ever seeing today in
+    isolation. Both come with the same "only when relevant" framing
+    already established for the weekday above — forcing a connection
+    that isn't really there reads worse than not mentioning it.
+
+    Also carries a standing instruction about teller/CEA coverage
+    specifically (see _teller_coverage_clause) — session context: "make
+    sure the AI knows that['s] ... your fuck ass manager has you doing
+    CEA time today." A plain "Work at 9:00 AM" fact (from
+    calendar_client's own normalization) reads as an ordinary shift;
+    without this, the model has no way to know THIS one is something
+    genuinely resented, not just another day at work."""
     facts = "; ".join(picked)
     weekday = now.strftime("%A")
+    history_block = _recent_history_block(now)
+    history_section = (
+        f"Recent days for context (oldest first, not including today):\n{history_block}\n\n"
+        "Use this ONLY to notice a genuine pattern actually worth a real line (a stretch of "
+        "early shifts, several rough-weather days in a row, yesterday being rough too) — most "
+        "days won't have one, and forcing a callback where there isn't a real connection reads "
+        "worse than not mentioning it at all.\n\n"
+        if history_block
+        else ""
+    )
     prompt = (
         f"You are {USER_FIRST_NAME}'s personal AI assistant, in the spirit of J.A.R.V.I.S. from "
         "Iron Man — sharp, hyper-competent, genuinely funny, unhinged rather than just pleasant. "
@@ -1103,12 +1167,20 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         "force it into every line, but don't default away from it either. Not corporate, not a "
         "stiff butler, not playing it safe. Say whatever actually lands — use your own judgment "
         "on structure, pacing, and where the wit goes; you don't need a formula for this.\n\n"
+        f"Background on {USER_FIRST_NAME}, for real specific jokes instead of generic ones — "
+        f"reference it only when genuinely relevant to today's facts below, don't force a "
+        f"mention in every brief: {USER_PROFILE}\n\n"
+        "If today's facts below mention teller/CEA coverage specifically, go especially hard — "
+        f"that's something {USER_FIRST_NAME} genuinely resents (unlike his regular shifts), so "
+        "roast whoever scheduled him for it without holding back.\n\n"
+        f"{history_section}"
         f"Today is {weekday} — a real, given fact, not a guess. Comment on it, and on how it "
         "relates to the facts below (a work shift landing on a weekend is genuinely worth a real "
         "line; an ordinary weekday usually isn't), only when it's actually relevant — your call, "
         "don't force it in every time. The humor otherwise comes entirely from how things are "
         "delivered, never from anything invented — do not add or invent any fact beyond the "
-        f"weekday above and what's given below; every other fact must actually appear.\n\n"
+        "weekday, the background, and the recent-days record above, and what's given below; "
+        "every other fact must actually appear.\n\n"
         "Always write numbers as actual digits, never spelled out as words — '18 minutes' and "
         "'0.8%' and '10:00 AM', not 'eighteen minutes' or 'zero point eight percent' or 'ten "
         "o'clock'. This is read at a glance on a screen, not literary prose, and digits are "
@@ -1136,6 +1208,7 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         (_air_clause, (now, air_quality)),
         (_commute_clause, (now,)),
         (_agenda_clause, (now,)),
+        (_teller_coverage_clause, (now,)),
         (_household_clause, (now,)),
         (_markets_clause, (now,)),
         (_daylight_clause, (now, weather)),
@@ -1151,6 +1224,10 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         return
     clauses.sort(key=lambda c: c[0], reverse=True)
     picked = [text for _, text in clauses[:MAX_CLAUSES]]
+    try:
+        _record_history(now, picked)
+    except Exception:
+        pass
     try:
         sentence = _ai_sentence(picked, now)
     except Exception:
@@ -1203,3 +1280,50 @@ def _notify_new_brief(sentence: str, now: datetime) -> None:
     _last_brief_date = today
     persisted_state.save("morning_brief_date", today)
     ntfy_client.send(title="Morning Brief", message=sentence, priority="default", tags="sunny")
+
+
+# Recent days' picked facts, oldest first — session question: "would it
+# benefit to train the ai on who i am... make it connect the dots on my
+# day more often." The brief only ever saw today's own isolated facts,
+# so it had no way to notice a real pattern (a stretch of early shifts,
+# a run of bad weather, yesterday also being rough) — this gives
+# _ai_sentence something to actually connect to. Bounded to
+# HISTORY_MAX_DAYS entries (an ordered list, oldest popped off the
+# front once it's full) and persisted the same way _last_brief_date
+# above is, so a redeploy doesn't wipe the very thing this exists to
+# remember. Loaded once at import, not re-fetched every rerun — same
+# per-rerun-cost reasoning as _last_brief_date's own comment.
+HISTORY_MAX_DAYS = 4
+_brief_history: list[dict] = persisted_state.load("morning_brief_history", [])
+
+
+def _record_history(now: datetime, picked: list[str]) -> None:
+    """Appends today's picked facts to _brief_history — once per
+    calendar day (checked against the history's own last entry, not a
+    separate tracker), regardless of whether the AI narration itself
+    succeeds or falls back to the plain join, so tomorrow's brief can
+    still reference today's real facts even on a day Gemini was down."""
+    global _brief_history
+    today = now.date().isoformat()
+    if _brief_history and _brief_history[-1]["date"] == today:
+        return
+    _brief_history.append({"date": today, "facts": picked})
+    _brief_history = _brief_history[-HISTORY_MAX_DAYS:]
+    persisted_state.save("morning_brief_history", _brief_history)
+
+
+def _recent_history_block(now: datetime) -> str:
+    """Prior days' facts (not including today), oldest first, as a
+    compact block for _ai_sentence's own prompt — "" if there's no
+    history yet (a fresh deploy, or simply the first few days this
+    feature has existed). Excludes today's own entry even if
+    _record_history already ran earlier this same process — this block
+    is specifically the BEFORE-today record for spotting a pattern
+    leading up to today, not a copy of what's already in today's own
+    facts."""
+    today = now.date().isoformat()
+    prior = [day for day in _brief_history if day["date"] != today]
+    if not prior:
+        return ""
+    lines = [f"{day['date']}: {'; '.join(day['facts'])}" for day in prior]
+    return "\n".join(lines)
