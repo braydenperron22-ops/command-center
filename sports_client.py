@@ -109,6 +109,7 @@ _NFL_LOGO_URL = "https://a.espncdn.com/i/teamlogos/nfl/500/{abbrev}.png"
 def _nfl_logo_url(abbrev: str) -> str:
     return _NFL_LOGO_URL.format(abbrev=abbrev.lower())
 
+
 SEASON_WINDOW_DAYS = 10  # no games at all in this wide a window either side of now => offseason
 # MLB's own schedule endpoint needs an explicit date range (unlike
 # NHL's club-schedule-season/now, which already returns the whole
@@ -119,6 +120,87 @@ SEASON_WINDOW_DAYS = 10  # no games at all in this wide a window either side of 
 MLB_FORM_LOOKBACK_DAYS = 30
 GAME_CACHE_TTL_SECONDS = 5 * 60  # frequent enough to catch a live score changing
 STANDINGS_CACHE_TTL_SECONDS = 30 * 60  # standings only move once a game finishes, not worth polling harder
+
+# Session request: "can we pull playoff odds for each of my teams?"
+# ESPN runs its own playoff-odds simulation and exposes it on this
+# (different-host, "web.api") standings endpoint — confirmed live it's
+# the same one espn.com's own site uses, one call per sport covering
+# every team/conference at once. This is a SEPARATE team-id space from
+# MLB Stats API/NHL API's own ids used everywhere else in this file
+# (confirmed live: ESPN's Blue Jays id is 14, not MLB_TEAM_ID's 141 —
+# querying 141 against ESPN silently returns an unrelated historical
+# team instead of erroring, so these are hand-verified, not reused).
+# NFL already sources entirely from ESPN, so NFL_TEAM_ID doubles as its
+# own ESPN id here with no separate constant needed.
+MLB_ESPN_TEAM_ID = 14  # Toronto Blue Jays
+NHL_ESPN_TEAM_ID = 10  # Montreal Canadiens
+ESPN_STANDINGS_URL = "https://site.web.api.espn.com/apis/v2/sports/{sport}/{league}/standings"
+
+
+@st.cache_data(ttl=STANDINGS_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_espn_standings_raw(sport: str, league: str) -> dict:
+    fetch_throttle.wait_turn()
+    resp = requests.get(ESPN_STANDINGS_URL.format(sport=sport, league=league), timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _espn_playoff_odds(sport: str, league: str, team_id: int) -> dict | None:
+    """{"seed": int|None, "percent": float|None, "display": str|None}
+    for one team, from ESPN's own playoff-odds simulation — None only
+    on an outright fetch failure or if this team_id genuinely isn't in
+    the payload. "percent"/"display" come back None outside of an
+    active regular season — confirmed live for NHL/NFL in July
+    (offseason/preseason): ESPN simply doesn't compute odds then, "seed"
+    alone still comes through (last completed season's final position),
+    same "show what's real, nothing invented" rule as everywhere else
+    in this app. Walks the response's nested children/groups (by
+    conference/league/division, varies by sport) looking for a
+    "standings.entries" list rather than assuming a fixed depth, since
+    that nesting isn't the same shape across sports."""
+    try:
+        data = _fetch_espn_standings_raw(sport, league)
+    except Exception:
+        return None
+
+    def find_entry(node) -> dict | None:
+        if not isinstance(node, dict):
+            return None
+        standings = node.get("standings")
+        if isinstance(standings, dict):
+            for entry in standings.get("entries", []):
+                if str((entry.get("team") or {}).get("id")) == str(team_id):
+                    return entry
+        for key in ("children", "groups"):
+            for child in node.get(key) or []:
+                found = find_entry(child)
+                if found:
+                    return found
+        return None
+
+    entry = find_entry(data)
+    if entry is None:
+        return None
+    stats = {s.get("type"): s for s in entry.get("stats", []) if s.get("type")}
+    seed = (stats.get("playoffseed") or {}).get("value")
+    percent = stats.get("playoffpercent") or {}
+    return {
+        "seed": int(seed) if seed is not None else None,
+        "percent": percent.get("value"),
+        "display": percent.get("displayValue"),
+    }
+
+
+def fetch_mlb_playoff_odds() -> dict | None:
+    return _espn_playoff_odds("baseball", "mlb", MLB_ESPN_TEAM_ID)
+
+
+def fetch_nhl_playoff_odds() -> dict | None:
+    return _espn_playoff_odds("hockey", "nhl", NHL_ESPN_TEAM_ID)
+
+
+def fetch_nfl_playoff_odds() -> dict | None:
+    return _espn_playoff_odds("football", "nfl", NFL_TEAM_ID)
 # A live game's own count/base-runners/period-clock genuinely can change
 # every few seconds — polled far tighter than the 5-minute schedule
 # cache above, which only needs to catch state flipping to/from "live".
@@ -428,6 +510,12 @@ def fetch_jays() -> dict | None:
 
     normalized = [_normalize_mlb_game(g) for g in raw_games if g.get("gameType") in MLB_SEASON_GAME_TYPES]
     game = _pick_current_game(normalized, now)
+    # Session request: "playoff odds for each of my teams" — on both the
+    # My Teams rail card ("playoff_odds" below) and this team's own
+    # standings row ("odds" on the is_team row only; ESPN's odds are one
+    # per-team simulation result, not something every division rival
+    # gets computed here too).
+    odds = fetch_mlb_playoff_odds()
 
     standings = [
         {
@@ -438,6 +526,7 @@ def fetch_jays() -> dict | None:
             "extra": t.get("gamesBack", "-"),
             "is_team": t["team"]["id"] == MLB_TEAM_ID,
             "logo": _mlb_logo_url(t["team"]["id"]),
+            "odds": odds if t["team"]["id"] == MLB_TEAM_ID else None,
         }
         for t in _fetch_mlb_standings()
     ]
@@ -448,6 +537,7 @@ def fetch_jays() -> dict | None:
         "wildcard": _fetch_mlb_wildcard(),
         "team_logo": _mlb_logo_url(MLB_TEAM_ID),
         "recent_form": _recent_form(normalized, now),
+        "playoff_odds": odds,
     }
 
 
@@ -487,6 +577,10 @@ def fetch_all_mlb_standings() -> list[dict]:
                 "extra": t.get("gamesBack", "-"),
                 "is_team": t["team"]["id"] == MLB_TEAM_ID,
                 "logo": _mlb_logo_url(t["team"]["id"]),
+                # Session request: "playoff odds for each of my teams" —
+                # only the Jays' own row, same reasoning as
+                # _nfl_division_rows's own "odds" field.
+                "odds": fetch_mlb_playoff_odds() if t["team"]["id"] == MLB_TEAM_ID else None,
             }
             for t in sorted(record["teamRecords"], key=lambda t: int(t["divisionRank"]))
         ]
@@ -597,6 +691,7 @@ def fetch_habs() -> dict | None:
     season_games = [g for g in raw_games if g.get("gameType") in NHL_SEASON_GAME_TYPES]
     normalized = [_normalize_nhl_game(g) for g in season_games]
     game = _pick_current_game(normalized, now)
+    odds = fetch_nhl_playoff_odds()  # see fetch_jays()'s own comment on "odds" vs "playoff_odds"
 
     standings = [
         {
@@ -611,6 +706,7 @@ def fetch_habs() -> dict | None:
             "extra": "",
             "is_team": t["teamAbbrev"]["default"] == NHL_TEAM_ABBR,
             "logo": _nhl_logo_url(t["teamAbbrev"]["default"]),
+            "odds": odds if t["teamAbbrev"]["default"] == NHL_TEAM_ABBR else None,
         }
         for t in _fetch_nhl_standings()
     ]
@@ -621,6 +717,7 @@ def fetch_habs() -> dict | None:
         "wildcard": _fetch_nhl_wildcard(),
         "team_logo": _nhl_logo_url(NHL_TEAM_ABBR),
         "recent_form": _recent_form(normalized, now),
+        "playoff_odds": odds,
     }
 
 
@@ -659,6 +756,10 @@ def fetch_all_nhl_standings() -> list[dict]:
                 "extra": "",
                 "is_team": t["teamAbbrev"]["default"] == NHL_TEAM_ABBR,
                 "logo": _nhl_logo_url(t["teamAbbrev"]["default"]),
+                # Session request: "playoff odds for each of my teams" —
+                # only the Habs' own row, same reasoning as
+                # _nfl_division_rows's own "odds" field.
+                "odds": fetch_nhl_playoff_odds() if t["teamAbbrev"]["default"] == NHL_TEAM_ABBR else None,
             }
             for t in group
         ]
@@ -787,6 +888,7 @@ def _nfl_division_rows(entries: list[dict], team_ids: set) -> list[dict]:
             wins, losses = 0, 0
         ties = _nfl_stat(e, "ties") or "0"
         extra = f"{ties} T" if ties not in ("0", "0.0", None) else "-"
+        is_team = int(team["id"]) == NFL_TEAM_ID
         rows.append(
             {
                 "rank": i + 1,
@@ -794,8 +896,13 @@ def _nfl_division_rows(entries: list[dict], team_ids: set) -> list[dict]:
                 "wins": wins,
                 "losses": losses,
                 "extra": extra,
-                "is_team": int(team["id"]) == NFL_TEAM_ID,
+                "is_team": is_team,
                 "logo": _nfl_logo_url(team["abbreviation"]),
+                # Session request: "playoff odds for each of my teams" —
+                # only ever computed for the Saints' own row; a plain
+                # attribute lookup for every other team here would be a
+                # whole extra fetch per row for data nobody asked for.
+                "odds": fetch_nfl_playoff_odds() if is_team else None,
             }
         )
     return rows
@@ -827,6 +934,7 @@ def fetch_saints() -> dict | None:
         "wildcard": None,
         "team_logo": _nfl_logo_url(NFL_TEAM_ABBR),
         "recent_form": _recent_form(normalized, now),
+        "playoff_odds": fetch_nfl_playoff_odds(),
     }
 
 

@@ -48,7 +48,7 @@ def _fetch_scoreboard_raw(sport: str, league: str, date_str: str) -> list[dict]:
     return resp.json().get("events", [])
 
 
-def _team_record(competitor: dict) -> str | None:
+def team_record(competitor: dict) -> str | None:
     """Overall W-L (e.g. "52-48") — a competitor's "records" list also
     carries home/road splits, so this specifically picks the "total"
     one rather than whichever happened to be listed first."""
@@ -57,7 +57,7 @@ def _team_record(competitor: dict) -> str | None:
     return (overall or (records[0] if records else {})).get("summary")
 
 
-def _game_leader(competition: dict) -> dict | None:
+def game_leader(competition: dict) -> dict | None:
     """That game's standout performer — the top name in ESPN's own
     first-listed stat category (its own per-sport "headline" stat:
     Rating for MLB, passer rating for NFL, etc.) — real box-score color
@@ -96,16 +96,16 @@ def _normalize_game(event: dict) -> dict | None:
             "name": home["team"].get("shortDisplayName", home["team"].get("displayName", "")),
             "logo": home["team"].get("logo"),
             "score": home.get("score") if state != "pre" else None,
-            "record": _team_record(home),
+            "record": team_record(home),
         },
         "away": {
             "abbr": away["team"].get("abbreviation", ""),
             "name": away["team"].get("shortDisplayName", away["team"].get("displayName", "")),
             "logo": away["team"].get("logo"),
             "score": away.get("score") if state != "pre" else None,
-            "record": _team_record(away),
+            "record": team_record(away),
         },
-        "leader": _game_leader(competition) if state != "pre" else None,
+        "leader": game_leader(competition) if state != "pre" else None,
     }
 
 
@@ -248,6 +248,20 @@ def _fetch_summary_raw(sport: str, league: str, event_id: str) -> dict:
     return resp.json()
 
 
+def fetch_summary(match: dict) -> dict:
+    """The full ESPN summary payload for a find_espn_competition() match
+    — {} on any fetch failure. Public (unlike the narrower win_probability/
+    leaders_with_headshots below, which each only pull one slice) —
+    session request: game_blurb.py's pre/postgame AI blurbs need a much
+    wider cut of this same payload (records, injuries, season series,
+    betting line, recap headline), so it gets the whole thing rather
+    than another single-purpose accessor here."""
+    try:
+        return _fetch_summary_raw(match["sport"], match["league"], match["event_id"])
+    except Exception:
+        return {}
+
+
 def win_probability(match: dict) -> float | None:
     """Home team's live win probability (0-100) — only populates once
     ESPN's own model has enough of the game to compute one (confirmed
@@ -274,7 +288,7 @@ def leaders_with_headshots(match: dict, max_items: int = 8) -> list[dict]:
     it (see sports_alerts.py's own docstring for what was deliberately
     left out and why). Skips ESPN's own composite "Rating" category —
     not a real single stat, same reasoning as this module's own
-    _game_leader. [] once the game is far enough along that ESPN stops
+    game_leader. [] once the game is far enough along that ESPN stops
     returning leaders (never happens in practice, but no different a
     result to callers than "no leaders yet")."""
     competition = match["competition"]

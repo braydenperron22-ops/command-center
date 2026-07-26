@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+import game_blurb
 import scores_client
 import sports_alerts
 import sports_client
@@ -794,6 +795,29 @@ def _play_result_overlay_html(game_id: int, play: dict | None) -> str:
     )
 
 
+# Session request: "make a pre and postgame ai overview thats only
+# generated once. give it a bunch of info from the espn API and have
+# it do a pre and post game blurb" — see game_blurb.py's own docstring
+# for the one-shot-per-game caching and where the ESPN facts come from.
+_TEAM_FULL_NAME = {"mlb": sports_client.MLB_TEAM_NAME, "nhl": sports_client.NHL_TEAM_NAME, "nfl": sports_client.NFL_TEAM_NAME}
+
+
+def _blurb_html(sport: str, game: dict, team_label: str, postgame: bool) -> str:
+    """"" whenever ESPN doesn't have this game or the AI call itself
+    failed/hasn't landed yet — same "just omit it" rule every other
+    optional jumbotron panel already follows, not a loading spinner or
+    placeholder text."""
+    our_name = _TEAM_FULL_NAME[sport]
+    away_name = our_name if not game["is_home"] else game["opponent"]
+    home_name = game["opponent"] if not game["is_home"] else our_name
+    get_blurb = game_blurb.get_postgame_blurb if postgame else game_blurb.get_pregame_blurb
+    text = get_blurb(sport, game["game_id"], team_label, away_name, home_name, game["opponent"])
+    if not text:
+        return ""
+    label = "AI Recap" if postgame else "AI Preview"
+    return f'<div class="jumbo-blurb"><div class="jumbo-sl">{html.escape(label)}</div><div class="jumbo-blurb-text">{html.escape(text)}</div></div>'
+
+
 def _board_html(state: dict, now: datetime) -> str:
     league, status, game = state["league"], state["status"], state["game"]
     sport, phase = league["sport"], state["phase"]
@@ -821,6 +845,7 @@ def _board_html(state: dict, now: datetime) -> str:
         start_label = _PREGAME_SITUATION_LABEL.get(sport, "START")
         situation = f'<div class="jumbo-situ"><span class="jumbo-situ-hot">{html.escape(start_label)} {html.escape(start_text)}</span></div>'
         situation += _pregame_extra_html(sport, game["game_id"])
+        blurb_html = _blurb_html(sport, game, league["label"].title(), postgame=False)
         wp_html = ""
         dim_away = dim_home = False
     else:
@@ -890,6 +915,7 @@ def _board_html(state: dict, now: datetime) -> str:
                 situation = _nfl_situation_html(match)
         else:
             situation = ""
+        blurb_html = _blurb_html(sport, game, league["label"].title(), postgame=True) if phase == "postgame" else ""
         wp_html = _win_probability_html(sport, match, away, home) if phase == "live" else ""
         # Only a finished game has a settled winner to dim the loser
         # against — during a live game the trailing side is still very
@@ -924,7 +950,7 @@ def _board_html(state: dict, now: datetime) -> str:
         f'<span class="jumbo-ph-right">{state_label}</span></div>'
         f'<div class="jumbo-board-body">'
         f'<div class="jumbo-matchup">{_side_html(away, dim_away)}{center}{_side_html(home, dim_home)}</div>'
-        f"{wp_html}{situation}{leaders_html}{last_play_html}"
+        f"{wp_html}{situation}{blurb_html}{leaders_html}{last_play_html}"
         f"</div></div>"
     )
 
@@ -938,7 +964,11 @@ def _standings_rows_html(rows: list[dict]) -> str:
     on fetch_jays/fetch_habs/fetch_all_mlb_standings/
     fetch_all_nhl_standings) the regular Sports page's _standings_table
     already renders, now with each row's own "logo" field (added
-    specifically for this)."""
+    specifically for this). "odds" (session request: "playoff odds for
+    each of my teams") only ever carries a value on our own team's row
+    (see fetch_all_mlb_standings/fetch_all_nhl_standings/
+    _nfl_division_rows) — every other row's "" leaves the layout
+    otherwise untouched."""
     if not rows:
         return ""
     return "".join(
@@ -947,7 +977,13 @@ def _standings_rows_html(rows: list[dict]) -> str:
         + (f'<img class="jumbo-standings-logo" src="{html.escape(r["logo"])}" />' if r.get("logo") else "")
         + f'<span class="jumbo-standings-team">{html.escape(r["team"])}</span>'
         f'<span class="jumbo-standings-record">{r["wins"]}-{r["losses"]}</span>'
-        f'<span class="jumbo-standings-extra">{r["extra"]}</span></div>'
+        f'<span class="jumbo-standings-extra">{r["extra"]}</span>'
+        + (
+            f'<span class="jumbo-standings-odds">{html.escape((r.get("odds") or {})["display"])} PO</span>'
+            if (r.get("odds") or {}).get("display")
+            else ""
+        )
+        + "</div>"
         for r in rows
     )
 
@@ -1038,12 +1074,21 @@ def _rail_hero_html(entry: dict, now: datetime) -> str:
 
     live_chip = '<div class="jumbo-livechip">LIVE</div>' if live else ""
     division = status.get("division_name") or ""
+    # Session request: "can we pull playoff odds for each of my teams?"
+    # Tucked onto the division line rather than its own row — this rail
+    # card's vertical space is already tightly tuned (see the padding
+    # trims earlier this session to fit all 3 teams). "" whenever ESPN
+    # hasn't computed real odds yet (offseason/preseason — see
+    # sports_client._espn_playoff_odds's own docstring), not a seed
+    # number alone, which reads as noise without the percent next to it.
+    odds = status.get("playoff_odds") or {}
+    odds_html = f' <span class="jumbo-hero-odds">· {html.escape(odds["display"])} PO</span>' if odds.get("display") else ""
     return (
         f'<div class="jumbo-hero jumbo-hero-{entry["sport"]}{" jumbo-hero-live" if live else ""}">'
         f"{live_chip}"
         f'<div class="jumbo-hero-head"><img src="{html.escape(status["team_logo"])}" />'
         f'<div class="jumbo-hero-id"><div class="jumbo-hero-name">{html.escape(entry["label"].title())}</div>'
-        f'<div class="jumbo-hero-div">{html.escape(division)}</div></div>'
+        f'<div class="jumbo-hero-div">{html.escape(division)}{odds_html}</div></div>'
         f'<div class="jumbo-hero-rec"><div class="jumbo-hero-rec-v">{html.escape(record)}</div>'
         f'<div class="jumbo-hero-rec-l">RECORD</div></div></div>'
         f"{form_html}"
@@ -1054,7 +1099,7 @@ def _rail_hero_html(entry: dict, now: datetime) -> str:
 def _mini_row_html(g: dict) -> str:
     """Session request: bring back the records + standout-performer
     line the regular rotation's Scores page already shows (see
-    scores_client._game_leader) — both were already sitting unused on
+    scores_client.game_leader) — both were already sitting unused on
     every game dict fetch_games returns, so this is purely additive,
     no new fetching. The leader line only exists once state != "pre"
     (see scores_client._normalize_game), same as ESPN's own leaders

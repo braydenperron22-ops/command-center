@@ -1394,7 +1394,7 @@ html, body, [class*="css"] {
 .score-card-winner .score-card-value {
     color: #32D74B;
 }
-/* That game's standout performer (see scores_client._game_leader) —
+/* That game's standout performer (see scores_client.game_leader) —
    real box-score color, not just the bare score. Single line, clipped
    rather than wrapped: a long stat line ("3-4, 2 HR, 2B, 3 RBI, 2 R")
    shouldn't be able to stretch or break this grid's compact card. */
@@ -2451,6 +2451,14 @@ html, body, [class*="css"] {
     text-transform: uppercase;
     margin-top: 4px;
 }
+/* Session request: "playoff odds for each of my teams" — a compact
+   suffix on the division line rather than its own row, since this
+   card's vertical space is already tightly tuned (see this file's own
+   padding-trim comments elsewhere on .jumbo-hero/.jumbo-form/
+   .jumbo-gameline). var(--tc) is each sport's own hero accent color
+   (set per .jumbo-hero-{sport} above), so this reads as a highlight,
+   not routine muted text. */
+.jumbo-hero-odds { color: var(--tc); font-weight: 600; letter-spacing: 0.08em; }
 .jumbo-hero-rec { margin-left: auto; text-align: right; flex: 0 0 auto; padding-left: 10px; }
 .jumbo-hero-rec-v { font-family: var(--num); font-size: 30px; line-height: 1; white-space: nowrap; }
 .jumbo-hero-rec-l { font-size: 10px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.3em; white-space: nowrap; }
@@ -2537,6 +2545,11 @@ html, body, [class*="css"] {
 .jumbo-standings-team { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jumbo-standings-record { flex: 0 0 auto; }
 .jumbo-standings-extra { flex: 0 0 40px; text-align: right; color: var(--mut-2); }
+/* Session request: "playoff odds for each of my teams" — only ever
+   present on our own team's row (see pages_jumbotron._standings_rows_html's
+   own comment), so this never competes with .jumbo-standings-extra for
+   every OTHER row in the division. */
+.jumbo-standings-odds { flex: 0 0 auto; text-align: right; color: var(--led); font-weight: 600; margin-left: 8px; }
 
 /* ---- Featured board ---- */
 .jumbo-board { position: relative; }
@@ -2992,6 +3005,14 @@ html, body, [class*="css"] {
     margin-bottom: 7px;
 }
 
+/* Session request: "make a pre and postgame ai overview thats only
+   generated once... have it do a pre and post game blurb." Same
+   border-top-divider treatment as .jumbo-leaders (Current Matchup)
+   right below it, so this reads as one more panel in the same stack,
+   not a visually distinct callout competing for attention. */
+.jumbo-blurb { border-top: 1px solid var(--edge); padding: 12px 26px 16px; }
+.jumbo-blurb-text { font-size: 15px; line-height: 1.5; color: var(--bone); }
+
 /* Last-play strip under the Current Matchup card — session request:
    "add a play badge that shows the last play from the live game feed
    and situation TOR LOGO 0-1 BOS LOGO ie: ____ grounded out to first
@@ -3057,7 +3078,7 @@ html, body, [class*="css"] {
 .jumbo-mini-record { font-size: 11px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.05em; }
 .jumbo-mini-score { margin-left: auto; font-family: var(--num); font-size: 26px; line-height: 1; color: var(--bone); }
 /* Session request: bring back the standout-performer line (see
-   scores_client._game_leader) that used to show on the regular
+   scores_client.game_leader) that used to show on the regular
    rotation's own Scores page. */
 .jumbo-mini-leader {
     font-family: var(--mono);

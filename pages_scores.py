@@ -57,7 +57,7 @@ def _score_side(team: dict, is_winner: bool) -> str:
 
 
 def _leader_html(game: dict) -> str:
-    """That game's standout performer (see scores_client._game_leader)
+    """That game's standout performer (see scores_client.game_leader)
     — real box-score color instead of just the bare score, especially
     useful for a final you missed live. "" pregame, or if the feed
     didn't carry one for this particular game."""
