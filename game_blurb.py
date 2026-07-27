@@ -8,14 +8,18 @@ primary, this one isn't).
 
 Each blurb is written exactly once per game — not re-rolled on a
 timer, not regenerated on every 5s rerun or on a fresh browser/kiosk
-session — and remembered in a plain module-level dict keyed by
-game_id for the rest of this process's life. Same "generate once,
-remember forever this run" shape as sports_alerts.py's own seen/
-baseline_done dicts, just for AI text instead of alert dedup.
-Deliberately NOT persisted_state-backed like morning_briefing's own
-daily dedup: a blurb for a game that's already over has no value
-surviving a redeploy, so there's nothing worth spending Upstash's
-budget on here.
+session — and remembered in a module-level dict keyed by game_id,
+persisted_state-backed the same way groq_client/gemini_client's own
+periodic caches are (loaded once at import, saved on every new
+success). Originally a plain in-process dict with no cloud backing —
+"a blurb for a game that's already over has no value surviving a
+redeploy" seemed right in isolation, but session report, the first day
+this app ever hit Gemini's free-tier rate limit: a mid-game redeploy/
+restart wiped this cache mid-window, so the very next rerun paid for a
+brand new Gemini call to re-write the exact same blurb it had already
+generated minutes earlier — for however many restarts happened while
+that one game's window was still open. Surviving a restart is the
+whole point now, not an afterthought.
 
 ESPN's summary endpoint (scores_client.fetch_summary, already used for
 win probability/leaders elsewhere) is the source for everything this
@@ -27,13 +31,34 @@ this (it's a different data source entirely — see that module's own
 docstring)."""
 
 import gemini_client
+import persisted_state
 import scores_client
 
 MAX_INJURIES_PER_TEAM = 3
 MAX_OUTPUT_TOKENS = 150
+# Comfortably above any realistic same-season count (3 tracked teams,
+# roughly one game a day between them) — a safety net against
+# unbounded growth, not something that trims real data in normal use.
+MAX_CACHED_BLURBS = 200
 
-_pregame_cache: dict[str, str] = {}
-_postgame_cache: dict[str, str] = {}
+
+def _load_cache(key: str) -> dict[str, str]:
+    raw = persisted_state.load(key, {})
+    return {str(k): str(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
+
+
+_pregame_cache: dict[str, str] = _load_cache("game_blurb_pregame_cache")
+_postgame_cache: dict[str, str] = _load_cache("game_blurb_postgame_cache")
+
+
+def _remember(cache: dict[str, str], persist_key: str, key: str, text: str) -> None:
+    cache[key] = text
+    if len(cache) > MAX_CACHED_BLURBS:
+        # Plain dicts preserve insertion order — drop the oldest entry,
+        # same bounded-eviction shape news.py's own headline-dedup dict
+        # already uses.
+        cache.pop(next(iter(cache)))
+    persisted_state.save(persist_key, cache)
 
 
 def _records_line(competition: dict) -> str | None:
@@ -184,12 +209,12 @@ def _postgame_prompt(team_label: str, opponent: str, context: str) -> str:
 
 
 def get_pregame_blurb(sport_key: str, game_id, team_label: str, away_name: str, home_name: str, opponent: str) -> str | None:
-    """Generated exactly once per game_id, then remembered for the rest
-    of this process — a fresh browser session or kiosk reload does NOT
-    regenerate it (see this module's own docstring on why there's no
-    persisted_state backing here). None whenever ESPN doesn't have this
-    game or the AI call itself fails — the caller just shows nothing,
-    same as every other optional jumbotron panel."""
+    """Generated exactly once per game_id, then remembered across
+    reruns, browser sessions, AND process restarts (see this module's
+    own docstring on why that last part matters now). None whenever
+    ESPN doesn't have this game or the AI call itself fails — the
+    caller just shows nothing, same as every other optional jumbotron
+    panel."""
     key = f"{sport_key}_{game_id}"
     if key in _pregame_cache:
         return _pregame_cache[key]
@@ -198,7 +223,7 @@ def get_pregame_blurb(sport_key: str, game_id, team_label: str, away_name: str, 
         return None
     text = gemini_client.generate(_pregame_prompt(team_label, opponent, context), max_output_tokens=MAX_OUTPUT_TOKENS)
     if text is not None:
-        _pregame_cache[key] = text
+        _remember(_pregame_cache, "game_blurb_pregame_cache", key, text)
     return text
 
 
@@ -222,5 +247,5 @@ def get_postgame_blurb(sport_key: str, game_id, team_label: str, away_name: str,
         _postgame_prompt(team_label, opponent, context), max_output_tokens=MAX_OUTPUT_TOKENS, allow_during_game=True
     )
     if text is not None:
-        _postgame_cache[key] = text
+        _remember(_postgame_cache, "game_blurb_postgame_cache", key, text)
     return text
