@@ -2388,6 +2388,17 @@ html, body, [class*="css"] {
     --glass: rgba(16,22,32,0.66);
     --edge: #1E2634;
     --edge-hi: #2E3B54;
+    /* Session request: "you know how we have the apple style thing for
+       the main page... I want that but keep the display dark." --edge
+       is arena identity (dividers, glyph strokes, accent fallbacks —
+       left untouched everywhere it already appears) and stays an
+       opaque blue-gray; this is a separate, dedicated tone specifically
+       for the handful of real card-surface borders below (.jumbo-panel,
+       .jumbo-marquee, etc.), matching the translucent white edge every
+       .tile elsewhere in this app already uses — the trait that actually
+       reads as "glass" rather than "flat dark panel," independent of
+       the arena color palette sitting on top of it. */
+    --glass-edge: rgba(255,255,255,0.10);
     --bone: #F4F1E8;
     /* Session feedback: "a lot of it is just gray... let's remove that
        muted gray to a more visible color overall" — brightened both
@@ -2454,8 +2465,11 @@ html, body, [class*="css"] {
     padding: 8px 16px;
     flex: 0 0 auto;
     background: linear-gradient(180deg, rgba(14,19,28,0.94), rgba(8,11,16,0.94));
-    border: 1px solid var(--edge);
-    border-radius: 12px;
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid var(--glass-edge);
+    border-radius: 18px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
     position: relative;
 }
 /* Jays blue on the left half, Habs red on the right — the arena's own
@@ -2467,7 +2481,7 @@ html, body, [class*="css"] {
     height: 2px;
     background: linear-gradient(90deg, #3E7CC9 0 50%, #D8323F 50% 100%);
     opacity: 0.85;
-    border-radius: 0 0 12px 12px;
+    border-radius: 0 0 18px 18px;
 }
 .jumbo-brand {
     font-family: var(--num);
@@ -2503,10 +2517,12 @@ html, body, [class*="css"] {
     display: flex;
     align-items: baseline;
     gap: 9px;
-    border: 1px solid var(--edge);
-    border-radius: 10px;
+    border: 1px solid var(--glass-edge);
+    border-radius: 14px;
     padding: 5px 14px;
     background: var(--glass);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
 }
 .jumbo-wx-temp { font-family: var(--num); font-size: 26px; line-height: 1; }
 .jumbo-wx-loc { font-size: 9px; font-weight: 300; color: var(--mut); letter-spacing: 0.24em; }
@@ -2519,10 +2535,15 @@ html, body, [class*="css"] {
     min-height: 0;
 }
 .jumbo-panel {
-    border: 1px solid var(--edge);
-    border-radius: 14px;
+    border: 1px solid var(--glass-edge);
+    /* Bumped from 14px to match the same generous "squircle" curve
+       every .tile on the normal kiosk pages already uses — see
+       --glass-edge's own comment above. */
+    border-radius: 20px;
     background: var(--glass);
-    box-shadow: 0 10px 32px rgba(0,0,0,0.4);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    box-shadow: 0 10px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -2597,9 +2618,11 @@ html, body, [class*="css"] {
     /* margin-top/padding trimmed from 14px/12px 15px — see
        .jumbo-rail-col's own comment on why this rail got tighter. */
     margin-top: 9px;
-    border: 1px solid var(--edge);
-    border-radius: 10px;
+    border: 1px solid var(--glass-edge);
+    border-radius: 14px;
     background: rgba(8,11,17,0.7);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
     padding: 9px 15px;
     font-family: var(--mono);
     font-size: 16px;
@@ -2655,9 +2678,11 @@ html, body, [class*="css"] {
    _standings_table, restyled for the jumbotron's LED-mono look. */
 .jumbo-standings-body { flex: 1; min-height: 0; padding: 4px 18px 14px; overflow: hidden; }
 .jumbo-standings {
-    border: 1px solid var(--edge);
-    border-radius: 9px;
+    border: 1px solid var(--glass-edge);
+    border-radius: 14px;
     background: rgba(8,11,17,0.7);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
     overflow: hidden;
     font-family: var(--mono);
     font-size: 14px;
@@ -2891,8 +2916,11 @@ html, body, [class*="css"] {
     align-items: center;
     gap: 22px;
     background: rgba(8,11,17,0.65);
-    border: 1px solid var(--edge);
-    border-radius: 14px;
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid var(--glass-edge);
+    border-radius: 18px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
     padding: 16px 26px;
 }
 .jumbo-leader-big-hshot {
@@ -3527,14 +3555,17 @@ html, body, [class*="css"] {
 }
 .st-key-jumbotron_controls div[data-testid="stButton"] button {
     background: rgba(16,22,32,0.82);
-    border: 1px solid var(--edge);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid var(--glass-edge);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
     color: var(--mut);
     font-family: var(--mono);
     font-size: 12px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     padding: 8px 16px;
-    border-radius: 8px;
+    border-radius: 12px;
     white-space: nowrap;
 }
 .st-key-jumbotron_controls div[data-testid="stButton"] button:hover {
