@@ -2516,7 +2516,15 @@ html, body, [class*="css"] {
     font-size: 9px;
 }
 .jumbo-clock {
-    font-family: var(--num);
+    /* Session feedback: "make the big numbers the same font as the
+       ones you just implemented" — every genuinely numeric big display
+       (this clock, the weather temp, records, countdowns, standings/
+       leader stats) now reads in the same --label font as the small
+       text. --num (Bebas Neue) stays only on real wordmarks/labels —
+       .jumbo-brand ("FANCAVE"), .jumbo-vs ("VS"), .jumbo-final-badge
+       ("FINAL") — the one place a distinct display font still earns
+       its keep. */
+    font-family: var(--label);
     font-size: 36px;
     letter-spacing: 0.05em;
     line-height: 1;
@@ -2540,7 +2548,7 @@ html, body, [class*="css"] {
     backdrop-filter: blur(24px) saturate(160%);
     -webkit-backdrop-filter: blur(24px) saturate(160%);
 }
-.jumbo-wx-temp { font-family: var(--num); font-size: 26px; line-height: 1; }
+.jumbo-wx-temp { font-family: var(--label); font-size: 26px; line-height: 1; }
 .jumbo-wx-loc { font-size: 9px; font-weight: 300; color: var(--mut); letter-spacing: 0.24em; }
 
 .jumbo-grid {
@@ -2627,7 +2635,7 @@ html, body, [class*="css"] {
    not routine muted text. */
 .jumbo-hero-odds { color: var(--tc); font-weight: 600; letter-spacing: 0.08em; }
 .jumbo-hero-rec { margin-left: auto; text-align: right; flex: 0 0 auto; padding-left: 10px; }
-.jumbo-hero-rec-v { font-family: var(--num); font-size: 30px; line-height: 1; white-space: nowrap; }
+.jumbo-hero-rec-v { font-family: var(--label); font-size: 30px; line-height: 1; white-space: nowrap; }
 .jumbo-hero-rec-l { font-size: 10px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.3em; white-space: nowrap; }
 .jumbo-form { display: flex; gap: 7px; align-items: center; margin-top: 9px; }  /* was 13px — see .jumbo-rail-col's own comment */
 .jumbo-form-label { font-size: 12px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.24em; margin-right: 3px; }
@@ -2651,7 +2659,7 @@ html, body, [class*="css"] {
 }
 .jumbo-gameline b { color: var(--bone); font-weight: 600; }
 .jumbo-gl-score { color: var(--led); font-weight: 800; font-size: 19px; }
-.jumbo-gl-cd { font-family: var(--num); color: var(--bone); font-size: 24px; letter-spacing: 0.08em; margin-left: 10px; }
+.jumbo-gl-cd { font-family: var(--label); color: var(--bone); font-size: 24px; letter-spacing: 0.08em; margin-left: 10px; }
 .jumbo-w { color: var(--ok); }
 .jumbo-l { color: var(--live); }
 .jumbo-offseason { border-style: dashed; color: var(--mut-2); letter-spacing: 0.28em; font-size: 13px; }
@@ -2820,9 +2828,9 @@ html, body, [class*="css"] {
     0% { transform: scale(1.12); text-shadow: 0 0 20px rgba(255,255,255,0.5); }
     100% { transform: scale(1); text-shadow: none; }
 }
-.jumbo-dash { color: var(--edge-hi); font-family: var(--num); font-size: 50px; }
+.jumbo-dash { color: var(--edge-hi); font-family: var(--label); font-size: 50px; }
 .jumbo-vs { font-family: var(--num); font-size: 26px; letter-spacing: 0.4em; color: var(--mut-2); padding-left: 0.4em; }
-.jumbo-countdown { font-family: var(--num); font-size: 96px; color: var(--bone); letter-spacing: 0.06em; line-height: 1; }
+.jumbo-countdown { font-family: var(--label); font-size: 96px; color: var(--bone); letter-spacing: 0.06em; line-height: 1; }
 .jumbo-cd-label { font-size: 10px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.4em; }
 .jumbo-final-badge {
     font-family: var(--num);
@@ -2849,7 +2857,7 @@ html, body, [class*="css"] {
 }
 .jumbo-situ-hot { color: var(--led); font-weight: 700; margin-right: 16px; font-size: 28px; }
 .jumbo-dim { color: var(--mut-2); }
-.jumbo-clockbig { font-family: var(--num); font-size: 30px; color: var(--bone); letter-spacing: 0.06em; }
+.jumbo-clockbig { font-family: var(--label); font-size: 30px; color: var(--bone); letter-spacing: 0.06em; }
 /* Pregame venue/weather + probable starters (pages_jumbotron.
    _pregame_extra_html) — session request, all free data off the same
    feed already used for scoring plays. */
@@ -2954,7 +2962,7 @@ html, body, [class*="css"] {
 }
 .jumbo-leader-big-col { min-width: 0; }
 .jumbo-leader-big-stat {
-    font-family: var(--num);
+    font-family: var(--label);
     font-size: 52px;
     line-height: 1;
     color: var(--bone);
@@ -3263,7 +3271,7 @@ html, body, [class*="css"] {
 .jumbo-mini-team img { width: 34px; height: 34px; object-fit: contain; flex: 0 0 auto; }
 .jumbo-mini-abbr { font-size: 22px; font-weight: 600; color: var(--mut); letter-spacing: 0.06em; }
 .jumbo-mini-record { font-size: 13px; font-weight: 400; color: var(--mut-2); letter-spacing: 0.04em; }
-.jumbo-mini-score { margin-left: auto; font-family: var(--num); font-size: 32px; line-height: 1; color: var(--bone); }
+.jumbo-mini-score { margin-left: auto; font-family: var(--label); font-size: 32px; line-height: 1; color: var(--bone); }
 /* Session request: bring back the standout-performer line (see
    scores_client.game_leader) that used to show on the regular
    rotation's own Scores page. */
