@@ -9,25 +9,36 @@ separate copy of the queue, so the exact same already-deduped alert
 still play out once per open connection instead of once, period.
 """
 
+import threading
+
 _queue: list[dict] = []
+# Streamlit runs each connected session's rerun on its own thread within
+# the same process — two sessions can both read/pop the front of this
+# process-wide queue in the same instant without a lock, which either
+# silently drops the *next* alert (both pop the same front item) or
+# raises IndexError (both pop when only one item remained).
+_lock = threading.Lock()
 
 
 def extend(alerts: list[dict]) -> None:
-    _queue.extend(alerts)
+    with _lock:
+        _queue.extend(alerts)
 
 
 def current(now_ts: float) -> dict | None:
     """Whatever's at the front of the queue right now, stamping its
     shown_at the first time it's seen. None if the queue's empty."""
-    if not _queue:
-        return None
-    alert = _queue[0]
-    if "shown_at" not in alert:
-        alert["shown_at"] = now_ts
-    return alert
+    with _lock:
+        if not _queue:
+            return None
+        alert = _queue[0]
+        if "shown_at" not in alert:
+            alert["shown_at"] = now_ts
+        return alert
 
 
 def advance() -> None:
     """Drops the front of the queue — call once its hold time is up."""
-    if _queue:
-        _queue.pop(0)
+    with _lock:
+        if _queue:
+            _queue.pop(0)

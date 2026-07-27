@@ -1,6 +1,11 @@
 """Personal command-center dashboard: ambient rotation across Home (macro
-data), Conflicts, News, Markets, Internals, and Today — clock/weather
-header stays constant."""
+data), Conflicts, News, Markets, Internals, Today, Household, Weather,
+Radar, Sports, Scores, and Portfolio — clock/weather header stays
+constant. Jumbotron (sports takeover) and Maintenance (diagnostics) are
+real pages too but deliberately excluded from the passive rotation —
+see PAGES in config.py and each page's own routing comments below for
+how they're reached instead (an automatic takeover / the J and D
+hotkeys)."""
 
 import time
 from datetime import datetime

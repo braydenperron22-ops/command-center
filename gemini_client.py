@@ -38,6 +38,7 @@ import time
 import requests
 import streamlit as st
 
+import fetch_throttle
 import persisted_state
 
 GEMINI_MODEL = "gemini-flash-lite-latest"
@@ -79,6 +80,7 @@ def _generate_or_raise(prompt: str, temperature: float, max_output_tokens: int) 
     api_key = st.secrets.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("no GEMINI_API_KEY configured")
+    fetch_throttle.wait_turn()
     resp = requests.post(
         GEMINI_URL,
         params={"key": api_key},

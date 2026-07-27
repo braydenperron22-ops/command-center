@@ -30,8 +30,18 @@ def _parse_pub_date(raw: str) -> datetime | None:
         return None
 
 
+# A single Google News RSS hiccup used to blank the whole Conflicts page
+# for up to an hour (this cache's own TTL) since the cached function
+# swallowed its own exception into an empty-but-"successful" `[]` —
+# same bug class ec_alerts.py's own docstring describes fixing. Now the
+# cached function raises on total failure instead, and this last-good
+# value carries the page through the cache window until the next real
+# success.
+_last_good_headlines: list[dict] = []
+
+
 @st.cache_data(ttl=60 * 60, show_spinner=False)
-def fetch_conflict_headlines() -> list[dict]:
+def _fetch_conflict_headlines_raw() -> list[dict]:
     """Google's own feed order isn't newest-first (confirmed by
     inspection — dates come back mixed), so `published` is captured here
     for the Conflicts page to sort and age-color by, not assumed."""
@@ -39,13 +49,10 @@ def fetch_conflict_headlines() -> list[dict]:
         "q": f"{QUERY} when:{CONFLICT_WINDOW_DAYS}d",
         "hl": "en-US", "gl": "US", "ceid": "US:en",
     }
-    try:
-        fetch_throttle.wait_turn()
-        resp = requests.get(GOOGLE_NEWS_RSS, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-        resp.raise_for_status()
-        root = ElementTree.fromstring(resp.content)
-    except (requests.RequestException, ElementTree.ParseError):
-        return []
+    fetch_throttle.wait_turn()
+    resp = requests.get(GOOGLE_NEWS_RSS, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+    resp.raise_for_status()
+    root = ElementTree.fromstring(resp.content)
 
     items = []
     for item in root.findall(".//item"):
@@ -56,3 +63,12 @@ def fetch_conflict_headlines() -> list[dict]:
                 "published": _parse_pub_date(item.findtext("pubDate") or ""),
             })
     return items
+
+
+def fetch_conflict_headlines() -> list[dict]:
+    global _last_good_headlines
+    try:
+        _last_good_headlines = _fetch_conflict_headlines_raw()
+    except (requests.RequestException, ElementTree.ParseError):
+        pass
+    return _last_good_headlines

@@ -210,34 +210,44 @@ def _computed_fear_greed_index() -> dict | None:
     e.g. IEF briefly unreachable, doesn't take down the whole gauge),
     returning None only once fewer than half of the four are
     available."""
-    series_by_component = {
-        "Momentum": _momentum_series(),
-        "Volatility": _volatility_series(),
-        "Junk Bond Demand": _junk_bond_series(),
-        "Safe Haven Demand": _safe_haven_series(),
-    }
-    valid = {k: v for k, v in series_by_component.items() if v is not None and not v.dropna().empty}
-    if len(valid) < 2:
+    try:
+        series_by_component = {
+            "Momentum": _momentum_series(),
+            "Volatility": _volatility_series(),
+            "Junk Bond Demand": _junk_bond_series(),
+            "Safe Haven Demand": _safe_haven_series(),
+        }
+        valid = {k: v for k, v in series_by_component.items() if v is not None and not v.dropna().empty}
+        if len(valid) < 2:
+            return None
+
+        combined = pd.concat(valid.values(), axis=1, keys=valid.keys()).ffill().dropna()
+        if combined.empty:
+            return None
+        composite = combined.mean(axis=1)
+
+        current = float(composite.iloc[-1])
+        prior = float(composite.iloc[-TREND_LOOKBACK_DAYS]) if len(composite) > TREND_LOOKBACK_DAYS else current
+        yesterday = float(composite.iloc[-2]) if len(composite) > 1 else current
+
+        return {
+            "value": current,
+            "prior_value": prior,
+            "yesterday": yesterday,
+            "components": {k: float(v.iloc[-1]) for k, v in combined.items()},
+            "component_count": len(valid),
+            "history": [float(v) for v in composite.tail(90)],
+            "source": "computed",
+        }
+    except Exception:
+        # Unlike _external_fear_greed_index, this fallback tier used to
+        # have no guard at all — an unexpected yfinance schema/dtype
+        # change here would propagate uncaught through fear_greed_index()
+        # and blank the whole Internals page (app.py's _safe_render is a
+        # last resort, not a substitute for the "data unavailable" state
+        # every other tile degrades to). Now matches every sibling
+        # fetch function in this module.
         return None
-
-    combined = pd.concat(valid.values(), axis=1, keys=valid.keys()).ffill().dropna()
-    if combined.empty:
-        return None
-    composite = combined.mean(axis=1)
-
-    current = float(composite.iloc[-1])
-    prior = float(composite.iloc[-TREND_LOOKBACK_DAYS]) if len(composite) > TREND_LOOKBACK_DAYS else current
-    yesterday = float(composite.iloc[-2]) if len(composite) > 1 else current
-
-    return {
-        "value": current,
-        "prior_value": prior,
-        "yesterday": yesterday,
-        "components": {k: float(v.iloc[-1]) for k, v in combined.items()},
-        "component_count": len(valid),
-        "history": [float(v) for v in composite.tail(90)],
-        "source": "computed",
-    }
 
 
 def fear_greed_index() -> dict | None:

@@ -80,6 +80,7 @@ import streamlit as st
 from astral import LocationInfo
 from astral.sun import sun
 
+import fetch_throttle
 import gemini_client
 import ntfy_client
 import persisted_state
@@ -540,6 +541,7 @@ def _generate_or_raise(
     if reasoning_effort is not None:
         payload["reasoning_effort"] = reasoning_effort
     try:
+        fetch_throttle.wait_turn()
         resp = requests.post(
             GROQ_URL,
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},

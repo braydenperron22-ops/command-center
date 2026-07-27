@@ -114,14 +114,29 @@ def _fetch_feed(url: str, source: str) -> list[dict]:
     return items
 
 
+# A simultaneous blip across all three sources (both BayToday feeds plus
+# 511 Ontario) used to blank this whole tile for the full cache window,
+# since the cached function itself swallowed every failure into an
+# empty-but-"successful" `[]` — same bug class ec_alerts.py's own
+# docstring describes fixing. _fetch_items_raw now raises when literally
+# nothing came through; this last-good value carries the tile through
+# the cache window until the next real success. A genuinely quiet news
+# day (some sources up, zero matching items) is NOT a failure and still
+# returns `[]` normally — only "every source errored" triggers the
+# fallback.
+_last_good_items: list[dict] = []
+
+
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def fetch_items() -> list[dict]:
+def _fetch_items_raw() -> list[dict]:
     """Most recent incident/construction items, newest first, capped to
     MAX_ITEMS — a glance-only list, not something to scroll through."""
     items = []
+    any_source_succeeded = False
     for url, source in INCIDENT_FEEDS:
         try:
             items.extend(_fetch_feed(url, source))
+            any_source_succeeded = True
         except Exception:
             continue
 
@@ -129,15 +144,29 @@ def fetch_items() -> list[dict]:
         for item in _fetch_feed(*CONSTRUCTION_FEED):
             if _CONSTRUCTION_PATTERN.search(item["headline"].lower()):
                 items.append(item)
+        any_source_succeeded = True
     except Exception:
         pass
 
     try:
         items.extend(_fetch_road_events())
+        any_source_succeeded = True
     except Exception:
         pass
+
+    if not any_source_succeeded:
+        raise RuntimeError("all local-news sources failed")
 
     # Undated items (parse failure) sort last rather than crashing on a
     # None comparison — still shown, just not trusted to be "recent."
     items.sort(key=lambda i: i["published"] or _EPOCH, reverse=True)
     return items[:MAX_ITEMS]
+
+
+def fetch_items() -> list[dict]:
+    global _last_good_items
+    try:
+        _last_good_items = _fetch_items_raw()
+    except Exception:
+        pass
+    return _last_good_items

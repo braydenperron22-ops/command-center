@@ -805,8 +805,18 @@ def _parse_pub_date(raw: str) -> datetime | None:
         return None
 
 
+# A simultaneous blip across every feed in FEEDS used to blank the News
+# page and the breaking-news bar for the full 3-minute cache window,
+# since the cached function itself swallowed the failure into an
+# empty-but-"successful" `[]` — same bug class ec_alerts.py's own
+# docstring describes fixing. _fetch_headlines_raw now raises when
+# nothing at all came through; this last-good value carries both
+# through the cache window until the next real success.
+_last_good_headlines: list[dict] = []
+
+
 @st.cache_data(ttl=3 * 60, show_spinner=False)
-def fetch_headlines() -> list[dict]:
+def _fetch_headlines_raw() -> list[dict]:
     items = []
     any_feed_succeeded = False
     for url, source in FEEDS:
@@ -835,14 +845,24 @@ def fetch_headlines() -> list[dict]:
                     )
         except Exception:
             continue  # one dead/slow feed shouldn't take down the others
+    if not any_feed_succeeded:
+        raise RuntimeError("all news feeds failed")
     # At least one of FEEDS came through — news is still genuinely
     # flowing, even if some other feed is currently down (see
     # data_health.py). Only runs on an actual cache miss (st.cache_data
     # skips this whole body on a hit), so this tracks "when a real fetch
     # last succeeded," on this function's own 3-minute cadence.
-    if any_feed_succeeded:
-        data_health.record_success("news")
+    data_health.record_success("news")
     return items
+
+
+def fetch_headlines() -> list[dict]:
+    global _last_good_headlines
+    try:
+        _last_good_headlines = _fetch_headlines_raw()
+    except Exception:
+        pass
+    return _last_good_headlines
 
 
 def get_new_alerts() -> list[dict]:

@@ -51,7 +51,7 @@ def reaction_badge_html(symbol: str | None, baseline_price: float | None) -> str
     """A small pill like "S&P +0.4% since" — "" if no baseline was
     captured for this headline (wrong category, or it broke on a
     weekend) or either price is currently unavailable."""
-    if symbol is None or baseline_price is None:
+    if symbol is None or not baseline_price:
         return ""
     current = price_for(symbol)
     if current is None:
