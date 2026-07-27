@@ -68,6 +68,20 @@ theme.inject()
 # share one toggle rule: set ?page= to that page, or clear it if that
 # page's already showing.
 #
+# Press S to open the screen picker (session request: "bind the S key
+# to a selection menu where i can pick any of the screens we've built
+# so i can look for ideas without needing to sit through the
+# rotation") — a separate ?picker=open query param, not ?page=, since
+# the picker is an OVERLAY on top of whatever's already showing (the
+# auto-rotation or a specific page), not a page swap itself; toggling
+# it must never disturb ?page=. The overlay itself (rendered separately
+# below, once _PAGE_LABELS exists) closes via plain <a href> links, not
+# this same JS function — window.kioskTogglePicker only needs to exist
+# for the keyboard path (S to open/close, Escape to close), which has
+# no href to navigate to, just the current URL to toggle in place.
+# Exposed on the parent window rather than closed over in here so nothing
+# else needs its own copy of this toggle logic if it ever needs it too.
+#
 # Has to be a components iframe rather than st.markdown: Streamlit
 # strips <script> out of unsafe_allow_html entirely, so markdown can't
 # run anything. The iframe's own document never has keyboard focus on a
@@ -77,6 +91,21 @@ theme.inject()
 # element (rather than binding a closure from in here) also means the
 # handler keeps working after Streamlit tears this iframe down and
 # rebuilds it, which it does on every 5-second rerun.
+#
+# The delegated click listener inside this same injected script (below,
+# on .screen-picker-item/-backdrop/-close) exists because Streamlit's
+# own markdown sanitizer force-adds target="_blank" rel="noopener
+# noreferrer" to every <a> it renders under unsafe_allow_html —
+# confirmed live, even this app's existing mobile-nav links carry it.
+# Left alone, every screen-picker click would pop open a brand-new
+# browser tab on the kiosk instead of navigating the one it's already
+# showing on. preventDefault() stops that default anchor navigation
+# before the browser ever acts on target="_blank", then the handler
+# navigates in-place itself via the same URL the href already pointed
+# to. Delegated on `document` (not bound to the specific elements) so
+# it keeps working after Streamlit tears the picker's markup down and
+# rebuilds it every 5s rerun, same reasoning as binding keydown on
+# `document` above rather than on any one element.
 components.html(
     """
     <script>
@@ -86,13 +115,34 @@ components.html(
       var s = doc.createElement('script');
       s.id = 'kiosk-hotkeys';
       s.textContent = [
+        "window.kioskTogglePicker = function () {",
+        "  var url = new URL(window.location.href);",
+        "  if (url.searchParams.get('picker') === 'open') {",
+        "    url.searchParams.delete('picker');",
+        "  } else {",
+        "    url.searchParams.set('picker', 'open');",
+        "  }",
+        "  window.location.replace(url.toString());",
+        "};",
         "document.addEventListener('keydown', function (e) {",
         "  var key = e.key.toLowerCase();",
+        "  var t = e.target;",
+        "  var typing = t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName);",
+        "  if (key === 'escape') {",
+        "    var url = new URL(window.location.href);",
+        "    if (url.searchParams.get('picker') === 'open') {",
+        "      url.searchParams.delete('picker');",
+        "      window.location.replace(url.toString());",
+        "    }",
+        "    return;",
+        "  }",
+        "  if (e.metaKey || e.ctrlKey || e.altKey || typing) return;",
+        "  if (key === 's') {",
+        "    window.kioskTogglePicker();",
+        "    return;",
+        "  }",
         "  var targetPage = key === 'j' ? 'jumbotron' : key === 'd' ? 'maintenance' : null;",
         "  if (!targetPage) return;",
-        "  if (e.metaKey || e.ctrlKey || e.altKey) return;",
-        "  var t = e.target;",
-        "  if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;",
         "  var url = new URL(window.location.href);",
         "  if (url.searchParams.get('page') === targetPage) {",
         "    url.searchParams.delete('page');",
@@ -100,6 +150,12 @@ components.html(
         "    url.searchParams.set('page', targetPage);",
         "  }",
         "  window.location.replace(url.toString());",
+        "});",
+        "document.addEventListener('click', function (e) {",
+        "  var link = e.target.closest && e.target.closest('.screen-picker-item, .screen-picker-backdrop, .screen-picker-close');",
+        "  if (!link) return;",
+        "  e.preventDefault();",
+        "  window.location.replace(link.getAttribute('href'));",
         "});",
       ].join('\\n');
       doc.head.appendChild(s);
@@ -396,6 +452,51 @@ _maint_active = " mobile-nav-item-active" if page == "maintenance" else ""
 st.markdown(
     f'<div class="mobile-nav"><a class="mobile-nav-item mobile-nav-item-auto{_auto_active}" href="?">Auto</a>{_nav_items}'
     f'<a class="mobile-nav-item mobile-nav-item-maintenance{_maint_active}" href="?page=maintenance">Dev</a></div>',
+    unsafe_allow_html=True,
+)
+
+# Screen picker — session request: "bind the S key to a selection menu
+# where i can pick any of the screens we've built so i can look for
+# ideas without needing to sit through the rotation." Rendered
+# unconditionally (regardless of `page`, including during a jumbotron
+# takeover) so S works no matter what's currently showing — CSS alone
+# decides whether it's actually visible, gated on the ?picker=open
+# query param the hotkey script above toggles. Every entry (including
+# the backdrop/close, see _close_href below) is a plain <a href="...">
+# — real navigation, not a JS-driven partial update or an onclick=""
+# handler (Streamlit's own markdown sanitizer already strips inline
+# style="" from anchors — confirmed live elsewhere in this file — not
+# worth gambling that onclick="" survives it too when a plain href does
+# the exact same job with zero risk). Clicking any screen tile closes
+# the picker for free, since that fresh href has no picker= param at
+# all — same "URL is the only source of truth" approach the J/D
+# hotkeys already use. Jumbotron/maintenance included alongside the
+# normal PAGES rotation — both are real built screens, just
+# deliberately excluded from the passive rotation (see their own
+# routing comments above), which is exactly what this picker exists to
+# route around.
+_picker_open = st.query_params.get("picker") == "open"
+_picker_entries = [(key, _PAGE_LABELS[key]) for key in PAGES] + [
+    ("jumbotron", "Jumbotron"), ("maintenance", "Dev / Maintenance"),
+]
+_picker_tiles = "".join(
+    f'<a class="screen-picker-item{" screen-picker-item-active" if key == page else ""}" href="?page={key}">{label}</a>'
+    for key, label in _picker_entries
+)
+# Wherever closing the picker (backdrop click, the × button) should
+# land — exactly the URL state from before it opened, not a hardcoded
+# "?": _requested_page already holds the real ?page= value (or None
+# for auto-rotation), same source the mobile-nav's own "Auto" link
+# above is built from.
+_close_href = f"?page={_requested_page}" if _requested_page in PAGES or _requested_page in ("jumbotron", "maintenance") else "?"
+st.markdown(
+    f'<div class="screen-picker{" screen-picker-open" if _picker_open else ""}">'
+    f'<a class="screen-picker-backdrop" href="{_close_href}"></a>'
+    f'<div class="screen-picker-panel">'
+    f'<div class="screen-picker-header"><span>Jump to a screen</span>'
+    f'<a class="screen-picker-close" href="{_close_href}">&times;</a></div>'
+    f'<div class="screen-picker-grid">{_picker_tiles}</div>'
+    f"</div></div>",
     unsafe_allow_html=True,
 )
 

@@ -2276,6 +2276,83 @@ html, body, [class*="css"] {
 .mobile-nav-item-portfolio { color: #A78BFA !important; }
 .mobile-nav-item-maintenance { color: #8E8E93 !important; }
 
+/* Screen picker (app.py) — session request: "bind the S key to a
+   selection menu where i can pick any of the screens we've built so i
+   can look for ideas without needing to sit through the rotation."
+   Always in the DOM; display alone gates visibility on .screen-picker-
+   open (see app.py's own ?picker=open query param). z-index above
+   every other overlay in this app (jumbotron controls top out at 9999)
+   — an explicit, user-invoked override should always be reachable,
+   including mid-takeover. */
+.screen-picker {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    align-items: center;
+    justify-content: center;
+}
+.screen-picker.screen-picker-open { display: flex; }
+.screen-picker-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(5,7,12,0.78);
+    backdrop-filter: blur(3px);
+}
+.screen-picker-panel {
+    position: relative;
+    width: min(680px, 90vw);
+    max-height: 80vh;
+    overflow-y: auto;
+    background: rgba(20,24,34,0.96);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+    padding: 22px 24px 26px;
+}
+.screen-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #F5F5F7;
+    margin-bottom: 16px;
+}
+.screen-picker-close {
+    font-size: 1.6rem;
+    line-height: 1;
+    color: #8E8E93 !important;
+    text-decoration: none !important;
+    padding: 0 4px;
+}
+.screen-picker-close:hover { color: #F5F5F7 !important; }
+.screen-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+.screen-picker-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 16px 10px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #ABB2C4 !important;
+    text-decoration: none !important;
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+.screen-picker-item:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.25); }
+.screen-picker-item-active {
+    background: rgba(255,255,255,0.16);
+    border-color: rgba(255,255,255,0.4);
+    color: #F5F5F7 !important;
+}
+
 /* ============ JUMBOTRON (pages_jumbotron.py) ============
    A self-contained arena-scoreboard skin that only ever renders while
    sports_alerts.takeover_state() has the screen (T-60min through ~15min
