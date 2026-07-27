@@ -428,6 +428,56 @@ def _top_performers_html(match: dict | None, now_ts: float) -> str:
     )
 
 
+# Session request: "at the end of an inning on the last out, it'll
+# automatically go to the other team's batter when I'm on delay, before
+# the play even populates for me." sports_client.delayed() already
+# trails the raw feed by the jumbotron's own delay stepper, but that's
+# a flat buffer on whatever inning/batter state happened to get polled
+# — it doesn't guarantee the actual moment the batting team changes
+# gets held on screen, especially when the whole half-inning break
+# falls inside a single LIVE_DETAIL_CACHE_TTL_SECONDS (5s) poll window
+# and MLB's feed jumps straight from the last out to the next team's
+# leadoff batter with no "Middle"/"End" state ever observed in between.
+# Same reasoning as OVERLAY_DELAY_SECONDS below (that one holds the
+# out-of-town scoreboard back so the last play stays visible) — this
+# holds the previous half's last real matchup on screen for this long
+# after the batting team actually changes, rather than swapping to the
+# new team the instant the delayed feed reports one.
+MATCHUP_SWITCH_HOLD_SECONDS = 15
+
+
+def _held_matchup(game_id: int, matchup: dict | None, half_marker: str) -> dict | None:
+    """Which matchup dict to actually show right now — either the fresh
+    one for the CURRENT half, or (for up to MATCHUP_SWITCH_HOLD_SECONDS
+    after the batting half last changed) the previous half's last real
+    matchup instead. Keyed by game_id + half_marker (inning_state:
+    current_inning, e.g. "Top:4") so a genuinely new half always starts
+    its own fresh hold rather than inheriting one from a half two
+    switches ago — same marker shape _mlb_between_innings_target above
+    already uses for the same reason."""
+    key = f"jumbotron_matchup_hold_{game_id}"
+    now_ts = time.time()
+    tracked = st.session_state.get(key)
+    if tracked is None or tracked["marker"] != half_marker:
+        st.session_state[key] = {
+            "marker": half_marker,
+            "matchup": matchup,
+            "changed_at": now_ts,
+            "prior_matchup": tracked["matchup"] if tracked else None,
+        }
+        tracked = st.session_state[key]
+    elif matchup is not None:
+        # Same half, fresher data for it (a new batter within the same
+        # half's lineup, or just-updated stats) — keep it current
+        # without resetting the hold clock, which only cares about
+        # WHEN the half itself last changed.
+        tracked["matchup"] = matchup
+
+    if tracked["prior_matchup"] is not None and now_ts - tracked["changed_at"] < MATCHUP_SWITCH_HOLD_SECONDS:
+        return tracked["prior_matchup"]
+    return tracked["matchup"]
+
+
 def _current_matchup_html(game_id: int) -> str:
     """Replaces the Top Performers panel with the two players actually
     involved in the live at-bat while a game is live — session request:
@@ -437,10 +487,13 @@ def _current_matchup_html(game_id: int) -> str:
     "add the pitcher and batter pics and put the stats below them like
     youd see on a jumbotron in the ballpark." MLB only (no batter/
     pitcher concept in hockey — NHL keeps the season-leaders rotation
-    throughout). "" between innings, when the live feed has no one
-    currently at the plate/mound to name (see sports_client.
+    throughout). "" between innings (past MATCHUP_SWITCH_HOLD_SECONDS'
+    own hold on the previous half's last batter), when the live feed
+    has no one currently at the plate/mound to name (see sports_client.
     fetch_mlb_live_matchup's own docstring)."""
-    matchup = sports_client.fetch_mlb_live_matchup(game_id)
+    detail = sports_client.fetch_mlb_live_detail(game_id)
+    half_marker = f"{detail.get('inning_state') if detail else None}:{detail.get('current_inning') if detail else None}"
+    matchup = _held_matchup(game_id, sports_client.fetch_mlb_live_matchup(game_id), half_marker)
     if not matchup:
         return ""
     batter, pitcher = matchup["batter"], matchup["pitcher"]
