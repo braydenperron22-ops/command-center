@@ -814,13 +814,35 @@ html, body, [class*="css"] {
 /* Weather-statement banner: an active Environment Canada alert (any
    severity — special weather statement up to warning) takes priority;
    our own extreme-heat/extreme-cold fallback only ever shows when EC has
-   nothing active, so the two never appear at once. */
+   nothing active, so the two never appear at once.
+
+   position: fixed — session report: "our heat warning just popped up
+   and its kinda colliding with the leave in timer." Root cause: this
+   was still plain in-flow content (just a margin-bottom), the one
+   banner in this trio that never got the same fix .top-alert-bar/
+   .leave-headline already needed for the identical problem (see their
+   own comments) — it only LOOKED positioned correctly by coincidence
+   of wherever it happened to fall in document flow, which put it close
+   enough below the fixed .leave-headline to read as touching/colliding
+   even on a rerun where they weren't truly overlapping yet (confirmed
+   live: a 26px gap that reads as a collision once you add each bar's
+   own blur/glow). Pinned below .leave-headline (fixed at top:88px,
+   height ~85px) with the same ~21px gap already used between
+   .top-alert-bar and .leave-headline themselves, so all three stack
+   deterministically regardless of which combination is actually
+   showing — including a breaking-news headline arriving at the same
+   time as this, which is exactly the scenario being guarded against. */
 .weather-statement-bar {
+    position: fixed;
+    top: 194px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 499;
+    width: min(1200px, calc(100vw - 48px));
     display: flex;
     align-items: center;
     gap: 0.9rem;
     padding: 0.5rem 1.3rem;
-    margin-bottom: 0.5rem;
     border-radius: 16px;
     background: rgba(255,159,10,0.16);
     backdrop-filter: blur(24px) saturate(160%);

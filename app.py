@@ -781,8 +781,15 @@ try:
 except Exception:
     pass
 
+# Gated on _jumbotron_active same as the top-alert bar right above —
+# now that this banner is position: fixed (theme.py's own comment on
+# .weather-statement-bar), an ungated render would float on top of the
+# jumbotron board instead of being naturally buried under it the way
+# plain in-flow content used to be.
+_weather_alert_shown = False
 try:
-    weather_alerts_bar.render(weather)
+    if not _jumbotron_active:
+        _weather_alert_shown = weather_alerts_bar.render(weather)
 except Exception:
     pass
 
@@ -1033,8 +1040,19 @@ if not _jumbotron_active:
 # The jumbotron brings its own marquee (clock, date, weather), so the
 # standard hero row would just be a duplicate stacked above it.
 if not _jumbotron_active:
+    # Reserves the same real vertical space the weather-statement bar
+    # used to occupy back when it was plain in-flow content — session
+    # report: "our heat warning just popped up and its kinda colliding
+    # with the leave in timer." Now that the bar is position: fixed
+    # (theme.py's own comment on .weather-statement-bar has the full
+    # story), it no longer pushes this row down on its own, so without
+    # this spacer the clock/weather row would render right underneath
+    # it instead of below it. Only added on a rerun where the bar
+    # actually rendered (_weather_alert_shown), not a permanent gap on
+    # every ordinary alert-free day.
+    _hero_spacer = '<div style="height: 220px;"></div>' if _weather_alert_shown else ""
     st.markdown(
-        f"""<div class="hero-row">
+        f"""{_hero_spacer}<div class="hero-row">
             <div class="hero-time">
                 <div class="clock">{now.strftime('%I:%M %p').lstrip('0')}</div>
                 <div class="date-sub">{now.strftime('%A, %B %d')}</div>

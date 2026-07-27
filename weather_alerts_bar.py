@@ -141,7 +141,15 @@ def current_severity() -> str | None:
     return _severity(alert["title"])
 
 
-def render(weather: dict | None) -> None:
+def render(weather: dict | None) -> bool:
+    """Returns whether a banner was actually rendered — session report:
+    "our heat warning just popped up and its kinda colliding with the
+    leave in timer." The banner is now position: fixed (theme.py's own
+    comment on .weather-statement-bar has the full story), which took
+    it out of document flow entirely — app.py uses this return value to
+    reserve the same real space in flow (a spacer before .hero-row)
+    only on a rerun where there's actually a banner to clear, rather
+    than a permanent gap on every ordinary alert-free day."""
     alerts = _combined_alerts()
     if alerts:
         # Several alerts can technically be active at once (e.g. a Heat
@@ -172,7 +180,7 @@ def render(weather: dict | None) -> None:
     else:
         text = _fallback_text(weather)
         if not text:
-            return
+            return False
         label = "Weather Advisory"
         bar_class = "weather-statement-bar"
 
@@ -184,3 +192,4 @@ def render(weather: dict | None) -> None:
         </div>""",
         unsafe_allow_html=True,
     )
+    return True
