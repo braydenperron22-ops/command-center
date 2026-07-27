@@ -2513,6 +2513,12 @@ html, body, [class*="css"] {
 .jumbo-w { color: var(--ok); }
 .jumbo-l { color: var(--live); }
 .jumbo-offseason { border-style: dashed; color: var(--mut-2); letter-spacing: 0.28em; font-size: 13px; }
+/* Session request: "for the teams that aren't currently in season,
+   can we have a little countdown on their team bar" — replaces the
+   plain "OFFSEASON" text with a real sentence ("Preseason opener Aug
+   15 · in 20 days"), which .jumbo-offseason's own 0.28em letter-
+   spacing (fine for one all-caps word) would badly reflow. */
+.jumbo-offseason-countdown { letter-spacing: 0.02em; font-size: 14px; text-align: left; }
 .jumbo-hero-live .jumbo-gameline { border-color: rgba(255,69,58,0.45); box-shadow: 0 0 16px rgba(255,69,58,0.1); }
 .jumbo-livechip {
     position: absolute;

@@ -155,7 +155,20 @@ TAKEOVER_POSTGAME_MINUTES = 15
 # Session request adding the Saints: "Saints should have the lowest
 # gameday priority... habs -> jays -> saints" — appended last, since
 # _takeover_priority ranks by position in this list (lower index wins).
+# Only a TIEBREAKER now (see LEVEL_PRIORITY/_takeover_priority below) —
+# session request: "even though the habs are technically higher in
+# priority ranking because it's a preseason game, the jays would take
+# authority" if the Jays are in a regular-season game at the same
+# time. Team identity alone no longer decides it; game level does
+# first, this only breaks a tie within the same level.
 COUNTDOWN_PRIORITY = ["nhl", "mlb", "nfl"]
+# Session request: "regardless of level, playoff games trump all" (and
+# a regular-season game outranks a preseason one even from a normally
+# higher-priority team). Lower rank wins, same convention as
+# COUNTDOWN_PRIORITY. A game with no recognized "level" (shouldn't
+# happen — every sports_client normalize function sets one — but
+# treated as "regular" rather than crashing) sits in the middle.
+LEVEL_PRIORITY = {"playoff": 0, "regular": 1, "preseason": 2}
 
 _LEAGUES = [
     {
@@ -691,9 +704,17 @@ def get_new_alerts(now: datetime) -> list[dict]:
     return alerts
 
 
-def _takeover_priority(league: dict) -> int:
+def _takeover_priority(league: dict, game: dict) -> tuple[int, int]:
+    """(level_rank, team_rank) — level always wins first (session
+    request: "regardless of level, playoff games trump all," and a
+    regular-season game outranks a preseason one even from a normally
+    higher-priority team — "even though the habs are technically
+    higher in priority ranking because it's a preseason game, the jays
+    would take authority"); team identity (COUNTDOWN_PRIORITY) only
+    breaks a tie within the same level."""
     sport = league["sport"]
-    return COUNTDOWN_PRIORITY.index(sport) if sport in COUNTDOWN_PRIORITY else len(COUNTDOWN_PRIORITY)
+    team_rank = COUNTDOWN_PRIORITY.index(sport) if sport in COUNTDOWN_PRIORITY else len(COUNTDOWN_PRIORITY)
+    return (LEVEL_PRIORITY.get(game.get("level"), 1), team_rank)
 
 
 def takeover_state(now: datetime) -> dict | None:
@@ -733,7 +754,7 @@ def takeover_state(now: datetime) -> dict | None:
 
     live = sorted(
         (c for c in candidates if c[2]["state"] == "live"),
-        key=lambda c: _takeover_priority(c[0]),
+        key=lambda c: _takeover_priority(c[0], c[2]),
     )
     if live:
         league, status, game = live[0]
@@ -752,7 +773,7 @@ def takeover_state(now: datetime) -> dict | None:
         if -COUNTDOWN_GRACE_MINUTES <= minutes_until <= TAKEOVER_LEAD_MINUTES:
             pregame.append((league, status, game, minutes_until))
     if pregame:
-        pregame.sort(key=lambda c: _takeover_priority(c[0]))
+        pregame.sort(key=lambda c: _takeover_priority(c[0], c[2]))
         league, status, game, minutes_until = pregame[0]
         seen[game["game_id"]] = True
         return {"phase": "pregame", "league": league, "status": status, "game": game, "minutes_until": minutes_until}
@@ -769,7 +790,7 @@ def takeover_state(now: datetime) -> dict | None:
         if time.time() - stamped <= TAKEOVER_POSTGAME_MINUTES * 60:
             postgame.append((league, status, game))
     if postgame:
-        postgame.sort(key=lambda c: _takeover_priority(c[0]))
+        postgame.sort(key=lambda c: _takeover_priority(c[0], c[2]))
         league, status, game = postgame[0]
         return {"phase": "postgame", "league": league, "status": status, "game": game, "minutes_until": None}
 
@@ -864,7 +885,12 @@ def render_game_countdown(now: datetime) -> None:
     request: the priority order when several things are going on at
     once is "leave in at the top, then Habs, then Jays." The leave
     headline's spot at the very top is app.py's call order (it renders
-    before this); Habs-before-Jays is COUNTDOWN_PRIORITY here.
+    before this); Habs-before-Jays (COUNTDOWN_PRIORITY) only breaks a
+    tie now — level (LEVEL_PRIORITY) decides first, same reasoning and
+    same _takeover_priority helper as takeover_state's own priority
+    sort (session request: "regardless of level, playoff games trump
+    all" — this docstring's own Jays-playoff-vs-Habs example is exactly
+    that case).
 
     Ticks for real once a second via app.py's global live-countdown
     ticker (session request, same as commute_reminder's leave headline:
@@ -879,9 +905,9 @@ def render_game_countdown(now: datetime) -> None:
         minutes_until = (game["start_time"] - now).total_seconds() / 60
         if not (-COUNTDOWN_GRACE_MINUTES <= minutes_until <= COUNTDOWN_WINDOW_MINUTES):
             continue
-        active.append({"league": league, "minutes_until": minutes_until, "start_time": game["start_time"]})
+        active.append({"league": league, "game": game, "minutes_until": minutes_until, "start_time": game["start_time"]})
 
-    active.sort(key=lambda entry: COUNTDOWN_PRIORITY.index(entry["league"]["sport"]))
+    active.sort(key=lambda entry: _takeover_priority(entry["league"], entry["game"]))
     for entry in active:
         kickoff = entry["league"]["kickoff_label"]
         minutes = int(entry["minutes_until"])

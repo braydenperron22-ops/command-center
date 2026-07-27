@@ -31,9 +31,20 @@ MLB_TEAM_ID = 141  # Toronto Blue Jays
 MLB_TEAM_NAME = "Toronto Blue Jays"
 MLB_DIVISION_ID = 201  # AL East
 MLB_DIVISION_NAME = "AL East"
-# "S" (spring training) and "A" (all-star) intentionally excluded — those
-# happening don't mean the real season is underway.
-MLB_SEASON_GAME_TYPES = {"R", "F", "D", "L", "W"}
+# Session request: "can we also include preseason games?" — "S" (spring
+# training) is now tracked too. "A" (all-star) stays excluded — an
+# exhibition mid-season, not part of the pre/regular/post progression
+# this set otherwise governs.
+MLB_SEASON_GAME_TYPES = {"S", "R", "F", "D", "L", "W"}
+# Session request: "regardless of level, playoff games trump all" — and
+# a regular-season game should outrank a preseason one even from a
+# normally higher-priority team. "level" needs a real value per game
+# for sports_alerts._takeover_priority to sort on; MLB Stats API's own
+# gameType codes collapse cleanly onto three buckets ("F"/"D"/"L"/"W"
+# are Wild Card/Division/League Championship/World Series — all
+# "playoff" for this purpose, the postseason round itself doesn't
+# matter here).
+MLB_GAME_LEVEL = {"S": "preseason", "R": "regular", "F": "playoff", "D": "playoff", "L": "playoff", "W": "playoff"}
 # MLB's own static logo CDN, keyed by team id — no API call, confirmed
 # live this returns a real SVG for every team id tried, not just 141.
 _MLB_LOGO_URL = "https://www.mlbstatic.com/team-logos/{team_id}.svg"
@@ -49,8 +60,11 @@ NHL_TEAM_ABBR = "MTL"  # Montreal Canadiens
 NHL_TEAM_NAME = "Montreal Canadiens"  # see MLB_TEAM_NAME's own comment above for why this exists
 NHL_DIVISION_ABBREV = "A"  # Atlantic
 NHL_DIVISION_NAME = "Atlantic"
-# gameType 1 is preseason — same reasoning as MLB's "S" exclusion above.
-NHL_SEASON_GAME_TYPES = {2, 3}
+# Session request: "can we also include preseason games?" — gameType 1
+# (preseason) is now tracked alongside 2 (regular)/3 (playoffs).
+NHL_SEASON_GAME_TYPES = {1, 2, 3}
+# See MLB_GAME_LEVEL's own comment above for why this exists.
+NHL_GAME_LEVEL = {1: "preseason", 2: "regular", 3: "playoff"}
 # Same idea as MLB above — the standings endpoint happens to return this
 # same URL shape per team (confirmed live), so it's built directly here
 # rather than needing a standings lookup just to find a logo. "_light"
@@ -82,6 +96,11 @@ NFL_TEAM_ID = 18  # New Orleans Saints
 NFL_TEAM_NAME = "New Orleans Saints"  # see MLB_TEAM_NAME's own comment above for why this exists
 NFL_TEAM_ABBR = "NO"
 NFL_DIVISION_NAME = "NFC South"
+# ESPN's own seasonType.type codes — session request: "can we also
+# include preseason games?" See _fetch_nfl_games_raw's own comment on
+# why fetching preseason needs an explicit extra request (unlike MLB/
+# NHL, where preseason already comes back in the same schedule call).
+NFL_GAME_LEVEL = {1: "preseason", 2: "regular", 3: "playoff"}
 # ESPN's schedule/standings responses carry no "division" field per team
 # (confirmed live) — divisions are static league structure that doesn't
 # change season to season, same reasoning MLB_DIVISION_NAMES elsewhere
@@ -111,6 +130,14 @@ def _nfl_logo_url(abbrev: str) -> str:
 
 
 SEASON_WINDOW_DAYS = 10  # no games at all in this wide a window either side of now => offseason
+# Session request: "for teams that aren't currently in season, can we
+# have a little countdown on their team bar for when their first game
+# is" — how far ahead fetch_mlb_next_game() looks for that countdown's
+# target, once SEASON_WINDOW_DAYS above has already come up empty. 240
+# days comfortably spans the widest real gap (a World Series ending in
+# late October/November to spring training games in mid-to-late
+# February) with room to spare.
+NEXT_GAME_LOOKAHEAD_DAYS = 240
 # MLB's own schedule endpoint needs an explicit date range (unlike
 # NHL's club-schedule-season/now, which already returns the whole
 # season regardless) — this is how far back that range reaches, wide
@@ -432,6 +459,9 @@ def _normalize_mlb_game(g: dict) -> dict:
         # upcoming game.
         "detail_state": g["status"].get("detailedState"),
         "start_time": _to_local(g["gameDate"]),
+        # "preseason"/"regular"/"playoff" — session request: level-aware
+        # jumbotron takeover priority (see sports_alerts._takeover_priority).
+        "level": MLB_GAME_LEVEL.get(g.get("gameType"), "regular"),
     }
 
 
@@ -451,6 +481,7 @@ def _normalize_nhl_game(g: dict) -> dict:
         "opp_score": opp.get("score"),
         "state": state,
         "start_time": _to_local(g["startTimeUTC"]),
+        "level": NHL_GAME_LEVEL.get(g.get("gameType"), "regular"),
     }
 
 
@@ -539,6 +570,37 @@ def fetch_jays() -> dict | None:
         "recent_form": _recent_form(normalized, now),
         "playoff_odds": odds,
     }
+
+
+def fetch_mlb_next_game() -> dict | None:
+    """{"start_time", "opponent", "level"} for the Jays' very next
+    scheduled game of any kind (including spring training, now that
+    MLB_SEASON_GAME_TYPES tracks "S") — session request: "for teams
+    that aren't currently in season, can we have a little countdown on
+    their team bar for when their first game is." Looked up with a
+    much wider window (NEXT_GAME_LOOKAHEAD_DAYS) than fetch_jays()'s own
+    near-term one, specifically for the true offseason gap fetch_jays()
+    itself returns None for (its own SEASON_WINDOW_DAYS is deliberately
+    narrow — this is the one place that needs to see further out).
+    None on a fetch failure or if the schedule endpoint genuinely has
+    nothing that far out yet (next spring's schedule not published)."""
+    now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
+    start = now.strftime("%Y-%m-%d")
+    end = (now + timedelta(days=NEXT_GAME_LOOKAHEAD_DAYS)).strftime("%Y-%m-%d")
+    try:
+        raw_games = _fetch_mlb_games_raw(start, end)
+    except Exception:
+        return None
+    season_games = [g for g in raw_games if g.get("gameType") in MLB_SEASON_GAME_TYPES]
+    upcoming = sorted(
+        (_normalize_mlb_game(g) for g in season_games),
+        key=lambda g: g["start_time"],
+    )
+    upcoming = [g for g in upcoming if g["start_time"] > now]
+    if not upcoming:
+        return None
+    g = upcoming[0]
+    return {"start_time": g["start_time"], "opponent": g["opponent"], "level": g["level"]}
 
 
 # division.id -> full name — the standings endpoint itself returns null
@@ -721,6 +783,31 @@ def fetch_habs() -> dict | None:
     }
 
 
+def fetch_nhl_next_game() -> dict | None:
+    """{"start_time", "opponent", "level"} for the Habs' very next
+    scheduled game (see fetch_mlb_next_game's own docstring for why
+    this exists) — no separate wide-window request needed here, unlike
+    MLB: _fetch_nhl_games() already returns the whole season regardless
+    of today's date (confirmed live it carries next season's preseason
+    games as early as this past July, months before puck drop), so this
+    just re-filters that same cached fetch by start_time. None on a
+    fetch failure or if genuinely nothing's scheduled yet."""
+    raw_games = _fetch_nhl_games()
+    if raw_games is None:
+        return None
+    now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
+    season_games = [g for g in raw_games if g.get("gameType") in NHL_SEASON_GAME_TYPES]
+    upcoming = sorted(
+        (_normalize_nhl_game(g) for g in season_games),
+        key=lambda g: g["start_time"],
+    )
+    upcoming = [g for g in upcoming if g["start_time"] > now]
+    if not upcoming:
+        return None
+    g = upcoming[0]
+    return {"start_time": g["start_time"], "opponent": g["opponent"], "level": g["level"]}
+
+
 NHL_DIVISION_ORDER = ["A", "M", "C", "P"]  # Atlantic, Metropolitan, Central, Pacific
 
 
@@ -799,24 +886,31 @@ def _normalize_nfl_game(e: dict) -> dict:
         "opp_score": score(opp),
         "state": state,
         "start_time": _to_local(e["date"]),
+        "level": NFL_GAME_LEVEL.get((e.get("seasonType") or {}).get("type"), "regular"),
     }
 
 
 @st.cache_data(ttl=GAME_CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_nfl_games_raw() -> list[dict]:
-    fetch_throttle.wait_turn()
-    resp = requests.get(NFL_TEAM_SCHEDULE_URL.format(team_id=NFL_TEAM_ID), timeout=10)
-    resp.raise_for_status()
-    # Confirmed live: this endpoint's default response only ever
-    # contains Regular Season events (seasonType.type == 2) — no
-    # preseason mixed in the way MLB/NHL's own raw schedules need
-    # filtering for, so nothing further to exclude here. Real
-    # limitation, not yet resolved: postseason (playoff) games haven't
-    # been confirmed to appear here either, since ESPN's own
-    # query-parameter convention for that wasn't chased down for this
-    # lighter-tier integration — see this module's own comment above
-    # NFL_TEAM_SCHEDULE_URL.
-    return resp.json().get("events", [])
+    """Every Saints game this endpoint knows about, across all three
+    season types — session request: "can we also include preseason
+    games?" Confirmed live: the default (no seasontype param) response
+    only ever contains Regular Season events; preseason/postseason each
+    need their own explicit seasontype=1/3 request (1=preseason,
+    2=regular, 3=postseason) — ESPN's own convention, chased down and
+    confirmed live rather than left as the unresolved gap the previous
+    single-request version had. seasontype=3 comes back as a clean
+    empty list before the Saints' own postseason schedule (if any)
+    exists yet, not an error, so it's always safe to ask."""
+    events = []
+    for seasontype in (1, 2, 3):
+        fetch_throttle.wait_turn()
+        resp = requests.get(
+            NFL_TEAM_SCHEDULE_URL.format(team_id=NFL_TEAM_ID), params={"seasontype": seasontype}, timeout=10
+        )
+        resp.raise_for_status()
+        events.extend(resp.json().get("events", []))
+    return events
 
 
 def _fetch_nfl_games() -> list[dict] | None:
@@ -936,6 +1030,29 @@ def fetch_saints() -> dict | None:
         "recent_form": _recent_form(normalized, now),
         "playoff_odds": fetch_nfl_playoff_odds(),
     }
+
+
+def fetch_nfl_next_game() -> dict | None:
+    """{"start_time", "opponent", "level"} for the Saints' very next
+    scheduled game (see fetch_mlb_next_game's own docstring for why
+    this exists) — no separate wide-window request needed: as of this
+    session, _fetch_nfl_games() already merges all three season types
+    (see its own docstring), so this just re-filters that same cached
+    fetch by start_time. None on a fetch failure or if genuinely
+    nothing's scheduled yet."""
+    raw_games = _fetch_nfl_games()
+    if raw_games is None:
+        return None
+    now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
+    upcoming = sorted(
+        (_normalize_nfl_game(e) for e in raw_games),
+        key=lambda g: g["start_time"],
+    )
+    upcoming = [g for g in upcoming if g["start_time"] > now]
+    if not upcoming:
+        return None
+    g = upcoming[0]
+    return {"start_time": g["start_time"], "opponent": g["opponent"], "level": g["level"]}
 
 
 def fetch_all_nfl_standings() -> list[dict]:

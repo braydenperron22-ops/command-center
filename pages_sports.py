@@ -47,6 +47,36 @@ def _odds_suffix_html(status: dict) -> str:
     return f' <span class="sports-odds-badge">· {html.escape(odds["display"])} PO</span>' if odds.get("display") else ""
 
 
+# Session request: "for the teams that aren't currently in season, can
+# we just have like a little countdown on their team bar for when
+# their first game is" — used by _compact_tile_html's out-of-season
+# branch below in place of the plain "Out of season." text, once one
+# of these actually finds a next game.
+_NEXT_GAME_FETCHER = {"mlb": sports_client.fetch_mlb_next_game, "nhl": sports_client.fetch_nhl_next_game}
+_NEXT_GAME_LEVEL_LABEL = {"preseason": "Preseason opener", "regular": "Season opener", "playoff": "Playoff opener"}
+
+
+def _days_until_text(target: datetime, now: datetime) -> str:
+    days = (target.date() - now.date()).days
+    if days <= 0:
+        return "today"
+    if days == 1:
+        return "tomorrow"
+    return f"in {days} days"
+
+
+def _offseason_countdown_html(sport: str, now: datetime) -> str:
+    """"Out of season." once fetch_*_next_game() itself comes up empty
+    too — otherwise "Preseason opener Aug 15 · in 20 days."""
+    next_game = _NEXT_GAME_FETCHER[sport]()
+    if not next_game:
+        return "Out of season."
+    level_label = _NEXT_GAME_LEVEL_LABEL.get(next_game["level"], "Next game")
+    date_text = next_game["start_time"].strftime("%b %-d")
+    countdown_text = _days_until_text(next_game["start_time"], now)
+    return f"{html.escape(level_label)} {date_text} · {countdown_text}"
+
+
 def _blurb_html(sport: str, game: dict, team_label: str) -> str:
     """Pre/postgame AI blurb (see game_blurb.py's own docstring for the
     one-shot-per-game caching and where the ESPN facts come from) — ""
@@ -190,7 +220,7 @@ def _compact_tile_html(label: str, status: dict | None, kickoff_label: str, now:
     if status is None:
         return (
             f'<div class="tile"><div class="tile-label">{label}</div>'
-            f'<div class="tile-prev">Out of season.</div></div>'
+            f'<div class="tile-prev">{_offseason_countdown_html(sport, now)}</div></div>'
         )
     game = status["game"]
     blurb_html = _blurb_html(sport, game, label.title()) if game else ""

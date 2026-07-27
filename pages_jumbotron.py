@@ -801,6 +801,45 @@ def _play_result_overlay_html(game_id: int, play: dict | None) -> str:
 # for the one-shot-per-game caching and where the ESPN facts come from.
 _TEAM_FULL_NAME = {"mlb": sports_client.MLB_TEAM_NAME, "nhl": sports_client.NHL_TEAM_NAME, "nfl": sports_client.NFL_TEAM_NAME}
 
+# Session request: "for the teams that aren't currently in season, can
+# we just have like a little countdown on their team bar for when
+# their first game is" — used by _rail_hero_html's OFFSEASON branch
+# below in place of the plain "OFFSEASON" text, once one of these
+# actually finds a next game (see each fetch_*_next_game's own
+# docstring for why the lookup differs per sport).
+_NEXT_GAME_FETCHER = {
+    "mlb": sports_client.fetch_mlb_next_game,
+    "nhl": sports_client.fetch_nhl_next_game,
+    "nfl": sports_client.fetch_nfl_next_game,
+}
+_NEXT_GAME_LEVEL_LABEL = {"preseason": "Preseason opener", "regular": "Season opener", "playoff": "Playoff opener"}
+
+
+def _days_until_text(target: datetime, now: datetime) -> str:
+    days = (target.date() - now.date()).days
+    if days <= 0:
+        return "today"
+    if days == 1:
+        return "tomorrow"
+    return f"in {days} days"
+
+
+def _offseason_countdown_html(sport: str, now: datetime) -> str:
+    """"OFFSEASON" once fetch_*_next_game() itself comes up empty too
+    (no schedule published that far out yet) — otherwise a compact
+    "Preseason opener Aug 15 · in 20 days" line, same jumbo-offseason
+    styling/slot as the plain text it replaces."""
+    next_game = _NEXT_GAME_FETCHER[sport]()
+    if not next_game:
+        return '<div class="jumbo-gameline jumbo-offseason">OFFSEASON</div>'
+    level_label = _NEXT_GAME_LEVEL_LABEL.get(next_game["level"], "Next game")
+    date_text = next_game["start_time"].strftime("%b %-d")
+    countdown_text = _days_until_text(next_game["start_time"], now)
+    return (
+        f'<div class="jumbo-gameline jumbo-offseason jumbo-offseason-countdown">'
+        f"{html.escape(level_label)} {date_text} · {countdown_text}</div>"
+    )
+
 
 def _blurb_html(sport: str, game: dict, team_label: str, postgame: bool) -> str:
     """"" whenever ESPN doesn't have this game or the AI call itself
@@ -1040,7 +1079,7 @@ def _rail_hero_html(entry: dict, now: datetime) -> str:
         return (
             f'<div class="jumbo-hero jumbo-hero-{entry["sport"]}">'
             f'<div class="jumbo-hero-head"><div class="jumbo-hero-name">{html.escape(entry["label"].title())}</div></div>'
-            f'<div class="jumbo-gameline jumbo-offseason">OFFSEASON</div></div>'
+            f"{_offseason_countdown_html(entry['sport'], now)}</div>"
         )
     game = status.get("game")
     record = _record_for(status)
