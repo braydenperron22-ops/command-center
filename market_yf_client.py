@@ -124,6 +124,26 @@ def quote_for(symbol: str) -> dict | None:
     closes = hist["Close"]
     latest_close = float(closes.iloc[-1])
     latest_open = float(hist["Open"].iloc[-1])
+    # Session report: "canada always comes up null regardless of
+    # state" — Canada already quotes the real TSX index (^GSPTSE), not
+    # futures, in both open and closed states (config.py's own
+    # MARKET_INSTRUMENTS_OPEN/CLOSED), so that wasn't actually the bug.
+    # The real fragility: intraday was computed purely off TODAY's own
+    # Open, which yfinance leaves NaN whenever a symbol's current daily
+    # bar hasn't fully formed yet — the existing _pct_change NaN guard
+    # already caught this so it wouldn't crash, but with no fallback it
+    # just always showed "data unavailable" for as long as that stayed
+    # true, and confirmed live this is a real, not-rare state
+    # specifically for ^GSPTSE, not just the brief pre-market window
+    # the original guard was written for (TSX's own daily bar on
+    # Yahoo's backend appears to lag/gap more than the US indices'
+    # do). Falling back to the prior session's close when Open is
+    # missing keeps intraday showing real data through that window —
+    # and is the more standard "daily % change" definition anyway
+    # (change since the last close, which is what most financial sites
+    # actually show), not just a workaround.
+    if math.isnan(latest_open) and len(closes) > 1:
+        latest_open = float(closes.iloc[-2])
     intraday = _pct_change(latest_close, latest_open)
 
     one_month_base = float(closes.iloc[-ONE_MONTH_TRADING_DAYS]) if len(closes) > ONE_MONTH_TRADING_DAYS else None
