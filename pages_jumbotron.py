@@ -55,11 +55,12 @@ _RAIL = [
 # cycle them... if there's too many games... make a second page for
 # that league it can flip to."
 _AROUND_LEAGUES = ["mlb", "nhl", "nba", "nfl"]
-# Confirmed live: 8 rows fit fine pregame (2 lines each), but once
-# records + a leader line are showing on every row (live/final games)
-# an 8th row clips against the panel's fixed height. 7 leaves real
-# margin at the tallest (leader-line-on-every-row) case.
-_AROUND_PAGE_SIZE = 7
+# Was 7 (8 clipped) — session feedback: "the around the league card is
+# a little crowded," right after theme.py's own distance-readability
+# pass made every row noticeably bigger (bigger logos, bigger type,
+# more row padding — see .jumbo-mini's own comment). Same rows, same
+# panel height, just fewer of them fit comfortably now.
+_AROUND_PAGE_SIZE = 6
 _AROUND_ROTATE_SECONDS = 12
 _FORM_GAMES_SHOWN = 8
 
