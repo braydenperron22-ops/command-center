@@ -2415,7 +2415,23 @@ html, body, [class*="css"] {
     --ok: #32D583;
     --disp: 'Oswald', 'Arial Narrow', sans-serif;
     --num: 'Bebas Neue', 'Oswald', Impact, sans-serif;
-    --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+    /* Was JetBrains Mono — session feedback: "pick a better font. I'm
+       not sure I'm too fond of the font... I can't really read the
+       little fonts... it's still not very apple-ish." This is every
+       small/secondary text element on the board (standings, Around The
+       Leagues rows, situation strip, stat labels, blurb text — ~30
+       call sites), not just one panel, and a coding monospace font is
+       exactly the opposite of what reads clearly from across a room:
+       narrow, uniform-width letterforms with no real weight contrast.
+       Same system font stack the normal kiosk pages already use (see
+       html/body's own rule far above) — genuinely Apple-ish, and SF's
+       real hinting/weight steps are far more legible at small sizes
+       than a monospace font optimized for aligning code, not for being
+       read at a glance. Named --label (not --mono) since that's no
+       longer an accurate description of what it holds. --num (Bebas
+       Neue, the big score/countdown digits) is untouched — session
+       feedback was explicit that one's fine as-is. */
+    --label: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
     font-family: var(--disp);
     color: var(--bone);
     display: flex;
@@ -2530,7 +2546,11 @@ html, body, [class*="css"] {
 .jumbo-grid {
     flex: 1;
     display: grid;
-    grid-template-columns: 420px 1fr 340px;
+    /* Right column widened 340->370px — the Around The Leagues text
+       inside it just got noticeably bigger (see .jumbo-mini's own
+       comment); the Featured board's flexible middle column easily
+       absorbs the difference. */
+    grid-template-columns: 420px 1fr 370px;
     gap: 12px;
     min-height: 0;
 }
@@ -2555,7 +2575,7 @@ html, body, [class*="css"] {
     align-items: center;
     padding: 12px 18px;
     border-bottom: 1px solid var(--edge);
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 13px;
     letter-spacing: 0.32em;
     color: var(--led);
@@ -2624,7 +2644,7 @@ html, body, [class*="css"] {
     backdrop-filter: blur(20px) saturate(160%);
     -webkit-backdrop-filter: blur(20px) saturate(160%);
     padding: 9px 15px;
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 16px;
     color: var(--mut);
     line-height: 1.6;
@@ -2645,7 +2665,7 @@ html, body, [class*="css"] {
 .jumbo-livechip {
     position: absolute;
     top: 18px; right: 20px;
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 11px;
     font-weight: 800;
     color: var(--live);
@@ -2684,7 +2704,7 @@ html, body, [class*="css"] {
     backdrop-filter: blur(20px) saturate(160%);
     -webkit-backdrop-filter: blur(20px) saturate(160%);
     overflow: hidden;
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 14px;
 }
 .jumbo-standings-row {
@@ -2769,7 +2789,7 @@ html, body, [class*="css"] {
    emoji? I don't really fuck with that. Can we just make it regular
    numbers." */
 .jumbo-digit {
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 92px;
     line-height: 0.92;
     width: 0.62em;
@@ -2821,7 +2841,7 @@ html, body, [class*="css"] {
    the same request, freeing up real room to grow into). */
 .jumbo-situ {
     text-align: center;
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 24px;
     letter-spacing: 0.05em;
     padding: 10px 26px 14px;
@@ -2835,7 +2855,7 @@ html, body, [class*="css"] {
    feed already used for scoring plays. */
 .jumbo-pregame-venue {
     text-align: center;
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 13px;
     color: var(--mut);
     letter-spacing: 0.03em;
@@ -2846,7 +2866,7 @@ html, body, [class*="css"] {
     justify-content: center;
     gap: 40px;
     padding: 6px 0 10px;
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 13px;
 }
 .jumbo-probables b { color: var(--bone); font-weight: 700; font-size: 15px; }
@@ -2877,7 +2897,7 @@ html, body, [class*="css"] {
 }
 .jumbo-wp-row { display: flex; align-items: center; gap: 16px; }
 .jumbo-wp-pct {
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 34px;
     font-weight: 700;
     flex: 0 0 auto;
@@ -2896,7 +2916,7 @@ html, body, [class*="css"] {
 .jumbo-wp-labels {
     display: flex;
     justify-content: space-between;
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 14px;
     font-weight: 700;
     color: var(--bone);
@@ -2942,7 +2962,7 @@ html, body, [class*="css"] {
     white-space: nowrap;
 }
 .jumbo-leader-big-cat {
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 13px;
     letter-spacing: 0.2em;
     color: var(--led);
@@ -2975,7 +2995,7 @@ html, body, [class*="css"] {
     padding-left: 24px;
     margin-left: 4px;
     border-left: 1px solid var(--edge);
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 13px;
 }
 .jumbo-leader-name-item {
@@ -3017,7 +3037,7 @@ html, body, [class*="css"] {
     margin-bottom: 6px;
 }
 .jumbo-live-matchup-tag {
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 13px;
     letter-spacing: 0.18em;
     color: var(--led);
@@ -3029,7 +3049,7 @@ html, body, [class*="css"] {
        inheriting var(--disp) (Oswald, condensed) at a forced 700, same
        swollen/blobby look. Session feedback: "can we make their name
        skinnier as well please i wanna be able to read that too." */
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 21px;
     font-weight: 600;
     color: var(--bone);
@@ -3049,9 +3069,10 @@ html, body, [class*="css"] {
        like a blob. pick a skinnier font." var(--num) is Bebas Neue — a
        squat display font with no real bold weight of its own, so
        font-weight:700 on it was faking a bold and coming out swollen at
-       this size. JetBrains Mono actually has real weight steps and
-       tabular figures, reads far slimmer for a stat number like this. */
-    font-family: var(--mono);
+       this size. --label (see its own comment) has real weight steps
+       and tabular figures, reads far slimmer for a stat number like
+       this. */
+    font-family: var(--label);
     font-size: 32px;
     font-weight: 600;
     color: var(--bone);
@@ -3082,7 +3103,7 @@ html, body, [class*="css"] {
     50% { text-shadow: 0 0 22px rgba(90,200,250,0.9), 0 0 36px rgba(90,200,250,0.4); }
 }
 .jumbo-live-matchup-stat-label {
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 12px;
     letter-spacing: 0.2em;
     color: var(--led);
@@ -3090,7 +3111,7 @@ html, body, [class*="css"] {
     text-transform: uppercase;
 }
 .jumbo-live-matchup-vs {
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 16px;
     font-weight: 700;
     color: var(--mut-2);
@@ -3157,7 +3178,7 @@ html, body, [class*="css"] {
 }
 
 .jumbo-sl {
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 8.5px;
     letter-spacing: 0.32em;
     color: var(--led);
@@ -3198,14 +3219,14 @@ html, body, [class*="css"] {
     object-fit: contain;
 }
 .jumbo-lastplay-tally {
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 15px;
     font-weight: 700;
     color: var(--bone);
     letter-spacing: 0.05em;
 }
 .jumbo-lastplay-desc {
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 14px;
     font-weight: 500;
     color: var(--mut-2);
@@ -3215,36 +3236,42 @@ html, body, [class*="css"] {
 
 /* ---- Around the leagues ---- */
 .jumbo-around-body { flex: 1; min-height: 0; overflow: hidden; }
+/* Session feedback: "improve the scoreboard to make it more visible
+   from a distance, especially the around the league portion... I'm
+   reading it from across the room." Every size in this section bumped
+   roughly 25-30% (17->22px abbreviations, 26->32px scores, 11-12->13-
+   14px status/leader lines, 28->34px team logos) — this panel is read
+   at arm's length from a bed, not up close like a phone screen. */
 .jumbo-around-league {
-    font-family: var(--mono);
-    font-size: 12px;
-    letter-spacing: 0.32em;
+    font-family: var(--label);
+    font-size: 14px;
+    letter-spacing: 0.28em;
     color: var(--led);
-    padding: 13px 18px 6px;
+    padding: 14px 18px 7px;
 }
 .jumbo-mini {
     display: flex;
     align-items: center;
-    padding: 10px 18px;
-    gap: 14px;
+    padding: 13px 18px;
+    gap: 16px;
     border-bottom: 1px solid rgba(30,38,52,0.4);
 }
 .jumbo-mini-final { opacity: 0.42; }
 .jumbo-mini-live { background: rgba(255,69,58,0.05); border-left: 3px solid var(--live); }
-.jumbo-mini-teams { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.jumbo-mini-teams { flex: 1; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .jumbo-mini-team { display: flex; align-items: center; gap: 10px; }
-.jumbo-mini-team img { width: 28px; height: 28px; object-fit: contain; flex: 0 0 auto; }
-.jumbo-mini-abbr { font-size: 17px; font-weight: 500; color: var(--mut); letter-spacing: 0.08em; }
-.jumbo-mini-record { font-size: 11px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.05em; }
-.jumbo-mini-score { margin-left: auto; font-family: var(--num); font-size: 26px; line-height: 1; color: var(--bone); }
+.jumbo-mini-team img { width: 34px; height: 34px; object-fit: contain; flex: 0 0 auto; }
+.jumbo-mini-abbr { font-size: 22px; font-weight: 600; color: var(--mut); letter-spacing: 0.06em; }
+.jumbo-mini-record { font-size: 13px; font-weight: 400; color: var(--mut-2); letter-spacing: 0.04em; }
+.jumbo-mini-score { margin-left: auto; font-family: var(--num); font-size: 32px; line-height: 1; color: var(--bone); }
 /* Session request: bring back the standout-performer line (see
    scores_client.game_leader) that used to show on the regular
    rotation's own Scores page. */
 .jumbo-mini-leader {
-    font-family: var(--mono);
-    font-size: 11px;
+    font-family: var(--label);
+    font-size: 13px;
     color: var(--led);
-    letter-spacing: 0.02em;
+    letter-spacing: 0.01em;
     margin-top: 3px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -3252,14 +3279,14 @@ html, body, [class*="css"] {
 }
 .jumbo-mini-leader-stat { color: var(--bone); font-weight: 700; }
 .jumbo-mini-status {
-    font-family: var(--mono);
-    font-size: 12px;
+    font-family: var(--label);
+    font-size: 14px;
     color: var(--mut-2);
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     text-align: right;
     flex: 0 0 auto;
-    line-height: 1.6;
+    line-height: 1.5;
 }
 .jumbo-mini-live .jumbo-mini-status { color: var(--live); font-weight: 800; }
 
@@ -3342,7 +3369,10 @@ html, body, [class*="css"] {
     100% { opacity: 1; }
 }
 .jumbo-transition-sub {
-    font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+    /* Can't use var(--label) here — this overlay (app.py) renders
+       outside .jumbo's own div entirely, so that custom property isn't
+       in scope. Same font stack it now points to, just spelled out. */
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
     font-size: 14px;
     letter-spacing: 0.32em;
     color: #FFB300;
@@ -3400,20 +3430,20 @@ html, body, [class*="css"] {
 }
 .jumbo-otc-inner { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 1440px; min-height: 0; }
 .jumbo-otc-title {
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 20px;
     letter-spacing: 0.32em;
     color: var(--led);
     text-transform: uppercase;
     font-weight: 700;
 }
-.jumbo-otc-sub { font-family: var(--mono); font-size: 30px; font-weight: 700; color: var(--bone); margin-top: 8px; }
+.jumbo-otc-sub { font-family: var(--label); font-size: 30px; font-weight: 700; color: var(--bone); margin-top: 8px; }
 .jumbo-otc-timer-block { display: flex; flex-direction: column; align-items: center; margin: 16px 0 26px; }
-.jumbo-otc-timer { font-family: var(--mono); font-size: 54px; font-weight: 700; color: var(--bone); line-height: 1.1; }
-.jumbo-otc-timer-label { font-family: var(--mono); font-size: 13px; letter-spacing: 0.22em; color: var(--led); text-transform: uppercase; font-weight: 700; margin-top: 4px; }
+.jumbo-otc-timer { font-family: var(--label); font-size: 54px; font-weight: 700; color: var(--bone); line-height: 1.1; }
+.jumbo-otc-timer-label { font-family: var(--label); font-size: 13px; letter-spacing: 0.22em; color: var(--led); text-transform: uppercase; font-weight: 700; margin-top: 4px; }
 .jumbo-otc-league {
     grid-column: 1 / -1;
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 14px;
     letter-spacing: 0.24em;
     color: var(--led);
@@ -3430,12 +3460,12 @@ html, body, [class*="css"] {
     min-height: 0;
     overflow-y: auto;
 }
-.jumbo-otc-grid .jumbo-mini { padding: 9px 16px; border-radius: 8px; }
-.jumbo-otc-grid .jumbo-mini-abbr { font-size: 19px; }
-.jumbo-otc-grid .jumbo-mini-score { font-size: 28px; }
-.jumbo-otc-grid .jumbo-mini-team img { width: 30px; height: 30px; }
-.jumbo-otc-grid .jumbo-mini-status { font-size: 13px; }
-.jumbo-otc-grid .jumbo-mini-leader { font-size: 12px; }
+.jumbo-otc-grid .jumbo-mini { padding: 10px 16px; border-radius: 8px; }
+.jumbo-otc-grid .jumbo-mini-abbr { font-size: 24px; }
+.jumbo-otc-grid .jumbo-mini-score { font-size: 34px; }
+.jumbo-otc-grid .jumbo-mini-team img { width: 36px; height: 36px; }
+.jumbo-otc-grid .jumbo-mini-status { font-size: 15px; }
+.jumbo-otc-grid .jumbo-mini-leader { font-size: 14px; }
 
 /* Full-screen play-result announcement — session request: "add an
    animation that takes up the screen after every play. Single,
@@ -3560,7 +3590,7 @@ html, body, [class*="css"] {
     border: 1px solid var(--glass-edge);
     box-shadow: 0 6px 18px rgba(0,0,0,0.35);
     color: var(--mut);
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 12px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
@@ -3584,7 +3614,7 @@ html, body, [class*="css"] {
     line-height: 1;
 }
 .jumbo-delay-label {
-    font-family: var(--mono);
+    font-family: var(--label);
     font-size: 12px;
     letter-spacing: 0.08em;
     color: var(--mut);
