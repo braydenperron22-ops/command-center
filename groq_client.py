@@ -24,11 +24,14 @@ None return as "the AI's unavailable right now" and fall back to its
 own non-AI behavior — a different provider doesn't change that
 obligation, only how rarely it should actually trigger.
 
-Two guardrails live here, applied uniformly to every caller regardless
+Three guardrails live here, applied uniformly to every caller regardless
 of which throttle wrapper they use (generate_periodic's cadence cache
-or news.py's own hand-rolled one) since both eventually call
+or news.py's own hand-rolled one) since all three eventually call
 _generate_or_raise: an overnight pause window (see _in_pause_window,
-synced to the bedroom monitor's own smart-plug schedule) and a hard
+synced to the bedroom monitor's own smart-plug schedule), a tracked
+game's own pregame/live/postgame pause (see sports_alerts.
+game_time_active — session request after hitting the rate limit: "make
+all the ai's go into a forced rest during game time"), and a hard
 daily token budget (DAILY_TOKEN_BUDGET) — see each one's own comment. Session request, after a day of
 testing discovered Groq's real cap is 100k tokens/day (not just the
 12k/min the response headers had already surfaced): "make everything
@@ -84,6 +87,7 @@ import fetch_throttle
 import gemini_client
 import ntfy_client
 import persisted_state
+import sports_alerts
 from config import TIMEZONE, WEATHER_LAT, WEATHER_LON
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
@@ -296,6 +300,10 @@ def ai_status() -> dict:
 
     - "Asleep" (neutral): the overnight pause window — deliberately not
       attempting anything, not a failure.
+    - "Game Time" (neutral): a tracked game's pregame/live/postgame
+      window (see sports_alerts.game_time_active) — also deliberate,
+      not a failure, same reasoning as Asleep just on a different
+      schedule.
     - "Rate Limited" (low): the most recent real attempt failed on
       every tier available to it. Nothing is currently getting through.
     - "On Gemini" (medium): a model's own dedicated Groq account just
@@ -314,6 +322,8 @@ def ai_status() -> dict:
     now = _local_now()
     if _in_pause_window(now):
         return {"label": "Asleep", "tone": "neutral"}
+    if sports_alerts.game_time_active():
+        return {"label": "Game Time", "tone": "neutral"}
     if _last_served_by == "none":
         return {"label": "Rate Limited", "tone": "low"}
     if _last_served_by == "gemini":
@@ -345,6 +355,11 @@ def ai_status_by_model() -> list[dict]:
     Per slot, in priority order:
     - "Asleep" (neutral): the overnight pause window, same as
       ai_status() — nothing's being attempted for ANY model right now.
+    - "Game Time" (neutral): a tracked game's pregame/live/postgame
+      window, same as ai_status() — also nothing being attempted for
+      ANY model (Gemini included), except game_blurb's own postgame
+      recap which bypasses this pause entirely rather than showing up
+      here as an exception.
     - "Idle" (neutral): this model hasn't had a real attempt yet this
       process — a fresh redeploy, or, for GPT-OSS specifically given
       its once-a-day cadence, simply hasn't been that model's turn yet
@@ -362,6 +377,7 @@ def ai_status_by_model() -> list[dict]:
     - "Active" (good): last real attempt succeeded on this model's own
       dedicated account."""
     asleep = _in_pause_window(_local_now())
+    game_paused = sports_alerts.game_time_active()
     entries = []
     for model in _MODEL_SLOTS:
         label = MODEL_DISPLAY_NAMES.get(model, model)
@@ -369,6 +385,8 @@ def ai_status_by_model() -> list[dict]:
         at = info["at"] if info else None
         if asleep:
             entries.append({"label": label, "status": "Asleep", "tone": "neutral", "at": at})
+        elif game_paused:
+            entries.append({"label": label, "status": "Game Time", "tone": "neutral", "at": at})
         elif info is None:
             entries.append({"label": label, "status": "Idle", "tone": "neutral", "at": None})
         elif not info["ok"]:
@@ -379,6 +397,8 @@ def ai_status_by_model() -> list[dict]:
     gemini_at = gemini_client.last_attempt_at()
     if asleep:
         entries.append({"label": "Gemini", "status": "Asleep", "tone": "neutral", "at": gemini_at})
+    elif game_paused:
+        entries.append({"label": "Gemini", "status": "Game Time", "tone": "neutral", "at": gemini_at})
     elif gemini_outcome is None:
         entries.append({"label": "Gemini", "status": "Idle", "tone": "neutral", "at": None})
     elif gemini_outcome:
@@ -613,10 +633,18 @@ def generate(
     left as None for every other caller/model, unchanged from before
     this existed.
 
-    During the overnight pause, returns None immediately without
-    attempting anything — neither Groq nor gemini_client, since the
-    pause is a deliberate quiet period, not a capacity problem (see
-    this module's own docstring). Otherwise looks up the ONE Groq
+    During the overnight pause, or while a tracked game is in its
+    pregame/live/postgame window (see sports_alerts.game_time_active),
+    returns None immediately without attempting anything — neither Groq
+    nor gemini_client. Both are deliberate quiet periods, not a capacity
+    problem (see this module's own docstring and sports_alerts.
+    game_time_active's own comment for the game-time one specifically —
+    session request, after a real rate-limit hit: "make all the ai's go
+    into a forced rest during game time"). This function has no
+    exception for game_blurb.py's own postgame recap since that call
+    goes through gemini_client.generate directly, not this one — see
+    that function's own allow_during_game parameter. Otherwise looks up
+    the ONE Groq
     account dedicated to `model` (see _MODEL_ACCOUNT — "primary" for
     Llama, "chatgpt" for gpt-oss; NOT tried against each other, these
     are two separate accounts for two separate purposes now), and
@@ -626,7 +654,7 @@ def generate(
     _last_served_by for ai_status() — left untouched during the pause
     itself, since that's a separate status, not a failure to record."""
     global _last_served_by
-    if _in_pause_window(_local_now()):
+    if _in_pause_window(_local_now()) or sports_alerts.game_time_active():
         return None
     account = _MODEL_ACCOUNT.get(model)
     if account is not None:

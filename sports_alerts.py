@@ -717,6 +717,28 @@ def _takeover_priority(league: dict, game: dict) -> tuple[int, int]:
     return (LEVEL_PRIORITY.get(game.get("level"), 1), team_rank)
 
 
+def game_time_active(now: datetime | None = None) -> bool:
+    """True for the same pregame-lead-through-postgame-hold window
+    takeover_state's own phase breakdown covers — session request,
+    after hitting the Groq/Gemini free-tier rate limit: "make all the
+    ai's go into a forced rest during game time... finding a pause is
+    the next best move." groq_client/gemini_client call this to skip
+    every AI generate() during that whole window (not just while a game
+    is actually live) since the point is saving budget for whenever the
+    user's actually looking at the dashboard again, not a claim that
+    pregame/postgame AI calls are individually harmful. game_blurb's own
+    postgame recap is the one deliberate exception (passes
+    allow_during_game=True), since that's the one AI call this pause
+    exists around, not despite."""
+    # Naive, matching app.py's own `now` — sports_client's game
+    # start_time is naive too (see that module's own convention), and
+    # takeover_state's minutes_until subtraction raises TypeError on a
+    # naive/aware mix (confirmed live: this crashed the maintenance
+    # page's ai_status_by_model() call the first time this ran).
+    now = now or datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
+    return takeover_state(now) is not None
+
+
 def takeover_state(now: datetime) -> dict | None:
     """Which game, if any, should take the entire screen over right now
     — {"phase": "pregame"|"live"|"postgame", "league", "status", "game",

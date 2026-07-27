@@ -40,6 +40,7 @@ import streamlit as st
 
 import fetch_throttle
 import persisted_state
+import sports_alerts
 
 GEMINI_MODEL = "gemini-flash-lite-latest"
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
@@ -101,10 +102,21 @@ def _generate_or_raise(prompt: str, temperature: float, max_output_tokens: int) 
     return text
 
 
-def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200) -> str | None:
+def generate(
+    prompt: str, temperature: float = 0.7, max_output_tokens: int = 200, allow_during_game: bool = False
+) -> str | None:
     """One short piece of AI-written text for `prompt`, or None if the
-    key's missing, the request fails, or the free tier's rate-limited
-    right now — never raises. Cached by the exact prompt string AND
+    key's missing, the request fails, the free tier's rate-limited right
+    now, or a tracked game is in its pregame/live/postgame window (see
+    sports_alerts.game_time_active) — never raises. Session request,
+    after a real rate-limit hit: "make all the ai's go into a forced
+    rest during game time... except for when the post game recap is
+    generate[d]." Pass `allow_during_game=True` to bypass that one check
+    for a call that's specifically FOR that window — game_blurb.py's
+    get_postgame_blurb is the only caller that does; its own
+    get_pregame_blurb deliberately doesn't, since a pregame blurb isn't
+    the exception the session request carved out. Cached by the exact
+    prompt string AND
     temperature/max_output_tokens, but ONLY on success (see
     _generate_or_raise) — confirmed live this matters: a plain
     @st.cache_data on a function that itself returns None on failure
@@ -138,6 +150,8 @@ def generate(prompt: str, temperature: float = 0.7, max_output_tokens: int = 200
     (pages_conflicts' multi-conflict JSON overview) needs to raise this
     explicitly, or the response silently truncates mid-output."""
     global _last_outcome, _last_attempt_at
+    if not allow_during_game and sports_alerts.game_time_active():
+        return None
     _last_attempt_at = time.time()
     try:
         text = _generate_or_raise(prompt, temperature, max_output_tokens)

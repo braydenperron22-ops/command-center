@@ -213,7 +213,14 @@ def get_postgame_blurb(sport_key: str, game_id, team_label: str, away_name: str,
     context = _gather_context(sport_key, away_name, home_name, postgame=True)
     if context is None:
         return None
-    text = gemini_client.generate(_postgame_prompt(team_label, opponent, context), max_output_tokens=MAX_OUTPUT_TOKENS)
+    # The one deliberate exception to gemini_client.generate's own
+    # game-time pause (see its docstring) — this call only exists
+    # DURING that window, right as a tracked game goes final, so
+    # pausing it along with everything else would mean it almost never
+    # fires.
+    text = gemini_client.generate(
+        _postgame_prompt(team_label, opponent, context), max_output_tokens=MAX_OUTPUT_TOKENS, allow_during_game=True
+    )
     if text is not None:
         _postgame_cache[key] = text
     return text
