@@ -112,7 +112,7 @@ def radar_image_url(kind: str = "rain") -> str:
 # browser composites its own transparent PNG against this same tile
 # background), so the loop looks identical, just animated.
 _RADAR_TILE_BG = (0x0A, 0x14, 0x20, 255)
-RADAR_LOOP_FRAME_MS = 600  # per-frame duration
+RADAR_LOOP_FRAME_MS = 600  # per-frame duration for a frame pair exactly REFRESH_SECONDS apart
 # How much longer the true final frame holds, relative to every other
 # frame — dialed back from 2x to 1.5x (900ms): with FRAME_HISTORY_SIZE
 # now spanning up to an hour, real consecutive captures can genuinely
@@ -124,6 +124,25 @@ RADAR_LOOP_FRAME_MS = 600  # per-frame duration
 # still gives the "current moment" a distinguishing pause without
 # making that impression last as long.
 RADAR_LOOP_FINAL_HOLD_MULTIPLIER = 1.5
+# Session report: "it seems really janky. almost like the 10 frames are
+# further apart than 6 mins." Root cause — every frame used to hold for
+# the same flat RADAR_LOOP_FRAME_MS regardless of the REAL gap between
+# it and the next frame, even though _frame_history already carries
+# each frame's own real EC timestamp. Our own GetCapabilities cache
+# (REFRESH_SECONDS TTL) isn't phase-locked to EC's actual 6-minute
+# publish schedule, and backfilled frames get stitched in around
+# whatever the live-fetched ones already are — either can leave a real
+# gap of more than one native 6-minute step between two adjacent
+# recorded frames. Playing that transition at the same speed as a true
+# 6-minute one visibly doubles (or worse) how far the storm appears to
+# jump in one step — precisely "further apart than 6 min." Frame
+# duration below is now scaled to the REAL measured gap instead of
+# assumed uniform, so an oversized gap holds proportionally longer
+# rather than animating too fast. Capped at MAX_FRAME_GAP_MULTIPLIER×
+# so one pathological gap (an outage, a cold start mid-backfill)
+# can't stall the whole loop on a single frame for several seconds.
+MAX_FRAME_GAP_MULTIPLIER = 3
+MIN_RADAR_LOOP_FRAME_MS = 200
 
 # Rebuilding and re-encoding the whole GIF is real work (decode N real
 # PNGs, composite each against the tile background, re-encode as GIF)
@@ -170,7 +189,23 @@ def radar_loop_data_uri(kind: str = "rain") -> str | None:
     except Exception:
         return None
 
-    durations = [RADAR_LOOP_FRAME_MS] * (len(composited) - 1) + [round(RADAR_LOOP_FRAME_MS * RADAR_LOOP_FINAL_HOLD_MULTIPLIER)]
+    # Each non-final frame's hold time is scaled to how long it actually
+    # sat before the next one arrived (see this constant's own comment
+    # above on why a flat duration read as janky) — a genuine 6-minute
+    # step gets RADAR_LOOP_FRAME_MS, a 12-minute one gets roughly double,
+    # clamped to MAX_FRAME_GAP_MULTIPLIER× so a single outlier gap can't
+    # stall the loop.
+    timestamps = [t for t, _ in history]
+    durations = [
+        max(
+            MIN_RADAR_LOOP_FRAME_MS,
+            min(
+                round(RADAR_LOOP_FRAME_MS * (timestamps[i + 1] - timestamps[i]).total_seconds() / REFRESH_SECONDS),
+                RADAR_LOOP_FRAME_MS * MAX_FRAME_GAP_MULTIPLIER,
+            ),
+        )
+        for i in range(len(timestamps) - 1)
+    ] + [round(RADAR_LOOP_FRAME_MS * RADAR_LOOP_FINAL_HOLD_MULTIPLIER)]
     buf = io.BytesIO()
     composited[0].save(
         buf, format="GIF", save_all=True, append_images=composited[1:],
