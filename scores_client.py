@@ -281,6 +281,46 @@ def win_probability(match: dict) -> float | None:
     return pct * 100 if pct is not None else None
 
 
+def _implied_prob(moneyline: float) -> float:
+    """American odds -> raw implied win probability (0-100) — still
+    includes the bookmaker's own vig, see moneyline_win_probability's
+    own docstring for why that gets removed before this is used."""
+    return -moneyline / (-moneyline + 100) * 100 if moneyline < 0 else 100 / (moneyline + 100) * 100
+
+
+def moneyline_win_probability(match: dict) -> float | None:
+    """Home team's approximate PREGAME win probability (0-100), derived
+    from the moneyline rather than ESPN's own live model (which is None
+    until the game actually starts — see win_probability above).
+    Session request: "how are we calculating that? Can we use money
+    line to get approximate win odds."
+
+    Both sides' moneylines imply a probability that individually sums
+    to slightly over 100% — that overround is the sportsbook's own edge
+    (vig), not a real 51/49 split reading as 52/50. Normalizing both
+    implied probabilities so they sum to exactly 100 removes it,
+    standard practice for reading a moneyline as "true" odds rather
+    than what the book would pay out. None whenever ESPN's pickcenter
+    doesn't have odds for this game yet (common more than a day or two
+    out) or the moneyline fields themselves are missing — same "not a
+    failure, just not populated yet" reasoning as win_probability's own
+    pregame None."""
+    try:
+        summary = _fetch_summary_raw(match["sport"], match["league"], match["event_id"])
+    except Exception:
+        return None
+    picks = summary.get("pickcenter") or []
+    if not picks:
+        return None
+    home_ml = (picks[0].get("homeTeamOdds") or {}).get("moneyLine")
+    away_ml = (picks[0].get("awayTeamOdds") or {}).get("moneyLine")
+    if home_ml is None or away_ml is None:
+        return None
+    home_implied, away_implied = _implied_prob(home_ml), _implied_prob(away_ml)
+    total = home_implied + away_implied
+    return home_implied / total * 100 if total > 0 else None
+
+
 def leaders_with_headshots(match: dict, max_items: int = 8) -> list[dict]:
     """Every real statistical leader across BOTH teams in this game —
     {"cat", "who", "stat", "hshot"} — same shape and purpose as the

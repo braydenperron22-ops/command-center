@@ -354,15 +354,24 @@ def _pregame_extra_html(sport: str, game_id: int) -> str:
 
 
 def _win_probability_html(sport: str, match: dict | None, away: dict, home: dict) -> str:
-    """Live win-probability bar — session request. Only ESPN's own
-    payload carries this (the native MLB/NHL APIs the rest of the
-    board runs on don't), and only once ESPN's model has enough of the
-    game to compute one — "" both when match is None (no ESPN game
-    found) and pregame (confirmed live: null before the game starts),
-    same as the original static mockup's own st==='in' gate."""
+    """Win-probability bar — session request. Only ESPN's own payload
+    carries either source (the native MLB/NHL APIs the rest of the
+    board runs on don't). ESPN's own live model (scores_client.
+    win_probability, updated play-by-play) is preferred once it has
+    enough of the game to compute one; pregame, when that's always None
+    (confirmed live), falls back to the moneyline instead (scores_client.
+    moneyline_win_probability — session request: "can we use money line
+    to get approximate win odds") rather than showing nothing until
+    first pitch. "" only when match is None (no ESPN game found) or
+    neither source has anything yet (moneylines usually don't post
+    until a day or two out)."""
     if not match:
         return ""
     home_pct = scores_client.win_probability(match)
+    title = "WIN PROBABILITY"
+    if home_pct is None:
+        home_pct = scores_client.moneyline_win_probability(match)
+        title = "PREGAME ODDS"
     if home_pct is None:
         return ""
     home_pct = round(home_pct)
@@ -376,7 +385,7 @@ def _win_probability_html(sport: str, match: dict | None, away: dict, home: dict
     # it), and the bar itself is thick enough to read as a real
     # visual split rather than a thin stripe.
     return (
-        '<div class="jumbo-wp"><div class="jumbo-wp-title">WIN PROBABILITY</div>'
+        f'<div class="jumbo-wp"><div class="jumbo-wp-title">{title}</div>'
         '<div class="jumbo-wp-row">'
         f'<div class="jumbo-wp-pct" style="color:{away_color}">{away_pct}%</div>'
         f'<div class="jumbo-wp-bar"><div class="jumbo-wp-seg" style="width:{away_pct}%;background:{away_color}"></div>'
@@ -960,7 +969,12 @@ def _board_html(state: dict, now: datetime) -> str:
         situation = f'<div class="jumbo-situ"><span class="jumbo-situ-hot">{html.escape(start_label)} {html.escape(start_text)}</span></div>'
         situation += _pregame_extra_html(sport, game["game_id"])
         blurb_html = _blurb_html(sport, game, league["label"].title(), postgame=False)
-        wp_html = ""
+        # Session request: "can we use money line to get approximate
+        # win odds" — ESPN's own live win-probability model is always
+        # None pregame (_win_probability_html falls back to the
+        # moneyline itself once it sees that), so this now shows
+        # something before first pitch instead of nothing.
+        wp_html = _win_probability_html(sport, match, away, home)
         dim_away = dim_home = False
     else:
         away_score = game["opp_score"] if game["is_home"] else game["team_score"]
