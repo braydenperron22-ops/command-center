@@ -28,8 +28,9 @@ Reversed again, later the same day: "transition feed processing from
 as it drops... stream headlines through the classifier individually
 so notifications fire in real-time... rather than in periodic bursts."
 _run_individual_decide() now classifies each pending headline with its
-own real Groq call, polling every INDIVIDUAL_REFRESH_SECONDS (60s)
-rather than batching — told directly this costs meaningfully more per
+own real Groq call, polling every INDIVIDUAL_REFRESH_SECONDS (90s —
+was 60s, widened after a real Gemini rate-limit hit; see that
+constant's own comment) rather than batching — told directly this costs meaningfully more per
 headline (each one now pays the full judgment-criteria overhead alone,
 confirmed live at roughly 4x the overhead tokens for the same headline
 volume, on the account that had already hit its daily cap once that
@@ -410,7 +411,16 @@ _AI_VALID_VERDICTS = {"REJECT", "MARKET"} | set(_AI_VERDICT_LABELS)
 # once that same day, and chose it anyway — see groq_client's own
 # daily-budget guard for what still catches this gracefully if it runs
 # the account dry again.
-INDIVIDUAL_REFRESH_SECONDS = 60
+INDIVIDUAL_REFRESH_SECONDS = 90
+# Widened from 60 — session request: "make the AI look at the headline
+# every minute and a half to try and cut back on AI usage a little
+# bit because we rate limited Gemini yesterday." This is a real call
+# every tick (Groq first, falling back to gemini_client.generate if
+# both Groq accounts fail — see groq_client.generate's own docstring),
+# so slowing the tick rate directly cuts total call volume rather than
+# just spacing out an already-fixed daily total. Still exactly one
+# headline per tick (INDIVIDUAL_MAX_PER_TICK below, unchanged) — a
+# backlog just drains a little slower now, nothing dropped.
 # Fixed at exactly one headline per tick — session correction: "it
 # should only track one headline per minute fixed, not 5." Simpler
 # than the original weekday/weekend cap this replaced, and a stronger
@@ -455,8 +465,8 @@ _last_tick_at: float = 0.0
 # crash-looped from memory pressure before) wipes this plain dict too,
 # and _decided (the classifier cache) right along with it. The
 # classifier only ever rates one headline per INDIVIDUAL_REFRESH_SECONDS
-# (60s) — with dozens of headlines in the current pool, a full pass
-# takes over an hour. A process that keeps restarting every few minutes
+# (90s) — with dozens of headlines in the current pool, a full pass
+# takes well over an hour. A process that keeps restarting every few minutes
 # therefore never gets past re-classifying (and, without this fix,
 # re-alerting) whatever's earliest in fetch_headlines()'s own order —
 # always the same few headlines — while everything later in the list
