@@ -336,12 +336,15 @@ def sync_lights(
     active breaking alert). `storm_phase` ("approaching"/"here"/
     "leaving"/None — weather_alerts_bar.current_storm_phase) is checked
     BEFORE the night gate, not after (see the night-override paragraph
-    below) — an alternating red/white pulse for approaching/leaving,
-    same as breaking news; a steady FLASH_RED at STORM_HERE_BRIGHTNESS
-    for "here", not pulsing, since that's an ongoing condition rather
-    than a fresh event. A genuinely extreme AQI (real wildfire smoke,
-    not routine haze) overrides everything below IT with SMOKE_COLOR
-    instead. During the
+    below) — an alternating red/white pulse, same as breaking news, only
+    for "approaching" (session correction, woken up by it at 2am: a
+    full-brightness flash is only actually justified for a genuine
+    incoming threat, not for a warning already trailing off); a steady
+    FLASH_RED at STORM_HERE_BRIGHTNESS for both "here" and "leaving",
+    not pulsing, since those are an ongoing/already-passing condition
+    rather than a fresh event worth a jolt. A genuinely extreme AQI
+    (real wildfire smoke, not routine haze) overrides everything below
+    IT with SMOKE_COLOR instead. During the
     sunrise/sunset transition (the same `phase` scenery.py's own sky
     gradient uses), the light tints to that gradient's own warm
     horizon-glow color — checked after the flash/smoke overrides (both
@@ -436,19 +439,29 @@ def sync_lights(
     # alert actually bearing down), not weather broadly. Checked ahead
     # of the night gate, same exception shape as score_flash above — its
     # own _apply_power(True) call is what actually wakes the light from
-    # night's power-off. Approaching/leaving reuse the exact same
-    # alternating pulse as breaking news, just not tied to any one
-    # toast's own elapsed time (this is a standing condition that can
-    # last many minutes, not a brief hold); "here" is steady instead,
-    # same reasoning as SMOKE_COLOR below.
-    if storm_phase in ("approaching", "leaving"):
+    # night's power-off.
+    #
+    # Session correction, at 2am, woken up by it: "the lights are
+    # flashing random colors... going from red to white to red again...
+    # its broken." Not a bug — this was the full-brightness alternating
+    # pulse "leaving" originally shared with "approaching" — but living
+    # with it live at night showed that pulse is only actually justified
+    # for a genuine incoming threat (approaching) worth being startled
+    # awake for. By the time a warning's in its trailing "leaving" tail
+    # (already past EC's own expected event_end_datetime — see
+    # ec_storm_timing.LEAVING_TAIL_MINUTES), the storm itself is
+    # basically already over, and jolting the room with a full-
+    # brightness flash for that is disruptive out of proportion to what
+    # it's actually signaling. "leaving" now gets the exact same calm,
+    # steady, dim treatment as "here" instead of "approaching"'s flash.
+    if storm_phase == "approaching":
         if not _apply_power(True):
             return
         color = FLASH_RED if int(time.time()) % 2 == 0 else FLASH_WHITE
         _apply_color(color, min_gap=FLASH_CALL_GAP_SECONDS)
         _apply_brightness_immediate(FLASH_BRIGHTNESS, min_gap=FLASH_CALL_GAP_SECONDS)
         return
-    if storm_phase == "here":
+    if storm_phase in ("here", "leaving"):
         if not _apply_power(True):
             return
         _apply_color(FLASH_RED)
