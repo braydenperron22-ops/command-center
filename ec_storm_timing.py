@@ -93,25 +93,50 @@ LEAVING_TAIL_MINUTES = 30
 # persistent banner/one-shot toast for its own sake.
 STORM_SEVERITIES = ("extreme", "warning")
 
+# Session follow-up: "make sure this whole crazy thing only triggers for
+# actually serious events not heat warnings and shit." STORM_SEVERITIES
+# above already excludes most of those (weather_alerts_bar._severity
+# puts a Warning-tier heat/cold/frost/fog/rainfall/snowfall/air-quality
+# alert into "warning-moderate", not "warning") — but that classification
+# exists for a different purpose (banner coloring), and a wind/blizzard/
+# winter-storm/ice-storm/flood Warning would still pass it. This is a
+# second, independent gate by hazard TYPE specifically, kept self-
+# contained here rather than importing weather_alerts_bar's own hazard
+# lists, so a future change to that unrelated classification can't
+# silently widen (or narrow) what wakes the room and flashes the lights.
+# Deliberately narrow — genuinely violent, fast-arriving weather with a
+# real "front" EC's own validity/end timing meaningfully describes, the
+# same category this feature was built and tested against (a real
+# severe thunderstorm warning).
+STORM_HAZARD_TERMS = ("thunderstorm", "tornado", "hurricane", "tropical storm", "tsunami")
 
-def storm_phase(now: datetime, severity: str) -> dict | None:
-    """{"phase": "approaching"|"here"|"leaving", "minutes": float} for
-    the region's current alert, using EC's own expected start/end
-    times — None whenever there's genuinely nothing active for this
-    region, the feature's own timing fields are missing (rare, but
-    real — not every alert type populates them), or `severity` isn't
-    storm-grade (see STORM_SEVERITIES). `minutes` is minutes until the
-    NEXT phase transition (start, for "approaching"; end, for "here";
-    the tail's own expiry, for "leaving") — floored at 0 rather than
-    going negative if a rerun lands a beat after the real transition
-    instant. `now` may be naive (app.py's own convention — passed in
-    already local to TIMEZONE with tzinfo stripped, same as every other
-    caller in this app threading its own `now` through) or aware; a
-    naive value is assumed to already be in TIMEZONE rather than
-    compared as-is against EC's own aware UTC timestamps, which would
-    raise TypeError — confirmed live this exact mismatch has bitten
-    this app before (see groq_client._in_pause_window's own comment)."""
+
+def storm_phase(now: datetime, title: str, severity: str) -> dict | None:
+    """{"phase": "approaching"|"here"|"leaving", "minutes": float,
+    "target": datetime} for the region's current alert, using EC's own
+    expected start/end times — None whenever there's genuinely nothing
+    active for this region, the feature's own timing fields are missing
+    (rare, but real — not every alert type populates them), `severity`
+    isn't storm-grade (see STORM_SEVERITIES), or `title`'s hazard isn't
+    in STORM_HAZARD_TERMS (see that constant's own comment — a second,
+    independent narrowing by hazard type, not just tier). `minutes` is
+    minutes until the NEXT phase transition (start, for "approaching";
+    end, for "here"; the tail's own expiry, for "leaving") — floored at
+    0 rather than going negative if a rerun lands a beat after the real
+    transition instant; `target` is that same transition instant as an
+    aware datetime, for a caller that wants to drive a real per-second
+    countdown (see app.py's live-countdown ticker) rather than a value
+    that's already stale by the time of the next 5s rerun. `now` may be
+    naive (app.py's own convention — passed in already local to
+    TIMEZONE with tzinfo stripped, same as every other caller in this
+    app threading its own `now` through) or aware; a naive value is
+    assumed to already be in TIMEZONE rather than compared as-is against
+    EC's own aware UTC timestamps, which would raise TypeError —
+    confirmed live this exact mismatch has bitten this app before (see
+    groq_client._in_pause_window's own comment)."""
     if severity not in STORM_SEVERITIES:
+        return None
+    if not any(term in title.lower() for term in STORM_HAZARD_TERMS):
         return None
     if now.tzinfo is None:
         now = now.replace(tzinfo=ZoneInfo(TIMEZONE))
@@ -123,10 +148,10 @@ def storm_phase(now: datetime, severity: str) -> dict | None:
     if start is None or end is None:
         return None
     if now < start:
-        return {"phase": "approaching", "minutes": max(0.0, (start - now).total_seconds() / 60)}
+        return {"phase": "approaching", "minutes": max(0.0, (start - now).total_seconds() / 60), "target": start}
     if now < end:
-        return {"phase": "here", "minutes": max(0.0, (end - now).total_seconds() / 60)}
+        return {"phase": "here", "minutes": max(0.0, (end - now).total_seconds() / 60), "target": end}
     tail_end = end + timedelta(minutes=LEAVING_TAIL_MINUTES)
     if now < tail_end:
-        return {"phase": "leaving", "minutes": max(0.0, (tail_end - now).total_seconds() / 60)}
+        return {"phase": "leaving", "minutes": max(0.0, (tail_end - now).total_seconds() / 60), "target": tail_end}
     return None

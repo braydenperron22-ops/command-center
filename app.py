@@ -797,6 +797,22 @@ try:
         except Exception:
             pass
 
+    # Session request: "make it bright like the EC alert even when the
+    # screen is dimmed for night time" — for the new APPROACHING/
+    # CLEARING storm headline specifically, unlike severe_weather_active
+    # above (which still respects quiet-hours dimming for the screen,
+    # a deliberate earlier choice preserved as-is). Not restricted to
+    # before 7am like the leave-headline check above it — a storm can
+    # approach at any hour, and this is already narrowly gated (see
+    # ec_storm_timing.STORM_HAZARD_TERMS/STORM_SEVERITIES) to genuinely
+    # serious, fast-moving hazards, not "any weather." Checked last so
+    # it takes final precedence over quiet-hours/jumbotron above.
+    try:
+        if weather_alerts_bar.storm_headline_active(now):
+            night_dim = 0.0
+    except Exception:
+        pass
+
     if night_dim > 0:
         # This runs 24/7 in a bedroom — night needs to be genuinely dim
         # enough to sleep next to, not just "a bit darker." Used to be a
@@ -1046,6 +1062,14 @@ if weather:
 if not _jumbotron_active:
     try:
         commute_reminder.render_leave_headline(now)
+    except Exception:
+        pass
+    # Session request: "an APPROACHING: and CLEARING: timer using
+    # these values pulled from the environment canadas alerts... for
+    # ultimate transparency" — same page-independent placement as the
+    # leave headline just above, for the same reason.
+    try:
+        weather_alerts_bar.render_storm_headline(now)
     except Exception:
         pass
 

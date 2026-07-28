@@ -290,20 +290,21 @@ def _current_alert_and_severity() -> tuple[dict, str] | None:
 
 
 def current_storm_phase(now: datetime) -> dict | None:
-    """{"phase": "approaching"|"here"|"leaving", "minutes": float} for
-    whichever alert render() would currently show, or None — for
-    govee_lighting.sync_lights (session request: "red govee flashes for
-    when the storm is approaching... solid red at like 30% for when its
-    here... same thing for when the storm is leaving"). Thin wrapper
-    around ec_storm_timing.storm_phase using the exact same alert
-    selection render()/get_new_alerts() already use, so the light, the
-    toast, and the banner never disagree about which alert is "the"
+    """{"phase": "approaching"|"here"|"leaving", "minutes": float,
+    "target": datetime} for whichever alert render() would currently
+    show, or None — for govee_lighting.sync_lights (session request:
+    "red govee flashes for when the storm is approaching... solid red
+    at like 30% for when its here... same thing for when the storm is
+    leaving") and render_storm_headline below. Thin wrapper around
+    ec_storm_timing.storm_phase using the exact same alert selection
+    render()/get_new_alerts() already use, so the light, the toast, the
+    banner, and the headline never disagree about which alert is "the"
     current one."""
     resolved = _current_alert_and_severity()
     if resolved is None:
         return None
     alert, severity = resolved
-    return ec_storm_timing.storm_phase(now, severity)
+    return ec_storm_timing.storm_phase(now, alert["title"], severity)
 
 
 # "every like 5-10 mins" — the middle of the requested range. Keyed per
@@ -314,6 +315,72 @@ def current_storm_phase(now: datetime) -> dict | None:
 # left of a previous, unrelated alert's timer.
 STORM_PROXIMITY_INTERVAL_SECONDS = 7 * 60
 _last_storm_toast: dict[str, float] = {}
+
+
+def _format_clock(remaining_seconds: float) -> str:
+    """H:MM:SS (or MM:SS under an hour) — first-frame value only; the
+    element's own data-target-ms/data-format drive the real per-second
+    tick from there via app.py's global live-countdown ticker. Same
+    shape as commute_reminder._format_clock, duplicated rather than
+    imported — this app's own established convention for a small,
+    module-specific first-frame formatter (see also pages_jumbotron.
+    _fmt_countdown's own copy)."""
+    total = max(0, int(remaining_seconds))
+    hours, rem = divmod(total, 3600)
+    minutes, seconds = divmod(rem, 60)
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
+
+
+def storm_headline_active(now: datetime) -> bool:
+    """Whether render_storm_headline below would show anything right
+    now — app.py checks this ahead of its own night-dim decision, same
+    role commute_reminder.leave_headline_active already plays for the
+    leave timer (session request: "make it bright like the EC alert
+    even when the screen is dimmed for night time"). True only for
+    "approaching"/"leaving" — same as get_storm_proximity_alerts, "here"
+    has no countdown to show (nothing left to count down to until the
+    next transition, itself already the ambient steady light's job)."""
+    info = current_storm_phase(now)
+    return info is not None and info["phase"] in ("approaching", "leaving")
+
+
+def render_storm_headline(now: datetime) -> None:
+    """A standalone bright countdown headline — session request: "can
+    we make an APPROACHING: and CLEARING: timer using these values
+    pulled from the EC alert for ultimate transparency," modeled
+    directly on commute_reminder.render_leave_headline (see
+    .storm-headline in theme.py for why it's colored differently).
+    "CLEARING" is the user's own word for the "leaving" phase — kept
+    as the on-screen label even though ec_storm_timing's own phase
+    value stays "leaving" internally, matching how "APPROACHING" only
+    ever shows for "approaching" too.
+
+    Ticks for real once a second via app.py's global live-countdown
+    ticker, exactly like the leave headline — the text rendered here is
+    only ever the first frame's value; data-target-ms drives everything
+    after that, straight off ec_storm_timing.storm_phase's own
+    "target" datetime (the actual EC-sourced validity_datetime/
+    event_end_datetime instant, not a value re-derived from "minutes"
+    and therefore never out of sync with it)."""
+    resolved = _current_alert_and_severity()
+    if resolved is None:
+        return
+    alert, severity = resolved
+    info = ec_storm_timing.storm_phase(now, alert["title"], severity)
+    if info is None or info["phase"] not in ("approaching", "leaving"):
+        return
+    target_ms = int(info["target"].timestamp() * 1000)
+    label = "APPROACHING" if info["phase"] == "approaching" else "CLEARING"
+    tier = "extreme" if severity == "extreme" else "warning"
+    remaining = max(0.0, info["minutes"] * 60)
+    st.markdown(
+        f'<div class="storm-headline storm-headline-{tier}"><span class="live-countdown" '
+        f'data-target-ms="{target_ms}" data-format="clock" data-template="{label}: {{}}">'
+        f'{label}: {_format_clock(remaining)}</span></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def get_storm_proximity_alerts(now: datetime) -> list[dict]:
@@ -332,7 +399,7 @@ def get_storm_proximity_alerts(now: datetime) -> list[dict]:
     if resolved is None:
         return []
     alert, severity = resolved
-    phase_info = ec_storm_timing.storm_phase(now, severity)
+    phase_info = ec_storm_timing.storm_phase(now, alert["title"], severity)
     if phase_info is None or phase_info["phase"] not in ("approaching", "leaving"):
         return []
     key = alert.get("id") or alert["title"]
