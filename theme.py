@@ -997,18 +997,20 @@ html, body, [class*="css"] {
    APPROACHING: and CLEARING: timer using these values pulled from the
    EC alert for ultimate transparency." Modeled directly on
    .leave-headline (the commute countdown) below — same fixed pill
-   shape, same font-size/weight — but colored with the persistent
-   .weather-statement-extreme/warning's own bright, saturated palette
-   instead of leave-headline's graduated calm→overdue tiers: "make it
-   bright like the EC alert," and there's no graduated urgency to show
-   here anyway (only ever "approaching" or "leaving", "here" shows the
-   ambient steady light instead — see ec_storm_timing.storm_phase).
-   Stacked below .weather-statement-bar (fixed at top:194, tall enough
-   for a 2-line title) using the same ~106px increment already used
-   between .leave-headline and .weather-statement-bar themselves — see
-   that block's own comment on why this stack uses fixed offsets
-   rather than dynamically reflowing around whichever subset of these
-   is actually showing. */
+   shape, same font-size/weight. Session follow-up: "make that
+   'clearing in' timer and the approaching timer: red with a black
+   background" — a distinct look from the white-on-red-gradient
+   .weather-statement-extreme/warning banner it sits under, deliberately
+   higher-contrast/starker for a countdown meant to be read at a glance.
+   No graduated urgency tiers here (unlike leave-headline's calm→
+   overdue) — only ever "approaching" or "leaving"/"here" (both show as
+   "CLEARING IN"), severity alone sets the shade of red. Stacked below
+   .weather-statement-bar (fixed at top:194, tall enough for a 2-line
+   title) using the same ~106px increment already used between
+   .leave-headline and .weather-statement-bar themselves — see that
+   block's own comment on why this stack uses fixed offsets rather
+   than dynamically reflowing around whichever subset of these is
+   actually showing. */
 .storm-headline {
     position: fixed;
     top: 300px;
@@ -1019,22 +1021,21 @@ html, body, [class*="css"] {
     font-size: 2.6rem;
     font-weight: 800;
     letter-spacing: -0.01em;
-    backdrop-filter: blur(24px) saturate(160%);
-    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    background: #0a0a0a;
     border-radius: 20px;
     padding: 0.5rem 1.6rem;
-    color: #FFFFFF;
+    color: #FF3B30;
 }
 .storm-headline-extreme {
-    background: linear-gradient(90deg, #5c0a0b 0%, #d4181a 50%, #5c0a0b 100%);
     border: 1px solid rgba(255,59,48,0.9);
-    box-shadow: 0 2px 20px rgba(212,24,26,0.55);
+    box-shadow: 0 2px 24px rgba(255,59,48,0.55);
+    color: #FF3B30;
     animation: weather-warning-pulse 1.3s ease-in-out infinite;
 }
 .storm-headline-warning {
-    background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
     border: 1px solid rgba(255,105,97,0.6);
-    box-shadow: 0 2px 16px rgba(179,20,20,0.35);
+    box-shadow: 0 2px 18px rgba(255,105,97,0.35);
+    color: #FF6961;
     animation: weather-warning-pulse 2.4s ease-in-out infinite;
 }
 
@@ -3792,7 +3793,15 @@ html, body, [class*="css"] {
     .commute-tile .tile-prev { font-size: 1.05rem; }
     .commute-tile .severity-caption.compact { font-size: 1rem; }
     .leave-headline { font-size: 1.9rem; }
-    .storm-headline { font-size: 1.9rem; top: 260px; }
+    /* top bumped from an earlier 260px — confirmed live this collided
+       with .weather-statement-bar: that bar wraps to 3 lines at phone
+       width for a long title ("YELLOW WARNING - SEVERE THUNDERSTORM,
+       North Bay - Powassan - Mattawa"), reaching ~134px tall (ending
+       around y=328 from its own top:194) versus the single/double-line
+       height the unmodified 300px desktop offset assumes. 360px clears
+       that real case with room to spare for an even longer title (e.g.
+       the "+N more alerts" suffix render() can append). */
+    .storm-headline { font-size: 1.9rem; top: 360px; }
     .game-countdown-headline { font-size: 1.4rem; }
     .news-breaking-label { font-size: 1.15rem; }
     .tile-value { font-size: 2rem; }

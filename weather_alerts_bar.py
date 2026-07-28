@@ -339,12 +339,13 @@ def render_storm_headline(now: datetime) -> None:
     pulled from the EC alert for ultimate transparency," modeled
     directly on commute_reminder.render_leave_headline (see
     .storm-headline in theme.py for why it's colored differently).
-    "CLEARING" is the user's own word, used for both "here" and
-    "leaving" — session correction: "it should say clearing in and
-    then a timer to [event_end_datetime] since thats when the message
-    actually clears," not only once that instant has already passed
-    (the original, narrower "leaving"-only behavior). "APPROACHING"
-    still only ever shows for "approaching". Either way the target is
+    "CLEARING IN" is the user's own phrase ("make that 'clearing in'
+    timer"), used for both "here" and "leaving" — session correction:
+    "it should say clearing in and then a timer to [event_end_datetime]
+    since thats when the message actually clears," not only once that
+    instant has already passed (the original, narrower "leaving"-only
+    behavior). "APPROACHING" still only ever shows for "approaching".
+    Either way the target is
     whatever ec_storm_timing.storm_phase's own "target" says for the
     current phase — "here"'s target IS event_end_datetime itself, so
     this is always counting down to something real and current, never
@@ -365,7 +366,7 @@ def render_storm_headline(now: datetime) -> None:
     if info is None:
         return
     target_ms = int(info["target"].timestamp() * 1000)
-    label = "APPROACHING" if info["phase"] == "approaching" else "CLEARING"
+    label = "APPROACHING" if info["phase"] == "approaching" else "CLEARING IN"
     tier = "extreme" if severity == "extreme" else "warning"
     remaining = max(0.0, info["minutes"] * 60)
     st.markdown(
