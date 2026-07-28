@@ -3354,6 +3354,93 @@ html, body, [class*="css"] {
     padding: 0 8px;
 }
 
+/* ---- UFC board ---- */
+/* Session request: "add UFC to the jumbotron." A genuinely separate,
+   simpler layout from the team-scoreboard grid above — no My Teams
+   rail, no Around The Leagues, no LED score digits (none of that
+   applies to a multi-bout fight card, see pages_jumbotron._ufc_
+   board_html's own docstring) — just a hero panel for whichever bout
+   matters most right now, and the full ordered card underneath it. */
+.jumbo-ufc-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+}
+.jumbo-ufc-phase {
+    flex: 0 0 auto;
+    text-align: center;
+    font-family: var(--num);
+    font-size: 22px;
+    letter-spacing: 0.1em;
+    color: var(--mut);
+    padding: 10px 0 0;
+}
+.jumbo-ufc-phase-live { color: var(--live); animation: jumbo-blink 1.4s infinite; }
+.jumbo-ufc-hero {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    padding: 24px 20px;
+}
+.jumbo-ufc-hero-fighter { flex: 1; text-align: center; min-width: 0; }
+.jumbo-ufc-hero-name {
+    font-family: var(--disp);
+    font-weight: 600;
+    font-size: 34px;
+    letter-spacing: 0.01em;
+    line-height: 1.1;
+}
+.jumbo-ufc-hero-record {
+    font-family: var(--num);
+    font-size: 18px;
+    color: var(--mut);
+    margin-top: 6px;
+}
+.jumbo-ufc-winner .jumbo-ufc-hero-name { color: var(--ok); }
+.jumbo-ufc-hero-mid { flex: 0 0 auto; text-align: center; }
+.jumbo-ufc-hero-weight {
+    font-size: 11px;
+    font-weight: 300;
+    letter-spacing: 0.2em;
+    color: var(--mut-2);
+    text-transform: uppercase;
+}
+.jumbo-ufc-hero-vs {
+    font-family: var(--num);
+    font-size: 28px;
+    color: var(--led);
+    text-shadow: 0 0 16px var(--ledglow);
+    margin-top: 6px;
+}
+.jumbo-ufc-card-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.jumbo-ufc-card-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--glass-edge);
+    font-family: var(--label);
+    font-size: 14px;
+}
+.jumbo-ufc-card-row:last-child { border-bottom: none; }
+.jumbo-ufc-card-row-main { background: rgba(255,179,0,0.06); }
+.jumbo-ufc-card-weight {
+    flex: 0 0 120px;
+    font-size: 10px;
+    font-weight: 300;
+    letter-spacing: 0.12em;
+    color: var(--mut-2);
+    text-transform: uppercase;
+}
+.jumbo-ufc-card-fighter { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jumbo-ufc-card-fighter.jumbo-ufc-winner { color: var(--ok); font-weight: 600; }
+.jumbo-ufc-card-vs { flex: 0 0 auto; color: var(--mut-2); font-size: 11px; }
+.jumbo-ufc-card-status { flex: 0 0 160px; text-align: right; font-family: var(--num); font-size: 13px; color: var(--mut); }
+.jumbo-ufc-live { color: var(--live); }
+.jumbo-ufc-final { color: var(--mut); }
+.jumbo-ufc-upcoming { color: var(--mut-2); }
+
 /* ---- Around the leagues ---- */
 .jumbo-around-body { flex: 1; min-height: 0; overflow: hidden; }
 /* Session feedback: "improve the scoreboard to make it more visible

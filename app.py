@@ -40,6 +40,7 @@ import payday_schedule
 import sports_alerts
 import theme
 import toast_queue
+import ufc_client
 import waste_schedule
 import weather_alerts_bar
 import weather_records_client
@@ -390,6 +391,23 @@ except Exception:
 if _takeover and _takeover["game"]["game_id"] == st.session_state.get("jumbotron_dismissed_game_id"):
     _takeover = None
 
+# UFC coverage — session request: "add UFC to the jumbotron... auto
+# rotation between fights coverage starts at 5pm every saturday, only
+# will not be shown on main if habs are playing. otherwise let it
+# run." Kept fully separate from `_takeover` above (see ufc_client.py's
+# own docstring on why a fight card needed a genuinely different data
+# shape/takeover concept, not a config tweak to the existing one) —
+# the one exception named is applied here, narrowly: only a LIVE Habs
+# (NHL) game specifically wins, not Jays/Saints, matching "otherwise
+# let it run" — UFC still takes the screen over those two if both
+# happen to be active at once.
+try:
+    _ufc_takeover = ufc_client.takeover_state(now)
+except Exception:
+    _ufc_takeover = None
+if _ufc_takeover is not None and _takeover and _takeover["league"]["sport"] == "nhl" and _takeover["phase"] == "live":
+    _ufc_takeover = None
+
 _requested_page = None
 try:
     _requested_page = st.query_params.get("page")
@@ -407,7 +425,7 @@ try:
         page = "maintenance"
     elif _requested_page in PAGES:
         page = _requested_page
-    elif _takeover:
+    elif _takeover or _ufc_takeover:
         page = "jumbotron"
     else:
         page, _, _ = _scheduled_page(_rotation_epoch)
@@ -424,7 +442,7 @@ except Exception:
 # shift" decision from back when the leave headline just flowed above
 # the hero row instead of overlaying the board. The toast queue, ticker
 # and Govee sync still run as normal.
-_jumbotron_active = page == "jumbotron" and _takeover is not None
+_jumbotron_active = page == "jumbotron" and (_takeover is not None or _ufc_takeover is not None)
 # Separate from _jumbotron_active above on purpose — that one is "is
 # THIS session's screen currently showing the board," which is exactly
 # what the screen-dimming/top-alert suppression above needs, but wrong
@@ -468,7 +486,12 @@ if not _jumbotron_active and page == "jumbotron":
 try:
     _prev_jumbotron_active = st.session_state.get("_prev_jumbotron_active", False)
     if _jumbotron_active and not _prev_jumbotron_active:
-        _team_label = (_takeover["league"]["label"] if _takeover else "").title()
+        if _takeover:
+            _team_label = _takeover["league"]["label"].title()
+        elif _ufc_takeover:
+            _team_label = "UFC"  # not .title()'d — that would mangle it to "Ufc"
+        else:
+            _team_label = ""
         st.markdown(
             f'<div class="jumbo-transition jumbo-transition-in">'
             f'<div class="jumbo-transition-brand">FANCAVE<span>JUMBOTRON</span></div>'
@@ -1276,7 +1299,7 @@ with st.container(key="page_body"):
     elif page == "radar":
         _safe_render(pages_radar.render)
     elif page == "jumbotron":
-        _safe_render(pages_jumbotron.render, now, _takeover, weather)
+        _safe_render(pages_jumbotron.render, now, _takeover, weather, _ufc_takeover)
     elif page == "sports":
         _safe_render(pages_sports.render)
     elif page == "scores":

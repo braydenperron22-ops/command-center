@@ -31,6 +31,7 @@ import game_blurb
 import scores_client
 import sports_alerts
 import sports_client
+import ufc_client
 from config import TIMEZONE
 
 # All three teams always appear in the My Teams rail, in the same
@@ -1386,11 +1387,146 @@ def _delay_stepper() -> None:
         st.rerun(scope="fragment")
 
 
-def render(now: datetime, state: dict, weather: dict | None) -> None:
+def _ufc_bout_status_html(bout: dict) -> str:
+    """The right-hand status chip for one row in the full-card list —
+    plain "Upcoming" for a bout that hasn't started, "LIVE · Rn M:SS"
+    while it's happening, or "FINAL · Rn M:SS" once it's over — the
+    winner itself is shown by highlighting their name in the row via
+    .jumbo-ufc-winner (see _ufc_card_row_html), not repeated here. No
+    finishing method (KO/submission/decision) — see ufc_client's own
+    docstring on why that's deliberately left out rather than guessed."""
+    if bout["state"] == "live":
+        return f'<span class="jumbo-ufc-live">LIVE · R{bout["round"]} {bout["clock"]}</span>'
+    if bout["state"] == "final":
+        return f'<span class="jumbo-ufc-final">FINAL · R{bout["round"]} {bout["clock"]}</span>'
+    return '<span class="jumbo-ufc-upcoming">Upcoming</span>'
+
+
+def _ufc_card_row_html(bout: dict) -> str:
+    a, b = bout["fighter_a"], bout["fighter_b"]
+    row_class = "jumbo-ufc-card-row"
+    if bout["is_main_event"]:
+        row_class += " jumbo-ufc-card-row-main"
+    a_class = "jumbo-ufc-card-fighter jumbo-ufc-winner" if a["winner"] else "jumbo-ufc-card-fighter"
+    b_class = "jumbo-ufc-card-fighter jumbo-ufc-winner" if b["winner"] else "jumbo-ufc-card-fighter"
+    return (
+        f'<div class="{row_class}">'
+        f'<span class="jumbo-ufc-card-weight">{html.escape(bout["weight_class"])}</span>'
+        f'<span class="{a_class}">{html.escape(a["short_name"])}</span>'
+        f'<span class="jumbo-ufc-card-vs">vs</span>'
+        f'<span class="{b_class}">{html.escape(b["short_name"])}</span>'
+        f'<span class="jumbo-ufc-card-status">{_ufc_bout_status_html(bout)}</span>'
+        f"</div>"
+    )
+
+
+def _ufc_board_html(ufc_state: dict, now: datetime) -> str:
+    """Full board content for a UFC takeover — session request: "add
+    UFC to the jumbotron," scoped by follow-up answers to exactly two
+    modes: an upcoming-event countdown, and a live card that tracks
+    itself bout-by-bout ("auto rotation between fights") — no postgame
+    recap (see ufc_client.takeover_state's own docstring on why
+    coverage just ends once the card goes final).
+
+    Deliberately does not reuse _board_html/the My Teams rail/Around
+    The Leagues panel below it — those are all built around one
+    team's single evolving score (see this module's own render()
+    docstring on why UFC needed a genuinely separate render path, not
+    a config tweak to the existing one). This is a much simpler two-
+    panel layout: a hero card for whichever bout matters most right
+    now, and the full ordered card underneath it.
+
+    The hero shows the MAIN EVENT specifically during "countdown"
+    (the actual draw worth building anticipation for — ufc_client.
+    current_bout would otherwise return the earliest, least
+    interesting prelim, since nothing's happened yet to track), and
+    ufc_client.current_bout's own live-tracking pick once the card is
+    underway."""
+    event = ufc_state["event"]
+    phase = ufc_state["phase"]
+    bouts = event["bouts"]
+    hero = bouts[-1] if phase == "countdown" else ufc_client.current_bout(event)
+
+    if phase == "countdown":
+        phase_html = f'<div class="jumbo-ufc-phase">STARTS IN {_fmt_countdown(event["start_time"], now)}</div>'
+    elif hero["state"] == "live":
+        phase_html = f'<div class="jumbo-ufc-phase jumbo-ufc-phase-live">LIVE · ROUND {hero["round"]} · {hero["clock"]}</div>'
+    else:
+        phase_html = '<div class="jumbo-ufc-phase">CARD UNDERWAY</div>'
+
+    a, b = hero["fighter_a"], hero["fighter_b"]
+    a_rec = f'<div class="jumbo-ufc-hero-record">{html.escape(a["record"])}</div>' if a["record"] else ""
+    b_rec = f'<div class="jumbo-ufc-hero-record">{html.escape(b["record"])}</div>' if b["record"] else ""
+    a_hl = " jumbo-ufc-winner" if hero["state"] == "final" and a["winner"] else ""
+    b_hl = " jumbo-ufc-winner" if hero["state"] == "final" and b["winner"] else ""
+
+    hero_html = (
+        f'<div class="jumbo-ufc-hero">'
+        f'<div class="jumbo-ufc-hero-fighter{a_hl}"><div class="jumbo-ufc-hero-name">{html.escape(a["name"])}</div>{a_rec}</div>'
+        f'<div class="jumbo-ufc-hero-mid">'
+        f'<div class="jumbo-ufc-hero-weight">{html.escape(hero["weight_class"])}</div>'
+        f'<div class="jumbo-ufc-hero-vs">VS</div>'
+        f"</div>"
+        f'<div class="jumbo-ufc-hero-fighter{b_hl}"><div class="jumbo-ufc-hero-name">{html.escape(b["name"])}</div>{b_rec}</div>'
+        f"</div>"
+    )
+
+    card_rows = "".join(_ufc_card_row_html(bout) for bout in bouts)
+
+    return (
+        f'<div class="jumbo-grid jumbo-ufc-grid">'
+        f'<div class="jumbo-panel jumbo-ufc-hero-panel">'
+        f'<div class="jumbo-ph"><span>{html.escape(event["name"])}</span></div>'
+        f"{phase_html}{hero_html}"
+        f"</div>"
+        f'<div class="jumbo-panel jumbo-ufc-card-panel">'
+        f'<div class="jumbo-ph"><span>Full Card</span></div>'
+        f'<div class="jumbo-ufc-card-body">{card_rows}</div>'
+        f"</div>"
+        f"</div>"
+    )
+
+
+def _render_ufc(now: datetime, ufc_state: dict, weather: dict | None) -> None:
+    """The whole UFC takeover render — shares only the outer marquee
+    header (clock/date/weather) with the team-scoreboard render()
+    below for visual consistency; everything under it is
+    _ufc_board_html's own two-panel layout instead of the rail/board/
+    Around The Leagues grid a team takeover uses."""
+    clock = now.strftime("%-I:%M")
+    meridiem = now.strftime("%p")
+    dateline = now.strftime("%A, %B %-d").upper()
+    weather_chip = ""
+    if weather and weather.get("temp_c") is not None:
+        weather_chip = (
+            f'<div class="jumbo-wx"><span class="jumbo-wx-temp">{weather["temp_c"]:.0f}°</span>'
+            f'<span class="jumbo-wx-loc">CORBEIL</span></div>'
+        )
+    st.markdown(
+        f'<div class="jumbo">'
+        f'<div class="jumbo-marquee">'
+        f'<div class="jumbo-brand">FANCAVE<span>JUMBOTRON</span></div>'
+        f'<div class="jumbo-clock">{clock}<em>{meridiem}</em></div>'
+        f'<div class="jumbo-dateline">{dateline}</div>'
+        f'<div class="jumbo-spacer"></div>{weather_chip}</div>'
+        f"{_ufc_board_html(ufc_state, now)}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render(now: datetime, state: dict, weather: dict | None, ufc_state: dict | None = None) -> None:
     """`state` is sports_alerts.takeover_state()'s own return value —
     passed in rather than re-derived here so app.py's routing decision
     and this page's content can never disagree about which game owns
-    the screen."""
+    the screen. `ufc_state` (ufc_client.takeover_state's own return
+    value) takes over entirely when set — app.py's own routing already
+    resolved the "Habs playing" exception before this is ever passed
+    in, so its mere presence here means UFC has already won the
+    screen; see _render_ufc."""
+    if ufc_state is not None:
+        _render_ufc(now, ufc_state, weather)
+        return
     clock = now.strftime("%-I:%M")
     meridiem = now.strftime("%p")
     dateline = now.strftime("%A, %B %-d").upper()
