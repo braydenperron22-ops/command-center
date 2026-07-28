@@ -511,6 +511,7 @@ def sync_plug(
     last_light: datetime | None,
     game_live: bool = False,
     leave_timer_active: bool = False,
+    storm_active: bool = False,
 ) -> None:
     """Off at last light, on at first light — deliberately real civil-
     twilight bounds (dawn/dusk, sun 6° below the horizon), not the same
@@ -542,11 +543,23 @@ def sync_plug(
     manually turn on the plug so she could see the leave in timer."
     Same re-checked-every-rerun behavior as game_live: reverts to the
     normal daylight window the instant the countdown ends, not held
-    open any longer than the timer itself needs."""
+    open any longer than the timer itself needs.
+
+    `storm_active` (see sync_lights' own storm_phase param, which the
+    caller derives this from — true for any of approaching/here/
+    leaving) — session follow-up to the storm-proximity light feature,
+    right after the lights themselves were made to wake overnight for
+    a storm: "monitor should turn on too." Same kind of override as
+    game_live/leave_timer_active: the monitor needs power for the
+    storm's own toast alerts and the light's own red flash to actually
+    be visible/legible, same reasoning as leave_timer_active existing
+    for exactly that purpose already. Re-checked every rerun, so it
+    reverts to the normal daylight window immediately once the storm
+    phase clears (nothing left active, "leaving"'s own tail included)."""
     global _plug_applied, _plug_last_call_ts
     if not st.secrets.get("GOVEE_API_KEY") or first_light is None or last_light is None:
         return
-    want_on = game_live or leave_timer_active or (first_light <= now < last_light)
+    want_on = game_live or leave_timer_active or storm_active or (first_light <= now < last_light)
     if _plug_applied == want_on:
         return
     if time.time() - _plug_last_call_ts < MIN_CALL_GAP_SECONDS:

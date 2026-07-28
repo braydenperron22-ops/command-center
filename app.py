@@ -1479,12 +1479,10 @@ try:
     aqi_for_lights = air_quality.get("us_aqi") if air_quality else None
     # Session request: "red govee flashes for when the storm is
     # approaching... solid red at like 30% for when its here... same
-    # thing for when the storm is leaving" — a scoped exception to the
-    # "waking the bedroom light for weather overnight was the wrong
-    # call" feedback above (see govee_lighting.sync_lights's own
-    # updated docstring): it still respects the night gate, same
-    # position breaking news already holds, so this doesn't reopen the
-    # thing that feedback was actually about.
+    # thing for when the storm is leaving," later "it should show at
+    # night" — this one specifically DOES bypass the night gate (see
+    # govee_lighting.sync_lights's own updated docstring), unlike
+    # breaking news, which still fully respects it.
     try:
         storm_phase_info = weather_alerts_bar.current_storm_phase(now)
     except Exception:
@@ -1504,6 +1502,7 @@ try:
         weather["last_light"] if weather else None,
         game_live,
         leave_timer_active,
+        storm_phase_name is not None,
     )
 except Exception:
     pass
