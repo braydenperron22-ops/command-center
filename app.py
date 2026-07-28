@@ -1291,6 +1291,20 @@ try:
 except Exception:
     pass
 
+# EC weather-alert toasts: same queue, same isolation reasoning as the
+# blocks above — session report: "a recent special weather statement
+# just came in but it didnt show as a toast alert." The persistent
+# banner (weather_alerts_bar.render, further down) already covers most
+# pages, but is skipped entirely during a jumbotron takeover, and this
+# toast queue is the one thing that still runs regardless (see
+# weather_alerts_bar.get_new_alerts's own docstring for the full
+# reasoning) — genuinely the only path that guarantees a new alert is
+# never missed just because a game happened to be on screen.
+try:
+    new_alerts.extend(weather_alerts_bar.get_new_alerts())
+except Exception:
+    pass
+
 # Radar-based severe/tracking-started toast alerts (ec_radar.
 # severe_weather_alert / tracking_started_alert) removed along with the
 # rest of the radar lookahead-forecasting layer at the user's own
@@ -1323,6 +1337,12 @@ except Exception:
 # own try/except too, but there's no reason to make it depend on this
 # block's internals for a safe default.
 def _alert_priority(alert: dict) -> int:
+    # Weather ranks above even commute — session request: weather alerts
+    # are "arguably the most important part of the dashboard," and a
+    # genuine EC warning outranks a leave-for-work reminder the same way
+    # it already outranks everything else in this queue.
+    if alert.get("kind") == "weather":
+        return -1
     if alert.get("kind") == "commute":
         return 0
     if alert.get("kind") == "sports":
@@ -1365,6 +1385,8 @@ try:
             commute_reminder.render_bar(current_alert, elapsed, _toast_variant)
         elif current_alert.get("kind") == "sports":
             sports_alerts.render_alert_bar(current_alert, elapsed, _toast_variant)
+        elif current_alert.get("kind") == "weather":
+            weather_alerts_bar.render_alert_bar(current_alert, elapsed, _toast_variant)
         else:
             news.render_alert_bar(current_alert, elapsed, _toast_variant)
     elif _jumbotron_active and commute_reminder.leave_headline_active(now):

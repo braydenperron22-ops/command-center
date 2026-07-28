@@ -5,10 +5,13 @@ observations (ec_aqhi), confirmed live to not overlap at all — and our
 own extreme-heat/extreme-cold fallback only ever shows when neither
 has anything active for the region."""
 
+import html
+
 import streamlit as st
 
 import ec_alerts
 import ec_aqhi
+import persisted_state
 from config import EXTREME_COLD_THRESHOLD_C, EXTREME_HEAT_THRESHOLD_C
 
 
@@ -193,3 +196,83 @@ def render(weather: dict | None) -> bool:
         unsafe_allow_html=True,
     )
     return True
+
+
+# Session request: "a recent special weather statement just came in but
+# it didnt show as a toast alert, make sure they show up." render()
+# above already surfaces whatever's currently active in the persistent
+# banner, but that banner is suppressed during a jumbotron takeover
+# (app.py) — with nothing else picking up the slack, a new alert issued
+# while a game's on screen went completely unseen, which is exactly what
+# happened here. get_new_alerts below mirrors news.get_new_alerts's own
+# shape so app.py's existing toast queue (which DOES still run during a
+# takeover) can carry this too, resolving from the exact same
+# _combined_alerts/_selection_score logic render() uses so the toast and
+# the banner always agree on which alert currently wins.
+#
+# Persisted (not a plain module-level set) so a redeploy/restart can't
+# re-toast an alert this process already showed — same reasoning as
+# news.py's own news_seen_headlines. Deliberately has NO "first call
+# just establishes a baseline, don't alert yet" step the way news.
+# get_new_alerts has: that exists there to avoid flooding dozens of
+# already-old headlines on a fresh restart, but the failure mode here
+# is the opposite and far worse — silently suppressing the one toast
+# that matters most (a warning already active the moment a redeploy
+# happens to land) is not an acceptable trade for a life-safety feed
+# that's supposed to "work consistently."
+MAX_SEEN_ALERTS = 200
+_seen_alert_keys: dict = dict(persisted_state.load("weather_seen_alerts", {}))
+
+
+def get_new_alerts() -> list[dict]:
+    """New weather alerts since the last check — {"kind": "weather",
+    "severity", "label", "headline"}, the toast queue's own generic
+    shape (see news.get_new_alerts/sports_alerts.get_new_alerts).
+    Keyed by the winning alert's own stable id (ec_alerts.fetch_alerts's
+    "id" field for a real EC alert — genuinely unique per issuance,
+    embeds the issue timestamp — or its title for the AQHI-synthesized
+    alert, which has no id of its own) so a genuinely new issuance
+    always toasts even if an alert with the same hazard/title was seen
+    before, while an alert that's merely still active from a prior
+    rerun never re-toasts. The manual heat/cold fallback (render()'s
+    own else branch) is deliberately NOT included — it's a slow-moving
+    daily forecast threshold, not a discrete "just came in" moment, and
+    current_severity() already treats it as not a real alert for the
+    same reason."""
+    alerts = _combined_alerts()
+    if not alerts:
+        return []
+    alert = max(alerts, key=_selection_score)
+    key = alert.get("id") or alert["title"]
+    if key in _seen_alert_keys:
+        return []
+    _seen_alert_keys[key] = True
+    if len(_seen_alert_keys) > MAX_SEEN_ALERTS:
+        _seen_alert_keys.pop(next(iter(_seen_alert_keys)))
+    persisted_state.save("weather_seen_alerts", _seen_alert_keys)
+    return [
+        {
+            "kind": "weather",
+            "severity": _severity(alert["title"]),
+            "label": "Environment Canada",
+            "headline": alert["title"],
+        }
+    ]
+
+
+def render_alert_bar(alert: dict, elapsed: float, variant: str = "a") -> None:
+    """Bottom-strip toast for a brand-new weather alert — same stretch-
+    then-slide intro as news.render_alert_bar/commute_reminder.
+    render_bar (theme.py's toast-*-anim keyframes), colored by severity
+    via .weather-alert-bar-* (theme.py), the same palette render()'s own
+    .weather-statement-* modifiers use so the toast and the persistent
+    banner never disagree about how urgent this looks."""
+    delay = f"animation-delay: -{elapsed:.2f}s;"
+    bar_class = f"weather-alert-bar weather-alert-bar-{alert['severity']}"
+    st.markdown(
+        f"""<div class="{bar_class}">
+            <span class="news-breaking-label toast-label-anim-{variant}" style="{delay}">{html.escape(alert['label'])}</span>
+            <span class="news-alert-headline toast-headline-anim-{variant}" style="{delay}">{html.escape(alert['headline'])}</span>
+        </div>""",
+        unsafe_allow_html=True,
+    )

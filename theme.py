@@ -757,6 +757,45 @@ html, body, [class*="css"] {
     object-fit: contain;
 }
 
+/* Weather alert toast (weather_alerts_bar.render_alert_bar) — session
+   request: "a recent special weather statement just came in but it
+   didnt show as a toast alert, make sure they show up." Same bottom-
+   strip takeover/intro as every other toast family above, colored per
+   severity to match the persistent .weather-statement-* banner's own
+   palette (see that block's own comments for the full reasoning behind
+   each tier) so the toast and the banner never disagree about how
+   urgent a given alert looks. */
+.weather-alert-bar-extreme, .weather-alert-bar-warning, .weather-alert-bar-warning-moderate,
+.weather-alert-bar-watch, .weather-alert-bar-statement {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10000;  /* see .news-alert-bar's own comment above */
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+    padding: 0.9rem 1.5rem;
+    border-top: 2px solid rgba(255,255,255,0.25);
+    overflow: hidden;
+}
+.weather-alert-bar-extreme {
+    background: linear-gradient(90deg, #5c0a0b 0%, #d4181a 50%, #5c0a0b 100%);
+    box-shadow: 0 -4px 24px rgba(212,24,26,0.5);
+}
+.weather-alert-bar-warning {
+    background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
+    box-shadow: 0 -4px 24px rgba(179,20,20,0.35);
+}
+.weather-alert-bar-warning-moderate {
+    background: linear-gradient(90deg, #7a3d10 0%, #b3641a 50%, #7a3d10 100%);
+    box-shadow: 0 -4px 24px rgba(179,100,20,0.3);
+}
+.weather-alert-bar-watch, .weather-alert-bar-statement {
+    background: linear-gradient(90deg, #7a4a0f 0%, #b3811a 50%, #7a4a0f 100%);
+    box-shadow: 0 -4px 24px rgba(179,142,20,0.35);
+}
+
 /* Persistent top banner: holds the latest red (important) headline for
    up to TOP_ALERT_HOLD_SECONDS, or until the next one replaces it.
 
