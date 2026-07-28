@@ -540,6 +540,30 @@ def _fetch_article_excerpt(url: str) -> str:
 # one happened to classify it. "this list"/"the same batch" language
 # generalized to "a different story" so it reads correctly whether
 # there's one headline in front of the model or several.
+#
+# Session report: "I'm getting random ass earnings to my phone while
+# I'm out and about... if something isn't a top fifty company in the
+# world, I don't want it to my inbox." EARNINGS (below) is one of the
+# "important" categories that pushes to the phone (see update_top_
+# alert) and previously had no size/prominence gate at all — a real
+# beat/miss from any company, however small, qualified equally.
+# Redirects a sub-top-50 beat/miss to MARKET instead of REJECTing it
+# outright — still real news, worth showing on the dashboard's own
+# routine ticker, just not worth a phone buzz.
+#
+# Same report, second half: "there are some really high quality market
+# headlines... just classified as MARKET" (a genuinely good example
+# given: the dollar index firming as the market starts pricing in the
+# Fed holding rather than hiking) "and I want the AI to gauge if it's
+# actually [1] informational, [2] simple enough to read, and [3] brings
+# actual quality to my day" — MARKET's old definition was just "real
+# but routine," a low bar that let real-but-low-value headlines (a
+# small-cap earnings number, say) through purely because they weren't
+# clearly REJECTable on the earlier checks. Given the user's own good/
+# bad pair as the calibration example directly in the prompt, the same
+# "name the actual example, don't just add an adjective" lesson this
+# app's other AI-prompt tuning already established (see morning_
+# briefing.py's own profanity/tone docstrings).
 _CLASSIFICATION_CRITERIA = (
     "For each: is it genuinely informational — reporting a fact that has already happened, "
     "not clickbait, not a listicle ('5 stocks to buy'), not opinion/analysis/commentary, not "
@@ -562,7 +586,14 @@ _CLASSIFICATION_CRITERIA = (
     "decision, a genuinely market-moving statement — not routine paperwork), DATA_SURPRISE "
     "(a major economic data release meaningfully above/below expectations), EARNINGS (a "
     "company's actual reported results that meaningfully BEAT or MISSED expectations — not "
-    "a routine 'reports Q2 results' headline with no real surprise attached), MACRO_SHOCK (a "
+    "a routine 'reports Q2 results' headline with no real surprise attached — AND the company "
+    "is unambiguously one of the roughly 50 largest publicly traded companies in the world by "
+    "market cap right now: Apple/Microsoft/Nvidia/Amazon/Alphabet/Saudi Aramco/Berkshire "
+    "Hathaway/Meta/Broadcom/TSMC/Eli Lilly/JPMorgan/Visa/Walmart tier, roughly $500B+ in "
+    "today's terms, not a mid-cap or small-cap name most people wouldn't recognize. A real "
+    "beat/miss from a company outside that top tier is genuine news but not worth a phone "
+    "alert — classify it as MARKET instead of EARNINGS, regardless of how large the surprise "
+    "is in percentage terms), MACRO_SHOCK (a "
     "crash/crisis/systemic event, or a real trading halt/circuit breaker), MERGERS (a "
     "genuinely major, DEFINITIVE $10B+ deal — a signed agreement, board-approved deal, or "
     "completed acquisition; NOT a company merely 'exploring' a sale, in informal/preliminary "
@@ -576,8 +607,16 @@ _CLASSIFICATION_CRITERIA = (
     "actually act on it, is the concrete event, not something to wait on a number for. Does NOT "
     "include vague 'trade tension' scene-setting, unnamed 'officials discuss/consider' framing, "
     "or third-party/analyst speculation about what a government might do), MARKET "
-    "(real but routine financial news), or BREAKING (something else genuinely major that "
-    "doesn't fit those).\n\n"
+    "(real, routine financial news that still has to clear a real quality bar, not just 'finance-"
+    "adjacent and not obviously rejectable': genuinely informational — reports a concrete "
+    "development, not vague scene-setting; simple enough to actually read and understand at a "
+    "glance; and genuinely adds something worth knowing about today, not filler. A headline "
+    "about the dollar index firming as the market starts pricing in the Fed holding rather than "
+    "hiking is MARKET done right — concrete, readable, actually informative. A routine small-cap "
+    "earnings headline with a real number attached is NOT — technically real and numeric, but "
+    "not something worth surfacing; REJECT that rather than letting it through as MARKET just "
+    "because it isn't clearly rejectable on the earlier checks), or BREAKING (something else "
+    "genuinely major that doesn't fit those).\n\n"
     "STRICT DATA REQUIREMENT — be strict here. Look at the headline, its SUMMARY, and its "
     "ARTICLE EXCERPT (whichever are present) for a specific number, percentage, or figure. "
     "If one exists, rewrite the headline into one short, concise, factual sentence that "
