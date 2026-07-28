@@ -279,6 +279,28 @@ _TEAM_ESPN_NAME = {
     "nfl": sports_client.NFL_TEAM_NAME,
 }
 _TEAM_COLOR = {"mlb": "#3E7CC9", "nhl": "#D8323F", "nfl": "#D3BC8D"}  # matches the rail hero's own --tc values
+# Same three colors as (r, g, b) — needed alongside the hex strings
+# above for _side_color below, which has to blend an opponent's real
+# ESPN color in at a controlled alpha (rgba(), not a flat hex fill).
+_TEAM_COLOR_RGB = {"mlb": (62, 124, 201), "nhl": (216, 50, 63), "nfl": (211, 188, 141)}
+_OPPONENT_FALLBACK_RGB = (82, 92, 110)  # matches the old fixed #525C6E gray
+
+
+def _side_color(sport: str, match: dict | None, side: dict) -> tuple[int, int, int]:
+    """This side's real (r, g, b) — our own fixed team color, or the
+    opponent's real color straight from ESPN (scores_client.team_color)
+    when this is the other team. Session request: "there was a cool
+    dark gradient behind the big score section with both team's
+    colors... the win bar could have the team's actual colors, right
+    now the opponent's colors just default to gray." Falls back to the
+    old fixed gray whenever ESPN doesn't have today's game or genuinely
+    has no usable color for that team — same graceful degradation
+    scores_client.team_color's own docstring already describes."""
+    if side["is_us"]:
+        return _TEAM_COLOR_RGB.get(sport, (255, 179, 0))
+    if match is None:
+        return _OPPONENT_FALLBACK_RGB
+    return scores_client.team_color(match["competition"], side["name"]) or _OPPONENT_FALLBACK_RGB
 # Pregame situation-strip label, per sport — was a hardcoded "FIRST
 # PITCH"/"PUCK DROP" binary ternary before the Saints, which would have
 # wrongly shown "PUCK DROP" for a football game.
@@ -345,9 +367,8 @@ def _win_probability_html(sport: str, match: dict | None, away: dict, home: dict
         return ""
     home_pct = round(home_pct)
     away_pct = 100 - home_pct
-    team_color = _TEAM_COLOR.get(sport, "#FFB300")
-    away_color = team_color if away["is_us"] else "#525C6E"
-    home_color = team_color if home["is_us"] else "#525C6E"
+    away_color = "rgb({},{},{})".format(*_side_color(sport, match, away))
+    home_color = "rgb({},{},{})".format(*_side_color(sport, match, home))
     # Session feedback: "find a better way to show the win odds since
     # its hard to see" — was an 11px-tall bar with 11px percentages
     # written below each end. The percentages themselves are now the
@@ -1037,11 +1058,31 @@ def _board_html(state: dict, now: datetime) -> str:
     }[phase]
     live_class = " jumbo-board-live" if phase == "live" else ""
 
+    # Session request: "in the original prototype there was a cool dark
+    # gradient behind the big score section with both team's colors."
+    # Each side's own real color (_side_color — our fixed color, or the
+    # opponent's real ESPN one) washes in from its own edge at a low
+    # enough alpha to stay a mood-lighting effect, not a bright fill —
+    # fading to nothing by the middle so the score digits themselves
+    # sit on the plain dark panel, not on top of a color transition.
+    # Applied to the whole board body (not just .jumbo-matchup) so it
+    # reads as ambient arena lighting behind the whole panel rather than
+    # a hard-edged color band that stops dead above the win-probability
+    # bar — the score still sits right at the top of it either way.
+    away_rgb, home_rgb = _side_color(sport, match, away), _side_color(sport, match, home)
+    board_gradient = (
+        "background:linear-gradient(90deg,"
+        f"rgba({away_rgb[0]},{away_rgb[1]},{away_rgb[2]},0.22) 0%,"
+        f"rgba({away_rgb[0]},{away_rgb[1]},{away_rgb[2]},0) 35%,"
+        f"rgba({home_rgb[0]},{home_rgb[1]},{home_rgb[2]},0) 65%,"
+        f"rgba({home_rgb[0]},{home_rgb[1]},{home_rgb[2]},0.22) 100%)"
+    )
+
     return (
         f'<div class="jumbo-panel jumbo-board{live_class}{win_burst}">'
         f'<div class="jumbo-ph"><span>{html.escape(league["label"])} · FEATURED</span>'
         f'<span class="jumbo-ph-right">{state_label}</span></div>'
-        f'<div class="jumbo-board-body">'
+        f'<div class="jumbo-board-body" style="{board_gradient}">'
         f'<div class="jumbo-matchup">{_side_html(away, dim_away)}{center}{_side_html(home, dim_home)}</div>'
         f"{wp_html}{situation}{blurb_html}{leaders_html}{last_play_html}"
         f"</div></div>"

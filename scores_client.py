@@ -174,6 +174,75 @@ def find_espn_competition(league_key: str, away_name: str, home_name: str, today
     return None
 
 
+# ESPN's own "color" field is right for the vast majority of real
+# teams — checked live against the entire real MLB scoreboard (Yankees
+# navy, Dodgers blue, Cardinals red, Diamondbacks maroon, Phillies red,
+# and two dozen others all check out) — but wrong for at least one:
+# session correction: "The red socks should not be navy... Look at
+# their logo. Look at their name. It's red." ESPN's own "color" for
+# the Red Sox is a navy alternate (0d2b56), not their real identity —
+# confirmed against their own "alternateColor" field (bd3039, a real
+# Red Sox red). A blanket "pick whichever of color/alternateColor is
+# more saturated" rule was tried and rejected: tested against that same
+# real scoreboard data, it also flips the Phillies from their correct
+# red to an incorrect blue, so it isn't safe to apply automatically —
+# only a hand-picked override for a team confirmed wrong is.
+_TEAM_COLOR_OVERRIDES = {"boston red sox": (189, 48, 57)}
+
+
+def _hex_to_rgb(hex_color) -> tuple[int, int, int] | None:
+    if not hex_color or len(hex_color) != 6:
+        return None
+    try:
+        return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return None
+
+
+def _boost_for_bulb(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
+    """Brightens a real, dim team color (Rays navy, Twins navy, ...)
+    just enough to read clearly against a dark background, without
+    changing its hue/identity. Already-vivid colors pass through
+    unchanged. Named for its original Govee-flash use (see git history)
+    — kept because the same boost is exactly as useful for the
+    jumbotron's own score-panel gradient/win-bar fill, which sit
+    against the same near-black arena background."""
+    max_c = max(rgb)
+    if max_c == 0 or max_c >= 170:
+        return rgb
+    scale = 190 / max_c
+    return tuple(min(255, round(c * scale)) for c in rgb)
+
+
+def team_color(competition: dict, team_name: str) -> tuple[int, int, int] | None:
+    """This team's real color as (r, g, b) — a hand-confirmed override
+    for the small number of teams proven wrong (see
+    _TEAM_COLOR_OVERRIDES above), otherwise ESPN's own scoreboard
+    "color" field for that team (already sitting in a
+    `find_espn_competition` result — no extra request), boosted for
+    visibility against the jumbotron's near-black background. Session
+    request: "there was a cool dark gradient behind the big score
+    section with both team's colors... also the win bar could have the
+    team's actual colors, right now the opponent's colors just default
+    to gray." Falls to "alternateColor" specifically when the primary
+    is pure/near black (Pirates, White Sox, Giants all confirmed live
+    to report black as "color") — not a branding opinion, just that
+    black reads as nothing against a black background regardless of
+    whether it's officially correct. None if this team isn't in the
+    competition, or ESPN genuinely has no usable color for it."""
+    key = team_name.lower()
+    if key in _TEAM_COLOR_OVERRIDES:
+        return _TEAM_COLOR_OVERRIDES[key]
+    for c in competition.get("competitors", []):
+        if (c.get("team", {}).get("displayName") or "").lower() == key:
+            team = c.get("team", {})
+            rgb = _hex_to_rgb(team.get("color"))
+            if rgb is None or max(rgb) < 30:
+                rgb = _hex_to_rgb(team.get("alternateColor"))
+            return _boost_for_bulb(rgb) if rgb else None
+    return None
+
+
 @st.cache_data(ttl=GAME_CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_summary_raw(sport: str, league: str, event_id: str) -> dict:
     fetch_throttle.wait_turn()
