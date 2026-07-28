@@ -338,12 +338,21 @@ def storm_headline_active(now: datetime) -> bool:
     now — app.py checks this ahead of its own night-dim decision, same
     role commute_reminder.leave_headline_active already plays for the
     leave timer (session request: "make it bright like the EC alert
-    even when the screen is dimmed for night time"). True only for
-    "approaching"/"leaving" — same as get_storm_proximity_alerts, "here"
-    has no countdown to show (nothing left to count down to until the
-    next transition, itself already the ambient steady light's job)."""
+    even when the screen is dimmed for night time"). True for all three
+    phases, not just "approaching"/"leaving" — session correction: "it
+    should say clearing in and then a timer to [the alert's own
+    event_end_datetime] since thats when the message actually clears."
+    "here"'s own storm_phase "target" is already that exact instant
+    (see ec_storm_timing.storm_phase's "here" branch), so there's a
+    real, meaningful countdown the whole time the storm is active, not
+    just once its own estimated end has already passed — unlike
+    get_storm_proximity_alerts's periodic toast, which stays "here"-
+    exempt on purpose (a toast every few minutes for something already
+    overhead would be noise; this headline is a passive, glanceable
+    readout, not an interruption, so the same reasoning doesn't apply
+    to it)."""
     info = current_storm_phase(now)
-    return info is not None and info["phase"] in ("approaching", "leaving")
+    return info is not None
 
 
 def render_storm_headline(now: datetime) -> None:
@@ -352,10 +361,16 @@ def render_storm_headline(now: datetime) -> None:
     pulled from the EC alert for ultimate transparency," modeled
     directly on commute_reminder.render_leave_headline (see
     .storm-headline in theme.py for why it's colored differently).
-    "CLEARING" is the user's own word for the "leaving" phase — kept
-    as the on-screen label even though ec_storm_timing's own phase
-    value stays "leaving" internally, matching how "APPROACHING" only
-    ever shows for "approaching" too.
+    "CLEARING" is the user's own word, used for both "here" and
+    "leaving" — session correction: "it should say clearing in and
+    then a timer to [event_end_datetime] since thats when the message
+    actually clears," not only once that instant has already passed
+    (the original, narrower "leaving"-only behavior). "APPROACHING"
+    still only ever shows for "approaching". Either way the target is
+    whatever ec_storm_timing.storm_phase's own "target" says for the
+    current phase — "here"'s target IS event_end_datetime itself, so
+    this is always counting down to something real and current, never
+    a stale or made-up value.
 
     Ticks for real once a second via app.py's global live-countdown
     ticker, exactly like the leave headline — the text rendered here is
@@ -369,7 +384,7 @@ def render_storm_headline(now: datetime) -> None:
         return
     alert, severity = resolved
     info = ec_storm_timing.storm_phase(now, alert["title"], severity)
-    if info is None or info["phase"] not in ("approaching", "leaving"):
+    if info is None:
         return
     target_ms = int(info["target"].timestamp() * 1000)
     label = "APPROACHING" if info["phase"] == "approaching" else "CLEARING"
