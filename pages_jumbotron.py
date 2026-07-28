@@ -384,12 +384,27 @@ def _win_probability_html(sport: str, match: dict | None, away: dict, home: dict
     # headline (big numbers flanking the bar, not small print under
     # it), and the bar itself is thick enough to read as a real
     # visual split rather than a thin stripe.
+    #
+    # Session request: "can you make the win probability bar update
+    # smoother instead of jumping" — .jumbo-wp-seg's own CSS transition
+    # can't animate this on its own: Streamlit re-renders this whole
+    # markdown block from scratch every rerun, so these are brand new
+    # DOM nodes each time with the new width already baked into the
+    # inline style, not an existing element whose width property just
+    # changed — nothing for a CSS transition to animate from. data-wp-
+    # key (stable per game+side, unlike the DOM node itself) and data-
+    # wp-pct let app.py's kiosk-wp-smoother script (injected once,
+    # survives the churn the same way the countdown ticker does) track
+    # the last real percentage itself and animate old -> new by hand.
+    event_id = match.get("event_id", "")
     return (
         f'<div class="jumbo-wp"><div class="jumbo-wp-title">{title}</div>'
         '<div class="jumbo-wp-row">'
         f'<div class="jumbo-wp-pct" style="color:{away_color}">{away_pct}%</div>'
-        f'<div class="jumbo-wp-bar"><div class="jumbo-wp-seg" style="width:{away_pct}%;background:{away_color}"></div>'
-        f'<div class="jumbo-wp-seg" style="width:{home_pct}%;background:{home_color}"></div></div>'
+        f'<div class="jumbo-wp-bar">'
+        f'<div class="jumbo-wp-seg" data-wp-key="{event_id}-away" data-wp-pct="{away_pct}" style="width:{away_pct}%;background:{away_color}"></div>'
+        f'<div class="jumbo-wp-seg" data-wp-key="{event_id}-home" data-wp-pct="{home_pct}" style="width:{home_pct}%;background:{home_color}"></div>'
+        "</div>"
         f'<div class="jumbo-wp-pct" style="color:{home_color}">{home_pct}%</div>'
         "</div>"
         f'<div class="jumbo-wp-labels"><span>{html.escape(away["name"])}</span>'

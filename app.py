@@ -255,6 +255,62 @@ components.html(
     height=0,
 )
 
+# Jumbotron win-probability bar (pages_jumbotron._win_probability_html)
+# — session request: "can you make the win probability bar update
+# smoother instead of jumping." theme.py's own .jumbo-wp-seg already
+# carries `transition: width 1s ease`, but that alone can't animate
+# anything here: Streamlit re-renders the whole markdown block from
+# scratch every rerun, so each .jumbo-wp-seg is a brand new DOM node
+# every time with the new width already baked into its inline style —
+# not an existing element whose width property just changed, which is
+# the only thing a CSS transition can actually animate. Tracked by
+# data-wp-key (stable per game+side — the DOM node itself isn't) in a
+# plain JS object that survives the churn the same way the countdown
+# ticker's own state does, so a genuine change gets a real old->new
+# animation: snap instantly back to the last real percentage (no
+# transition), force a reflow, then let the CSS transition carry it
+# forward to the new one. A first sighting or an unchanged percentage
+# just sets the width directly, no animation to fake.
+components.html(
+    """
+    <script>
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-wp-smoother')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-wp-smoother';
+      s.textContent = [
+        "window.kioskWpState = window.kioskWpState || {};",
+        "function kioskSmoothWp(el) {",
+        "  var key = el.getAttribute('data-wp-key');",
+        "  var newPct = parseFloat(el.getAttribute('data-wp-pct'));",
+        "  if (!key || isNaN(newPct)) return;",
+        "  var lastPct = window.kioskWpState[key];",
+        "  if (lastPct === undefined || lastPct === newPct) {",
+        "    el.style.transition = 'none';",
+        "    el.style.width = newPct + '%';",
+        "  } else {",
+        "    el.style.transition = 'none';",
+        "    el.style.width = lastPct + '%';",
+        "    void el.offsetHeight;",
+        "    el.style.transition = '';",
+        "    el.style.width = newPct + '%';",
+        "  }",
+        "  window.kioskWpState[key] = newPct;",
+        "}",
+        "function kioskSmoothWpAll() {",
+        "  document.querySelectorAll('.jumbo-wp-seg').forEach(kioskSmoothWp);",
+        "}",
+        "kioskSmoothWpAll();",
+        "new MutationObserver(kioskSmoothWpAll).observe(document.body, {childList: true, subtree: true});",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+    </script>
+    """,
+    height=0,
+)
+
 FRED_API_KEY = st.secrets.get("FRED_API_KEY")
 
 # Resolved early (not down by the page-routing block that used to live
