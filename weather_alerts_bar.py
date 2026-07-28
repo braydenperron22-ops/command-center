@@ -333,28 +333,6 @@ def _format_clock(remaining_seconds: float) -> str:
     return f"{minutes:02d}:{seconds:02d}"
 
 
-def storm_headline_active(now: datetime) -> bool:
-    """Whether render_storm_headline below would show anything right
-    now — app.py checks this ahead of its own night-dim decision, same
-    role commute_reminder.leave_headline_active already plays for the
-    leave timer (session request: "make it bright like the EC alert
-    even when the screen is dimmed for night time"). True for all three
-    phases, not just "approaching"/"leaving" — session correction: "it
-    should say clearing in and then a timer to [the alert's own
-    event_end_datetime] since thats when the message actually clears."
-    "here"'s own storm_phase "target" is already that exact instant
-    (see ec_storm_timing.storm_phase's "here" branch), so there's a
-    real, meaningful countdown the whole time the storm is active, not
-    just once its own estimated end has already passed — unlike
-    get_storm_proximity_alerts's periodic toast, which stays "here"-
-    exempt on purpose (a toast every few minutes for something already
-    overhead would be noise; this headline is a passive, glanceable
-    readout, not an interruption, so the same reasoning doesn't apply
-    to it)."""
-    info = current_storm_phase(now)
-    return info is not None
-
-
 def render_storm_headline(now: datetime) -> None:
     """A standalone bright countdown headline — session request: "can
     we make an APPROACHING: and CLEARING: timer using these values
