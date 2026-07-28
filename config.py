@@ -79,6 +79,11 @@ AQI_EXTREME = 200  # AQI at which the badge reaches full saturated color
 # Powassan - Mattawa region (found via weather.gc.ca/warnings/report_e.html
 # for North Bay's coordinates).
 EC_ALERT_REGION_CODE = "onrm119"
+# Same region, spelled out — MSC GeoMet's weather-alerts OGC API
+# (ec_storm_timing.py) matches by this exact name (its own
+# "feature_name_en" field) rather than the battleboard's short code,
+# confirmed live to be the identical string.
+EC_ALERT_REGION_NAME = "North Bay - Powassan - Mattawa"
 
 # Our own fallback extreme-heat/extreme-cold banner only shows when EC has
 # no official alert active — thresholds are a rough approximation of EC's

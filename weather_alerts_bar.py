@@ -6,11 +6,14 @@ own extreme-heat/extreme-cold fallback only ever shows when neither
 has anything active for the region."""
 
 import html
+import time
+from datetime import datetime
 
 import streamlit as st
 
 import ec_alerts
 import ec_aqhi
+import ec_storm_timing
 import persisted_state
 from config import EXTREME_COLD_THRESHOLD_C, EXTREME_HEAT_THRESHOLD_C
 
@@ -276,3 +279,74 @@ def render_alert_bar(alert: dict, elapsed: float, variant: str = "a") -> None:
         </div>""",
         unsafe_allow_html=True,
     )
+
+
+def _current_alert_and_severity() -> tuple[dict, str] | None:
+    alerts = _combined_alerts()
+    if not alerts:
+        return None
+    alert = max(alerts, key=_selection_score)
+    return alert, _severity(alert["title"])
+
+
+def current_storm_phase(now: datetime) -> dict | None:
+    """{"phase": "approaching"|"here"|"leaving", "minutes": float} for
+    whichever alert render() would currently show, or None — for
+    govee_lighting.sync_lights (session request: "red govee flashes for
+    when the storm is approaching... solid red at like 30% for when its
+    here... same thing for when the storm is leaving"). Thin wrapper
+    around ec_storm_timing.storm_phase using the exact same alert
+    selection render()/get_new_alerts() already use, so the light, the
+    toast, and the banner never disagree about which alert is "the"
+    current one."""
+    resolved = _current_alert_and_severity()
+    if resolved is None:
+        return None
+    alert, severity = resolved
+    return ec_storm_timing.storm_phase(now, severity)
+
+
+# "every like 5-10 mins" — the middle of the requested range. Keyed per
+# alert id (not persisted — a restart just resets the cadence once,
+# acceptable for a repeating reminder rather than a one-shot safety
+# notice like get_new_alerts's own persisted dedup) so a brand new storm
+# always gets an immediate fresh cycle rather than inheriting whatever's
+# left of a previous, unrelated alert's timer.
+STORM_PROXIMITY_INTERVAL_SECONDS = 7 * 60
+_last_storm_toast: dict[str, float] = {}
+
+
+def get_storm_proximity_alerts(now: datetime) -> list[dict]:
+    """Periodic toasts while a storm-grade alert is approaching or
+    leaving — session request: "toast alerts for when the storm gets
+    closer every like 5-10 mins... same thing for when the storm is
+    leaving." Distinct from get_new_alerts's own one-shot "a new alert
+    just came in" toast: this repeats on a fixed cadence for as long as
+    ec_storm_timing.storm_phase keeps returning "approaching" or
+    "leaving" for the current alert, giving a running sense of how
+    close it is rather than a single notice. Nothing fires during
+    "here" — the steady red light (govee_lighting.sync_lights) is the
+    ambient signal for that; a toast every few minutes for something
+    already overhead would just be noise, not news."""
+    resolved = _current_alert_and_severity()
+    if resolved is None:
+        return []
+    alert, severity = resolved
+    phase_info = ec_storm_timing.storm_phase(now, severity)
+    if phase_info is None or phase_info["phase"] not in ("approaching", "leaving"):
+        return []
+    key = alert.get("id") or alert["title"]
+    last = _last_storm_toast.get(key, 0.0)
+    if time.time() - last < STORM_PROXIMITY_INTERVAL_SECONDS:
+        return []
+    _last_storm_toast[key] = time.time()
+    minutes = round(phase_info["minutes"])
+    verb = "expected to arrive in about" if phase_info["phase"] == "approaching" else "expected to clear in about"
+    return [
+        {
+            "kind": "weather",
+            "severity": severity,
+            "label": "Environment Canada",
+            "headline": f"{alert['title']} — {verb} {minutes} min",
+        }
+    ]

@@ -1305,6 +1305,17 @@ try:
 except Exception:
     pass
 
+# Storm-proximity toasts: "toast alerts for when the storm gets closer
+# every like 5-10 mins... same thing for when the storm is leaving" —
+# a separate, repeating cadence from the one-shot "new alert" toast
+# right above (see weather_alerts_bar.get_storm_proximity_alerts's own
+# docstring), so it gets its own try/except for the same isolation
+# reasoning as every other block here.
+try:
+    new_alerts.extend(weather_alerts_bar.get_storm_proximity_alerts(now))
+except Exception:
+    pass
+
 # Radar-based severe/tracking-started toast alerts (ec_radar.
 # severe_weather_alert / tracking_started_alert) removed along with the
 # rest of the radar lookahead-forecasting layer at the user's own
@@ -1466,13 +1477,22 @@ try:
     if current_alert and current_alert.get("kind") == "sports" and elapsed is not None and elapsed < govee_lighting.FLASH_SECONDS:
         score_flash = (elapsed, current_alert["flash_color"])
     aqi_for_lights = air_quality.get("us_aqi") if air_quality else None
-    # Session feedback: waking the bedroom light for weather overnight
-    # was the wrong call — sync_lights no longer reacts to weather at
-    # all (severe_weather_active still drives the screen's own separate
-    # night_dim override above, just not the light).
+    # Session request: "red govee flashes for when the storm is
+    # approaching... solid red at like 30% for when its here... same
+    # thing for when the storm is leaving" — a scoped exception to the
+    # "waking the bedroom light for weather overnight was the wrong
+    # call" feedback above (see govee_lighting.sync_lights's own
+    # updated docstring): it still respects the night gate, same
+    # position breaking news already holds, so this doesn't reopen the
+    # thing that feedback was actually about.
+    try:
+        storm_phase_info = weather_alerts_bar.current_storm_phase(now)
+    except Exception:
+        storm_phase_info = None
+    storm_phase_name = storm_phase_info["phase"] if storm_phase_info else None
     govee_lighting.sync_lights(
         phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
-        aqi_for_lights, category, score_flash, _game_takeover_live,
+        aqi_for_lights, category, score_flash, _game_takeover_live, storm_phase_name,
     )
     try:
         leave_timer_active = commute_reminder.leave_headline_active(now)

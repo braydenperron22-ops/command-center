@@ -52,6 +52,19 @@ MARKET_SIGNIFICANT_RELEASE = 0.7
 FLASH_RED = (255, 0, 0)
 FLASH_WHITE = (255, 255, 255)
 FLASH_BRIGHTNESS = 100
+# Storm-proximity light (session request: "red govee flashes for when
+# the storm is approaching... solid red at like 30% for when its
+# here... same thing for when the storm is leaving," driven by
+# weather_alerts_bar.current_storm_phase/ec_storm_timing's own EC-
+# sourced expected start/end times). "Here" is deliberately steady, not
+# pulsing — same reasoning as SMOKE_COLOR below: an ongoing condition,
+# not a sudden event, shouldn't compete for attention the same way an
+# approaching/leaving flash (reusing FLASH_RED/FLASH_WHITE — the same
+# alternating pulse breaking news already uses) is supposed to. Dim,
+# not full brightness, once the storm has actually arrived — this is
+# meant to be read at a glance without lighting up the whole room
+# during what's often already a dark, stormy evening.
+STORM_HERE_BRIGHTNESS = 30
 # A physical, ambient signal for real wildfire smoke — the room itself
 # tells you the air's bad without needing to look at the screen.
 # Deliberately not pulsing like the breaking-news flash: this is an
@@ -302,6 +315,7 @@ def sync_lights(
     category: str | None = None,
     score_flash: tuple[float, tuple[int, int, int]] | None = None,
     jumbotron_active: bool = False,
+    storm_phase: str | None = None,
 ) -> None:
     """Call once per rerun. Light follows the exact same sunset/sunrise
     pattern as the plug — off at night, no exceptions. Every override
@@ -319,10 +333,16 @@ def sync_lights(
     seconds elapsed since a fresh breaking alert started showing — the
     caller already tracks each alert's shown_at for the toast bar, so
     this reuses that instead of tracking its own copy; None means no
-    active breaking alert). A genuinely extreme AQI (real wildfire
-    smoke, not routine haze) overrides everything below it with
-    SMOKE_COLOR instead — checked after the breaking-news flash (which
-    still wins, being the more urgent/immediate of the two). During the
+    active breaking alert). `storm_phase` ("approaching"/"here"/
+    "leaving"/None — weather_alerts_bar.current_storm_phase) checked
+    right after that: an alternating red/white pulse for approaching/
+    leaving, same as breaking news; a steady FLASH_RED at
+    STORM_HERE_BRIGHTNESS for "here", not pulsing, since that's an
+    ongoing condition rather than a fresh event. A genuinely extreme AQI
+    (real wildfire smoke, not routine haze) overrides everything below
+    IT with SMOKE_COLOR instead — checked after both the breaking-news
+    flash and storm_phase (both still win, being the more urgent/
+    immediate of the three). During the
     sunrise/sunset transition (the same `phase` scenery.py's own sky
     gradient uses), the light tints to that gradient's own warm
     horizon-glow color — checked after the flash/smoke overrides (both
@@ -335,9 +355,13 @@ def sync_lights(
 
     Used to also wake for severe weather and incoming rain, bypassing
     night/off — session feedback: waking the room for weather overnight
-    was the wrong call, full stop. The screen still does its own,
-    separate thing for weather overnight (see app.py's night_dim
-    override) — this module no longer reacts to weather at all.
+    was the wrong call, full stop. That's still true: `storm_phase`
+    (see its own comment below, ahead of the AQI-smoke check) reacts to
+    a genuine storm-grade EC alert, but only after the night gate above
+    it, same position breaking news already holds — a severe storm
+    doesn't wake the room at 3am any more than a breaking headline
+    does. The screen still does its own, separate thing for weather
+    overnight (see app.py's night_dim override).
 
     `score_flash` is (elapsed, color) for a fresh Jays/Habs scoring-play
     alert (see sports_alerts.py) — session request: "a blue govee flash"
@@ -410,6 +434,28 @@ def sync_lights(
         color = FLASH_RED if int(breaking_alert_elapsed) % 2 == 0 else FLASH_WHITE
         _apply_color(color, min_gap=FLASH_CALL_GAP_SECONDS)
         _apply_brightness_immediate(FLASH_BRIGHTNESS, min_gap=FLASH_CALL_GAP_SECONDS)
+        return
+    # Storm proximity — session request: "red govee flashes for when the
+    # storm is approaching... solid red at like 30% for when its
+    # here... same thing for when the storm is leaving." Checked ahead
+    # of AQI smoke and jumbotron game-mode, same tier as breaking news —
+    # matches an earlier session's own "no other force except breaking
+    # news alerts, bluejays alerts, or other team alerts can impact the
+    # lights [during a game]... oh, severe weather too," which this app
+    # never actually implemented until now. Approaching/leaving reuse
+    # the exact same alternating pulse as breaking news (still grabbing
+    # attention, just not tied to any one toast's own elapsed time —
+    # this is a standing condition that can last many minutes, not a
+    # brief hold); "here" is steady instead, same reasoning as
+    # SMOKE_COLOR below.
+    if storm_phase in ("approaching", "leaving"):
+        color = FLASH_RED if int(time.time()) % 2 == 0 else FLASH_WHITE
+        _apply_color(color, min_gap=FLASH_CALL_GAP_SECONDS)
+        _apply_brightness_immediate(FLASH_BRIGHTNESS, min_gap=FLASH_CALL_GAP_SECONDS)
+        return
+    if storm_phase == "here":
+        _apply_color(FLASH_RED)
+        _apply_brightness_immediate(STORM_HERE_BRIGHTNESS)
         return
     if aqi is not None and aqi >= AQI_EXTREME:
         _apply_color(SMOKE_COLOR)
