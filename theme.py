@@ -2671,16 +2671,6 @@ html, body, [class*="css"] {
    spacing (fine for one all-caps word) would badly reflow. */
 .jumbo-offseason-countdown { letter-spacing: 0.02em; font-size: 14px; text-align: left; }
 .jumbo-hero-live .jumbo-gameline { border-color: rgba(255,69,58,0.45); box-shadow: 0 0 16px rgba(255,69,58,0.1); }
-.jumbo-livechip {
-    position: absolute;
-    top: 18px; right: 20px;
-    font-family: var(--label);
-    font-size: 11px;
-    font-weight: 800;
-    color: var(--live);
-    letter-spacing: 0.26em;
-    animation: jumbo-blink 1.4s infinite;
-}
 /* My Teams + Division Standings share the left column as two stacked
    panels — session request moved standings out of each hero card into
    its own rotating panel at the bottom. My Teams sizes to its own

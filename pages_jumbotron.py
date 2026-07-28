@@ -1242,7 +1242,6 @@ def _rail_hero_html(entry: dict, now: datetime) -> str:
         )
         form_html = f'<div class="jumbo-form"><span class="jumbo-form-label">FORM</span>{dots}</div>'
 
-    live_chip = '<div class="jumbo-livechip">LIVE</div>' if live else ""
     division = status.get("division_name") or ""
     # Session request: "can we pull playoff odds for each of my teams?"
     # Tucked onto the division line rather than its own row — this rail
@@ -1255,7 +1254,6 @@ def _rail_hero_html(entry: dict, now: datetime) -> str:
     odds_html = f' <span class="jumbo-hero-odds">· {html.escape(odds["display"])} PO</span>' if odds.get("display") else ""
     return (
         f'<div class="jumbo-hero jumbo-hero-{entry["sport"]}{" jumbo-hero-live" if live else ""}">'
-        f"{live_chip}"
         f'<div class="jumbo-hero-head"><img src="{html.escape(status["team_logo"])}" />'
         f'<div class="jumbo-hero-id"><div class="jumbo-hero-name">{html.escape(entry["label"].title())}</div>'
         f'<div class="jumbo-hero-div">{html.escape(division)}{odds_html}</div></div>'
