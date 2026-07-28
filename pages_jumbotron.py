@@ -1295,6 +1295,60 @@ def _rail_hero_html(entry: dict, now: datetime) -> str:
     )
 
 
+def _ufc_rail_hero_html(now: datetime) -> str:
+    """UFC's own "My Teams" rail card — session request: "can you add
+    the UFC in the my teams section?" Genuinely different shape from
+    the other three cards (no team/record/standings/division/recent-
+    form — see ufc_client.py's own docstring on why UFC needed a
+    separate data model entirely), so this doesn't reuse
+    _rail_hero_html at all, just its outer .jumbo-hero slot/sizing for
+    visual consistency. Deliberately NOT gated to the Saturday-5pm
+    takeover window (ufc_client.takeover_state) — that window decides
+    when UFC is worth taking over the WHOLE screen for; this card's
+    job is just "what's the UFC status right now," visible the whole
+    time some other sport's game owns the featured board, the same way
+    the Habs/Jays/Saints cards already are for each other. Checks
+    TODAY specifically first (a live card, or a same-day countdown to
+    one), falling back to whatever's next on the calendar otherwise —
+    same "OFFSEASON" vs "next game in N days" shape _offseason_
+    countdown_html already uses for the other three."""
+    event = ufc_client.fetch_event_for_date(now.date())
+    live = False
+    if event and event["state"] != "final":
+        if event["state"] == "live":
+            live = True
+            bout = ufc_client.current_bout(event)
+            if bout:
+                line = (
+                    f'LIVE · <b>{html.escape(bout["fighter_a"]["short_name"])}</b> vs '
+                    f'<b>{html.escape(bout["fighter_b"]["short_name"])}</b>'
+                )
+            else:
+                line = "LIVE"
+        elif now >= event["start_time"]:
+            line = "Card underway"
+        else:
+            line = f'Starts {_fmt_countdown(event["start_time"], now)}'
+        detail = html.escape(event["name"])
+    else:
+        next_event = ufc_client.fetch_next_event(now)
+        if not next_event:
+            detail, line = "", '<span class="jumbo-offseason">No event scheduled</span>'
+        else:
+            date_text = next_event["start_time"].strftime("%b %-d")
+            countdown_text = _days_until_text(next_event["start_time"], now)
+            detail = html.escape(next_event["name"])
+            line = f'<span class="jumbo-offseason">{date_text} · {countdown_text}</span>'
+
+    return (
+        f'<div class="jumbo-hero jumbo-hero-ufc{" jumbo-hero-live" if live else ""}">'
+        f'<div class="jumbo-hero-head"><div class="jumbo-hero-id">'
+        f'<div class="jumbo-hero-name">UFC</div>'
+        f'<div class="jumbo-hero-div">{detail}</div></div></div>'
+        f'<div class="jumbo-gameline">{line}</div></div>'
+    )
+
+
 def _mini_row_html(g: dict) -> str:
     """Session request: bring back the records + standout-performer
     line the regular rotation's Scores page already shows (see
@@ -1567,7 +1621,7 @@ def render(now: datetime, state: dict, weather: dict | None, ufc_state: dict | N
             f'<span class="jumbo-wx-loc">CORBEIL</span></div>'
         )
 
-    rail = "".join(_rail_hero_html(entry, now) for entry in _RAIL)
+    rail = "".join(_rail_hero_html(entry, now) for entry in _RAIL) + _ufc_rail_hero_html(now)
     around = _around_html(time.time())
     around_block = (
         f'<div class="jumbo-panel jumbo-around"><div class="jumbo-ph"><span>Around The Leagues</span></div>'

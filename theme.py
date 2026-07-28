@@ -2701,6 +2701,7 @@ html, body, [class*="css"] {
 .jumbo-hero-nhl { --tc: #D8323F; }
 .jumbo-hero-mlb { --tc: #3E7CC9; }
 .jumbo-hero-nfl { --tc: #D3BC8D; }
+.jumbo-hero-ufc { --tc: #D20A0A; }
 .jumbo-hero-head { display: flex; align-items: center; gap: 14px; }
 .jumbo-hero-head img { width: 58px; height: 58px; object-fit: contain; flex: 0 0 auto; }
 .jumbo-hero-id { min-width: 0; white-space: nowrap; }

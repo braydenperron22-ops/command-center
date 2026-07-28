@@ -129,6 +129,59 @@ def fetch_event_for_date(day: date) -> dict | None:
     return event
 
 
+@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_calendar_raw() -> list[dict]:
+    """Every UFC event ESPN currently has scheduled this season (~40+
+    entries confirmed live), name + date only — no bout-level detail,
+    just enough for "what's the next one." The plain scoreboard
+    endpoint (no `dates` param) returns this full-season list under
+    leagues[0].calendar alongside its own single nearest-event answer;
+    reusing that same call here instead of a separate endpoint."""
+    fetch_throttle.wait_turn()
+    resp = requests.get(UFC_SCOREBOARD_URL, params={"f": "json"}, timeout=10)
+    resp.raise_for_status()
+    leagues = resp.json().get("leagues") or []
+    return leagues[0].get("calendar", []) if leagues else []
+
+
+_last_good_calendar: list[dict] | None = None
+
+
+def fetch_next_event(now: datetime) -> dict | None:
+    """{"name", "start_time"} for the next UFC event scheduled on or
+    after `now` (any day — this is for the "My Teams" rail card's own
+    off-day fallback, see pages_jumbotron._ufc_rail_hero_html, not the
+    Saturday-5pm takeover window, which is deliberately narrower), or
+    None if ESPN doesn't have anything scheduled that far out yet.
+    Deliberately no bout-level detail here — the calendar entries don't
+    carry it, and this is only ever used for a compact "next event in
+    N days" line, not a full card."""
+    global _last_good_calendar
+    try:
+        calendar = _fetch_calendar_raw()
+    except Exception:
+        calendar = _last_good_calendar
+    else:
+        _last_good_calendar = calendar
+        data_health.record_success("sports_schedule")
+    if not calendar:
+        return None
+    # Naive-local, matching this app's own `now` convention (see
+    # takeover_state's own comment) — _to_local already produces a
+    # naive-local value for each entry's startDate, so normalizing
+    # `now` the same way (not the other way around) keeps both sides
+    # directly comparable with no extra tzinfo round-trip.
+    if now.tzinfo is not None:
+        now = now.astimezone(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
+    upcoming = sorted(
+        (entry for entry in calendar if _to_local(entry["startDate"]) >= now),
+        key=lambda entry: entry["startDate"],
+    )
+    if not upcoming:
+        return None
+    return {"name": upcoming[0]["label"], "start_time": _to_local(upcoming[0]["startDate"])}
+
+
 def current_bout(event: dict) -> dict | None:
     """Which bout to actually show right now — session request: "auto
     rotation between fights," i.e. the displayed bout should track the
