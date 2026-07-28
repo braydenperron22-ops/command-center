@@ -566,7 +566,7 @@ def _current_matchup_html(game_id: int) -> str:
     # delta off the player's own career line rather than a fixed
     # threshold), so those two now pass a real heat value instead of
     # None — everything else is unaffected.
-    def col(tag: str, player: dict, stat_rows: list[list[tuple]]) -> str:
+    def col(tag: str, player: dict, stat_rows: list[list[tuple]], line: str | None = None) -> str:
         photo = (
             f'<img class="jumbo-live-matchup-photo" src="{html.escape(player["photo"])}" onerror="this.style.display=\'none\'" />'
             if player.get("photo")
@@ -586,11 +586,18 @@ def _current_matchup_html(game_id: int) -> str:
                 rows_html += f'<div class="jumbo-live-matchup-stat-row">{blocks}</div>'
         if not rows_html:
             rows_html = '<div class="jumbo-live-matchup-stat-row"><div class="jumbo-live-matchup-stat-block"><div class="jumbo-live-matchup-stat">—</div></div></div>'
+        # Session request: "add the full line score for the active
+        # pitchers below balls and strike count without making the
+        # pitchers name shift up" — appended strictly after every stat
+        # row, never before the name/photo/tag above, so there's
+        # nothing here that could move them: this is the last thing in
+        # the column, not an insertion above anything already placed.
+        line_html = f'<div class="jumbo-live-matchup-line">{html.escape(line)}</div>' if line else ""
         return (
             f'<div class="jumbo-live-matchup-col">{photo}'
             f'<div class="jumbo-live-matchup-tag">{html.escape(tag)}</div>'
             f'<div class="jumbo-live-matchup-name">{html.escape(player["name"])}</div>'
-            f"{rows_html}"
+            f"{rows_html}{line_html}"
             f"</div>"
         )
 
@@ -610,7 +617,7 @@ def _current_matchup_html(game_id: int) -> str:
         f'<div class="jumbo-live-matchup">'
         f'{col("At Bat", batter, batter_rows)}'
         f'<div class="jumbo-live-matchup-vs">VS</div>'
-        f'{col("Pitching", pitcher, pitcher_rows)}'
+        f'{col("Pitching", pitcher, pitcher_rows, pitcher.get("line"))}'
         f"</div></div>"
     )
 

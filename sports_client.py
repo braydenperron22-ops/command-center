@@ -1327,19 +1327,26 @@ def _fetch_mlb_boxscore_raw(game_id: int) -> dict:
 
 
 def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
-    """This specific game's pitch count, plus how many of those were
-    balls vs strikes, so far for one pitcher — {"pitches", "balls",
-    "strikes"}, any of which is None if genuinely not available yet.
+    """This specific game's pitch count, balls/strikes split, and full
+    line, so far for one pitcher — {"pitches", "balls", "strikes",
+    "line"}, any of which is None if genuinely not available yet.
     Session request: "for pitchers add number of pitches below ERA,"
     then clarified to "how many of the pitches have been balls and how
     many have been strikes over the entire outing" (not the live
     at-bat's own count, which the situation strip above already
-    shows). Season ERA comes from the /people stat line, but these are
-    inherently per-game, only in the boxscore's own per-player stats.
-    {} on any fetch failure or before this pitcher has thrown a pitch
-    this game (not yet in the boxscore's player list). Delayed the same
-    amount as the linescore feed, so this pitcher's count doesn't tick
-    up before the pitch it reflects has aired."""
+    shows), then "add the full line score for the active pitchers" —
+    "line" is the boxscore's own ready-made "summary" string (e.g.
+    "2.2 IP, ER, 4 K, 3 BB"), used verbatim rather than hand-assembled
+    from the individual innings/earnedRuns/strikeOuts/baseOnBalls
+    fields sitting right next to it, same "MLB already wrote the real
+    sentence, don't re-synthesize it" reasoning as the scoring-play/
+    last-play descriptions elsewhere in this app. Season ERA comes from
+    the /people stat line, but all of these are inherently per-game,
+    only in the boxscore's own per-player stats. {} on any fetch
+    failure or before this pitcher has thrown a pitch this game (not
+    yet in the boxscore's player list). Delayed the same amount as the
+    linescore feed, so this pitcher's count doesn't tick up before the
+    pitch it reflects has aired."""
     try:
         data = delayed(f"mlb_boxscore_{game_id}", _fetch_mlb_boxscore_raw(game_id))
     except Exception:
@@ -1349,7 +1356,12 @@ def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
         for p in players.values():
             if (p.get("person") or {}).get("id") == pitcher_id:
                 pitching = (p.get("stats") or {}).get("pitching", {})
-                return {"pitches": pitching.get("numberOfPitches"), "balls": pitching.get("balls"), "strikes": pitching.get("strikes")}
+                return {
+                    "pitches": pitching.get("numberOfPitches"),
+                    "balls": pitching.get("balls"),
+                    "strikes": pitching.get("strikes"),
+                    "line": pitching.get("summary"),
+                }
     return {}
 
 
@@ -1357,8 +1369,8 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     """{"batter": {"id", "name", "ops", "season_ops_heat", "last15_ops",
     "last15_heat", "vs_pitcher", "vs_pitcher_heat", "photo"}, "pitcher":
     {"id", "name", "era", "season_era_heat", "pitches", "balls",
-    "strikes", "photo"}} for whoever's actually at the plate/on the
-    mound right now — session request: "during the game can you make
+    "strikes", "line", "photo"}} for whoever's actually at the plate/on
+    the mound right now — session request: "during the game can you make
     the top performers tab show current pitcher and batter and their
     stats... ideally add the pitcher and batter pics," later refined to
     "for pitchers add number of pitches below ERA" (briefly swapped the
@@ -1432,6 +1444,7 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
             "pitches": pitcher_totals.get("pitches"),
             "balls": pitcher_totals.get("balls"),
             "strikes": pitcher_totals.get("strikes"),
+            "line": pitcher_totals.get("line"),
             "photo": _mlb_headshot_url(pitcher["id"]),
         },
     }

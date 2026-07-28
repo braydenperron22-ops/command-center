@@ -3124,6 +3124,22 @@ html, body, [class*="css"] {
     font-weight: 700;
     text-transform: uppercase;
 }
+/* Session request: "add the full line score for the active pitchers
+   below balls and strike count without making the pitchers name shift
+   up" — MLB's own ready-made per-pitcher boxscore summary (e.g. "2.2
+   IP, ER, 4 K, 3 BB"), appended strictly after the existing stat rows
+   (see col()'s own comment in pages_jumbotron.py). A plain centered
+   sentence rather than another stat-block: this is one whole line of
+   text, not a value+label pair, so it doesn't try to force-fit the
+   number/caption pattern the rows above use. */
+.jumbo-live-matchup-line {
+    margin-top: 6px;
+    font-family: var(--label);
+    font-size: 13px;
+    color: var(--mut);
+    text-align: center;
+    white-space: nowrap;
+}
 .jumbo-live-matchup-vs {
     font-family: var(--label);
     font-size: 16px;
