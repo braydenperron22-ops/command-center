@@ -2747,6 +2747,10 @@ html, body, [class*="css"] {
 .jumbo-gameline b { color: var(--bone); font-weight: 600; }
 .jumbo-gl-score { color: var(--led); font-weight: 800; font-size: 19px; }
 .jumbo-gl-cd { font-family: var(--label); color: var(--bone); font-size: 24px; letter-spacing: 0.08em; margin-left: 10px; }
+/* Same "delayed instead of stuck at 0:00" fix as .jumbo-countdown-
+   delayed above, sized for this compact rail chip instead of the big
+   featured board. */
+.jumbo-gl-cd-delayed { color: #FF9F0A; font-size: 18px; }
 .jumbo-w { color: var(--ok); }
 .jumbo-l { color: var(--live); }
 .jumbo-offseason { border-style: dashed; color: var(--mut-2); letter-spacing: 0.28em; font-size: 13px; }
@@ -2908,6 +2912,26 @@ html, body, [class*="css"] {
 .jumbo-dash { color: var(--edge-hi); font-family: var(--label); font-size: 50px; }
 .jumbo-vs { font-family: var(--num); font-size: 26px; letter-spacing: 0.4em; color: var(--mut-2); padding-left: 0.4em; }
 .jumbo-countdown { font-family: var(--label); font-size: 96px; color: var(--bone); letter-spacing: 0.06em; line-height: 1; }
+/* Session request: "the jays game is delayed can you make it show
+   delayed instead of sitting at 0:00" — swaps in for .jumbo-countdown
+   once the scheduled start has passed with no live game yet (see
+   _board_html's own comment). A real status word/phrase, not a
+   number, so it needs a much smaller size than the 96px countdown
+   digits to avoid overflowing this same slot — sized and wrapped to
+   still comfortably fit MLB's own longer detail_state text ("Delayed
+   Start: Rain"), not just the plain "Delayed"/"Warmup" cases. Amber
+   rather than the countdown's own neutral --bone, matching this app's
+   established "something needs attention" color elsewhere. */
+.jumbo-countdown-delayed {
+    font-family: var(--disp);
+    font-size: 34px;
+    font-weight: 700;
+    color: #FF9F0A;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    text-align: center;
+    max-width: 320px;
+}
 .jumbo-cd-label { font-size: 10px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.4em; }
 .jumbo-final-badge {
     font-family: var(--num);

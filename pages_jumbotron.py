@@ -982,9 +982,33 @@ def _board_html(state: dict, now: datetime) -> str:
 
     if phase == "pregame":
         kickoff = next((r["kickoff"] for r in _RAIL if r["sport"] == sport), "TO FIRST PITCH")
+        # Session report: "the jays game is delayed can you make it
+        # show delayed instead of sitting at 0:00." The live-countdown
+        # ticker (app.py's kioskFmtClock) floors at 0 once its target
+        # passes and just holds there forever — nothing distinguishes
+        # "first pitch is seconds away" from "the scheduled time has
+        # genuinely come and gone and nothing's happening" (a rain
+        # delay, most often). Once `now` has caught up to the real
+        # scheduled start, there's nothing left to count down to at
+        # all, so this switches to a plain status label instead of a
+        # ticking number. MLB's own detail_state (see sports_client.
+        # _normalize_mlb_game) already carries the real reason when
+        # there is one ("Delayed Start: Rain") — used verbatim, same
+        # preference for real official text over a generic label this
+        # app already applies elsewhere (scoring-play descriptions,
+        # pitcher line summaries); also correctly shows "Warmup" if
+        # that's still running past the nominal start time, which used
+        # to read as stuck at 0:00 too. NHL/NFL have no equivalent
+        # detail field (sports_client's own comment on why), so those
+        # just get a plain "DELAYED".
+        if now >= game["start_time"]:
+            delay_text = (game.get("detail_state") or "Delayed").upper() if sport == "mlb" else "DELAYED"
+            countdown_html = f'<div class="jumbo-countdown jumbo-countdown-delayed">{html.escape(delay_text)}</div>'
+        else:
+            countdown_html = f'<div class="jumbo-countdown">{_fmt_countdown(game["start_time"], now)}</div>'
         center = (
             f'<div class="jumbo-center"><div class="jumbo-vs">VS</div>'
-            f'<div class="jumbo-countdown">{_fmt_countdown(game["start_time"], now)}</div>'
+            f"{countdown_html}"
             f'<div class="jumbo-cd-label">{html.escape(kickoff)}</div></div>'
         )
         start_text = game["start_time"].strftime("%-I:%M %p")
@@ -1221,10 +1245,16 @@ def _rail_hero_html(entry: dict, now: datetime) -> str:
         line = "No game on today's slate"
     elif game["state"] == "upcoming":
         versus = "vs" if game["is_home"] else "@"
-        line = (
-            f'{versus} <b>{html.escape(game["opponent"])}</b>'
-            f'<span class="jumbo-gl-cd">{_fmt_countdown(game["start_time"], now)}</span>'
-        )
+        # Same "delayed instead of stuck at 0:00" fix as the featured
+        # board's own countdown (_board_html) — this compact rail chip
+        # has no room for MLB's full detail_state text, so it's kept to
+        # a short, generic "DELAYED" here rather than duplicating the
+        # board's own longer, real-reason label.
+        if now >= game["start_time"]:
+            cd_html = '<span class="jumbo-gl-cd jumbo-gl-cd-delayed">DELAYED</span>'
+        else:
+            cd_html = f'<span class="jumbo-gl-cd">{_fmt_countdown(game["start_time"], now)}</span>'
+        line = f'{versus} <b>{html.escape(game["opponent"])}</b>{cd_html}'
     else:
         versus = "vs" if game["is_home"] else "@"
         score = f'<span class="jumbo-gl-score">{game["team_score"]}–{game["opp_score"]}</span>'
