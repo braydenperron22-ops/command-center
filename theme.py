@@ -2,14 +2,13 @@
 
 CSS = """
 <style>
-/* Jumbotron faces only (pages_jumbotron.py) — the rest of the kiosk
-   deliberately stays on the system font stack below. @import has to be
-   the first thing in the sheet to be valid CSS at all, which is why
-   it sits above even the Streamlit chrome rules. Every jumbo-* rule
-   names real fallbacks, so a blocked/slow font request costs the
-   arena look, not the layout. */
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Oswald:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600;700;800&display=swap');
-
+/* Used to @import Bebas Neue/Oswald/JetBrains Mono here for the
+   jumbotron's own separate arena font stack — removed once --label/
+   --disp/--num all converged on the same system font (see --label's
+   own comment in the JUMBOTRON section below): "make every single
+   text in the sheet that font." Nothing in this file references any
+   of those three families anymore, so one less Google Fonts request
+   on every kiosk page load, not just dead CSS. */
 #MainMenu, header, footer { visibility: hidden; }
 
 /* Kills Streamlit's own "stale element" dimming — every element
@@ -2380,7 +2379,9 @@ html, body, [class*="css"] {
    sports_alerts.takeover_state() has the screen (T-60min through ~15min
    past final). Every rule here is namespaced .jumbo* so none of it can
    leak into the normal kiosk pages, which keep the Apple-glass look.
-   LED amber on near-black, glass bento panels, Bebas Neue numerals. */
+   LED amber on near-black, glass bento panels, Apple-system type
+   throughout (see --label's own comment for why this no longer runs
+   its own separate arena font stack). */
 .jumbo {
     --led: #FFB300;
     --ledglow: rgba(255,179,0,0.5);
@@ -2413,25 +2414,25 @@ html, body, [class*="css"] {
     --mut-2: #9BA6BA;
     --live: #FF453A;
     --ok: #32D583;
-    --disp: 'Oswald', 'Arial Narrow', sans-serif;
-    --num: 'Bebas Neue', 'Oswald', Impact, sans-serif;
-    /* Was JetBrains Mono — session feedback: "pick a better font. I'm
-       not sure I'm too fond of the font... I can't really read the
-       little fonts... it's still not very apple-ish." This is every
-       small/secondary text element on the board (standings, Around The
-       Leagues rows, situation strip, stat labels, blurb text — ~30
-       call sites), not just one panel, and a coding monospace font is
-       exactly the opposite of what reads clearly from across a room:
-       narrow, uniform-width letterforms with no real weight contrast.
-       Same system font stack the normal kiosk pages already use (see
-       html/body's own rule far above) — genuinely Apple-ish, and SF's
-       real hinting/weight steps are far more legible at small sizes
-       than a monospace font optimized for aligning code, not for being
-       read at a glance. Named --label (not --mono) since that's no
-       longer an accurate description of what it holds. --num (Bebas
-       Neue, the big score/countdown digits) is untouched — session
-       feedback was explicit that one's fine as-is. */
+    /* --label was JetBrains Mono, swapped for the small/secondary text
+       (standings, Around The Leagues rows, situation strip, stat
+       labels, blurb text) — session feedback: "pick a better font...
+       I can't really read the little fonts... it's still not very
+       apple-ish." --num (Bebas Neue) then got the same swap for the
+       big numeric displays (clock, countdown, records, standings/
+       leader scores) — "make the big numbers the same font as the ones
+       you just implemented." Session feedback on the result: "that
+       looks amazing, can you make every single text in the sheet that
+       font" — --disp (Oswald, the board's own default/heading font:
+       team names, division labels, everything that doesn't set its own
+       font-family) now points to the same stack too, so every one of
+       these three aliases the same system font. Kept as three separate
+       variables rather than collapsing to one, since a future session
+       asking to bring back a distinct display font only needs one line
+       changed here, not a hunt through every call site again. */
     --label: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+    --disp: var(--label);
+    --num: var(--label);
     font-family: var(--disp);
     color: var(--bone);
     display: flex;
@@ -2519,11 +2520,11 @@ html, body, [class*="css"] {
     /* Session feedback: "make the big numbers the same font as the
        ones you just implemented" — every genuinely numeric big display
        (this clock, the weather temp, records, countdowns, standings/
-       leader stats) now reads in the same --label font as the small
-       text. --num (Bebas Neue) stays only on real wordmarks/labels —
-       .jumbo-brand ("FANCAVE"), .jumbo-vs ("VS"), .jumbo-final-badge
-       ("FINAL") — the one place a distinct display font still earns
-       its keep. */
+       leader stats) reads in the same --label font as the small text.
+       --num itself is now just an alias for --label (see its own
+       comment) — kept as its own explicit font-family here rather than
+       relying on inheritance so it's clear at a glance this element is
+       the same font on purpose, not by accident. */
     font-family: var(--label);
     font-size: 36px;
     letter-spacing: 0.05em;
@@ -3054,9 +3055,14 @@ html, body, [class*="css"] {
 }
 .jumbo-live-matchup-name {
     /* Same fix as jumbo-live-matchup-stat below — this was silently
-       inheriting var(--disp) (Oswald, condensed) at a forced 700, same
-       swollen/blobby look. Session feedback: "can we make their name
-       skinnier as well please i wanna be able to read that too." */
+       inheriting var(--disp) (Oswald at the time, condensed) at a
+       forced 700, same swollen/blobby look. Session feedback: "can we
+       make their name skinnier as well please i wanna be able to read
+       that too." --disp is --label's own alias now (see its comment),
+       so this explicit override is no longer strictly load-bearing —
+       left in place since it still documents that this element is
+       deliberately sized/weighted on its own, not just inheriting
+       whatever the board's default happens to be. */
     font-family: var(--label);
     font-size: 21px;
     font-weight: 600;
@@ -3074,12 +3080,12 @@ html, body, [class*="css"] {
 .jumbo-live-matchup-stat-block { display: flex; flex-direction: column; align-items: center; }
 .jumbo-live-matchup-stat {
     /* Session feedback: "the font is still so clunky that it just looks
-       like a blob. pick a skinnier font." var(--num) is Bebas Neue — a
-       squat display font with no real bold weight of its own, so
-       font-weight:700 on it was faking a bold and coming out swollen at
-       this size. --label (see its own comment) has real weight steps
-       and tabular figures, reads far slimmer for a stat number like
-       this. */
+       like a blob. pick a skinnier font." var(--num) was Bebas Neue at
+       the time — a squat display font with no real bold weight of its
+       own, so font-weight:700 on it was faking a bold and coming out
+       swollen at this size. --label (see its own comment) has real
+       weight steps and tabular figures, reads far slimmer for a stat
+       number like this — and is what --num itself resolves to now too. */
     font-family: var(--label);
     font-size: 32px;
     font-weight: 600;
@@ -3342,11 +3348,14 @@ html, body, [class*="css"] {
     100% { opacity: 0; visibility: hidden; }
 }
 /* Entering the jumbotron — same LED-amber arena identity as the board
-   itself (Bebas Neue is already loaded globally, see the @import at
-   the top of this file, so no extra font request here). */
+   itself (color/glow, not font — see --label's own comment on why the
+   board no longer runs Bebas Neue/Oswald at all). Spelled out directly
+   rather than var(--label): this overlay (app.py) renders outside
+   .jumbo's own div entirely, so that custom property isn't in scope —
+   same reasoning .jumbo-transition-sub below already documented. */
 .jumbo-transition-in { background: #05070C; }
 .jumbo-transition-brand {
-    font-family: 'Bebas Neue', 'Oswald', Impact, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
     font-size: 72px;
     letter-spacing: 0.12em;
     color: #FFB300;
@@ -3357,7 +3366,7 @@ html, body, [class*="css"] {
 }
 .jumbo-transition-brand span {
     display: block;
-    font-family: 'Oswald', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
     font-weight: 300;
     letter-spacing: 0.5em;
     font-size: 16px;
@@ -3510,7 +3519,7 @@ html, body, [class*="css"] {
     100% { opacity: 0; visibility: hidden; }
 }
 .jumbo-play-text {
-    font-family: 'Bebas Neue', 'Oswald', Impact, sans-serif;
+    font-family: var(--label);
     font-size: 96px;
     letter-spacing: 0.08em;
     text-align: center;
