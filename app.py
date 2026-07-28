@@ -312,6 +312,42 @@ components.html(
     height=0,
 )
 
+# Connection watchdog — session report: "why is my dashboard stuck at
+# 12:48pm" while the real time was 7:29pm, ~7 hours stale. Confirmed
+# not a code bug: a fresh instance of the exact same deployed code
+# ticked correctly, every requests.get/post call in this app already
+# has an explicit timeout, and a plain browser refresh fixed it
+# instantly — meaning the Python process itself was fine the whole
+# time, but this kiosk's own long-lived browser tab had silently lost
+# its Streamlit WebSocket connection and never reconnected on its own.
+# st_autorefresh (above) can't rescue this: its own rerun trigger rides
+# that exact same connection, so once it's dead, the "every 5s" tick
+# just stops firing right along with everything else, with nothing on
+# screen ever indicating it. This is a plain browser-level timer,
+# deliberately NOT going through Streamlit/the WebSocket at all — a
+# full hard reload re-establishes a genuinely fresh connection from
+# scratch, so even a silent, otherwise-invisible disconnect can never
+# leave the kiosk frozen for more than one interval.
+components.html(
+    """
+    <script>
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-reload-watchdog')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-reload-watchdog';
+      s.textContent = [
+        "setInterval(function () {",
+        "  window.parent.location.reload();",
+        "}, 60 * 60 * 1000);",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+    </script>
+    """,
+    height=0,
+)
+
 FRED_API_KEY = st.secrets.get("FRED_API_KEY")
 
 # Resolved early (not down by the page-routing block that used to live
