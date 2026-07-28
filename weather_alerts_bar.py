@@ -6,7 +6,6 @@ own extreme-heat/extreme-cold fallback only ever shows when neither
 has anything active for the region."""
 
 import html
-import time
 from datetime import datetime
 
 import streamlit as st
@@ -307,14 +306,41 @@ def current_storm_phase(now: datetime) -> dict | None:
     return ec_storm_timing.storm_phase(now, alert["title"], severity)
 
 
-# "every like 5-10 mins" — the middle of the requested range. Keyed per
-# alert id (not persisted — a restart just resets the cadence once,
-# acceptable for a repeating reminder rather than a one-shot safety
-# notice like get_new_alerts's own persisted dedup) so a brand new storm
-# always gets an immediate fresh cycle rather than inheriting whatever's
-# left of a previous, unrelated alert's timer.
-STORM_PROXIMITY_INTERVAL_SECONDS = 7 * 60
-_last_storm_toast: dict[str, float] = {}
+# Milestone-based, not a flat interval — session request: "make sure
+# theres toast alerts from up to 2 hours and counting down for when a
+# storm is approaching and when it is leaving." Mirrors commute_
+# reminder.MILESTONES_MINUTES exactly (same widest-to-narrowest shape,
+# same "up to 2 hours" outer bound), reusing the model the user's own
+# storm-headline requests have already been referencing throughout this
+# feature. One shared list for both phases, not two: "leaving" never
+# has more than LEAVING_TAIL_MINUTES (30) left by construction, so the
+# 120/90/60/45 milestones simply never fire for it — nothing extra to
+# special-case. Keyed per alert id (not persisted — a restart just
+# resets a repeating reminder's progress once, acceptable here unlike
+# get_new_alerts's own persisted one-shot dedup) so a brand new storm
+# always gets a fresh full run of milestones rather than inheriting
+# whatever's left of a previous, unrelated alert's.
+STORM_MILESTONES_MINUTES = [120, 90, 60, 45, 30, 20, 15, 10, 5, 3, 0]
+_storm_milestones_shown: dict[str, set[int]] = {}
+
+
+def _due_storm_milestone(minutes_remaining: float, shown: set[int]) -> int | None:
+    """The largest not-yet-shown milestone reached — same skip-ahead
+    logic as commute_reminder._due_milestone: waking up from a gap
+    (e.g. the dashboard was on a different rotation page's data fetch
+    for a few minutes) fires only the milestone actually due now, and
+    marks any larger ones already blown past as shown too, rather than
+    bursting out every milestone missed in between."""
+    candidates = [m for m in STORM_MILESTONES_MINUTES if minutes_remaining <= m]
+    if not candidates:
+        return None
+    due = min(candidates)
+    if due in shown:
+        return None
+    for m in STORM_MILESTONES_MINUTES:
+        if m > due:
+            shown.add(m)
+    return due
 
 
 def _format_clock(remaining_seconds: float) -> str:
@@ -378,17 +404,21 @@ def render_storm_headline(now: datetime) -> None:
 
 
 def get_storm_proximity_alerts(now: datetime) -> list[dict]:
-    """Periodic toasts while a storm-grade alert is approaching or
-    leaving — session request: "toast alerts for when the storm gets
-    closer every like 5-10 mins... same thing for when the storm is
-    leaving." Distinct from get_new_alerts's own one-shot "a new alert
-    just came in" toast: this repeats on a fixed cadence for as long as
-    ec_storm_timing.storm_phase keeps returning "approaching" or
-    "leaving" for the current alert, giving a running sense of how
-    close it is rather than a single notice. Nothing fires during
-    "here" — the steady red light (govee_lighting.sync_lights) is the
-    ambient signal for that; a toast every few minutes for something
-    already overhead would just be noise, not news."""
+    """Milestone toasts while a storm-grade alert is approaching or
+    leaving — session request, in two parts: first "toast alerts for
+    when the storm gets closer every like 5-10 mins... same thing for
+    when the storm is leaving," then refined to "make sure theres toast
+    alerts from up to 2 hours and counting down for when a storm is
+    approaching and when it is leaving." Fires at STORM_MILESTONES_
+    MINUTES checkpoints as the remaining time counts down, not a flat
+    interval — see _due_storm_milestone. Distinct from get_new_alerts's
+    own one-shot "a new alert just came in" toast: this repeats across
+    the whole approaching/leaving window, giving a running sense of how
+    close it is. Nothing fires during "here" — the steady red light
+    (govee_lighting.sync_lights) is the ambient signal for that; a
+    milestone toast for something already overhead would just be
+    noise, not news (the CLEARING IN countdown headline already covers
+    "here" on its own, passively, without an interruption)."""
     resolved = _current_alert_and_severity()
     if resolved is None:
         return []
@@ -397,17 +427,22 @@ def get_storm_proximity_alerts(now: datetime) -> list[dict]:
     if phase_info is None or phase_info["phase"] not in ("approaching", "leaving"):
         return []
     key = alert.get("id") or alert["title"]
-    last = _last_storm_toast.get(key, 0.0)
-    if time.time() - last < STORM_PROXIMITY_INTERVAL_SECONDS:
+    shown = _storm_milestones_shown.setdefault(key, set())
+    milestone = _due_storm_milestone(phase_info["minutes"], shown)
+    if milestone is None:
         return []
-    _last_storm_toast[key] = time.time()
-    minutes = round(phase_info["minutes"])
-    verb = "expected to arrive in about" if phase_info["phase"] == "approaching" else "expected to clear in about"
+    shown.add(milestone)
+    approaching = phase_info["phase"] == "approaching"
+    if milestone == 0:
+        headline = f"{alert['title']} — {'arriving' if approaching else 'clearing'} now"
+    else:
+        verb = "expected to arrive in about" if approaching else "expected to clear in about"
+        headline = f"{alert['title']} — {verb} {milestone} min"
     return [
         {
             "kind": "weather",
             "severity": severity,
             "label": "Environment Canada",
-            "headline": f"{alert['title']} — {verb} {minutes} min",
+            "headline": headline,
         }
     ]
