@@ -1309,7 +1309,7 @@ except Exception:
 # reasoning) — genuinely the only path that guarantees a new alert is
 # never missed just because a game happened to be on screen.
 try:
-    new_alerts.extend(weather_alerts_bar.get_new_alerts())
+    new_alerts.extend(weather_alerts_bar.get_new_alerts(now))
 except Exception:
     pass
 

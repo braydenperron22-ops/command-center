@@ -7,6 +7,7 @@ has anything active for the region."""
 
 import html
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -14,7 +15,7 @@ import ec_alerts
 import ec_aqhi
 import ec_storm_timing
 import persisted_state
-from config import EXTREME_COLD_THRESHOLD_C, EXTREME_HEAT_THRESHOLD_C
+from config import EXTREME_COLD_THRESHOLD_C, EXTREME_HEAT_THRESHOLD_C, TIMEZONE
 
 
 # Tornado/hurricane/tsunami are categorically more dangerous than any
@@ -226,7 +227,7 @@ MAX_SEEN_ALERTS = 200
 _seen_alert_keys: dict = dict(persisted_state.load("weather_seen_alerts", {}))
 
 
-def get_new_alerts() -> list[dict]:
+def get_new_alerts(now: datetime) -> list[dict]:
     """New weather alerts since the last check — {"kind": "weather",
     "severity", "label", "headline"}, the toast queue's own generic
     shape (see news.get_new_alerts/sports_alerts.get_new_alerts).
@@ -236,11 +237,25 @@ def get_new_alerts() -> list[dict]:
     alert, which has no id of its own) so a genuinely new issuance
     always toasts even if an alert with the same hazard/title was seen
     before, while an alert that's merely still active from a prior
-    rerun never re-toasts. The manual heat/cold fallback (render()'s
-    own else branch) is deliberately NOT included — it's a slow-moving
-    daily forecast threshold, not a discrete "just came in" moment, and
+    rerun never re-toasts — confirmed live this is exactly why a
+    "continued" re-issuance (EC extending an already-active warning's
+    own expected clear time) toasts again: same title, new id. The
+    manual heat/cold fallback (render()'s own else branch) is
+    deliberately NOT included — it's a slow-moving daily forecast
+    threshold, not a discrete "just came in" moment, and
     current_severity() already treats it as not a real alert for the
-    same reason."""
+    same reason.
+
+    Session follow-up, on exactly that "continued" reissue toast: "can
+    you add the clearing time to the toast." Storm-grade alerts (see
+    ec_storm_timing.storm_phase/STORM_HAZARD_TERMS) get a real EC-
+    sourced clock time appended — "arriving around" for "approaching",
+    "clearing by" for "here"/"leaving" (target already means whichever
+    of those is next, see storm_phase's own docstring) — straight off
+    the same "target" the countdown headline uses, so the toast and the
+    on-screen timer always agree. Non-storm-grade alerts (a Heat
+    Warning, say) get no time appended — there's no meaningful EC
+    "clear" instant to show for those in the first place."""
     alerts = _combined_alerts()
     if not alerts:
         return []
@@ -252,12 +267,19 @@ def get_new_alerts() -> list[dict]:
     if len(_seen_alert_keys) > MAX_SEEN_ALERTS:
         _seen_alert_keys.pop(next(iter(_seen_alert_keys)))
     persisted_state.save("weather_seen_alerts", _seen_alert_keys)
+    severity = _severity(alert["title"])
+    headline = alert["title"]
+    phase_info = ec_storm_timing.storm_phase(now, alert["title"], severity)
+    if phase_info is not None:
+        clock = phase_info["target"].astimezone(ZoneInfo(TIMEZONE)).strftime("%I:%M %p").lstrip("0")
+        verb = "arriving around" if phase_info["phase"] == "approaching" else "clearing by"
+        headline = f"{headline} — {verb} {clock}"
     return [
         {
             "kind": "weather",
-            "severity": _severity(alert["title"]),
+            "severity": severity,
             "label": "Environment Canada",
-            "headline": alert["title"],
+            "headline": headline,
         }
     ]
 
