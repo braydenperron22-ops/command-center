@@ -3100,21 +3100,35 @@ html, body, [class*="css"] {
    .jumbo-live-matchup-stat white above. Same text-shadow-pulse pattern
    as .leave-headline's intensity tiers, just fire/ice instead of
    amber/red. */
+/* Session feedback: "can you make the hot cold colours a little
+   better?" The old cold (#5AC8FA, Apple's own systemBlue-light) sat
+   too close to real team blues for comfort — this same card now shares
+   the screen with team-colored gradients/win-bar fills (see
+   pages_jumbotron._side_color), and a lot of MLB teams (Jays included)
+   are blue. A stat reading "cold" could get misread as just team
+   branding. Shifted to a distinctly electric cyan that no real team
+   color is likely to land on, and the same idea for hot — the old
+   #FF7A1A sat close enough to --led (#FFB300, this board's own
+   dominant amber accent, on every tag/label/section header) to lose
+   some of its own pop; shifted more saturated and red-leaning, further
+   from amber, closer to a genuine flame. Both keep the fire/ice
+   metaphor from the original request intact, just more distinct from
+   everything else already using warm/cool accents on this board. */
 .jumbo-live-matchup-stat-hot {
-    color: #FF7A1A;
+    color: #FF5A1F;
     animation: jumbo-matchup-pulse-hot 1.3s ease-in-out infinite;
 }
 .jumbo-live-matchup-stat-cold {
-    color: #5AC8FA;
+    color: #3DD9FF;
     animation: jumbo-matchup-pulse-cold 1.3s ease-in-out infinite;
 }
 @keyframes jumbo-matchup-pulse-hot {
-    0%, 100% { text-shadow: 0 0 10px rgba(255,122,26,0.45); }
-    50% { text-shadow: 0 0 22px rgba(255,122,26,0.9), 0 0 36px rgba(255,80,0,0.4); }
+    0%, 100% { text-shadow: 0 0 10px rgba(255,90,31,0.5); }
+    50% { text-shadow: 0 0 22px rgba(255,90,31,0.95), 0 0 38px rgba(255,45,0,0.5); }
 }
 @keyframes jumbo-matchup-pulse-cold {
-    0%, 100% { text-shadow: 0 0 10px rgba(90,200,250,0.45); }
-    50% { text-shadow: 0 0 22px rgba(90,200,250,0.9), 0 0 36px rgba(90,200,250,0.4); }
+    0%, 100% { text-shadow: 0 0 10px rgba(61,217,255,0.5); }
+    50% { text-shadow: 0 0 22px rgba(61,217,255,0.95), 0 0 38px rgba(61,217,255,0.5); }
 }
 .jumbo-live-matchup-stat-label {
     font-family: var(--label);
