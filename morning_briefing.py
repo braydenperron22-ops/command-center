@@ -1139,7 +1139,44 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     CEA time today." A plain "Work at 9:00 AM" fact (from
     calendar_client's own normalization) reads as an ordinary shift;
     without this, the model has no way to know THIS one is something
-    genuinely resented, not just another day at work."""
+    genuinely resented, not just another day at work.
+
+    Session report, on a real live example ("Good morning... teller and
+    CEA coverage... some sadist in scheduling... AQI's at 1... weather's
+    dragging from 16 to 19... S&P's holding steady"): "it could be so
+    much better." Not a complaint that the voice wasn't edgy enough —
+    it already was — but that the RANGE was flat: always the same one
+    note, always the same shape (a couple of plain sentences, one fact
+    each). Three changes, matched to the three things actually named:
+
+    1. "give it as much data as possible" — see render()'s own comment
+    on `all_facts` replacing the MAX_CLAUSES-capped `picked` as this
+    function's input; every fact computed today now reaches the model,
+    not just the top 5 by priority.
+
+    2. "get a little more creative with how it formats the thing" — the
+    old instruction hard-required "a couple of sentences," full stop,
+    every single day regardless of what today's facts actually were.
+    Loosened to a real range (one sharp line some days, more structure
+    on a genuinely busy one) plus explicit permission to use basic HTML
+    (this renders straight into the page, unsafe_allow_html=True — see
+    render() below) for a line break or emphasis when it helps, since
+    there was no legal way to do anything but one flat paragraph before.
+
+    3. "tell it it can choose how it wants to act... nice if it wants,
+    mean if it wants, whatever it wants" — the previous version of this
+    prompt didn't just permit mean, it MANDATED it ("if this ever reads
+    as polite, careful, or restrained, that's the failure") — a single
+    locked note is exactly what reads as flat and predictable over many
+    mornings in a row, regardless of which note it is. That mandate is
+    gone; genuine tonal range (including landing somewhere warm or
+    sincere some mornings) is now the explicit instruction, with the
+    real-edge/profanity permission preserved as something available,
+    not required. Same lesson this session's own profanity fix already
+    established (see that earlier docstring paragraph above): vague
+    permission alone doesn't move real output, so this names the actual
+    old failure mode (a single mandated tone) rather than just adding
+    another adjective on top of it."""
     facts = "; ".join(picked)
     weekday = now.strftime("%A")
     history_block = _recent_history_block(now)
@@ -1154,19 +1191,24 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     )
     prompt = (
         f"You are {USER_FIRST_NAME}'s personal AI assistant, in the spirit of J.A.R.V.I.S. from "
-        "Iron Man — sharp, hyper-competent, genuinely funny, unhinged rather than just pleasant. "
-        "Real wit, real edge: dry, cutting, deadpan, willing to roast "
-        f"{USER_FIRST_NAME} directly and make it genuinely "
-        "mean — he doesn't need protecting from the joke, and a line that actually stings is a "
-        "win, not something to walk back. Don't hedge a hard line by softening it right after, "
-        "and don't reach for the safe version of a joke when a meaner, sharper one is sitting "
-        "right there — take it. If a brief in this voice ever reads as polite, careful, or "
-        "restrained, that's the failure, not a safe landing. Actual profanity (shit, damn, hell, "
-        "ass, and the like) is explicitly allowed, not just euphemisms or 'edgy' insults — "
-        "genuinely use a real swear when a line lands sharper with one, your call on when. Don't "
-        "force it into every line, but don't default away from it either. Not corporate, not a "
-        "stiff butler, not playing it safe. Say whatever actually lands — use your own judgment "
-        "on structure, pacing, and where the wit goes; you don't need a formula for this.\n\n"
+        "Iron Man — sharp, hyper-competent, genuinely funny. You choose the tone each morning, "
+        "not a fixed formula: genuinely warm or sincere if that's actually what today calls for, "
+        f"dry and cutting and willing to roast {USER_FIRST_NAME} directly if that's funnier, "
+        "deadpan, playful, whatever — your call, and it's fine (good, even) for it to vary "
+        "morning to morning instead of landing on the same note every time. When you do go for "
+        "the edge, go all the way: don't hedge a hard line by softening it right after, and a "
+        "line that actually stings is a win, not something to walk back — he doesn't need "
+        "protecting from the joke. Actual profanity (shit, damn, hell, ass, and the like) is "
+        "explicitly allowed when a line genuinely lands sharper with one — your call on when, "
+        "never required, never the default either. Not corporate, not a stiff butler either "
+        "direction. Say whatever actually lands.\n\n"
+        "Format is also your call, not a fixed template — a single sharp line some mornings, a "
+        "couple of flowing sentences another, even real structure (a short break between two "
+        "distinct things) on a morning where the facts genuinely call for it. This renders "
+        "directly as HTML, so a plain <br> for a real line break or <strong>/<em> for emphasis is "
+        "available when it actually helps a specific moment land — sparingly, as a tool, not "
+        "decoration on every line. Whatever shape actually serves today, not the same shape every "
+        "single morning.\n\n"
         f"Background on {USER_FIRST_NAME}, for real specific jokes instead of generic ones — "
         f"reference it only when genuinely relevant to today's facts below, don't force a "
         f"mention in every brief: {USER_PROFILE}\n\n"
@@ -1185,9 +1227,13 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         "'0.8%' and '10:00 AM', not 'eighteen minutes' or 'zero point eight percent' or 'ten "
         "o'clock'. This is read at a glance on a screen, not literary prose, and digits are "
         "faster to scan.\n\n"
-        "Combine the following facts into a couple of sentences — short enough to read at a "
-        f"glance on a kiosk display. Address {USER_FIRST_NAME} by name naturally somewhere in the "
-        "text. Start with a capital letter and end with a period. Facts: " + facts
+        "Below is everything real that's actually true about today — the full picture, not a "
+        "filtered subset, so you can draw real connections across it and decide for yourself "
+        "what's actually worth a comment rather than restating each one in turn. Still needs to "
+        f"read at a glance on a kiosk display, but genuinely short is fine and genuinely more "
+        "isn't a formatting failure either — your call based on what's actually here today. "
+        f"Address {USER_FIRST_NAME} by name naturally somewhere in it. Start with a capital "
+        "letter. Facts: " + facts
     )
     if groq_client.ai_pulls_paused():
         return None
@@ -1223,20 +1269,34 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     if not clauses:
         return
     clauses.sort(key=lambda c: c[0], reverse=True)
-    picked = [text for _, text in clauses[:MAX_CLAUSES]]
+    # Session request: "give it as much data as possible so it could
+    # make as many informed comments as possible." The AI now gets
+    # EVERY fact computed today, not just the top MAX_CLAUSES=5 by
+    # priority — that cap exists for the plain-text fallback below
+    # (which genuinely needs to stay short with no AI narration to
+    # shape it), not for what the AI itself gets to see and draw on.
+    # A day where 8 of the 10 clause functions fire (a real event, real
+    # weather, real traffic, a full calendar, all at once) used to
+    # silently lose 3 of them before the AI ever got a look, with no
+    # way to notice a connection between something it was never told.
+    all_facts = [text for _, text in clauses]
+    picked = all_facts[:MAX_CLAUSES]
     try:
-        _record_history(now, picked)
+        _record_history(now, all_facts)
     except Exception:
         pass
     try:
-        sentence = _ai_sentence(picked, now)
+        sentence = _ai_sentence(all_facts, now)
     except Exception:
         sentence = None
     if sentence is None:
         # JARVIS opens the line himself when this succeeds (see
         # _ai_sentence's own docstring) — the plain fallback needs its
         # own random greeting since there's no in-character opener to
-        # supply one.
+        # supply one. Still uses the capped `picked`, not `all_facts` —
+        # with no AI to shape it into real prose, a plain semicolon-join
+        # of everything today would read as an unreadable list, not a
+        # brief.
         plain = "; ".join(picked)
         plain = plain[0].upper() + plain[1:] + "."
         sentence = f"{_pick(GREETINGS, now, 'greeting')}{plain}"
