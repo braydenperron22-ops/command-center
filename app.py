@@ -328,6 +328,19 @@ components.html(
 # full hard reload re-establishes a genuinely fresh connection from
 # scratch, so even a silent, otherwise-invisible disconnect can never
 # leave the kiosk frozen for more than one interval.
+#
+# Interval tightened from 60 to 5 minutes the same evening, after a
+# second, related incident: a live game staying stuck on stale pregame
+# data ("the game has started but the jumbotron hasnt picked it up")
+# that only resolved once a completely separate browser session loaded
+# the app — the app itself (or this kiosk's own connection to it) had
+# gone idle, and a fresh visit is what woke it back up. Session report,
+# on being told to just refresh it again: "id really rather not have
+# to refresh it every time i want to do something." A once-an-hour
+# safety net is nowhere near frequent enough to catch that — this kiosk
+# now pings itself back to a fresh connection every 5 minutes on its
+# own, without needing anyone to actually visit the page for it to
+# recover.
 components.html(
     """
     <script>
@@ -339,7 +352,7 @@ components.html(
       s.textContent = [
         "setInterval(function () {",
         "  window.parent.location.reload();",
-        "}, 60 * 60 * 1000);",
+        "}, 5 * 60 * 1000);",
       ].join('\\n');
       doc.head.appendChild(s);
     })();
