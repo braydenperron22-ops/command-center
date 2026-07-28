@@ -348,6 +348,91 @@ components.html(
     height=0,
 )
 
+# Radar loop GIF — session report: "radar is so buggy," narrowed down
+# to "flickers or jumps around." Root cause: pages_radar.py's <img> for
+# the animated radar loop (ec_radar.radar_loop_data_uri) is plain
+# markdown output, so Streamlit re-emits it as a BRAND NEW <img> DOM
+# node every ~5s autorefresh rerun — same root cause class as the sky-
+# gradient fade and the win-probability bar (see those own comments
+# above), but with no CSS-transition equivalent available here: a
+# browser always restarts an animated GIF from its first frame the
+# instant a NEW <img> element is created for it, even when the `src`
+# is byte-for-byte identical to the previous element's. With the loop
+# itself often spanning close to an hour of real radar history but a
+# fresh DOM node arriving every 5 seconds, the loop almost never got
+# far enough into its own frames to show real motion — constantly
+# snapping back to the start read exactly as "flickers or jumps
+# around," not as smooth animation.
+#
+# Unlike the wp-smoother/countdown-ticker fixes above, there's no CSS
+# property to fake here (a GIF's own playback position isn't something
+# JS can set or resume) — the only real fix is to stop the DOM node
+# from ever being recreated at all. Can't just clone it as a sibling
+# INSIDE .weather-radar-frame either — that whole frame is itself part
+# of the same single unsafe_allow_html markdown string pages_radar.py
+# renders, so Streamlit replaces it wholesale (frame and all) every
+# cycle, taking any child inserted into it right along with the
+# original. The persistent <img> instead lives as a direct child of
+# <body>, entirely outside anything Streamlit ever touches, and is
+# repositioned via getBoundingClientRect() against the (now-hidden)
+# real frame on every detection cycle so it visually tracks it exactly
+# — cheap enough to recompute that often, and this kiosk's layout
+# doesn't scroll during normal operation anyway. `src` only gets
+# reassigned when it actually changed (a genuinely new radar frame,
+# which legitimately should restart the loop — that's correct, not the
+# bug); an unchanged src leaves the persistent element's own ongoing
+# GIF animation completely undisturbed.
+components.html(
+    """
+    <script>
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-radar-loop')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-radar-loop';
+      s.textContent = [
+        "function kioskPersistRadarImg(el) {",
+        "  var frame = el.closest('.weather-radar-frame');",
+        "  if (!frame) return;",
+        "  var persistent = document.getElementById('kiosk-radar-persistent-img');",
+        "  if (!persistent) {",
+        "    persistent = document.createElement('img');",
+        "    persistent.id = 'kiosk-radar-persistent-img';",
+        "    persistent.style.position = 'fixed';",
+        "    persistent.style.zIndex = '5';",
+        "    persistent.style.pointerEvents = 'none';",
+        "    persistent.style.display = 'block';",
+        "    document.body.appendChild(persistent);",
+        "  }",
+        "  var rect = frame.getBoundingClientRect();",
+        "  persistent.style.top = rect.top + 'px';",
+        "  persistent.style.left = rect.left + 'px';",
+        "  persistent.style.width = rect.width + 'px';",
+        "  persistent.style.height = rect.height + 'px';",
+        "  persistent.style.borderRadius = getComputedStyle(frame).borderRadius;",
+        "  var newSrc = el.getAttribute('src');",
+        "  if (newSrc && persistent.src !== newSrc) {",
+        "    persistent.src = newSrc;",
+        "  }",
+        "  el.style.display = 'none';",
+        "}",
+        "function kioskPersistRadarAll() {",
+        "  document.querySelectorAll('img.weather-radar-image').forEach(kioskPersistRadarImg);",
+        "  var persistent = document.getElementById('kiosk-radar-persistent-img');",
+        "  if (persistent && !document.querySelector('img.weather-radar-image')) {",
+        "    persistent.remove();",
+        "  }",
+        "}",
+        "kioskPersistRadarAll();",
+        "new MutationObserver(kioskPersistRadarAll).observe(document.body, {childList: true, subtree: true});",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+    </script>
+    """,
+    height=0,
+)
+
 FRED_API_KEY = st.secrets.get("FRED_API_KEY")
 
 # Resolved early (not down by the page-routing block that used to live
