@@ -471,6 +471,21 @@ components.html(
 # dependency on where it sits in the DOM, so — unlike the radar frame —
 # this doesn't need any manual position-tracking against the (now-
 # hidden) real one.
+#
+# Bug found from a session report ("what happened to my toast alerts?
+# and my bottom bar"): the clone keeps class="ticker-bar" (only its id
+# differs), so the very first time the REAL ticker-bar goes away for a
+# real reason — a news/weather/sports toast or the jumbotron leave-
+# ticker taking over this same slot, both of which skip calling
+# ticker.render_html() entirely for that rerun — the plain
+# `document.querySelector('.ticker-bar')` below matched the PERSISTENT
+# CLONE ITSELF instead of finding nothing. That aliased `real` to the
+# clone, and the final `real.style.display = 'none'` line hid the
+# clone permanently — nothing else in this script ever un-hides it, so
+# once any toast fired even once, the ticker was gone for the rest of
+# the session, reload required. `:not(#kiosk-ticker-persistent)`
+# excludes the clone from that lookup so a genuinely-absent real ticker
+# correctly falls into the `if (!real)` branch instead.
 components.html(
     """
     <script>
@@ -481,7 +496,7 @@ components.html(
       s.id = 'kiosk-ticker-persist';
       s.textContent = [
         "function kioskPersistTicker() {",
-        "  var real = document.querySelector('.ticker-bar');",
+        "  var real = document.querySelector('.ticker-bar:not(#kiosk-ticker-persistent)');",
         "  var persistent = document.getElementById('kiosk-ticker-persistent');",
         "  if (!real) {",
         "    if (persistent) persistent.remove();",
