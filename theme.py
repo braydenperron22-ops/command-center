@@ -3307,17 +3307,31 @@ html, body, [class*="css"] {
     0% { transform: scale(1.35); text-shadow: 0 0 16px var(--led); }
     100% { transform: scale(1); text-shadow: none; }
 }
-/* Strike% digit — session request: "change the ball[s] strikes to
-   strike percentage." Used to be two separately-colored ball/strike
-   digits (session request: "make it so a ball is green and a strike
-   is red and make it flash"), but a single merged percentage has no
-   natural way to keep that two-color distinction, so a new pitch now
-   just gets the same neutral .jumbo-situ-pulse every other situation-
-   bar number already uses. display:inline-block is a base rule here
-   (not just set alongside the animation like .jumbo-situ-pulse does)
-   since .jumbo-count-digit needs a stable layout whether or not it's
-   actively pulsing. */
+/* Ball and strike digits get their own color and their own flash —
+   session request: "make it so a ball is green and a strike is red
+   and make it flash when a strike comes through and when a ball comes
+   through." Same scale+glow shape as .jumbo-situ-pulse above, just
+   colored per digit instead of one shared neutral pulse, so which of
+   the two just happened reads at a glance. display:inline-block is a
+   base rule here (not just set alongside the animation like
+   .jumbo-situ-pulse does) since .jumbo-count-digit needs a stable
+   layout whether or not it's actively flashing.
+   (A same-evening detour turned this into a single merged strike%
+   figure and back — session correction: "who wants the count shown as
+   a percentage... revert the count to what it was before." The
+   percentage version lives in _current_matchup_html's pitcher card
+   instead now, see .jumbo-matchup-strike-pct below.) */
 .jumbo-count-digit { display: inline-block; }
+.jumbo-ball-flash { animation: jumbo-ball-flash 0.6s ease-out; }
+.jumbo-strike-flash { animation: jumbo-strike-flash 0.6s ease-out; }
+@keyframes jumbo-ball-flash {
+    0% { transform: scale(1.35); color: #32D74B; text-shadow: 0 0 16px rgba(50,215,75,0.85); }
+    100% { transform: scale(1); color: var(--bone); text-shadow: none; }
+}
+@keyframes jumbo-strike-flash {
+    0% { transform: scale(1.35); color: #FF453A; text-shadow: 0 0 16px rgba(255,69,58,0.85); }
+    100% { transform: scale(1); color: var(--bone); text-shadow: none; }
+}
 
 .jumbo-sl {
     font-family: var(--label);

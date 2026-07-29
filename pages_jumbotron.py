@@ -186,25 +186,25 @@ def _mlb_situation_html(game_id: int) -> str:
     # just animating the number itself now instead of lighting up one
     # more dot. A new at-bat resetting the count to 0 never falsely
     # pulses anything: nothing to compare up against on the way down.
+    # Session request: "make it so a ball is green and a strike is red
+    # and make it flash when [one] comes through" — ball and strike now
+    # get their own digit and their own color/flash instead of sharing
+    # one plain "B-S" pulse, so which one just happened is readable at
+    # a glance, not just that the count changed.
     #
-    # Session request: "change the ball[s] strikes to strike
-    # percentage" — the raw "COUNT 2-1" digits (this at-bat's own
-    # ball/strike tally, which a past request had colored green/red
-    # per digit) are now this same at-bat's strikes as a share of
-    # pitches thrown so far, e.g. "67%" for a 2-1 count. Same
-    # balls/strikes fields already fetched, no new data needed. A
-    # single merged number has no natural way to keep the old per-digit
-    # ball-vs-strike coloring (see this function's own docstring
-    # history above), so a new pitch now gets the same neutral pulse
-    # OUT already uses instead, rather than trying to force two colors
-    # onto one figure.
+    # A same-evening request to turn this into a strike-percentage
+    # figure instead was tried and reverted right back — session
+    # correction: "who wants the count shown as a percentage... I only
+    # want it shown for the pitcher's total ball and strike count below
+    # their ERA and their pitches." The at-bat's own live count stays
+    # exactly as it was; the percentage version lives in
+    # _current_matchup_html's own pitcher card instead (see that
+    # function's own comment on _pitch_strike_pct_text).
     balls, strikes, outs = detail.get("balls") or 0, detail.get("strikes") or 0, detail.get("outs") or 0
     prev_counts = st.session_state.get(f"jumbotron_mlb_counts_{game_id}", {})
     st.session_state[f"jumbotron_mlb_counts_{game_id}"] = {"b": balls, "s": strikes, "o": outs}
-    pitches_seen = balls + strikes
-    strike_pct = round(strikes / pitches_seen * 100) if pitches_seen else 0
-    prev_pitches_seen = prev_counts.get("b", 0) + prev_counts.get("s", 0)
-    strike_pct_pulse = " jumbo-situ-pulse" if pitches_seen > prev_pitches_seen else ""
+    ball_flash = " jumbo-ball-flash" if balls > prev_counts.get("b", 0) else ""
+    strike_flash = " jumbo-strike-flash" if strikes > prev_counts.get("s", 0) else ""
     outs_pulse = " jumbo-situ-pulse" if outs > prev_counts.get("o", 0) else ""
 
     # Session request: "put an up or down arrow beside inning instead
@@ -219,8 +219,8 @@ def _mlb_situation_html(game_id: int) -> str:
     parts = [f'<span class="jumbo-situ-hot">{html.escape(inning)}</span>'] if inning else []
     parts.append(diamond)
     parts.append(
-        f'<span class="jumbo-situ-count"><span class="jumbo-dim">STRIKE%</span> '
-        f'<span class="jumbo-count-digit{strike_pct_pulse}">{strike_pct}%</span></span>'
+        f'<span class="jumbo-situ-count"><span class="jumbo-dim">COUNT</span> '
+        f'<span class="jumbo-count-digit{ball_flash}">{balls}</span>-<span class="jumbo-count-digit{strike_flash}">{strikes}</span></span>'
     )
     parts.append(f'<span class="jumbo-situ-outs{outs_pulse}">{outs} OUT</span>')
     line = "".join(parts)
@@ -558,10 +558,18 @@ def _current_matchup_html(game_id: int) -> str:
     # pitches" — clarified to mean the whole outing's ball/strike split
     # (sports_client.fetch_mlb_live_matchup's own "balls"/"strikes"),
     # not the live at-bat's own count _mlb_situation_html's strip above
-    # already shows — a different number, so a distinct "B-S" label
-    # here rather than reusing "COUNT".
+    # already shows — a different number, so a distinct label here
+    # rather than reusing "COUNT". Session follow-up, after a same-
+    # evening detour that put a strike% figure in _mlb_situation_html's
+    # own strip instead and got immediately reverted ("who wants the
+    # count shown as a percentage... I only want it shown for the
+    # pitcher's total ball and strike count below their ERA and their
+    # pitches"): the raw split here is now that percentage instead —
+    # this is specifically the slot it was asked for, unlike the at-bat
+    # strip above, which keeps its own real "2-1"-style count untouched.
     balls, strikes = pitcher.get("balls"), pitcher.get("strikes")
-    pitch_split = f"{balls}-{strikes}" if balls is not None and strikes is not None else None
+    total_pitches = (balls or 0) + (strikes or 0)
+    strike_pct = f"{round(strikes / total_pitches * 100)}%" if balls is not None and strikes is not None and total_pitches else None
 
     # Session feedback: "make the ops and era less clunky... the whole
     # matchup thing needs to be easier to read." A value+unit crammed
@@ -635,7 +643,7 @@ def _current_matchup_html(game_id: int) -> str:
     ]
     pitcher_rows = [
         [(pitcher.get("era"), "ERA", pitcher.get("season_era_heat")), (pitcher.get("pitches"), "PITCHES", None)],
-        [(pitch_split, "B-S", None)],
+        [(strike_pct, "STRIKE%", None)],
     ]
     return (
         f'<div class="jumbo-leaders"><div class="jumbo-sl">Current Matchup</div>'
