@@ -186,16 +186,25 @@ def _mlb_situation_html(game_id: int) -> str:
     # just animating the number itself now instead of lighting up one
     # more dot. A new at-bat resetting the count to 0 never falsely
     # pulses anything: nothing to compare up against on the way down.
-    # Session request: "make it so a ball is green and a strike is red
-    # and make it flash when [one] comes through" — ball and strike now
-    # get their own digit and their own color/flash instead of sharing
-    # one plain "B-S" pulse, so which one just happened is readable at
-    # a glance, not just that the count changed.
+    #
+    # Session request: "change the ball[s] strikes to strike
+    # percentage" — the raw "COUNT 2-1" digits (this at-bat's own
+    # ball/strike tally, which a past request had colored green/red
+    # per digit) are now this same at-bat's strikes as a share of
+    # pitches thrown so far, e.g. "67%" for a 2-1 count. Same
+    # balls/strikes fields already fetched, no new data needed. A
+    # single merged number has no natural way to keep the old per-digit
+    # ball-vs-strike coloring (see this function's own docstring
+    # history above), so a new pitch now gets the same neutral pulse
+    # OUT already uses instead, rather than trying to force two colors
+    # onto one figure.
     balls, strikes, outs = detail.get("balls") or 0, detail.get("strikes") or 0, detail.get("outs") or 0
     prev_counts = st.session_state.get(f"jumbotron_mlb_counts_{game_id}", {})
     st.session_state[f"jumbotron_mlb_counts_{game_id}"] = {"b": balls, "s": strikes, "o": outs}
-    ball_flash = " jumbo-ball-flash" if balls > prev_counts.get("b", 0) else ""
-    strike_flash = " jumbo-strike-flash" if strikes > prev_counts.get("s", 0) else ""
+    pitches_seen = balls + strikes
+    strike_pct = round(strikes / pitches_seen * 100) if pitches_seen else 0
+    prev_pitches_seen = prev_counts.get("b", 0) + prev_counts.get("s", 0)
+    strike_pct_pulse = " jumbo-situ-pulse" if pitches_seen > prev_pitches_seen else ""
     outs_pulse = " jumbo-situ-pulse" if outs > prev_counts.get("o", 0) else ""
 
     # Session request: "put an up or down arrow beside inning instead
@@ -210,8 +219,8 @@ def _mlb_situation_html(game_id: int) -> str:
     parts = [f'<span class="jumbo-situ-hot">{html.escape(inning)}</span>'] if inning else []
     parts.append(diamond)
     parts.append(
-        f'<span class="jumbo-situ-count"><span class="jumbo-dim">COUNT</span> '
-        f'<span class="jumbo-count-digit{ball_flash}">{balls}</span>-<span class="jumbo-count-digit{strike_flash}">{strikes}</span></span>'
+        f'<span class="jumbo-situ-count"><span class="jumbo-dim">STRIKE%</span> '
+        f'<span class="jumbo-count-digit{strike_pct_pulse}">{strike_pct}%</span></span>'
     )
     parts.append(f'<span class="jumbo-situ-outs{outs_pulse}">{outs} OUT</span>')
     line = "".join(parts)
@@ -1474,7 +1483,16 @@ def _delay_stepper() -> None:
     its key — Streamlit tracks live edits in session_state from there,
     so this doesn't fight the user's own in-progress typing on this
     fragment's later, unrelated reruns (every 5s, riding the outer
-    app's own st_autorefresh)."""
+    app's own st_autorefresh).
+
+    No explicit st.rerun(scope="fragment") here, unlike the old button
+    handlers — confirmed live that raises StreamlitAPIException
+    ("can only be specified... during fragment reruns"). A button's
+    own click doesn't rerun anything on its own, so the old code had to
+    force one; a number_input's changed value already triggers
+    Streamlit's own automatic fragment-scoped rerun by itself, so
+    calling this a second time was both redundant and, apparently, not
+    actually legal to do here."""
     delay = sports_client.get_live_delay_seconds()
     st.markdown('<div class="jumbo-delay-label">DELAY</div>', unsafe_allow_html=True)
     new_delay = st.number_input(
@@ -1483,7 +1501,6 @@ def _delay_stepper() -> None:
     )
     if new_delay != delay:
         sports_client.set_live_delay_seconds(int(new_delay))
-        st.rerun(scope="fragment")
 
 
 def _ufc_bout_status_html(bout: dict) -> str:

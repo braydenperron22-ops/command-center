@@ -2950,14 +2950,20 @@ html, body, [class*="css"] {
    inning-by-inning linescore this used to sit above was dropped in
    the same request, freeing up real room to grow into). */
 .jumbo-situ {
+    /* Session request: "make the situation bar more visible ie bigger,
+       inning, bases, count, outs" — the whole strip (inning, base
+       diamond, strike%, outs) scaled up together, same proportions
+       just bigger, so it reads at a glance from across the room like
+       the rest of this board's own distance-readability pass already
+       treats its other big numbers. */
     text-align: center;
     font-family: var(--label);
-    font-size: 24px;
+    font-size: 34px;
     letter-spacing: 0.05em;
-    padding: 10px 26px 14px;
+    padding: 14px 26px 18px;
     line-height: 1.7;
 }
-.jumbo-situ-hot { color: var(--led); font-weight: 700; margin-right: 16px; font-size: 28px; }
+.jumbo-situ-hot { color: var(--led); font-weight: 700; margin-right: 20px; font-size: 38px; }
 .jumbo-dim { color: var(--mut-2); }
 .jumbo-clockbig { font-family: var(--label); font-size: 30px; color: var(--bone); letter-spacing: 0.06em; }
 /* Pregame venue/weather + probable starters (pages_jumbotron.
@@ -3263,7 +3269,7 @@ html, body, [class*="css"] {
     letter-spacing: 0.1em;
     flex: 0 0 auto;
 }
-.jumbo-diamond { width: 62px; height: 62px; display: inline-block; vertical-align: -18px; margin: 0 18px; }
+.jumbo-diamond { width: 84px; height: 84px; display: inline-block; vertical-align: -24px; margin: 0 22px; }
 /* Session request: "make the bases react when someone gets on with a
    smooth lighting up animation" — the plain transition covers every
    state change (a runner forced out fades back to dark, same as
@@ -3290,8 +3296,8 @@ html, body, [class*="css"] {
     font-weight: 700;
     color: var(--bone);
 }
-.jumbo-situ-count { margin-left: 14px; }
-.jumbo-situ-outs { margin-left: 22px; }
+.jumbo-situ-count { margin-left: 18px; }
+.jumbo-situ-outs { margin-left: 28px; }
 /* Session request (carried over from the old dots): "are there
    animations for... there's a strikeout" — the count/outs number
    pulses the instant it climbs instead of just silently updating
@@ -3301,26 +3307,17 @@ html, body, [class*="css"] {
     0% { transform: scale(1.35); text-shadow: 0 0 16px var(--led); }
     100% { transform: scale(1); text-shadow: none; }
 }
-/* Ball and strike digits get their own color and their own flash —
-   session request: "make it so a ball is green and a strike is red
-   and make it flash when a strike comes through and when a ball comes
-   through." Same scale+glow shape as .jumbo-situ-pulse above, just
-   colored per digit instead of one shared neutral pulse, so which of
-   the two just happened reads at a glance. display:inline-block is a
-   base rule here (not just set alongside the animation like
-   .jumbo-situ-pulse does) since .jumbo-count-digit needs a stable
-   layout whether or not it's actively flashing. */
+/* Strike% digit — session request: "change the ball[s] strikes to
+   strike percentage." Used to be two separately-colored ball/strike
+   digits (session request: "make it so a ball is green and a strike
+   is red and make it flash"), but a single merged percentage has no
+   natural way to keep that two-color distinction, so a new pitch now
+   just gets the same neutral .jumbo-situ-pulse every other situation-
+   bar number already uses. display:inline-block is a base rule here
+   (not just set alongside the animation like .jumbo-situ-pulse does)
+   since .jumbo-count-digit needs a stable layout whether or not it's
+   actively pulsing. */
 .jumbo-count-digit { display: inline-block; }
-.jumbo-ball-flash { animation: jumbo-ball-flash 0.6s ease-out; }
-.jumbo-strike-flash { animation: jumbo-strike-flash 0.6s ease-out; }
-@keyframes jumbo-ball-flash {
-    0% { transform: scale(1.35); color: #32D74B; text-shadow: 0 0 16px rgba(50,215,75,0.85); }
-    100% { transform: scale(1); color: var(--bone); text-shadow: none; }
-}
-@keyframes jumbo-strike-flash {
-    0% { transform: scale(1.35); color: #FF453A; text-shadow: 0 0 16px rgba(255,69,58,0.85); }
-    100% { transform: scale(1); color: var(--bone); text-shadow: none; }
-}
 
 .jumbo-sl {
     font-family: var(--label);
