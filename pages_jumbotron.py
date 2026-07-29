@@ -534,6 +534,33 @@ def _held_matchup(game_id: int, matchup: dict | None, half_marker: str) -> dict 
     return tracked["matchup"]
 
 
+# Session request: "add conditional formatting to the strike% value for
+# pitchers so i can see at a glance if a pitcher is flowing or is
+# struggling to find the zone" — same fire/ice hot-cold treatment the
+# batter's OPS stats already get (_ops_heat/_vs_pitcher_heat in
+# sports_client.py), reusing col()'s existing heat plumbing rather than
+# adding a new visual language. League-average strike rate sits around
+# 63-64%, so thresholds sit a healthy distance either side of that with
+# a dead zone in between (normal outings shouldn't flicker orange/blue).
+# A minimum pitch count guards against a small early-outing sample
+# reading as a hot/cold streak (3 pitches, 3 strikes = 100% means
+# nothing) — same idea as vs-pitcher's own VS_PITCHER_MIN_AB.
+STRIKE_PCT_HOT = 66
+STRIKE_PCT_COLD = 58
+STRIKE_PCT_MIN_PITCHES = 10
+
+
+def _strike_pct_heat(strikes: int, total_pitches: int) -> str | None:
+    if total_pitches < STRIKE_PCT_MIN_PITCHES:
+        return None
+    pct = strikes / total_pitches * 100
+    if pct >= STRIKE_PCT_HOT:
+        return "hot"
+    if pct <= STRIKE_PCT_COLD:
+        return "cold"
+    return None
+
+
 def _current_matchup_html(game_id: int) -> str:
     """Replaces the Top Performers panel with the two players actually
     involved in the live at-bat while a game is live — session request:
@@ -570,6 +597,7 @@ def _current_matchup_html(game_id: int) -> str:
     balls, strikes = pitcher.get("balls"), pitcher.get("strikes")
     total_pitches = (balls or 0) + (strikes or 0)
     strike_pct = f"{round(strikes / total_pitches * 100)}%" if balls is not None and strikes is not None and total_pitches else None
+    strike_pct_heat = _strike_pct_heat(strikes, total_pitches) if strike_pct is not None else None
 
     # Session feedback: "make the ops and era less clunky... the whole
     # matchup thing needs to be easier to read." A value+unit crammed
@@ -643,7 +671,7 @@ def _current_matchup_html(game_id: int) -> str:
     ]
     pitcher_rows = [
         [(pitcher.get("era"), "ERA", pitcher.get("season_era_heat")), (pitcher.get("pitches"), "PITCHES", None)],
-        [(strike_pct, "STRIKE%", None)],
+        [(strike_pct, "STRIKE%", strike_pct_heat)],
     ]
     return (
         f'<div class="jumbo-leaders"><div class="jumbo-sl">Current Matchup</div>'
