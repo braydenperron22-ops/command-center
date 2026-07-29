@@ -486,6 +486,22 @@ components.html(
 # the session, reload required. `:not(#kiosk-ticker-persistent)`
 # excludes the clone from that lookup so a genuinely-absent real ticker
 # correctly falls into the `if (!real)` branch instead.
+#
+# Second bug, found the same session, reproduced live on a real page
+# (internals): the clone can inherit a stale `display:none` at the
+# exact moment it's cloned — a real timing window right at a toast-to-
+# ticker transition (real gets hidden as the toast begins, and if the
+# very next real ticker-bar Streamlit creates once the toast clears
+# happens to still carry that same stale inline style at the instant
+# this observer callback catches it and clones it, `persistent`
+# permanently inherits `display:none` too, with nothing else in this
+# script ever explicitly un-hiding it afterward — confirmed live: manually
+# forcing `persistent.style.display = 'block'` fixed it permanently, proving
+# nothing was actively re-hiding it, it just had no path back to visible on
+# its own). `persistent.style.display = ''` right after cloning clears
+# any inherited inline override unconditionally, so the clone always
+# starts from a clean, CSS-default (visible) state regardless of
+# whatever `real` happened to look like at the exact clone moment.
 components.html(
     """
     <script>
@@ -505,6 +521,7 @@ components.html(
         "  if (!persistent) {",
         "    persistent = real.cloneNode(true);",
         "    persistent.id = 'kiosk-ticker-persistent';",
+        "    persistent.style.display = '';",
         "    document.body.appendChild(persistent);",
         "  }",
         "  var realTrack = real.querySelector('.ticker-track');",
