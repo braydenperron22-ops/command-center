@@ -445,6 +445,70 @@ components.html(
     height=0,
 )
 
+# Bottom ticker — session report: "this dashboard is really heavy...
+# the bottom bar[ is] a little janky on the old laptop." Same root
+# cause as the radar loop and win-probability bar above: ticker.
+# render_html() is one plain st.markdown call, so Streamlit replaces
+# its whole .ticker-bar > .ticker-track > .ticker-content tree from
+# scratch on every ~5s rerun — and .ticker-track carries a 55-second
+# CSS scroll animation (animation: ticker-scroll, theme.py), which a
+# browser always restarts from 0% the instant a NEW element gets that
+# animation, even with identical content. The scroll never got more
+# than a few seconds into its own 55s cycle before snapping back to
+# the start — on a fast machine that reads as a barely-perceptible
+# stutter; on weaker hardware, forcing that same restart (a style
+# recalc across dozens of ticker-item spans, easily 40+ once every
+# live stat source is duplicated for the seamless loop) is real,
+# regular jank.
+#
+# Same fix shape as the radar loop: a persistent .ticker-bar clone
+# living as a direct child of <body>, entirely outside Streamlit's own
+# churn, so its .ticker-track element is never recreated and its
+# animation just keeps running uninterrupted. Only .ticker-track's
+# innerHTML gets resynced (and only when it's actually changed — a
+# real stat ticking, not every 5s regardless), never the track element
+# itself; .ticker-bar's own CSS is already position:fixed with no
+# dependency on where it sits in the DOM, so — unlike the radar frame —
+# this doesn't need any manual position-tracking against the (now-
+# hidden) real one.
+components.html(
+    """
+    <script>
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-ticker-persist')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-ticker-persist';
+      s.textContent = [
+        "function kioskPersistTicker() {",
+        "  var real = document.querySelector('.ticker-bar');",
+        "  var persistent = document.getElementById('kiosk-ticker-persistent');",
+        "  if (!real) {",
+        "    if (persistent) persistent.remove();",
+        "    return;",
+        "  }",
+        "  if (!persistent) {",
+        "    persistent = real.cloneNode(true);",
+        "    persistent.id = 'kiosk-ticker-persistent';",
+        "    document.body.appendChild(persistent);",
+        "  }",
+        "  var realTrack = real.querySelector('.ticker-track');",
+        "  var persistentTrack = persistent.querySelector('.ticker-track');",
+        "  if (realTrack && persistentTrack && persistentTrack.innerHTML !== realTrack.innerHTML) {",
+        "    persistentTrack.innerHTML = realTrack.innerHTML;",
+        "  }",
+        "  real.style.display = 'none';",
+        "}",
+        "kioskPersistTicker();",
+        "new MutationObserver(kioskPersistTicker).observe(document.body, {childList: true, subtree: true});",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+    </script>
+    """,
+    height=0,
+)
+
 FRED_API_KEY = st.secrets.get("FRED_API_KEY")
 
 # Resolved early (not down by the page-routing block that used to live
