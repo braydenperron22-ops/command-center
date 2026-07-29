@@ -224,9 +224,11 @@ def check(now: datetime) -> dict | None:
     same minute marks.
 
     Also pushes a phone notification for the same milestone, once per
-    (event, milestone), disk-persisted separately from the on-screen
+    (event, milestone), disk-persisted independently of the on-screen
     "shown" state above (see the push call's own comment further
-    down)."""
+    down) — both are persisted now, but kept as two separate tracked
+    sets rather than unified into one, matching how independently they
+    already behaved before this fix."""
     current = _current_shift(now)
     if current is None:
         return None
@@ -241,18 +243,38 @@ def check(now: datetime) -> dict | None:
     if not (LATEST_FIRE_MINUTES <= minutes_until_leave <= max(MILESTONES_MINUTES)):
         return None
 
-    state = st.session_state.setdefault("commute_reminder", {"date": None, "shown": {}})
-    if state["date"] != now.date():
-        state["date"] = now.date()
-        state["shown"] = {}
+    # Disk-persisted (persisted_state), not st.session_state — session
+    # report: "the ticker tape doesn't show up at all on some pages...
+    # I haven't received any [market news]." Traced to this same
+    # milestone toast re-firing far more than intended: st.session_state
+    # is scoped per browser CONNECTION, and this kiosk's own hourly
+    # reload watchdog (app.py) forces a fresh connection every 60
+    # minutes — which reset this "shown" tracking right back to empty
+    # while a shift's multi-hour leave-window was often still open,
+    # letting the same milestone re-fire as if new roughly once an hour
+    # for as long as that window stayed active. A toast re-triggering
+    # that often effectively monopolized the shared bottom-bar slot,
+    # crowding out both the ticker AND whatever real news/market alert
+    # would otherwise have become "current" in the same queue. This was
+    # previously a known, deliberately-accepted gap (see this function's
+    # own history below) — not deliberate anymore now that it's shown to
+    # cause real harm. Persisted the same way the push tracking just
+    # below already was, for exactly the same reason: a module global
+    # alone survives multiple browser sessions but not an actual reload/
+    # reconnect; this needs to survive both.
+    shown_state = persisted_state.load("commute_reminder_shown", {"date": None, "events": {}})
+    if shown_state["date"] != now.date().isoformat():
+        shown_state = {"date": now.date().isoformat(), "events": {}}
 
     event_key = f"{shift['summary']}|{shift['start'].isoformat()}"
-    shown_for_event = state["shown"].setdefault(event_key, set())
+    shown_for_event = set(shown_state["events"].get(event_key, []))
 
     milestone = _due_milestone(minutes_until_leave, shown_for_event)
     if milestone is None:
         return None
     shown_for_event.add(milestone)
+    shown_state["events"][event_key] = sorted(shown_for_event)
+    persisted_state.save("commute_reminder_shown", shown_state)
 
     # Disk-persisted (persisted_state), not a plain module-level global
     # or st.session_state — session report: "I received the leave for
@@ -260,9 +282,7 @@ def check(now: datetime) -> dict | None:
     # a duplicate morning brief push traced to a redeploy resetting an
     # in-memory tracker right back to empty. A module global alone
     # survives multiple browser sessions but not an actual process
-    # restart; this needs to survive both. Kept independent of `state`
-    # above (the on-screen toast's own still-session-scoped "shown"
-    # tracking, unreported as broken, left as-is).
+    # restart; this needs to survive both.
     pushed = persisted_state.load("commute_milestones", {"date": None, "keys": []})
     if pushed["date"] != now.date().isoformat():
         pushed = {"date": now.date().isoformat(), "keys": []}
