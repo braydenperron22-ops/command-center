@@ -3855,6 +3855,37 @@ html, body, [class*="css"] {
     color: var(--mut);
     white-space: nowrap;
 }
+/* Session request: "make it so i can type my ideal stream delay
+   please. the plus/minus boxes are finnicky" — replaced with a real
+   st.number_input (see pages_jumbotron._delay_stepper's own comment):
+   tapping into it brings up this touchscreen kiosk's own on-screen
+   numeric keypad, letting the value be typed directly. Streamlit's own
+   built-in label is already collapsed (label_visibility="collapsed")
+   but still occupies a hidden row of layout height by default —
+   zeroed out here so the field sits at the same compact size as the
+   buttons it replaced, matching the rest of this cluster's own dark-
+   glass treatment. */
+.st-key-jumbotron_controls label[data-testid="stWidgetLabel"] {
+    display: none;
+}
+.st-key-jumbotron_controls div[data-testid="stNumberInputContainer"] {
+    background: rgba(16,22,32,0.82);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid var(--glass-edge);
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    width: 84px;
+}
+.st-key-jumbotron_controls input[data-testid="stNumberInputField"] {
+    background: transparent;
+    color: var(--bone);
+    font-family: var(--label);
+    font-size: 18px;
+    font-weight: 700;
+    text-align: center;
+    padding: 12px 6px;
+}
 
 /* Phone breakpoint. Everything above this point is untouched at any
    width above it (including the kiosk monitor, always far wider) —

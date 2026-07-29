@@ -1450,24 +1450,39 @@ def _around_html(now_ts: float) -> str:
 
 @st.fragment
 def _delay_stepper() -> None:
-    """The −/DELAY Xs/+ trio, split into its own fragment — session
-    report: tapping +/- felt unresponsive, "only updates when the page
-    updates after the 5 second pause." A plain st.button here reruns
-    the WHOLE jumbotron page (every sports/weather fetch, every HTML
-    block) before the click's own effect shows up, and a tap that lands
-    mid-rerun (the rest of the page is still catching up from the
+    """The live-data delay control, split into its own fragment —
+    session report: tapping +/- felt unresponsive, "only updates when
+    the page updates after the 5 second pause." A plain st.button here
+    reruns the WHOLE jumbotron page (every sports/weather fetch, every
+    HTML block) before the click's own effect shows up, and a tap that
+    lands mid-rerun (the rest of the page is still catching up from the
     previous click) gets silently dropped — with the rest of the page
     this heavy, that's a real, repeated wait, not a one-off. A
-    fragment's own rerun only re-executes this function, so the label
-    updates as fast as Streamlit can redraw one small widget, regardless
-    of how long the surrounding page takes."""
+    fragment's own rerun only re-executes this function, so a change
+    here updates as fast as Streamlit can redraw one small widget,
+    regardless of how long the surrounding page takes.
+
+    Session follow-up: "make it so i can type my ideal stream delay
+    please. the plus/minus boxes are finnicky" — this kiosk is a
+    touchscreen with no physical keyboard (see the earlier "make it
+    easier to click up/down on it" bump to these same controls' own
+    tap-target size, still not enough on its own). Swapped the +/-
+    button pair for a single st.number_input: tapping into a native
+    number field brings up the OS's own on-screen numeric keypad,
+    letting the exact value be typed directly instead of repeated small
+    taps. `value=delay` only seeds this widget's very first render for
+    its key — Streamlit tracks live edits in session_state from there,
+    so this doesn't fight the user's own in-progress typing on this
+    fragment's later, unrelated reruns (every 5s, riding the outer
+    app's own st_autorefresh)."""
     delay = sports_client.get_live_delay_seconds()
-    if st.button("−", key="jumbotron_delay_minus"):
-        sports_client.set_live_delay_seconds(max(0, delay - 5))
-        st.rerun(scope="fragment")
-    st.markdown(f'<div class="jumbo-delay-label">DELAY {delay}s</div>', unsafe_allow_html=True)
-    if st.button("+", key="jumbotron_delay_plus"):
-        sports_client.set_live_delay_seconds(min(60, delay + 5))
+    st.markdown('<div class="jumbo-delay-label">DELAY</div>', unsafe_allow_html=True)
+    new_delay = st.number_input(
+        "Delay", min_value=0, max_value=60, step=5, value=delay,
+        key="jumbotron_delay_input", label_visibility="collapsed",
+    )
+    if new_delay != delay:
+        sports_client.set_live_delay_seconds(int(new_delay))
         st.rerun(scope="fragment")
 
 
