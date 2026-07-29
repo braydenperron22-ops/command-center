@@ -64,6 +64,19 @@ HEADLINE_GRACE_MINUTES = 10
 STRETCH_END = 1.8
 SLIDE_END = 3.0
 
+# check() runs once per rerun (~5s during the whole commute window),
+# not once per genuine state change like the milestone/push saves below
+# it — loading this fresh from persisted_state on every single call was
+# a real, live-confirmed bug (a Redis MONITOR capture showed a GET on
+# this key every few seconds around the clock, easily enough volume on
+# its own to make a real dent in the whole app's monthly Upstash
+# command budget). Same fix shape as news.py's _seen_headlines/_decided
+# and gemini_client's periodic cache: load once at import into a module
+# global, save only on a genuine change (see check() below — the save
+# call only ever runs when a milestone is actually newly due, same as
+# it always did).
+_shown_state: dict = persisted_state.load("commute_reminder_shown", {"date": None, "events": {}})
+
 
 def _leave_text(minutes: int) -> str:
     if minutes == 0:
@@ -262,19 +275,30 @@ def check(now: datetime) -> dict | None:
     # below already was, for exactly the same reason: a module global
     # alone survives multiple browser sessions but not an actual reload/
     # reconnect; this needs to survive both.
-    shown_state = persisted_state.load("commute_reminder_shown", {"date": None, "events": {}})
-    if shown_state["date"] != now.date().isoformat():
-        shown_state = {"date": now.date().isoformat(), "events": {}}
+    #
+    # Loaded once at import (see _shown_state's own module-level
+    # comment), not re-loaded here on every call — a real Redis MONITOR
+    # capture caught the very first version of this fix doing exactly
+    # that (a GET on this key every few seconds, around the clock),
+    # which would have been a real, ongoing drain on the whole app's
+    # monthly Upstash command budget for no reason: nothing about this
+    # value needs to be re-fetched mid-process, since this same process
+    # is the only thing that ever writes it (the save call below stays
+    # exactly as targeted as it always was — only when a milestone is
+    # actually newly due, not every rerun).
+    global _shown_state
+    if _shown_state["date"] != now.date().isoformat():
+        _shown_state = {"date": now.date().isoformat(), "events": {}}
 
     event_key = f"{shift['summary']}|{shift['start'].isoformat()}"
-    shown_for_event = set(shown_state["events"].get(event_key, []))
+    shown_for_event = set(_shown_state["events"].get(event_key, []))
 
     milestone = _due_milestone(minutes_until_leave, shown_for_event)
     if milestone is None:
         return None
     shown_for_event.add(milestone)
-    shown_state["events"][event_key] = sorted(shown_for_event)
-    persisted_state.save("commute_reminder_shown", shown_state)
+    _shown_state["events"][event_key] = sorted(shown_for_event)
+    persisted_state.save("commute_reminder_shown", _shown_state)
 
     # Disk-persisted (persisted_state), not a plain module-level global
     # or st.session_state — session report: "I received the leave for
