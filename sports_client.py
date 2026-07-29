@@ -1331,7 +1331,7 @@ def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
 def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     """{"batter": {"id", "name", "ops", "season_ops_heat",
     "overall_percentile", "vs_pitcher", "vs_pitcher_heat", "photo"}, "pitcher":
-    {"id", "name", "era", "season_era_heat", "pitches", "balls",
+    {"id", "name", "era", "season_era_heat", "overall_percentile", "pitches", "balls",
     "strikes", "line", "photo"}} for whoever's actually at the plate/on
     the mound right now — session request: "during the game can you make
     the top performers tab show current pitcher and batter and their
@@ -1352,13 +1352,19 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     player's own career line (_batter_season_heat/_pitcher_season_heat),
     not a fixed threshold like vs_pitcher's — "hot" means "better than
     his own normal," a different question than vs_pitcher's absolute
-    cutoff. "overall_percentile" replaced the original rolling last-15-
-    games OPS ("last15_ops"/"last15_heat") per a later session request:
-    "instead of the last fifteen OPS... replace it with the average of
-    every single one of their percentiles" from Baseball Savant — see
-    savant_client.batter_overall_percentile's own docstring for why a
-    plain average is meaningful there and what "every single one" means.
-    Reuses the same cached linescore fetch_mlb_live_detail already
+    cutoff. The batter's "overall_percentile" replaced the original
+    rolling last-15-games OPS ("last15_ops"/"last15_heat") per a later
+    session request: "instead of the last fifteen OPS... replace it
+    with the average of every single one of their percentiles" from
+    Baseball Savant — see savant_client.batter_overall_percentile's own
+    docstring for why a plain average is meaningful there and what
+    "every single one" means. The pitcher's own "overall_percentile"
+    followed immediately after ("add the same thing for Baseball
+    Pitcher") — savant_client.pitcher_overall_percentile, same
+    averaging rule, off Savant's separate pitcher-side percentile table
+    (different columns — xERA, fastball velo/spin — not the batter's
+    sprint speed/OAA/etc.). Reuses the same cached linescore
+    fetch_mlb_live_detail already
     pulls this rerun (no extra request for the matchup itself), one
     small extra request each for the two players' own season+career
     stat lines (both come back in the same hydrate call — see
@@ -1407,6 +1413,7 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
             "name": pitcher["fullName"],
             "era": pitcher_stat.get("era"),
             "season_era_heat": _pitcher_season_heat(pitcher_stat.get("era"), pitcher_career.get("era")),
+            "overall_percentile": savant_client.pitcher_overall_percentile(pitcher["id"]),
             "pitches": pitcher_totals.get("pitches"),
             "balls": pitcher_totals.get("balls"),
             "strikes": pitcher_totals.get("strikes"),

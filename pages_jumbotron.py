@@ -692,12 +692,18 @@ def _current_matchup_html(game_id: int) -> str:
             f"</div>"
         )
 
-    overall = batter.get("overall_percentile")
-    overall_style = _savant_gradient_color(overall) if overall is not None else None
+    batter_overall = batter.get("overall_percentile")
+    batter_overall_style = _savant_gradient_color(batter_overall) if batter_overall is not None else None
+    # Session follow-up: "add the same thing for Baseball Pitcher" — the
+    # pitcher's own Savant OVERALL, same gradient treatment, off his
+    # separate percentile table (sports_client's pitcher-side
+    # "overall_percentile" — see savant_client.pitcher_overall_percentile).
+    pitcher_overall = pitcher.get("overall_percentile")
+    pitcher_overall_style = _savant_gradient_color(pitcher_overall) if pitcher_overall is not None else None
     batter_rows = [
         [(batter.get("ops"), "OPS", batter.get("season_ops_heat"), None)],
         [
-            (overall, "OVERALL", None, overall_style),
+            (batter_overall, "OVERALL", None, batter_overall_style),
             (batter.get("vs_pitcher"), "VS PITCHER", batter.get("vs_pitcher_heat"), None),
         ],
     ]
@@ -706,7 +712,10 @@ def _current_matchup_html(game_id: int) -> str:
             (pitcher.get("era"), "ERA", pitcher.get("season_era_heat"), None),
             (pitcher.get("pitches"), "PITCHES", None, None),
         ],
-        [(strike_pct, "STRIKE%", strike_pct_heat, None)],
+        [
+            (strike_pct, "STRIKE%", strike_pct_heat, None),
+            (pitcher_overall, "OVERALL", None, pitcher_overall_style),
+        ],
     ]
     return (
         f'<div class="jumbo-leaders"><div class="jumbo-sl">Current Matchup</div>'

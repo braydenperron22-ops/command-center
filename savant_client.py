@@ -84,13 +84,8 @@ def _percentile_table(player_type: str) -> dict[int, dict]:
     return table
 
 
-def batter_overall_percentile(player_id: int) -> int | None:
-    """Straight (unweighted) average of every percentile column Savant
-    has for this batter this season, rounded to a whole number — "kinda
-    like an overall in NHL 25 or MLB The Show." None if the batter has
-    no row yet (e.g. a just-called-up rookie Savant hasn't processed a
-    leaderboard entry for) or every column on his row is blank."""
-    row = _percentile_table("batter").get(player_id)
+def _overall_percentile(player_type: str, player_id: int) -> int | None:
+    row = _percentile_table(player_type).get(player_id)
     if not row:
         return None
     values = []
@@ -102,3 +97,23 @@ def batter_overall_percentile(player_id: int) -> int | None:
         except (TypeError, ValueError):
             continue
     return round(sum(values) / len(values)) if values else None
+
+
+def batter_overall_percentile(player_id: int) -> int | None:
+    """Straight (unweighted) average of every percentile column Savant
+    has for this batter this season, rounded to a whole number — "kinda
+    like an overall in NHL 25 or MLB The Show." None if the batter has
+    no row yet (e.g. a just-called-up rookie Savant hasn't processed a
+    leaderboard entry for) or every column on his row is blank."""
+    return _overall_percentile("batter", player_id)
+
+
+def pitcher_overall_percentile(player_id: int) -> int | None:
+    """Same idea as batter_overall_percentile, off the separate pitcher
+    percentile-rankings table — session request: "add the same thing
+    for Baseball Pitcher." Genuinely different columns (xERA, fastball
+    velo/spin, curve spin instead of sprint speed/OAA/bat speed/etc.),
+    which is exactly why this reads from Savant's own type=pitcher table
+    rather than reusing the batter one — same averaging rule either
+    way, every populated percentile column on that row, unweighted."""
+    return _overall_percentile("pitcher", player_id)
