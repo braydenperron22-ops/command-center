@@ -375,6 +375,19 @@ def is_clickbait(headline: str) -> bool:
 # for something genuinely major that doesn't fit any named category, and
 # gets its own small theme.py addition.
 #
+# CONFLICT added — session report on a real live example ("Oil prices
+# jump more than 6% after Trump says U.S. will hit Iran hard" landed as
+# plain MARKET — "that trump headline should also be breaking news").
+# Exactly the same failure shape TARIFFS was added to fix (see that
+# category's own comment right below): a real war/military-escalation
+# headline with a genuine, quantified market reaction had nowhere named
+# to land — MACRO_SHOCK is worded around crashes/halts, not geopolitical
+# conflict, so the model defaulted to safe/routine MARKET (always
+# important=False, see _apply_verdict) rather than reaching for the
+# vague BREAKING catch-all, even though a 6% oil move from a real
+# military threat is exactly the kind of thing that should render as a
+# red "breaking" toast, not a black "market news" one.
+#
 # TARIFFS added — session report: a real tariff headline wasn't getting
 # treated as breaking news when it should have been. There was no named
 # category for it, so a genuinely major tariff/trade-restriction story
@@ -391,6 +404,7 @@ _AI_VERDICT_LABELS = {
     "MERGERS": "Mergers",
     "MILESTONE": "Milestone",
     "TARIFFS": "Tariffs",
+    "CONFLICT": "Conflict",
     "BREAKING": "Breaking News",
 }
 _AI_VALID_VERDICTS = {"REJECT", "MARKET"} | set(_AI_VERDICT_LABELS)
@@ -627,7 +641,17 @@ _CLASSIFICATION_CRITERIA = (
     "counts even without a numeric rate attached — the threat itself, from someone who can "
     "actually act on it, is the concrete event, not something to wait on a number for. Does NOT "
     "include vague 'trade tension' scene-setting, unnamed 'officials discuss/consider' framing, "
-    "or third-party/analyst speculation about what a government might do), MARKET "
+    "or third-party/analyst speculation about what a government might do), CONFLICT (a real "
+    "act of war or military conflict — an actual military strike, attack, invasion, or a "
+    "genuinely escalating armed conflict — from an actual government/military actor, where the "
+    "headline also names a clear, quantified market reaction: a specific commodity, index, or "
+    "currency move, e.g. 'Oil prices jump 6% after [country] strikes...'. A credible, on-record "
+    "THREAT of imminent military action from an actual head of state or government official with "
+    "the authority to order it counts too, same standard as TARIFFS' own threat rule — the threat "
+    "itself is the concrete event. Does NOT include vague 'tensions rise'/'fears grow' scene-"
+    "setting, unnamed-official speculation, or a recap/analysis of an already-known ongoing "
+    "conflict with no new escalation — those stay MARKET at best, or REJECT per the retrospective-"
+    "analysis rule above), MARKET "
     "(real, routine financial news that still has to clear a real quality bar, not just 'finance-"
     "adjacent and not obviously rejectable': genuinely informational — reports a concrete "
     "development, not vague scene-setting; simple enough to actually read and understand at a "

@@ -1172,7 +1172,7 @@ html, body, [class*="css"] {
    reused on .news-feed-row (below) for just a left-border accent color,
    and that row must NOT pick up this solid pill background too. */
 /* news.decide's AI catch-all — something genuinely breaking that
-   doesn't fit any of the seven named categories below. */
+   doesn't fit any of the eight named categories below. */
 .news-alert-tag.news-cat-breaking-news { background: rgba(255,105,97,0.9); color: #4d0f0d; }
 .news-alert-tag.news-cat-fed-boc { background: rgba(191,90,242,0.9); color: #2b0f3d; }
 .news-alert-tag.news-cat-data-surprise { background: rgba(90,200,250,0.9); color: #0a2c3d; }
@@ -1182,6 +1182,13 @@ html, body, [class*="css"] {
 .news-alert-tag.news-cat-mergers { background: rgba(255,159,10,0.9); color: #4d2c00; }
 .news-alert-tag.news-cat-milestone { background: rgba(100,210,255,0.9); color: #0a2c3d; }
 .news-alert-tag.news-cat-tariffs { background: rgba(88,86,214,0.9); color: #17153d; }
+/* Deliberately a deeper, more saturated red than breaking-news/severe-
+   weather's shared coral (rgba(255,105,97,...)) — session request
+   added this category specifically because a real war/military-strike
+   headline reads as more severe than an ordinary breaking story, and
+   sharing the exact same color would erase that distinction at a
+   glance. */
+.news-alert-tag.news-cat-conflict { background: rgba(215,0,21,0.9); color: #ffd6d2; }
 .news-alert-tag.news-cat-severe-weather { background: rgba(255,105,97,0.9); color: #4d0f0d; }
 .news-alert-tag.news-cat-weather-tracking { background: rgba(100,210,255,0.9); color: #0a2c3d; }
 
@@ -1960,6 +1967,7 @@ html, body, [class*="css"] {
 .news-feed-row.news-cat-mergers { border-left-color: #FF9F0A; }
 .news-feed-row.news-cat-milestone { border-left-color: #64D2FF; }
 .news-feed-row.news-cat-tariffs { border-left-color: #5856D6; }
+.news-feed-row.news-cat-conflict { border-left-color: #D70015; }
 /* Today page's local-incidents section (local_news_client) — amber,
    distinct from every news.py category above since it's a completely
    separate, non-financial feed. */
