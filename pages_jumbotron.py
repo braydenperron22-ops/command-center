@@ -311,6 +311,33 @@ def _side_color(sport: str, match: dict | None, side: dict) -> tuple[int, int, i
     if match is None:
         return _OPPONENT_FALLBACK_RGB
     return scores_client.team_color(match["competition"], side["name"]) or _OPPONENT_FALLBACK_RGB
+
+
+# Session request: the batter's new Savant "OVERALL" percentile average
+# (see savant_client.batter_overall_percentile) should use "the baseball
+# savant type of formatting where a hundred, like the best of the best,
+# is red and the worst, or a zero, is blue." A continuous gradient, not
+# the fixed hot/cold pulse the rest of this card uses (that's a
+# streak/deviation signal — "better/worse than usual right now" — this
+# is a stable season-quality score, closer to Savant's own percentile
+# bar chart than to a hot streak). Two-segment linear blend through
+# --bone (this card's own plain-white stat color) at the midpoint, so a
+# perfectly average player's number looks exactly like every other
+# unstyled stat on this card, and only actually diverges toward red or
+# blue the further it sits from average — same idea ColorBrewer's RdBu
+# diverging scale uses, which is what Savant's own chart approximates.
+_SAVANT_COLD_RGB = (61, 133, 217)
+_SAVANT_MID_RGB = (244, 241, 232)  # --bone
+_SAVANT_HOT_RGB = (200, 40, 40)
+
+
+def _savant_gradient_color(pct: int) -> str:
+    pct = max(0, min(100, pct))
+    lo, hi, t = (_SAVANT_COLD_RGB, _SAVANT_MID_RGB, pct / 50) if pct <= 50 else (_SAVANT_MID_RGB, _SAVANT_HOT_RGB, (pct - 50) / 50)
+    r, g, b = (round(lo[i] + (hi[i] - lo[i]) * t) for i in range(3))
+    return f"rgb({r},{g},{b})"
+
+
 # Pregame situation-strip label, per sport — was a hardcoded "FIRST
 # PITCH"/"PUCK DROP" binary ternary before the Saints, which would have
 # wrongly shown "PUCK DROP" for a football game.
@@ -537,8 +564,8 @@ def _held_matchup(game_id: int, matchup: dict | None, half_marker: str) -> dict 
 # Session request: "add conditional formatting to the strike% value for
 # pitchers so i can see at a glance if a pitcher is flowing or is
 # struggling to find the zone" — same fire/ice hot-cold treatment the
-# batter's OPS stats already get (_ops_heat/_vs_pitcher_heat in
-# sports_client.py), reusing col()'s existing heat plumbing rather than
+# batter's OPS stats already get (_vs_pitcher_heat/_batter_season_heat
+# in sports_client.py), reusing col()'s existing heat plumbing rather than
 # adding a new visual language. League-average strike rate sits around
 # 63-64%, so thresholds sit a healthy distance either side of that with
 # a dead zone in between (normal outings shouldn't flicker orange/blue).
@@ -611,22 +638,24 @@ def _current_matchup_html(game_id: int) -> str:
     # (value, label) pairs apply, skipping any that came back None.
     # Session request: "move that count below the other pitcher stats"
     # — `stat_rows` is a list of rows, each a list of (value, label,
-    # heat) triples, so a pitcher can get ERA/PITCHES on one row and B-S
-    # on its own row underneath, while a batter's single-row OPS is
-    # unaffected. Later session request ("does espn show hot streaks or
-    # anything? yes please") added the batter's own second row: rolling
-    # last-15 OPS (the "hot/cold right now" proxy) beside career
-    # at-bats vs this exact pitcher — each already None'd out by
-    # sports_client when there's no last-15 sample or no history vs
-    # this pitcher, so `stats` filtering them out here is enough, no
-    # extra branch needed. Follow-up request added `heat` ("hot"/
-    # "cold"/None from sports_client's _ops_heat/_vs_pitcher_heat) —
-    # None for pitches/B-S, which aren't judged hot/cold at all. A
-    # second follow-up request extended heat to season OPS/ERA too
-    # (sports_client's _batter_season_heat/_pitcher_season_heat, a
-    # delta off the player's own career line rather than a fixed
-    # threshold), so those two now pass a real heat value instead of
-    # None — everything else is unaffected.
+    # heat, style) tuples, so a pitcher can get ERA/PITCHES on one row
+    # and STRIKE% on its own row underneath, while a batter's single-row
+    # OPS is unaffected. Later session request ("does espn show hot
+    # streaks or anything? yes please") added the batter's own second
+    # row: career at-bats vs this exact pitcher, already None'd out by
+    # sports_client when there's no history vs this pitcher, so `stats`
+    # filtering them out here is enough, no extra branch needed. Follow-
+    # up request added `heat` ("hot"/"cold"/None from sports_client's
+    # _vs_pitcher_heat) — None for pitches/strike%, which aren't judged
+    # hot/cold at all. A second follow-up request extended heat to
+    # season OPS/ERA too (sports_client's _batter_season_heat/
+    # _pitcher_season_heat, a delta off the player's own career line
+    # rather than a fixed threshold). `style` was added for a later
+    # session request that replaced the batter's rolling last-15 OPS
+    # with a Savant percentile average formatted "like an overall" —
+    # continuous red/blue gradient rather than a fixed hot/cold class,
+    # so it needs a real inline style rather than another `heat` value
+    # (see _savant_gradient_color) — None for every other stat here.
     def col(tag: str, player: dict, stat_rows: list[list[tuple]], line: str | None = None) -> str:
         photo = (
             f'<img class="jumbo-live-matchup-photo" src="{html.escape(player["photo"])}" onerror="this.style.display=\'none\'" />'
@@ -637,10 +666,11 @@ def _current_matchup_html(game_id: int) -> str:
         for stats in stat_rows:
             blocks = "".join(
                 f'<div class="jumbo-live-matchup-stat-block">'
-                f'<div class="jumbo-live-matchup-stat{" jumbo-live-matchup-stat-" + heat if heat else ""}">{html.escape(str(value))}</div>'
+                f'<div class="jumbo-live-matchup-stat{" jumbo-live-matchup-stat-" + heat if heat else ""}"'
+                f'{f" style=\"color:{style}\"" if style else ""}>{html.escape(str(value))}</div>'
                 f'<div class="jumbo-live-matchup-stat-label">{html.escape(label)}</div>'
                 f"</div>"
-                for value, label, heat in stats
+                for value, label, heat, style in stats
                 if value is not None
             )
             if blocks:
@@ -662,16 +692,21 @@ def _current_matchup_html(game_id: int) -> str:
             f"</div>"
         )
 
+    overall = batter.get("overall_percentile")
+    overall_style = _savant_gradient_color(overall) if overall is not None else None
     batter_rows = [
-        [(batter.get("ops"), "OPS", batter.get("season_ops_heat"))],
+        [(batter.get("ops"), "OPS", batter.get("season_ops_heat"), None)],
         [
-            (batter.get("last15_ops"), "L15 OPS", batter.get("last15_heat")),
-            (batter.get("vs_pitcher"), "VS PITCHER", batter.get("vs_pitcher_heat")),
+            (overall, "OVERALL", None, overall_style),
+            (batter.get("vs_pitcher"), "VS PITCHER", batter.get("vs_pitcher_heat"), None),
         ],
     ]
     pitcher_rows = [
-        [(pitcher.get("era"), "ERA", pitcher.get("season_era_heat")), (pitcher.get("pitches"), "PITCHES", None)],
-        [(strike_pct, "STRIKE%", strike_pct_heat)],
+        [
+            (pitcher.get("era"), "ERA", pitcher.get("season_era_heat"), None),
+            (pitcher.get("pitches"), "PITCHES", None, None),
+        ],
+        [(strike_pct, "STRIKE%", strike_pct_heat, None)],
     ]
     return (
         f'<div class="jumbo-leaders"><div class="jumbo-sl">Current Matchup</div>'

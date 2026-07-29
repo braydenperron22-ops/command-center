@@ -18,6 +18,7 @@ import streamlit as st
 import data_health
 import fetch_throttle
 import persisted_state
+import savant_client
 from config import TIMEZONE
 
 MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
@@ -1180,8 +1181,8 @@ def _fetch_mlb_player_season_stat_raw(player_id: int, group: str) -> dict:
 # Session request: "do the same thing with the players season ops
 # compared to his career average... same with pitchers but opposite
 # rules lower = hot." A delta off the player's OWN career line (not a
-# fixed threshold like L15_OPS_HOT above) — "hot" here means "better
-# than his own normal," which a flat threshold can't tell you (an
+# fixed threshold like VS_PITCHER_HOT_AVG below) — "hot" here means
+# "better than his own normal," which a flat threshold can't tell you (an
 # already-great hitter having a merely-average year would falsely read
 # "hot" under a fixed cutoff).
 SEASON_OPS_DELTA_HOT = 0.060
@@ -1231,27 +1232,6 @@ def _mlb_headshot_url(player_id: int) -> str:
     return _MLB_HEADSHOT_URL.format(player_id=player_id)
 
 
-@st.cache_data(ttl=LIVE_DETAIL_CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_mlb_player_last15_raw(player_id: int) -> dict:
-    """This batter's rolling last-15-games hitting line — session
-    request ("does espn show hot streaks or anything?"): MLB Stats API
-    has no literal hitting-streak field, but "lastXGames" is the same
-    rolling-window proxy real broadcasts show ("hitting .350 over his
-    last 15"). {} if the API genuinely has none yet (a
-    September call-up with fewer than 15 games played, all-star break
-    with none recent, etc.), not just on a fetch failure."""
-    fetch_throttle.wait_turn()
-    resp = requests.get(
-        PEOPLE_URL.format(player_id=player_id),
-        params={"hydrate": "stats(group=[hitting],type=[lastXGames],limit=15)"},
-        timeout=10,
-    )
-    resp.raise_for_status()
-    people = resp.json().get("people") or []
-    stats = (people[0].get("stats") if people else None) or []
-    splits = stats[0].get("splits") if stats else []
-    return splits[0].get("stat", {}) if splits else {}
-
 
 @st.cache_data(ttl=LIVE_DETAIL_CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_mlb_vs_pitcher_raw(batter_id: int, pitcher_id: int) -> dict:
@@ -1278,30 +1258,13 @@ def _fetch_mlb_vs_pitcher_raw(batter_id: int, pitcher_id: int) -> dict:
 
 # Session request: "make those stats fire coloured or ice coloured if
 # theyve been hot or cold lately... if its in normal range just make it
-# white." Thresholds picked around a real everyday-regular's OPS
-# (~.720-ish league average) with a wide dead zone in between so normal
-# variance doesn't flicker orange/blue — only a real, sustained
-# stretch. "hot"/"cold"/None (None = plain white, no animation).
-L15_OPS_HOT = 0.900
-L15_OPS_COLD = 0.600
-# vs-pitcher runs on far fewer at-bats than a 15-game rolling line, so
-# it gets its own (wider) thresholds plus a minimum sample size — a
-# single 1-for-1 shouldn't read as "on fire."
+# white." vs-pitcher runs on far fewer at-bats than a full season, so
+# it gets a wide dead zone plus a minimum sample size — a single 1-for-1
+# shouldn't read as "on fire." "hot"/"cold"/None (None = plain white,
+# no animation).
 VS_PITCHER_HOT_AVG = 0.350
 VS_PITCHER_COLD_AVG = 0.150
 VS_PITCHER_MIN_AB = 5
-
-
-def _ops_heat(ops_str) -> str | None:
-    try:
-        ops = float(ops_str)
-    except (TypeError, ValueError):
-        return None
-    if ops >= L15_OPS_HOT:
-        return "hot"
-    if ops <= L15_OPS_COLD:
-        return "cold"
-    return None
 
 
 def _vs_pitcher_heat(hits, at_bats) -> str | None:
@@ -1366,8 +1329,8 @@ def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
 
 
 def fetch_mlb_live_matchup(game_id: int) -> dict | None:
-    """{"batter": {"id", "name", "ops", "season_ops_heat", "last15_ops",
-    "last15_heat", "vs_pitcher", "vs_pitcher_heat", "photo"}, "pitcher":
+    """{"batter": {"id", "name", "ops", "season_ops_heat",
+    "overall_percentile", "vs_pitcher", "vs_pitcher_heat", "photo"}, "pitcher":
     {"id", "name", "era", "season_era_heat", "pitches", "balls",
     "strikes", "line", "photo"}} for whoever's actually at the plate/on
     the mound right now — session request: "during the game can you make
@@ -1377,32 +1340,37 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     batter stat to AVG in the same request, then "keep ops, screw avg"
     put it right back) and then "how many of the pitches have been
     balls and how many have been strikes over the entire outing."
-    "last15_ops"/"vs_pitcher" added for a later session request ("does
-    espn show hot streaks or anything?") — see
-    _fetch_mlb_player_last15_raw/_fetch_mlb_vs_pitcher_raw for why those
-    two and not a literal hitting-streak count. All four "_heat" fields
-    ("hot"/"cold"/None) came from two back-to-back follow-up requests to
-    color-pulse the ones running hot or cold — computed here rather
-    than in pages_jumbotron so the thresholds/deltas live next to the
-    stats they're judging. "season_ops_heat"/"season_era_heat" (the
-    second request: "same thing with the players season ops compared to
-    his career average... same with pitchers but opposite rules lower =
-    hot") are a DELTA off the player's own career line
-    (_batter_season_heat/_pitcher_season_heat), not a fixed threshold
-    like last15's — "hot" means "better than his own normal," which is
-    a different question than last15/vs_pitcher's absolute cutoffs.
+    "vs_pitcher" added for a later session request ("does espn show hot
+    streaks or anything?") — see _fetch_mlb_vs_pitcher_raw for why that
+    and not a literal hitting-streak count. Its "_heat" field ("hot"/
+    "cold"/None) came from a follow-up request to color-pulse it when
+    running hot or cold — computed here rather than in pages_jumbotron
+    so the thresholds/deltas live next to the stat they're judging.
+    "season_ops_heat"/"season_era_heat" (a second follow-up: "same thing
+    with the players season ops compared to his career average... same
+    with pitchers but opposite rules lower = hot") are a DELTA off the
+    player's own career line (_batter_season_heat/_pitcher_season_heat),
+    not a fixed threshold like vs_pitcher's — "hot" means "better than
+    his own normal," a different question than vs_pitcher's absolute
+    cutoff. "overall_percentile" replaced the original rolling last-15-
+    games OPS ("last15_ops"/"last15_heat") per a later session request:
+    "instead of the last fifteen OPS... replace it with the average of
+    every single one of their percentiles" from Baseball Savant — see
+    savant_client.batter_overall_percentile's own docstring for why a
+    plain average is meaningful there and what "every single one" means.
     Reuses the same cached linescore fetch_mlb_live_detail already
     pulls this rerun (no extra request for the matchup itself), one
     small extra request each for the two players' own season+career
     stat lines (both come back in the same hydrate call — see
-    _fetch_mlb_player_raw), the batter's last-15 line, the batter's
-    vs-pitcher history, plus one boxscore request for the pitcher's
-    game-total pitch/ball/strike counts. None on any fetch failure or
-    once there's genuinely no one at the plate/mound to name (the
-    linescore payload omits offense/defense between innings). Uses the
-    same _mlb_linescore_delayed snapshot as fetch_mlb_live_detail (see
-    its own docstring) so the matchup shown here never gets ahead of
-    the situation strip above it."""
+    _fetch_mlb_player_raw), the batter's vs-pitcher history, plus one
+    boxscore request for the pitcher's game-total pitch/ball/strike
+    counts (the Savant percentile lookup itself is a long-TTL cached
+    league-wide table, not a per-matchup request — see savant_client.py).
+    None on any fetch failure or once there's genuinely no one at the
+    plate/mound to name (the linescore payload omits offense/defense
+    between innings). Uses the same _mlb_linescore_delayed snapshot as
+    fetch_mlb_live_detail (see its own docstring) so the matchup shown
+    here never gets ahead of the situation strip above it."""
     try:
         data = _mlb_linescore_delayed(game_id)
     except Exception:
@@ -1419,7 +1387,6 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     # asking for the career line too costs no extra HTTP call.
     batter_career = _fetch_mlb_player_stat_raw(batter["id"], "hitting", "career")
     pitcher_career = _fetch_mlb_player_stat_raw(pitcher["id"], "pitching", "career")
-    last15 = _fetch_mlb_player_last15_raw(batter["id"])
     vs_pitcher = _fetch_mlb_vs_pitcher_raw(batter["id"], pitcher["id"])
     # "0-0" (no career at-bats vs this pitcher) reads as a real stat, not
     # "no history yet" — only show it once there's an actual at-bat on record.
@@ -1430,8 +1397,7 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
             "name": batter["fullName"],
             "ops": batter_stat.get("ops"),
             "season_ops_heat": _batter_season_heat(batter_stat.get("ops"), batter_career.get("ops")),
-            "last15_ops": last15.get("ops"),
-            "last15_heat": _ops_heat(last15.get("ops")),
+            "overall_percentile": savant_client.batter_overall_percentile(batter["id"]),
             "vs_pitcher": vs_pitcher_line,
             "vs_pitcher_heat": _vs_pitcher_heat(vs_pitcher.get("hits"), vs_pitcher.get("atBats")),
             "photo": _mlb_headshot_url(batter["id"]),
