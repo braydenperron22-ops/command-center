@@ -923,37 +923,16 @@ def _agenda_clause(now: datetime) -> tuple[int, str] | None:
     return 5, text
 
 
-# Session context: "when you see customer experience associate central
-# [on the calendar], that basically means I have to be a teller for
-# like a couple hours during the day to cover lunch and stuff... make
-# sure the AI knows that, and it's like 'your fuck ass manager has you
-# doing CEA time today.'" A separate clause from _agenda_clause above,
-# not folded into it — the agenda clause already shows "Work at 9:00
-# AM" for this same event (calendar_client normalizes the real title
-# down to plain "Work" for display), which gives the AI no way to know
-# THIS specific shift is teller coverage specifically, or that it's
-# something Brayden genuinely resents. Priority 9 — above every other
-# clause (max elsewhere is 8) — since this should reliably make the cut
-# whenever it's actually on today's calendar, not get crowded out by a
-# routine weather/market fact.
-TELLER_COVERAGE_PRIORITY = 9
-
-
-def _teller_coverage_clause(now: datetime) -> tuple[int, str] | None:
-    calendars = st.secrets.get("CALENDARS")
-    if not calendars:
-        return None
-    events = [e for e in calendar_client.todays_events(calendars, now.date()) if not e["all_day"]]
-    coverage = [e for e in events if e.get("is_teller_coverage")]
-    if not coverage:
-        return None
-    times = ", ".join(e["start"].strftime("%I:%M %p").lstrip("0") for e in sorted(coverage, key=lambda e: e["start"]))
-    # Plain, neutral fact text — this also doubles as the mechanical
-    # fallback sentence if the AI call fails (see render()), so it has
-    # to read fine as-is, not like a note addressed to the AI. The
-    # "he genuinely hates this" framing lives in _ai_sentence's own
-    # prompt instructions instead, not folded in here.
-    return TELLER_COVERAGE_PRIORITY, f"scheduled for teller/CEA coverage today at {times}"
+# _teller_coverage_clause (priority 9, its own dedicated fact + AI
+# prompt instruction flagging teller/CEA coverage as something
+# genuinely resented) retired per session note: "I have teller coverage
+# like everyday so don't worry about needing to mention it anymore" —
+# happening literally every day means it no longer distinguishes today
+# from any other day, so there's nothing left worth a dedicated clause
+# or a special callout for; see _ai_sentence's own docstring for the
+# full history and calendar_client.py's own comment on the same
+# retirement. The plain "Work at 9:00 AM" _agenda_clause already shows
+# for this same event covers it now, same as any other ordinary shift.
 
 
 def _household_clause(now: datetime) -> tuple[int, str] | None:
@@ -1200,7 +1179,25 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     day, in a fun, silly, however they want kind of way") reframes the
     humor as being in service of actually keeping him informed, not a
     comedy bit that happens to have facts attached — genuinely useful
-    even on a morning with nothing funny to say."""
+    even on a morning with nothing funny to say.
+
+    Session note, the very next day: "I have teller coverage like
+    everyday so don't worry about needing to mention it anymore." The
+    previous paragraph's fix (soften from a mandated roast to a real-
+    but-optional beat) assumed teller/CEA coverage was still at least
+    an occasional, distinguishing fact worth a special callout — this
+    clarifies it isn't: happening literally every day means it carries
+    no more day-to-day signal than an ordinary shift does, so there's
+    nothing left to single out at all. The whole mechanism retired, not
+    just softened further: _teller_coverage_clause (and its dedicated
+    priority-9 fact) removed from morning_briefing.py entirely, this
+    prompt's teller/CEA paragraph removed outright rather than reworded
+    again, and calendar_client.py's own is_teller_coverage flag/
+    _TELLER_COVERAGE_KEYWORDS removed too (nothing else in the codebase
+    ever read that flag). The plain "Work at 9:00 AM" _agenda_clause
+    already surfaces for this same event is what's left — exactly the
+    same as any other ordinary shift, which is now an accurate
+    description of what this actually is."""
     facts = "; ".join(picked)
     weekday = now.strftime("%A")
     history_block = _recent_history_block(now)
@@ -1239,14 +1236,6 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         f"Background on {USER_FIRST_NAME}, for real specific jokes instead of generic ones — "
         f"reference it only when genuinely relevant to today's facts below, don't force a "
         f"mention in every brief: {USER_PROFILE}\n\n"
-        "If today's facts mention teller/CEA coverage specifically, that's something "
-        f"{USER_FIRST_NAME} genuinely resents (unlike his regular shifts, including a plain sales "
-        "one) — real material if you're in the mood for it, but not a required beat just because "
-        "it's on the calendar today, and not something that has to open the brief either. The "
-        "same complaint about the same target every single morning stops being funny fast — some "
-        "days a quick real jab is enough, some days it's not even worth a mention because "
-        "something else today is more interesting, and that's fine too. Your call, same as "
-        "everything else here.\n\n"
         f"{history_section}"
         f"Today is {weekday} — a real, given fact, not a guess. Comment on it, and on how it "
         "relates to the facts below (a work shift landing on a weekend is genuinely worth a real "
@@ -1286,7 +1275,6 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         (_air_clause, (now, air_quality)),
         (_commute_clause, (now,)),
         (_agenda_clause, (now,)),
-        (_teller_coverage_clause, (now,)),
         (_household_clause, (now,)),
         (_markets_clause, (now,)),
         (_daylight_clause, (now, weather)),
