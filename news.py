@@ -480,7 +480,28 @@ _last_tick_at: float = 0.0
 # re-classified after a restart still gets caught and skipped once its
 # hash is already on record from before.
 _seen_headlines: dict = dict(persisted_state.load("news_seen_headlines", {}))
-_news_baseline_done: bool = False
+# Session report: "I haven't received any earnings or anything, I've
+# received zero market news... investigate further." Root cause: this
+# flag governed whether get_new_alerts() below actually appends a kept,
+# newly-seen headline to `alerts` or just silently records it as seen —
+# exactly the "first call ever" guard _decided/_seen_headlines above
+# already learned needed to survive a restart (see their own comments
+# on this exact class of bug), except this one was still a plain
+# in-memory bool. Every real process restart (a redeploy — this repo
+# alone saw 9+ pushes over two days) reset it to False, so the very
+# next get_new_alerts() call re-ran the "establish a baseline, don't
+# alert on anything yet" branch — silently marking whatever was
+# genuinely new and toast-worthy at that exact moment as "seen" WITHOUT
+# ever appending it to `alerts`. That headline is then gone forever
+# (its hash is in the persisted seen-set now), never eligible to alert
+# on later either. Commute reminders were never affected — those come
+# from commute_reminder.check(), a wholly separate mechanism with its
+# own dedup — which is exactly why commute toasts kept firing while
+# market/news ones silently stopped, matching the actual report.
+# Persisted the same way, loaded once at import: the baseline only
+# ever needs to be established ONE time for the life of this feature,
+# not once per restart.
+_news_baseline_done: bool = persisted_state.load("news_baseline_done", False)
 
 
 def _hash(headline: str) -> str:
@@ -916,12 +937,17 @@ def fetch_headlines() -> list[dict]:
 
 def get_new_alerts() -> list[dict]:
     """Flags fresh headlines that qualify for the News page; only returns
-    ones not already alerted on, for the life of this process — not just
-    this browser session (see _seen_headlines/_news_baseline_done's own
-    comment for why a refresh must not be able to re-trigger the same
-    toast). Uses the same `decide()` verdict as the News page itself so
-    the breaking-news bar is just the News page's feed, surfaced the
-    moment each headline first appears.
+    ones not already alerted on, for the life of this DEPLOYMENT — not
+    just this process, and not just this browser session (see
+    _seen_headlines/_news_baseline_done's own comment for the full
+    history, including a real bug found from a "zero market news toasts
+    ever" session report: _news_baseline_done used to reset on every
+    process restart, silently eating whatever was genuinely new at that
+    exact moment rather than alerting on it — now persisted so the
+    baseline is only ever established once, not once per redeploy).
+    Uses the same `decide()` verdict as the News page itself so the
+    breaking-news bar is just the News page's feed, surfaced the moment
+    each headline first appears.
 
     Calls _run_individual_decide() first — this is the one call site
     that runs every rerun regardless of which page is up, so it's what
@@ -969,7 +995,9 @@ def get_new_alerts() -> list[dict]:
 
     if seen_changed:
         persisted_state.save("news_seen_headlines", seen)
-    _news_baseline_done = True
+    if not _news_baseline_done:
+        _news_baseline_done = True
+        persisted_state.save("news_baseline_done", True)
     # Session request: when several headlines qualify as new in the
     # same batch (e.g. a feed recovering from an outage and surfacing
     # everything it missed at once), line them up in the toast queue in
