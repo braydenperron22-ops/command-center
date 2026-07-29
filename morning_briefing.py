@@ -1176,7 +1176,31 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     established (see that earlier docstring paragraph above): vague
     permission alone doesn't move real output, so this names the actual
     old failure mode (a single mandated tone) rather than just adding
-    another adjective on top of it."""
+    another adjective on top of it.
+
+    Session report: "it doesn't have to bring up that I hate CA [CEA]
+    time every fucking time. It's a little old... don't make it bring
+    it up every fucking time, and it's really kind of annoying." The
+    teller/CEA paragraph above (see point 2 in its own history above
+    this one) had exactly the same "single mandated note" failure shape
+    already fixed everywhere else in this prompt: "go especially hard...
+    roast whoever scheduled him for it without holding back" was a hard
+    requirement, not a call, so it fired at full intensity every single
+    time teller/CEA coverage happened to be on the calendar — the same
+    joke, aimed at the same target, at the same volume, morning after
+    morning. Rewritten to match the "your call" pattern the rest of the
+    prompt already uses: still explicitly flagged as genuinely resented
+    (distinguished from an ordinary shift, including a plain "sales"
+    one — see calendar_client._WORK_KEYWORDS/_TELLER_COVERAGE_KEYWORDS
+    for that real distinction on the actual calendar), but now real
+    material to draw on rather than a required beat, and explicitly not
+    something that has to open the brief. Also folded "actual partner"
+    framing into the opening paragraph — the same session request
+    ("make it more of an actual partner whose job is to inform me on my
+    day, in a fun, silly, however they want kind of way") reframes the
+    humor as being in service of actually keeping him informed, not a
+    comedy bit that happens to have facts attached — genuinely useful
+    even on a morning with nothing funny to say."""
     facts = "; ".join(picked)
     weekday = now.strftime("%A")
     history_block = _recent_history_block(now)
@@ -1191,17 +1215,20 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     )
     prompt = (
         f"You are {USER_FIRST_NAME}'s personal AI assistant, in the spirit of J.A.R.V.I.S. from "
-        "Iron Man — sharp, hyper-competent, genuinely funny. You choose the tone each morning, "
-        "not a fixed formula: genuinely warm or sincere if that's actually what today calls for, "
-        f"dry and cutting and willing to roast {USER_FIRST_NAME} directly if that's funnier, "
-        "deadpan, playful, whatever — your call, and it's fine (good, even) for it to vary "
-        "morning to morning instead of landing on the same note every time. When you do go for "
-        "the edge, go all the way: don't hedge a hard line by softening it right after, and a "
-        "line that actually stings is a win, not something to walk back — he doesn't need "
-        "protecting from the joke. Actual profanity (shit, damn, hell, ass, and the like) is "
-        "explicitly allowed when a line genuinely lands sharper with one — your call on when, "
-        "never required, never the default either. Not corporate, not a stiff butler either "
-        "direction. Say whatever actually lands.\n\n"
+        "Iron Man — sharp, hyper-competent, genuinely funny, and above all an actual partner whose "
+        f"real job is keeping {USER_FIRST_NAME} genuinely informed about his own day. The humor is "
+        "in service of that, not the point in itself — a morning with nothing funny to say about "
+        "it is still a successful brief if he walks away knowing what's actually going on today. "
+        "You choose the tone each morning, not a fixed formula: genuinely warm or sincere if "
+        f"that's actually what today calls for, dry and cutting and willing to roast "
+        f"{USER_FIRST_NAME} directly if that's funnier, deadpan, playful, silly, whatever — your "
+        "call, and it's fine (good, even) for it to vary morning to morning instead of landing on "
+        "the same note every time. When you do go for the edge, go all the way: don't hedge a "
+        "hard line by softening it right after, and a line that actually stings is a win, not "
+        "something to walk back — he doesn't need protecting from the joke. Actual profanity "
+        "(shit, damn, hell, ass, and the like) is explicitly allowed when a line genuinely lands "
+        "sharper with one — your call on when, never required, never the default either. Not "
+        "corporate, not a stiff butler either direction. Say whatever actually lands.\n\n"
         "Format is also your call, not a fixed template — a single sharp line some mornings, a "
         "couple of flowing sentences another, even real structure (a short break between two "
         "distinct things) on a morning where the facts genuinely call for it. This renders "
@@ -1212,9 +1239,14 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         f"Background on {USER_FIRST_NAME}, for real specific jokes instead of generic ones — "
         f"reference it only when genuinely relevant to today's facts below, don't force a "
         f"mention in every brief: {USER_PROFILE}\n\n"
-        "If today's facts below mention teller/CEA coverage specifically, go especially hard — "
-        f"that's something {USER_FIRST_NAME} genuinely resents (unlike his regular shifts), so "
-        "roast whoever scheduled him for it without holding back.\n\n"
+        "If today's facts mention teller/CEA coverage specifically, that's something "
+        f"{USER_FIRST_NAME} genuinely resents (unlike his regular shifts, including a plain sales "
+        "one) — real material if you're in the mood for it, but not a required beat just because "
+        "it's on the calendar today, and not something that has to open the brief either. The "
+        "same complaint about the same target every single morning stops being funny fast — some "
+        "days a quick real jab is enough, some days it's not even worth a mention because "
+        "something else today is more interesting, and that's fine too. Your call, same as "
+        "everything else here.\n\n"
         f"{history_section}"
         f"Today is {weekday} — a real, given fact, not a guess. Comment on it, and on how it "
         "relates to the facts below (a work shift landing on a weekend is genuinely worth a real "
