@@ -11,6 +11,7 @@ beyond what those modules' own callers already pay for.
 import market_internals
 import market_yf_client
 import portfolio_client
+import prediction_markets_client
 import sports_client
 import air_quality_client
 import fuel_price_client
@@ -127,6 +128,25 @@ def build_internals_stat_items() -> list[dict]:
     rsp_spy = market_internals.price_ratio("RSP", "SPY")
     if rsp_spy:
         items.append({"text": f'RSP/SPY {rsp_spy["value"]:.3f}', "tone": "neutral"})
+    return items
+
+
+def build_prediction_market_stat_items() -> list[dict]:
+    """One compact item per tracked central bank (Fed/BoC/BoJ — see
+    prediction_markets_client.BANKS), naming the market's current
+    single most-likely outcome for its next meeting and that outcome's
+    own probability — the same rolling-contract data the Predictions
+    page shows in full, just the headline number here. Neutral tone:
+    "most likely" isn't inherently good or bad news the way a plain %
+    change is."""
+    items = []
+    for bank in prediction_markets_client.BANKS:
+        odds = prediction_markets_client.current_odds(bank)
+        if not odds:
+            continue
+        bucket, prob = prediction_markets_client.most_likely_outcome(odds)
+        label = prediction_markets_client.BUCKET_LABELS[bucket]
+        items.append({"text": f'{bank.upper()} {label} {prob * 100:.0f}%', "tone": "neutral"})
     return items
 
 

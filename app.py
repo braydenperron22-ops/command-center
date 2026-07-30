@@ -1,8 +1,8 @@
 """Personal command-center dashboard: ambient rotation across Home (macro
 data), Conflicts, News, Markets, Internals, Today, Household, Weather,
-Radar, Sports, Scores, and Portfolio — clock/weather header stays
-constant. Jumbotron (sports takeover) and Maintenance (diagnostics) are
-real pages too but deliberately excluded from the passive rotation —
+Radar, Sports, Scores, Portfolio, and Predictions — clock/weather header
+stays constant. Jumbotron (sports takeover) and Maintenance (diagnostics)
+are real pages too but deliberately excluded from the passive rotation —
 see PAGES in config.py and each page's own routing comments below for
 how they're reached instead (an automatic takeover / the J and D
 hotkeys)."""
@@ -31,12 +31,14 @@ import pages_maintenance
 import pages_markets
 import pages_news
 import pages_portfolio
+import pages_predictions
 import pages_radar
 import pages_scores
 import pages_sports
 import pages_today
 import pages_weather
 import payday_schedule
+import prediction_markets_client
 import sports_alerts
 import theme
 import toast_queue
@@ -742,7 +744,7 @@ _PAGE_LABELS = {
     "home": "Home", "conflicts": "Conflicts", "news": "News", "markets": "Markets",
     "internals": "Internals", "today": "Today", "household": "Household",
     "weather": "Weather", "radar": "Radar", "sports": "Sports", "scores": "Scores",
-    "portfolio": "Portfolio",
+    "portfolio": "Portfolio", "predictions": "Predictions",
 }
 
 # Invisible on the kiosk monitor — theme.py hides .mobile-nav entirely
@@ -1535,6 +1537,8 @@ with st.container(key="page_body"):
         _safe_render(pages_scores.render, _rotation_epoch)
     elif page == "portfolio":
         _safe_render(pages_portfolio.render)
+    elif page == "predictions":
+        _safe_render(pages_predictions.render)
     elif page == "maintenance":
         _safe_render(pages_maintenance.render)
     else:
@@ -1608,6 +1612,21 @@ try:
     new_alerts.extend(weather_alerts_bar.get_storm_proximity_alerts(now))
 except Exception:
     pass
+
+# Prediction-market rate-odds toasts — session request: "rolling rate
+# odds from polymarket/kalshi... news/toast alert on a big swing." Same
+# isolation reasoning as every other block here: a bug in one bank's
+# check must never take down another's, or real breaking-news alerts.
+# check_for_swing itself already returns None almost every call (see
+# its own docstring) — this only actually produces an alert on a real
+# consensus flip or a large probability move, not every rerun.
+for _pm_bank in prediction_markets_client.BANKS:
+    try:
+        swing = prediction_markets_client.check_for_swing(_pm_bank)
+        if swing:
+            new_alerts.append(prediction_markets_client.swing_alert(swing))
+    except Exception:
+        pass
 
 # Radar-based severe/tracking-started toast alerts (ec_radar.
 # severe_weather_alert / tracking_started_alert) removed along with the
@@ -1738,6 +1757,10 @@ try:
             pass
         try:
             stats.extend(ticker.build_internals_stat_items())
+        except Exception:
+            pass
+        try:
+            stats.extend(ticker.build_prediction_market_stat_items())
         except Exception:
             pass
         try:

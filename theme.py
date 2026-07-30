@@ -494,6 +494,61 @@ html, body, [class*="css"] {
     max-width: 46rem;
 }
 
+/* Predictions page — session request: "make it its own page for just
+   prediction market things." Same verdict-first shape as Market
+   Internals' own tiles (big tone-colored verdict, a plain-language
+   context line below it), plus a compact 5-row breakdown of every
+   outcome bucket underneath, since "expected outcome" here means the
+   whole distribution, not just the single leading number. */
+.prediction-source-note {
+    font-size: 1rem;
+    color: #ABB2C4;
+    margin: -0.4rem 0 0.9rem;
+}
+.prediction-breakdown {
+    margin-top: 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.prediction-bar-row {
+    display: grid;
+    grid-template-columns: 5.5rem 1fr 3.2rem;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.95rem;
+    color: #ABB2C4;
+}
+.prediction-bar-label {
+    white-space: nowrap;
+}
+.prediction-bar-track {
+    background: rgba(255,255,255,0.08);
+    border-radius: 4px;
+    height: 0.6rem;
+    overflow: hidden;
+}
+.prediction-bar-fill {
+    display: block;
+    height: 100%;
+    background: #5AC8FA;
+    border-radius: 4px;
+}
+.prediction-bar-pct {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+/* The market's own current leading outcome — brighter text and a blue
+   fill matching the page's own accent, so it reads as "this one" at a
+   glance among the other four rows. */
+.prediction-bar-row-leading {
+    color: #F5F5F7;
+    font-weight: 600;
+}
+.prediction-bar-row-leading .prediction-bar-fill {
+    background: #0A84FF;
+}
+
 .tile-extra {
     margin-top: 0.5rem;
     padding-top: 0.5rem;
@@ -1182,6 +1237,10 @@ html, body, [class*="css"] {
 .news-alert-tag.news-cat-mergers { background: rgba(255,159,10,0.9); color: #4d2c00; }
 .news-alert-tag.news-cat-milestone { background: rgba(100,210,255,0.9); color: #0a2c3d; }
 .news-alert-tag.news-cat-tariffs { background: rgba(88,86,214,0.9); color: #17153d; }
+/* Same blue as the Predictions page's own beacon (page-title-
+   predictions) — a rate-odds swing toast and the page it came from
+   should read as visually related. */
+.news-alert-tag.news-cat-rate-odds { background: rgba(10,132,255,0.9); color: #002447; }
 /* Deliberately a deeper, more saturated red than breaking-news/severe-
    weather's shared coral (rgba(255,105,97,...)) — session request
    added this category specifically because a real war/military-strike
@@ -1297,6 +1356,10 @@ html, body, [class*="css"] {
 .page-title-portfolio::before {
     background: #A78BFA;
     box-shadow: 0 0 8px 1px rgba(167,139,250,0.5);
+}
+.page-title-predictions::before {
+    background: #0A84FF;
+    box-shadow: 0 0 8px 1px rgba(10,132,255,0.5);
 }
 /* Deliberately muted grey rather than another vibrant page color —
    this page isn't part of the normal rotation (see pages_maintenance's
@@ -2389,6 +2452,7 @@ html, body, [class*="css"] {
 .mobile-nav-item-sports { color: #5E5CE6 !important; }
 .mobile-nav-item-scores { color: #30D5C8 !important; }
 .mobile-nav-item-portfolio { color: #A78BFA !important; }
+.mobile-nav-item-predictions { color: #0A84FF !important; }
 .mobile-nav-item-maintenance { color: #8E8E93 !important; }
 
 /* Screen picker (app.py) — session request: "bind the S key to a

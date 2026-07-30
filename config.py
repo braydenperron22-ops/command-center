@@ -170,12 +170,12 @@ YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 
 # --- Multi-page ambient rotation -------------------------------------------
 # Home / Conflicts / News / Markets / Internals / Today / Household /
-# Weather / Radar / Sports / Scores / Portfolio cycle the same way US/CA
-# already does: a time.time()-based index, no Streamlit multipage chrome,
-# no scrolling.
+# Weather / Radar / Sports / Scores / Portfolio / Predictions cycle the
+# same way US/CA already does: a time.time()-based index, no Streamlit
+# multipage chrome, no scrolling.
 PAGES = [
     "home", "conflicts", "news", "markets", "internals", "today", "household",
-    "weather", "radar", "sports", "scores", "portfolio",
+    "weather", "radar", "sports", "scores", "portfolio", "predictions",
 ]
 PAGE_ROTATION_SECONDS = 5 * 60
 
