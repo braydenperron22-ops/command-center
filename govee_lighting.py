@@ -21,6 +21,23 @@ import scenery
 from config import AQI_EXTREME, GOVEE_LIGHT, GOVEE_PLUG
 
 MIN_CALL_GAP_SECONDS = 10
+# Session request: "how can we make the turn off plug system more
+# dynamic" -> "the grace period one." sync_plug's `want_on` used to cut
+# power the instant ANY of its conditions (game/leave-timer/storm/
+# daylight window) flipped false, with only game_live getting its own
+# bespoke softening (sports_alerts.plug_should_stay_on's own postgame
+# hold, TAKEOVER_POSTGAME_MINUTES — 15 minutes, tuned specifically for
+# "give someone time to read the recap," not a general-purpose buffer).
+# leave_timer_active, storm_active, and the plain daylight-window
+# boundary had no grace at all — any of those ending mid-rerun snapped
+# the plug straight off. This applies one general hold at the sync_plug
+# level instead, after whichever specific condition contributed, so all
+# four get the same softened landing without teaching each individual
+# signal its own copy of "wait a bit before actually committing to
+# off." Deliberately shorter than the postgame-specific hold above (5
+# min vs. 15) — this is "don't cut power the instant something ends,"
+# not "give a whole recap time to be read."
+PLUG_OFF_GRACE_SECONDS = 5 * 60
 # The breaking-news pulse alternates color roughly once per second (capped
 # by the dashboard's own 1-second rerun cadence anyway), which the standard
 # 10s gap would mostly swallow — but breaking alerts are rare (classify()
@@ -164,6 +181,7 @@ _brightness_step_ts: float = 0.0
 _market_significant: bool = False
 _plug_applied: bool | None = None
 _plug_last_call_ts: float = 0.0
+_plug_last_true_at: float | None = None
 
 
 def _brightness_envelope(now: datetime, base_brightness: int, sunset: datetime | None) -> int:
@@ -541,10 +559,9 @@ def sync_plug(
     a Jays/Habs game is live or in its postgame recap (session request:
     "the smart plug can't turn off if there's a live game," later "the
     second the end of game recap happened the smart plug turned off...
-    shouldn't have happened for at least 5 mins"). Re-checked fresh
-    every rerun, so it reverts to the normal daylight window as soon as
-    that hold ends — or immediately, if the recap's dismissed early via
-    the jumbotron's own End Session button.
+    shouldn't have happened for at least 5 mins" — that specific gap
+    already gets its own long, sport-tuned hold via the postgame phase,
+    see plug_should_stay_on's own docstring).
 
     `leave_timer_active` (see commute_reminder.leave_headline_active) —
     same kind of override, for the same reason: an early shift's 2-hour
@@ -554,9 +571,6 @@ def sync_plug(
     none of that matters if the monitor has no power yet. Session
     report: "my girlfriend worked at 6am this morning and I had to
     manually turn on the plug so she could see the leave in timer."
-    Same re-checked-every-rerun behavior as game_live: reverts to the
-    normal daylight window the instant the countdown ends, not held
-    open any longer than the timer itself needs.
 
     `storm_active` (see sync_lights' own storm_phase param, which the
     caller derives this from — true for any of approaching/here/
@@ -566,13 +580,28 @@ def sync_plug(
     game_live/leave_timer_active: the monitor needs power for the
     storm's own toast alerts and the light's own red flash to actually
     be visible/legible, same reasoning as leave_timer_active existing
-    for exactly that purpose already. Re-checked every rerun, so it
-    reverts to the normal daylight window immediately once the storm
-    phase clears (nothing left active, "leaving"'s own tail included)."""
-    global _plug_applied, _plug_last_call_ts
+    for exactly that purpose already.
+
+    None of the three overrides (or the plain daylight window itself)
+    cut power the instant they stop being true anymore — see
+    PLUG_OFF_GRACE_SECONDS's own comment ("how can we make the turn off
+    plug system more dynamic" -> "the grace period one"): the plug
+    stays on for a short buffer after the LAST moment any condition
+    genuinely wanted it on, re-armed fresh every time one does, so a
+    condition flickering true/false right at its own boundary (a storm
+    phase clearing, a leave countdown ending, last_light passing) can't
+    cause a premature cutoff either. Still reverts to fully off once
+    that whole buffer genuinely elapses with nothing wanting it on."""
+    global _plug_applied, _plug_last_call_ts, _plug_last_true_at
     if not st.secrets.get("GOVEE_API_KEY") or first_light is None or last_light is None:
         return
-    want_on = game_live or leave_timer_active or storm_active or (first_light <= now < last_light)
+    raw_want_on = game_live or leave_timer_active or storm_active or (first_light <= now < last_light)
+    now_ts = time.time()
+    if raw_want_on:
+        _plug_last_true_at = now_ts
+        want_on = True
+    else:
+        want_on = _plug_last_true_at is not None and (now_ts - _plug_last_true_at) < PLUG_OFF_GRACE_SECONDS
     if _plug_applied == want_on:
         return
     if time.time() - _plug_last_call_ts < MIN_CALL_GAP_SECONDS:
