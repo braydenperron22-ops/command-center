@@ -1,17 +1,18 @@
-"""Predictions: rolling, per-meeting rate-decision odds for the central
-banks this app tracks (Federal Reserve, Bank of Canada, Bank of Japan —
-see prediction_markets_client.BANKS for why not every major central
-bank; ECB/BoE don't currently have an actively-maintained version of
-this same market series). Session request: "make it its own page for
-just prediction market things. start by doing this for the biggest
-central banks and the 'expected outcome for them.'"
+"""Predictions: rolling, per-meeting rate-decision odds for every central
+bank prediction_markets_client.BANKS actually covers. Session history:
+"make it its own page for just prediction market things. start by doing
+this for the biggest central banks" (shipped first for Fed/BoC/BoJ) ->
+"I want all of the rate odds as many as you can find... I want them all
+on the side with the country name and then the most likely outcome and
+the percentage. So it's like, what is expected of them?"
 
-One tile per bank, verdict-first — same "the meaning has to be readable
-from across the room" philosophy pages_internals.py already established
-for this app's other probability-flavored page: the market's single
-most-likely outcome and its own probability lead each tile, the full
-five-way breakdown (50+/25 bps either direction, or no change) sits
-underneath as supporting context, not the headline.
+Two-part layout: FEATURED_BANKS keep the original detailed tile (full
+verdict + the whole outcome breakdown, same "readable from across the
+room" verdict-first shape pages_internals.py already established) in
+the wider main column; every bank in BANKS — featured ones included, so
+the side list is genuinely complete on its own — gets one compact row
+(country, most likely outcome, probability) in a side list, sorted by
+whichever meeting is coming up soonest.
 """
 
 import html
@@ -20,6 +21,13 @@ from datetime import datetime
 import streamlit as st
 
 import prediction_markets_client as pmc
+
+# The original three, kept as the detailed hero tiles — every other
+# bank BANKS covers gets the compact side-list treatment only, since a
+# full 5-way breakdown tile per bank wouldn't fit for a roster this
+# size (see the session request behind this file's own docstring: "as
+# many as you can find," not "in this much detail for all of them").
+FEATURED_BANKS = ["fed", "boc", "boj"]
 
 
 def _format_meeting_date(iso_date: str | None) -> str:
@@ -78,6 +86,32 @@ def _bank_tile_html(bank: str) -> str:
     )
 
 
+def _side_list_html() -> str:
+    rows = []
+    entries = []
+    for bank in pmc.BANKS:
+        odds = pmc.current_odds(bank)
+        if not odds:
+            continue
+        bucket, prob = pmc.most_likely_outcome(odds)
+        entries.append((odds.get("end_date") or "", bank, bucket, prob))
+    # Soonest meeting first — draws the eye to whatever's actually
+    # coming up next, not an arbitrary or alphabetical order.
+    entries.sort(key=lambda e: e[0])
+    for _, bank, bucket, prob in entries:
+        country = pmc.BANK_COUNTRIES[bank]
+        rows.append(
+            f'<div class="prediction-row">'
+            f'<span class="prediction-row-country">{html.escape(country)}</span>'
+            f'<span class="prediction-row-outcome">{html.escape(pmc.BUCKET_LABELS[bucket])}</span>'
+            f'<span class="prediction-row-pct">{prob * 100:.0f}%</span>'
+            f"</div>"
+        )
+    if not rows:
+        return '<div class="tile-prev">data unavailable</div>'
+    return "".join(rows)
+
+
 def render() -> None:
     st.markdown('<div class="page-title page-title-predictions">Predictions</div>', unsafe_allow_html=True)
     st.markdown(
@@ -86,7 +120,17 @@ def render() -> None:
         unsafe_allow_html=True,
     )
 
-    cols = st.columns(len(pmc.BANKS))
-    for col, bank in zip(cols, pmc.BANKS):
-        with col:
-            st.markdown(_bank_tile_html(bank), unsafe_allow_html=True)
+    main_col, side_col = st.columns([3, 2])
+    with main_col:
+        tile_cols = st.columns(len(FEATURED_BANKS))
+        for col, bank in zip(tile_cols, FEATURED_BANKS):
+            with col:
+                st.markdown(_bank_tile_html(bank), unsafe_allow_html=True)
+    with side_col:
+        st.markdown(
+            f'<div class="tile prediction-side-tile">'
+            f'<div class="tile-label">ALL CENTRAL BANKS</div>'
+            f'<div class="prediction-side-list">{_side_list_html()}</div>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )

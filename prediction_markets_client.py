@@ -4,26 +4,37 @@ fedwatch" (CME's own FedWatch data turned out to be gated behind a paid,
 OAuth-only commercial API, confirmed live: no public JSON/CSV endpoint the
 way Baseball Savant's percentile leaderboard had) -> "what about rolling
 rate odds from polymarket/kalshi that switches contracts after one
-expires."
+expires" -> once shipped for just Fed/BoC/BoJ: "I want all of the rate
+odds as many as you can find... if that means finding a proper source
+for ECB or including other countries [beyond] more than three, I want
+them all."
 
 No API key, no auth: `gamma-api.polymarket.com/public-search` is a public
-GET endpoint. Confirmed live that searching "<bank> Decision in" reliably
-surfaces that bank's own clean per-meeting series — e.g. "Fed Decision in
-September?", each one a 5-way market (50+ bps cut / 25 bps cut / no
-change / 25 bps hike / 50+ bps hike) with a real `closed` flag and
+GET endpoint. Confirmed live that a bank-specific search query reliably
+surfaces that bank's own per-meeting series with a real `closed` flag and
 `endDate`. "Rolling" is just: fetch that search, drop anything already
-`closed`, sort what's left by `endDate`, and treat the earliest as
-"current" — no hardcoded month/date logic needed at all. The instant
-today's meeting closes, the same query naturally returns next month's as
-the new earliest-open entry.
+`closed`, sort what's left by `endDate`, and try each in order until one
+actually parses as a rate-decision market — no hardcoded month/date logic
+needed at all, and no reliance on a single fixed title wording either
+(see BANKS' own comment: title conventions genuinely differ bank to
+bank). The instant today's meeting closes, the same query naturally
+returns next month's as the new earliest-open entry.
 
-BANKS below is deliberately just Fed/BoC/BoJ, not every major central
-bank — confirmed live that ECB and BoE don't currently have an actively-
-maintained version of this same per-meeting series (their last
-per-meeting markets found were stale by a year+; only annual "hike/cut in
-2026" catch-all markets are currently open for them), so forcing them
-into this same shape would either be wrong or need an entirely different
-data treatment. Left out rather than faked.
+Two market shapes confirmed live, both handled by the same
+_bucket_for_question: most banks (Fed, BoC, BoJ, ECB, BoE, RBA, RBNZ,
+Mexico, RBI, Korea, Brazil) run a 5-way market — 50+/25 bps either
+direction, or no change. Two (Bank of Israel, South African Reserve
+Bank) only run a plain 3-way cut/hold/hike, no bps-level detail — a
+genuinely coarser market, not a parsing gap, so those banks' `outcomes`
+dict just comes back with "cut"/"hold"/"hike" keys instead of the usual
+five.
+
+Checked and found NOT to have a currently-open version of this same
+per-meeting series, so deliberately left out rather than faked: Swiss
+National Bank, Norges Bank (Norway), PBoC (China), Bank Indonesia,
+Turkey's CBRT, Riksbank (Sweden) — each either has no live rate-decision
+market on Polymarket at all right now, or (Turkey) only unrelated
+political/military markets came back for the same search terms.
 """
 
 import json
@@ -42,36 +53,64 @@ SEARCH_URL = "https://gamma-api.polymarket.com/public-search"
 # to chase every tick.
 CACHE_TTL_SECONDS = 20 * 60
 
+# bank key -> (search query, display name, country/region). Query
+# strings are each individually confirmed live to surface that bank's
+# real, currently-open per-meeting market — title WORDING genuinely
+# varies (e.g. ECB's own series is titled "ECB Interest Rates: <Month>
+# <Year>", not "<Bank> Decision in <Month>?" the way most others are),
+# which is exactly why current_odds() below validates structurally
+# (does it parse into a real rate-decision shape) rather than by
+# matching a fixed title pattern.
 BANKS = {
-    "fed": "Fed Decision in",
-    "boc": "Bank of Canada Decision in",
-    "boj": "Bank of Japan Decision in",
+    "fed": ("Fed Decision in", "Federal Reserve", "United States"),
+    "ecb": ("ECB Interest Rates", "European Central Bank", "Eurozone"),
+    "boe": ("Bank of England Decision in", "Bank of England", "United Kingdom"),
+    "boj": ("Bank of Japan Decision in", "Bank of Japan", "Japan"),
+    "boc": ("Bank of Canada Decision in", "Bank of Canada", "Canada"),
+    "rba": ("Reserve Bank of Australia Decision in", "Reserve Bank of Australia", "Australia"),
+    "rbnz": ("RBNZ Decision in", "Reserve Bank of New Zealand", "New Zealand"),
+    "banxico": ("Bank of Mexico Decision in", "Bank of Mexico", "Mexico"),
+    "rbi": ("Reserve Bank of India Decision in", "Reserve Bank of India", "India"),
+    "boi": ("Bank of Israel Decision in", "Bank of Israel", "Israel"),
+    "sarb": ("South African Reserve Bank Decision in", "South African Reserve Bank", "South Africa"),
+    "bok": ("Bank of Korea Decision in", "Bank of Korea", "South Korea"),
+    "bcb": ("Bank of Brazil Decision in", "Bank of Brazil", "Brazil"),
 }
-BANK_LABELS = {"fed": "Federal Reserve", "boc": "Bank of Canada", "boj": "Bank of Japan"}
+BANK_LABELS = {key: label for key, (_, label, _) in BANKS.items()}
+BANK_COUNTRIES = {key: country for key, (_, _, country) in BANKS.items()}
 
 # Matched against each sub-market's own `question` text (not a fixed
-# index — the API doesn't promise the 5 markets always come back in the
-# same order). Order here is cut-to-hike, used as BUCKET_ORDER below for
-# consistent display regardless of API ordering. Each question is
-# entirely about one single scenario ("Will the Fed decrease interest
-# rates by 50+ bps after..."), so a plain co-occurrence check (not a
-# tight proximity regex) is safe — confirmed live a naive `decrease.{0,
-# 15}50` gap missed every real question, since "decrease interest rates
-# by " alone is 28 characters, well past any reasonably tight gap.
+# index — the API doesn't promise the markets always come back in the
+# same order). Each question is entirely about one single scenario
+# ("Will the Fed decrease interest rates by 50+ bps after..."), so a
+# plain co-occurrence check (not a tight proximity regex) is safe —
+# confirmed live a naive `decrease.{0,15}50` gap missed every real
+# question, since "decrease interest rates by " alone is 28 characters,
+# well past any reasonably tight gap. Two genuinely different wordings
+# confirmed live across banks — most use "decrease"/"no change"/
+# "increase" (Fed, ECB, BoC, BoJ, ...), Bank of Korea instead uses a
+# plain "cut"/"hold"/"hike" phrasing ("Will the Bank of Korea cut by 25
+# bps at the August 2026 meeting?") — both checked for every bucket
+# rather than assuming one convention app-wide.
+_DECREASE_WORDS = re.compile(r"decrease|\bcut\b", re.I)
+_INCREASE_WORDS = re.compile(r"increase|\bhike\b", re.I)
+_HOLD_WORDS = re.compile(r"no change|\bhold\b", re.I)
 _BUCKET_PATTERNS = [
-    ("cut_50", re.compile(r"decrease", re.I), re.compile(r"50", re.I)),
-    ("cut_25", re.compile(r"decrease", re.I), re.compile(r"25", re.I)),
-    ("hold", re.compile(r"no change", re.I), None),
-    ("hike_25", re.compile(r"increase", re.I), re.compile(r"25", re.I)),
-    ("hike_50", re.compile(r"increase", re.I), re.compile(r"50", re.I)),
+    ("cut_50", _DECREASE_WORDS, re.compile(r"50", re.I)),
+    ("cut_25", _DECREASE_WORDS, re.compile(r"25", re.I)),
+    ("hold", _HOLD_WORDS, None),
+    ("hike_25", _INCREASE_WORDS, re.compile(r"25", re.I)),
+    ("hike_50", _INCREASE_WORDS, re.compile(r"50", re.I)),
 ]
-BUCKET_ORDER = ["cut_50", "cut_25", "hold", "hike_25", "hike_50"]
+BUCKET_ORDER = ["cut_50", "cut_25", "cut", "hold", "hike_25", "hike_50", "hike"]
 BUCKET_LABELS = {
     "cut_50": "−50+bps",
     "cut_25": "−25bps",
+    "cut": "Cut",
     "hold": "No change",
     "hike_25": "+25bps",
     "hike_50": "+50+bps",
+    "hike": "Hike",
 }
 
 
@@ -79,25 +118,23 @@ def _bucket_for_question(question: str) -> str | None:
     for bucket, primary, secondary in _BUCKET_PATTERNS:
         if primary.search(question) and (secondary is None or secondary.search(question)):
             return bucket
+    # No bps-level detail in this question — a coarser 3-way market
+    # (Bank of Israel, South African Reserve Bank). "no change"/"hold"
+    # is already caught above regardless of detail level, so this only
+    # ever needs to catch a bare decrease/cut or increase/hike.
+    if _DECREASE_WORDS.search(question):
+        return "cut"
+    if _INCREASE_WORDS.search(question):
+        return "hike"
     return None
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_current_event_raw(bank: str, query: str) -> dict | None:
+def _search_raw(query: str) -> list[dict]:
     fetch_throttle.wait_turn()
     resp = requests.get(SEARCH_URL, params={"q": query}, timeout=10)
     resp.raise_for_status()
-    events = resp.json().get("events") or []
-    # Title itself must actually contain "Decision in" too — public-
-    # search is a fuzzy text match, not an exact filter, so this guards
-    # against a loosely-related result slipping into "current" (nothing
-    # observed live so far, but cheap insurance against a future change
-    # in Polymarket's own search ranking).
-    open_events = [e for e in events if not e.get("closed") and e.get("endDate") and "decision in" in (e.get("title") or "").lower()]
-    if not open_events:
-        return None
-    open_events.sort(key=lambda e: e["endDate"])
-    return open_events[0]
+    return resp.json().get("events") or []
 
 
 def _parse_event(event: dict) -> dict | None:
@@ -111,10 +148,13 @@ def _parse_event(event: dict) -> dict | None:
             outcomes[bucket] = float(prices[0])
         except (ValueError, IndexError, TypeError):
             continue
-    # Fewer than 3 of the 5 buckets parsed means something about the
-    # question wording changed enough that this reading can't be
-    # trusted — safer to fall back to the last good snapshot than show
-    # a visibly-incomplete breakdown.
+    # Fewer than 3 recognized buckets means either this isn't really a
+    # rate-decision market (a loosely-related search result — public-
+    # search is fuzzy text matching, not an exact filter) or something
+    # about the question wording changed enough that this reading can't
+    # be trusted — either way, safer to skip it than show a visibly-
+    # incomplete breakdown. 3 covers both real shapes: all of a 3-way
+    # market, or a majority of a 5-way one.
     if len(outcomes) < 3:
         return None
     return {"title": event.get("title"), "end_date": event.get("endDate"), "outcomes": outcomes}
@@ -127,22 +167,30 @@ def current_odds(bank: str) -> dict | None:
     """{"title", "end_date", "outcomes": {bucket: probability, ...}} for
     the nearest still-open rate-decision meeting for `bank` (one of
     BANKS' own keys) — rolls to the next meeting automatically the
-    moment the current one closes. None if nothing usable has ever come
-    back for this bank."""
-    query = BANKS.get(bank)
-    if query is None:
+    moment the current one closes. Tries every still-open search result
+    in end-date order, not just the earliest, so one loosely-related
+    result that doesn't actually parse as a rate-decision market (fuzzy
+    text search, not an exact filter) doesn't block a real one further
+    down the list. None if nothing usable has ever come back for this
+    bank."""
+    entry = BANKS.get(bank)
+    if entry is None:
         return None
+    query = entry[0]
     try:
-        event = _fetch_current_event_raw(bank, query)
+        events = _search_raw(query)
     except Exception:
         return _last_good.get(bank)
-    if event is None:
-        return _last_good.get(bank)
-    parsed = _parse_event(event)
-    if parsed is None:
-        return _last_good.get(bank)
-    _last_good[bank] = parsed
-    return parsed
+    open_events = sorted(
+        (e for e in events if not e.get("closed") and e.get("endDate")),
+        key=lambda e: e["endDate"],
+    )
+    for event in open_events:
+        parsed = _parse_event(event)
+        if parsed is not None:
+            _last_good[bank] = parsed
+            return parsed
+    return _last_good.get(bank)
 
 
 def most_likely_outcome(odds: dict) -> tuple[str, float]:

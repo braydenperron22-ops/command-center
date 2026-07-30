@@ -549,6 +549,51 @@ html, body, [class*="css"] {
     background: #0A84FF;
 }
 
+/* Session follow-up: "I want all of the rate odds as many as you can
+   find... I want them all on the side with the country name and then
+   the most likely outcome and the percentage." A compact scrollable
+   roster, not another full breakdown tile per bank — that's what the
+   three FEATURED_BANKS tiles are for (pages_predictions.py). */
+.prediction-side-tile {
+    max-height: 100%;
+}
+.prediction-side-list {
+    margin-top: 0.6rem;
+    max-height: 22rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+.prediction-row {
+    display: grid;
+    grid-template-columns: 1fr 5.5rem 3.2rem;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.45rem 0.2rem;
+    font-size: 1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.prediction-row:last-child {
+    border-bottom: none;
+}
+.prediction-row-country {
+    color: #F5F5F7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.prediction-row-outcome {
+    color: #ABB2C4;
+    white-space: nowrap;
+}
+.prediction-row-pct {
+    color: #F5F5F7;
+    font-weight: 600;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
 .tile-extra {
     margin-top: 0.5rem;
     padding-top: 0.5rem;
