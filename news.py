@@ -68,6 +68,25 @@ REJECTed outright, not shown vague. Numbers are still never invented,
 estimated, or recalled from the model's own training knowledge — a
 confidently wrong figure would be worse than dropping the headline
 entirely.
+
+Rebuilt again, much later: session report — "it took like 3 hours to
+get the FOMC rate decision" and "I've gotten a few notifications today
+but not nearly the same amount as normal," after a run of persistence
+bugs the day before ("this is kinda getting annoying... tear down the
+entire market news and toast alerts system and rebuild it from the
+ground up"). Root cause of both: _run_individual_decide's own pending
+list was never ordered by actual recency, only by fetch_headlines()'s
+arbitrary per-feed order — a genuinely urgent, just-published headline
+had to wait behind however many older unclassified ones happened to
+sit ahead of it, one classification per INDIVIDUAL_REFRESH_SECONDS,
+however large that backlog was. See BACKLOG_BATCH_THRESHOLD's own
+comment for the fix (recency-first ordering, plus adaptive batch
+draining reusing _build_batch_prompt — which had sat unused, not
+deleted, since the individual-streaming switch above) and
+MAX_NEW_ALERTS_PER_CALL's own comment for why draining the
+classification backlog faster does NOT reintroduce the exact "4 alerts
+in one minute" burst this file already moved away from once — the two
+are now genuinely independent dials, not the same one.
 """
 
 import functools
@@ -383,7 +402,7 @@ def is_clickbait(headline: str) -> bool:
 # headline with a genuine, quantified market reaction had nowhere named
 # to land — MACRO_SHOCK is worded around crashes/halts, not geopolitical
 # conflict, so the model defaulted to safe/routine MARKET (always
-# important=False, see _apply_verdict) rather than reaching for the
+# important=False, see _record_verdict) rather than reaching for the
 # vague BREAKING catch-all, even though a 6% oil move from a real
 # military threat is exactly the kind of thing that should render as a
 # red "breaking" toast, not a black "market news" one.
@@ -773,12 +792,78 @@ def _build_single_prompt(item: dict) -> str:
     )
 
 
-def _apply_verdict(item: dict, verdict_obj) -> None:
-    """Parses one AI verdict object — the batch and single-headline
-    prompts both ask for the exact same object shape, just wrapped
-    differently (an array of them vs. one on its own) — and records it
-    in _decided. Shared so both call sites apply identical parsing and
-    validation, not two copies that could quietly drift apart."""
+# Session report: "it took like 3 hours to get the FOMC rate decision"
+# — root cause traced to `pending` (below) never being ordered by
+# actual recency, only by fetch_headlines()'s own per-feed iteration
+# order (CNBC, then MarketWatch, then Yahoo, each in whatever order
+# their raw XML happens to list items). With INDIVIDUAL_MAX_PER_TICK
+# fixed at one classification per INDIVIDUAL_REFRESH_SECONDS, a
+# genuinely urgent, just-published headline (an FOMC decision, a war
+# escalation) had to wait behind however many OLDER unclassified
+# headlines happened to sit ahead of it in that arbitrary order — with
+# a real backlog of 60-120+ pending headlines observed live, that's
+# 1.5-3 hours before the classifier ever looked at it, even though it
+# was the single most time-sensitive thing in the whole pool.
+#
+# Same session, a related report: "I've gotten a few notifications
+# today but not nearly the same amount as normal." A steady inflow of
+# genuinely new headlines throughout market hours can easily exceed one
+# classification per 90 seconds — the backlog doesn't just delay a
+# specific headline, it can grow faster than it drains, meaning a real
+# chunk of an ordinary day's actual news never gets classified before
+# rolling off the feeds' own ~24h window and becoming moot.
+#
+# Two-part rebuild:
+#
+# 1. `pending` is now sorted newest-published-first before anything
+# else — a headline that just broke always gets first crack at the
+# next tick, full stop, regardless of how large the backlog behind it
+# is. This alone fixes the FOMC-delay failure mode directly.
+#
+# 2. Backlog-adaptive batching: below BACKLOG_BATCH_THRESHOLD pending,
+# behavior is unchanged from the original "stream headlines
+# individually... real-time" design (one per tick, its own full
+# per-headline prompt). Above that threshold, a tick instead classifies
+# BACKLOG_BATCH_SIZE headlines in ONE call via _build_batch_prompt —
+# the exact same batch machinery this file used before the individual-
+# streaming switch, which sat unused since then rather than being
+# deleted (see _build_batch_prompt's own docstring; nothing about its
+# judgment criteria has changed, only when it gets called). This drains
+# a genuine pileup many times faster per Groq call than one-at-a-time
+# ever could, without abandoning the real-time feel on an ordinary,
+# non-backlogged day.
+#
+# Deliberately does NOT let batch mode surface a burst of several
+# toasts/pushes at once — that was the specific, explicit reason this
+# file moved to one-per-tick in the first place ("it should only track
+# one headline per minute fixed, not 5," after a real "4 alerts in one
+# minute" complaint). Batching here only speeds up how fast _decided
+# gets populated; get_new_alerts() below still separately caps how many
+# newly-kept headlines it will ever surface as alerts in one call
+# (MAX_NEW_ALERTS_PER_CALL) regardless of how many just got classified
+# in the same tick — classification throughput and alert-surfacing pace
+# are two independent dials now, not one.
+BACKLOG_BATCH_THRESHOLD = 10
+BACKLOG_BATCH_SIZE = 8
+# Output budget for a batch call — one verdict per item plus JSON
+# overhead runs meaningfully more than a single-item response, but the
+# same low-effort, no-prose judgment call means each individual verdict
+# is still short. Capped well under Groq's per-request ceiling even at
+# the largest batch this ever assembles (BACKLOG_BATCH_SIZE).
+BATCH_TOKENS_PER_ITEM = 90
+BATCH_MAX_OUTPUT_TOKENS = 60 + BATCH_TOKENS_PER_ITEM * BACKLOG_BATCH_SIZE
+
+
+def _record_verdict(item: dict, verdict_obj) -> None:
+    """Parses one AI verdict object and mutates _decided in place — the
+    batch and single-headline prompts both ask for the exact same
+    object shape, just wrapped differently (an array of them vs. one on
+    its own), so both call sites apply identical parsing and validation
+    here, not two copies that could quietly drift apart. Does NOT
+    persist — callers save once, after however many of these they're
+    applying in one tick (one for the individual path, several for a
+    batch), so a batch tick doesn't write the whole (potentially six-
+    figure-byte) _decided blob to Upstash once per item."""
     h = _hash(item["headline"])
     if not isinstance(verdict_obj, dict):
         return
@@ -793,39 +878,23 @@ def _apply_verdict(item: dict, verdict_obj) -> None:
             _decided[h] = {"headline": display_headline, "category": _AI_VERDICT_LABELS[verdict], "important": True}
     if len(_decided) > MAX_DECIDED:
         _decided.pop(next(iter(_decided)))
-    persisted_state.save("news_decided", _decided)
 
 
-def _run_individual_decide() -> None:
-    """Classifies up to INDIVIDUAL_MAX_PER_TICK (one) currently-pending
-    headline (from the current fetch_headlines() pool, not already in
-    _decided) with its own real Groq call, throttled to at most once
-    per INDIVIDUAL_REFRESH_SECONDS regardless of how often this is
-    called — see this module's own docstring for why this replaced
-    batching. A no-op if it's not yet time for a new tick, or there's
-    nothing pending. Call this once per rerun before relying on
-    decide() for fresh coverage; get_new_alerts() already does, and
-    since that runs early in app.py regardless of which page is up,
-    callers like pages_news.py don't need to call this themselves.
+def _strip_code_fence(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else text
+        text = text.rsplit("```", 1)[0]
+    return text.strip()
 
-    A backlog beyond one headline simply waits, one per tick, for
-    however many ticks it takes — nothing is ever dropped, only spread
-    out further (see INDIVIDUAL_MAX_PER_TICK's own comment for why a
-    hard cap of exactly one, not a small handful)."""
-    global _last_tick_at
-    now = time.time()
-    if now - _last_tick_at < INDIVIDUAL_REFRESH_SECONDS:
-        return
-    pending = [item for item in fetch_headlines() if _hash(item["headline"]) not in _decided][:INDIVIDUAL_MAX_PER_TICK]
-    if not pending:
-        _last_tick_at = now
-        return
-    # Set before the calls, not after — same reasoning the old batch
-    # design already established: a failed attempt still counts against
-    # the cadence, so a rate-limit blip can't turn into a tight retry
-    # loop; the next tick waits the full window regardless.
-    _last_tick_at = now
-    for item in pending:
+
+def _classify_individually(items: list[dict]) -> None:
+    """The original per-headline flow, unchanged in behavior — one real
+    Groq call per item, each with its own full judgment-criteria
+    overhead. Used below BACKLOG_BATCH_THRESHOLD, where that per-
+    headline cost buys a genuinely real-time feel on an ordinary day
+    with nothing backed up."""
+    for item in items:
         # Full article text, not just the RSS description — session
         # request: "make it look at the full story for a more detailed
         # headline." A slow or blocked site just contributes "" for
@@ -841,15 +910,78 @@ def _run_individual_decide() -> None:
         result = groq_client.generate(prompt, temperature=0.1, max_output_tokens=INDIVIDUAL_MAX_OUTPUT_TOKENS)
         if result is None:
             continue  # this one headline stays pending, retried next tick
-        text = result.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text
-            text = text.rsplit("```", 1)[0]
         try:
-            verdict_obj = json.loads(text.strip())
+            verdict_obj = json.loads(_strip_code_fence(result))
         except Exception:
             continue  # unparseable response — stays pending, retried next tick
-        _apply_verdict(item, verdict_obj)
+        _record_verdict(item, verdict_obj)
+        persisted_state.save("news_decided", _decided)
+
+
+def _classify_batch(items: list[dict]) -> None:
+    """Drains several pending headlines in one real Groq call via
+    _build_batch_prompt — see BACKLOG_BATCH_THRESHOLD's own comment for
+    when this fires instead of _classify_individually. A failed or
+    unparseable response leaves the WHOLE batch pending, same "never
+    drop, only delay" rule the individual path already follows — no
+    partial credit for a response that came back malformed."""
+    enriched = [{**item, "article_excerpt": _fetch_article_excerpt(item.get("link", ""))} for item in items]
+    prompt = _build_batch_prompt(enriched)
+    result = groq_client.generate(prompt, temperature=0.1, max_output_tokens=BATCH_MAX_OUTPUT_TOKENS)
+    if result is None:
+        return  # whole batch stays pending, retried next tick
+    try:
+        verdict_list = json.loads(_strip_code_fence(result))
+    except Exception:
+        return  # unparseable response -- whole batch stays pending, retried next tick
+    if not isinstance(verdict_list, list):
+        return
+    # zip() truncates to the shorter side on its own — a short reply
+    # (missing trailing verdicts) just leaves those items pending for
+    # the next tick rather than crashing or misaligning the rest.
+    for item, verdict_obj in zip(items, verdict_list):
+        _record_verdict(item, verdict_obj)
+    persisted_state.save("news_decided", _decided)
+
+
+def _run_individual_decide() -> None:
+    """Classifies some currently-pending headlines (from the current
+    fetch_headlines() pool, not already in _decided), throttled to at
+    most one tick per INDIVIDUAL_REFRESH_SECONDS regardless of how
+    often this is called. A no-op if it's not yet time for a new tick,
+    or there's nothing pending. Call this once per rerun before relying
+    on decide() for fresh coverage; get_new_alerts() already does, and
+    since that runs early in app.py regardless of which page is up,
+    callers like pages_news.py don't need to call this themselves.
+
+    See BACKLOG_BATCH_THRESHOLD's own comment for the two-part rebuild
+    this represents (recency ordering + adaptive batch draining) and
+    why classification speed is now decoupled from alert-surfacing
+    pace (get_new_alerts()'s own MAX_NEW_ALERTS_PER_CALL still holds
+    that line)."""
+    global _last_tick_at
+    now = time.time()
+    if now - _last_tick_at < INDIVIDUAL_REFRESH_SECONDS:
+        return
+    pending = [item for item in fetch_headlines() if _hash(item["headline"]) not in _decided]
+    if not pending:
+        _last_tick_at = now
+        return
+    # Newest-published first — see this function's own module-level
+    # comment (BACKLOG_BATCH_THRESHOLD) for the real incident this
+    # fixes. Anything with an unparseable/missing pubDate sorts to the
+    # end rather than crashing the comparison or jumping the queue on a
+    # false "newest."
+    pending.sort(key=lambda item: item["published"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    # Set before the calls, not after — same reasoning the old batch
+    # design already established: a failed attempt still counts against
+    # the cadence, so a rate-limit blip can't turn into a tight retry
+    # loop; the next tick waits the full window regardless.
+    _last_tick_at = now
+    if len(pending) > BACKLOG_BATCH_THRESHOLD:
+        _classify_batch(pending[:BACKLOG_BATCH_SIZE])
+    else:
+        _classify_individually(pending[:INDIVIDUAL_MAX_PER_TICK])
 
 
 def decide(headline: str) -> dict | None:
@@ -959,6 +1091,20 @@ def fetch_headlines() -> list[dict]:
     return _last_good_headlines
 
 
+# Deliberately independent of BACKLOG_BATCH_SIZE (see that constant's
+# own comment) — however many headlines a batch tick just classified,
+# get_new_alerts() only ever surfaces this many as new toasts/pushes in
+# one call. Matches the explicit "one headline per minute fixed, not 5"
+# correction this file already established once, after a real "4
+# alerts in one minute" complaint — batching speeds up classification,
+# it must never speed up how many things can hit the toast bar or the
+# phone at once. Anything beyond this per call simply stays genuinely
+# unseen (not marked, not dropped) and surfaces on a later call instead
+# — the same "never drop, only delay" rule this whole file already
+# follows everywhere else.
+MAX_NEW_ALERTS_PER_CALL = 1
+
+
 def get_new_alerts() -> list[dict]:
     """Flags fresh headlines that qualify for the News page; only returns
     ones not already alerted on, for the life of this DEPLOYMENT — not
@@ -984,6 +1130,13 @@ def get_new_alerts() -> list[dict]:
     whatever already qualifies as "seen" without alerting) so a fresh
     process doesn't immediately flood every historical headline as if it
     just broke.
+
+    Returns at most MAX_NEW_ALERTS_PER_CALL items even if more than that
+    are newly kept-and-unseen right now (see that constant's own
+    comment) — genuinely decoupled from how many _run_individual_decide
+    just classified in this same tick, on purpose. A real backlog of
+    several ready-to-surface headlines drains oldest-first, one call at
+    a time, rather than all landing on the toast bar/phone together.
     """
     global _news_baseline_done
     _run_individual_decide()
@@ -997,39 +1150,62 @@ def get_new_alerts() -> list[dict]:
     # so they'd never need to be recognized as "seen" again regardless.
     seen = _seen_headlines
 
-    alerts = []
-    seen_changed = False
+    # Everything currently kept-and-unseen, not yet marked — the actual
+    # marking (and the surfacing cap) happens below, split by whether a
+    # baseline has ever been established.
+    candidates = []
     for item in fetch_headlines():
         # decide() is a plain cache lookup now (no network call), so
         # checking it before "seen" costs nothing — a still-pending or
         # rejected headline just keeps getting skipped for free until a
-        # later batch (if ever) actually classifies it as keepable.
+        # later tick (if ever) actually classifies it as keepable.
         decision = decide(item["headline"])
         if decision is None:
             continue
         h = hashlib.sha1(item["headline"].encode()).hexdigest()
         if h in seen:
             continue
+        candidates.append((item, decision, h))
+
+    if not _news_baseline_done:
+        # First call ever for this deployment — mark everything already
+        # sitting in the pool as seen without alerting on any of it, so
+        # a fresh process doesn't flood every historical headline as if
+        # it just broke. This is the one place ALL candidates get
+        # marked in a single pass rather than just MAX_NEW_ALERTS_PER_
+        # CALL of them — a one-time operation, not the steady-state path.
+        for _, _, h in candidates:
+            seen[h] = True
+        if len(seen) > MAX_SEEN_HEADLINES:
+            for _ in range(len(seen) - MAX_SEEN_HEADLINES):
+                seen.pop(next(iter(seen)))
+        if candidates:
+            persisted_state.save("news_seen_headlines", seen)
+        _news_baseline_done = True
+        persisted_state.save("news_baseline_done", True)
+        return []
+
+    # Session request: when several headlines qualify as new at once
+    # (e.g. a feed recovering from an outage and surfacing everything it
+    # missed, or a batch classification tick clearing a real backlog),
+    # line them up in the order they were actually published — not
+    # FEEDS' own fixed iteration order, which has nothing to do with
+    # real chronology. Anything with an unparseable/missing pubDate
+    # sorts to the end rather than crashing the comparison or claiming a
+    # false "first."
+    candidates.sort(key=lambda c: c[0]["published"] or datetime.min.replace(tzinfo=timezone.utc))
+
+    alerts = []
+    seen_changed = False
+    for item, decision, h in candidates[:MAX_NEW_ALERTS_PER_CALL]:
         seen[h] = True
         seen_changed = True
         if len(seen) > MAX_SEEN_HEADLINES:
             seen.pop(next(iter(seen)))
-        if _news_baseline_done:
-            alerts.append({**item, **decision})
+        alerts.append({**item, **decision})
 
     if seen_changed:
         persisted_state.save("news_seen_headlines", seen)
-    if not _news_baseline_done:
-        _news_baseline_done = True
-        persisted_state.save("news_baseline_done", True)
-    # Session request: when several headlines qualify as new in the
-    # same batch (e.g. a feed recovering from an outage and surfacing
-    # everything it missed at once), line them up in the toast queue in
-    # the order they were actually published — not FEEDS' own fixed
-    # iteration order, which has nothing to do with real chronology.
-    # Anything with an unparseable/missing pubDate sorts to the end
-    # rather than crashing the comparison or claiming a false "first."
-    alerts.sort(key=lambda a: a["published"] or datetime.min.replace(tzinfo=timezone.utc))
     return alerts
 
 
