@@ -466,6 +466,35 @@ INDIVIDUAL_REFRESH_SECONDS = 90
 INDIVIDUAL_MAX_PER_TICK = 1
 INDIVIDUAL_MAX_OUTPUT_TOKENS = 150
 
+# Session request: "have the individual dashboard... whenever something
+# new comes up, automatically toast it... regardless of if it was shown
+# on another terminal... every single terminal gets the alert." Before
+# this, news_seen_headlines/news_baseline_done below were a single
+# shared key covering "the life of this DEPLOYMENT" — deliberately so,
+# to survive a redeploy's process restart (see their own comments on
+# the "zero market news toasts ever" bug that shipped from getting that
+# wrong once already). But the same global key also meant genuinely
+# separate running instances sharing one Upstash store (a second kiosk,
+# a local dev box also pointed at Upstash) raced for the same headline:
+# whichever instance's poll got there first marked it seen for
+# everyone, and every other instance silently never got its own toast.
+# INSTANCE_ID splits "seen" into its own per-instance-but-still-
+# persisted key — same restart-survival as before for whichever single
+# instance a given deployment actually is, but a genuinely different
+# instance (distinct INSTANCE_ID secret) gets its own independent
+# baseline and seen-set instead of colliding with this one. Defaults to
+# a fixed constant so a deployment that never sets this secret at all
+# (true today) behaves exactly as before — this only changes anything
+# once a second instance actually configures a different value.
+# news_decided (the classification cache, right below) and
+# pushed_headlines (update_top_alert's own phone-push dedup, later in
+# this file) both stay on their single shared key on purpose: no
+# instance should ever re-spend a Groq/Gemini call re-classifying a
+# headline another instance already judged, and the same physical phone
+# must never get the same ntfy push twice just because two instances
+# both saw the headline as "new to me."
+_INSTANCE_ID = st.secrets.get("INSTANCE_ID", "shared")
+
 # hash -> decision dict (kept) or None (AI rejected). A key's absence
 # means "not yet classified" — decide() and _run_individual_decide()
 # both rely on that three-way distinction (see their own docstrings).
@@ -512,7 +541,26 @@ _last_tick_at: float = 0.0
 # `h in seen` check below runs before the baseline gate, so a headline
 # re-classified after a restart still gets caught and skipped once its
 # hash is already on record from before.
-_seen_headlines: dict = dict(persisted_state.load("news_seen_headlines", {}))
+def _load_per_instance(key: str, default):
+    """Same per-instance split as _INSTANCE_ID's own comment above, plus
+    a one-time migration path: the very first load after this key got
+    split per-instance would otherwise find nothing under the new
+    "key:shared" name and think this is a brand new instance — exactly
+    the "zero market news toasts" bug already fixed once (see
+    _news_baseline_done's own comment), just from a different cause
+    this time (a rename, not a restart). Falling back to the old,
+    pre-migration un-suffixed key — only for the default "shared"
+    identity, since a genuinely new second instance has no old key to
+    inherit from anyway — preserves that real history with zero gap."""
+    value = persisted_state.load(f"{key}:{_INSTANCE_ID}", None)
+    if value is not None:
+        return value
+    if _INSTANCE_ID == "shared":
+        return persisted_state.load(key, default)
+    return default
+
+
+_seen_headlines: dict = dict(_load_per_instance("news_seen_headlines", {}))
 # Session report: "I haven't received any earnings or anything, I've
 # received zero market news... investigate further." Root cause: this
 # flag governed whether get_new_alerts() below actually appends a kept,
@@ -534,7 +582,7 @@ _seen_headlines: dict = dict(persisted_state.load("news_seen_headlines", {}))
 # Persisted the same way, loaded once at import: the baseline only
 # ever needs to be established ONE time for the life of this feature,
 # not once per restart.
-_news_baseline_done: bool = persisted_state.load("news_baseline_done", False)
+_news_baseline_done: bool = _load_per_instance("news_baseline_done", False)
 
 
 def _hash(headline: str) -> str:
@@ -1107,14 +1155,21 @@ MAX_NEW_ALERTS_PER_CALL = 1
 
 def get_new_alerts() -> list[dict]:
     """Flags fresh headlines that qualify for the News page; only returns
-    ones not already alerted on, for the life of this DEPLOYMENT — not
-    just this process, and not just this browser session (see
-    _seen_headlines/_news_baseline_done's own comment for the full
-    history, including a real bug found from a "zero market news toasts
-    ever" session report: _news_baseline_done used to reset on every
-    process restart, silently eating whatever was genuinely new at that
-    exact moment rather than alerting on it — now persisted so the
-    baseline is only ever established once, not once per redeploy).
+    ones not already alerted on, for the life of this INSTANCE (per
+    _INSTANCE_ID, defaulting to a single shared identity if never
+    configured otherwise) — not just this process, and not just this
+    browser session (see _seen_headlines/_news_baseline_done's own
+    comment for the full history, including a real bug found from a
+    "zero market news toasts ever" session report: _news_baseline_done
+    used to reset on every process restart, silently eating whatever
+    was genuinely new at that exact moment rather than alerting on it —
+    now persisted so the baseline is only ever established once per
+    instance, not once per redeploy of that same instance). A second,
+    genuinely separate instance (its own INSTANCE_ID) gets its own
+    independent baseline/seen-set instead of racing this one for the
+    same headline — session request: "every single terminal gets the
+    alert... we're not in the situation where your localhost gets it
+    and my Streamlit doesn't."
     Uses the same `decide()` verdict as the News page itself so the
     breaking-news bar is just the News page's feed, surfaced the moment
     each headline first appears.
@@ -1180,9 +1235,9 @@ def get_new_alerts() -> list[dict]:
             for _ in range(len(seen) - MAX_SEEN_HEADLINES):
                 seen.pop(next(iter(seen)))
         if candidates:
-            persisted_state.save("news_seen_headlines", seen)
+            persisted_state.save(f"news_seen_headlines:{_INSTANCE_ID}", seen)
         _news_baseline_done = True
-        persisted_state.save("news_baseline_done", True)
+        persisted_state.save(f"news_baseline_done:{_INSTANCE_ID}", True)
         return []
 
     # Session request: when several headlines qualify as new at once
@@ -1205,7 +1260,7 @@ def get_new_alerts() -> list[dict]:
         alerts.append({**item, **decision})
 
     if seen_changed:
-        persisted_state.save("news_seen_headlines", seen)
+        persisted_state.save(f"news_seen_headlines:{_INSTANCE_ID}", seen)
     return alerts
 
 
