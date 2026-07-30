@@ -580,6 +580,31 @@ html, body, [class*="css"] {
     font-variant-numeric: tabular-nums;
 }
 
+/* Session follow-up: "what other markets are there... pull the
+   consensus... build a forecast... estimate if it's gonna be coming in
+   cooler or hotter than expected." Fills the open column reserved
+   above. Reuses the same good/bad/neutral verdict coloring
+   pages_internals.py already established (green=good, red=bad,
+   blue=neutral) rather than the cut/hike fire-ice palette — this is
+   "higher/lower than last time," not a rate direction, and it matches
+   config.py's own good_direction: "down" for both CPI and unemployment
+   (cooler is the good outcome for both). */
+.prediction-macro-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.prediction-macro-label {
+    font-size: 1rem;
+    color: #ABB2C4;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+.prediction-macro-verdict {
+    font-size: 1.5rem;
+    margin-top: 0.15rem;
+}
+
 .tile-extra {
     margin-top: 0.5rem;
     padding-top: 0.5rem;

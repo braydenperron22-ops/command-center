@@ -8,10 +8,14 @@ likely outcome and the percentage" (added the compact all-bank side
 list alongside those tiles) -> "don't make the BoC, Fed, and the other
 one big, make them fit into the same row... leave an open spot on the
 right side, we're gonna put some other things there... nice, clean
-format, like a list almost" — dropped the separate hero-tile row
-entirely; every bank (Fed/BoC/BoJ included) is just a row in the one
-list now, and the freed-up space is a deliberately empty column
-reserved for future widgets.
+format, like a list almost" (dropped the separate hero-tile row
+entirely) -> "what other markets are there... pull the consensus...
+build a forecast... estimate if it's gonna be coming in cooler or
+hotter than expected" — the reserved right column now holds that: CPI
+and unemployment's market-implied next-print forecast vs. the last
+actual FRED reading (see prediction_markets_client.forecast_vs_last_actual;
+there's no economist-consensus figure anywhere in this app, so "last
+actual" is the only real baseline available to compare against).
 """
 
 import html
@@ -19,6 +23,9 @@ import html
 import streamlit as st
 
 import prediction_markets_client as pmc
+
+_DIRECTION_TONE = {"cooler": "good", "hotter": "bad", "in-line": "neutral"}
+_DIRECTION_WORD = {"cooler": "COOLER", "hotter": "HOTTER", "in-line": "IN LINE"}
 
 
 def _side_list_html() -> str:
@@ -51,7 +58,32 @@ def _side_list_html() -> str:
     return "".join(rows)
 
 
-def render() -> None:
+def _macro_row_html(series: str, readings: dict) -> str:
+    cfg = pmc.DATA_SERIES[series]
+    reading = readings.get(cfg["reading_key"])
+    last_actual = reading.get("current") if reading else None
+    result = pmc.forecast_vs_last_actual(series, last_actual)
+    if not result:
+        return (
+            f'<div class="prediction-macro-row">'
+            f'<div class="prediction-macro-label">{html.escape(cfg["label"])}</div>'
+            f'<div class="tile-prev">data unavailable</div>'
+            f"</div>"
+        )
+    tone = _DIRECTION_TONE[result["direction"]]
+    word = _DIRECTION_WORD[result["direction"]]
+    unit = cfg["unit"]
+    return (
+        f'<div class="prediction-macro-row">'
+        f'<div class="prediction-macro-label">{html.escape(cfg["label"])}</div>'
+        f'<div class="internals-verdict internals-verdict-{tone} prediction-macro-verdict">{word}</div>'
+        f'<div class="internals-context">Market-implied {result["forecast"]:.2f}{unit} vs. last {result["last_actual"]:.2f}{unit}</div>'
+        f"</div>"
+    )
+
+
+def render(readings: dict | None = None) -> None:
+    readings = readings or {}
     st.markdown('<div class="page-title page-title-predictions">Predictions</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="prediction-source-note">Market-implied odds from Polymarket — '
@@ -69,5 +101,11 @@ def render() -> None:
             unsafe_allow_html=True,
         )
     with open_col:
-        # Deliberately empty — reserved for whatever goes here next.
-        pass
+        st.markdown(
+            f'<div class="tile prediction-macro-tile">'
+            f'<div class="tile-label">NEXT PRINT: MARKET vs. LAST ACTUAL</div>'
+            f'{_macro_row_html("cpi_yoy", readings)}'
+            f'{_macro_row_html("unemployment", readings)}'
+            f"</div>",
+            unsafe_allow_html=True,
+        )

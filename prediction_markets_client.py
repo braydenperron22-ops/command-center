@@ -262,6 +262,138 @@ def check_for_swing(bank: str) -> dict | None:
     return None
 
 
+# --- Rolling macro-data-print markets (CPI, unemployment) --------------
+# Session follow-up, after picking CPI + unemployment as the two most
+# useful things to add beyond central banks: "pull the consensus...
+# build a forecast or a forecasted value based on the value of the
+# prediction markets themselves... estimate if it's gonna be coming in
+# cooler or hotter than expected." Checked this repo first: there is no
+# economist-consensus figure anywhere (fred_client.py/indicators.py only
+# ever compute the actual reported value, never a forecast) — so
+# "expected" here means the last actual FRED reading, and "hotter"/
+# "cooler" is the market's own next-print forecast relative to what
+# already printed last time, not a Wall Street consensus poll this app
+# has no free source for.
+#
+# Different market shape than the bank-decision ones above: Polymarket
+# runs one event per calendar month, and *within* that event, one binary
+# sub-market per specific point value ("Will the July 2026 unemployment
+# rate be 4.2%?") rather than a handful of named buckets. So the
+# "forecast" isn't a single most-likely bucket — it's a probability-
+# weighted average across every point value the event covers, a much
+# better summary of a distribution spread across 8-12 adjacent buckets
+# than picking just the single largest one.
+DATA_SERIES = {
+    "cpi_yoy": {
+        "query": "Inflation US Annual",
+        "label": "CPI (YoY)",
+        # Matches "<Month> Inflation US - Annual", not the
+        # "(Higher Brackets)" duplicate some already-closed months
+        # also carry.
+        "title_pattern": re.compile(r"Inflation US - Annual$"),
+        "unit": "%",
+        "reading_key": ("us", "cpi"),
+    },
+    "unemployment": {
+        "query": "Unemployment Rate",
+        "label": "Unemployment Rate",
+        # Matches "<Month> Unemployment Rate" only — excludes the
+        # per-country variants ("... - Japan", "... - Mexico") the same
+        # search also surfaces.
+        "title_pattern": re.compile(r"^[A-Za-z]+ Unemployment Rate$"),
+        "unit": "%",
+        "reading_key": ("us", "unemployment"),
+    },
+}
+
+_VALUE_RE = re.compile(r"(\d+\.?\d*)\s*%")
+
+
+def _value_for_question(question: str) -> float | None:
+    m = _VALUE_RE.search(question)
+    return float(m.group(1)) if m else None
+
+
+def _parse_data_event(event: dict) -> dict | None:
+    points = []
+    for m in event.get("markets") or []:
+        value = _value_for_question(m.get("question") or "")
+        if value is None:
+            continue
+        try:
+            prices = json.loads(m.get("outcomePrices") or "[]")
+            points.append((value, float(prices[0])))
+        except (ValueError, IndexError, TypeError):
+            continue
+    # Same "at least 3 recognized points" guard as _parse_event above —
+    # fuzzy search can surface an unrelated event, or question wording
+    # can drift enough that this reading shouldn't be trusted.
+    if len(points) < 3:
+        return None
+    total_prob = sum(p for _, p in points)
+    if total_prob <= 0:
+        return None
+    forecast = sum(v * p for v, p in points) / total_prob
+    return {"title": event.get("title"), "end_date": event.get("endDate"), "forecast": forecast, "points": points}
+
+
+_last_good_series: dict[str, dict] = {}
+
+
+def current_data_forecast(series: str) -> dict | None:
+    """{"title", "end_date", "forecast", "points"} — the market's own
+    probability-weighted point forecast for the next print of `series`
+    (a DATA_SERIES key), rolling to the next month's event the same way
+    current_odds() rolls to the next meeting."""
+    cfg = DATA_SERIES.get(series)
+    if cfg is None:
+        return None
+    try:
+        events = _search_raw(cfg["query"])
+    except Exception:
+        return _last_good_series.get(series)
+    open_events = sorted(
+        (
+            e for e in events
+            if not e.get("closed") and e.get("endDate") and cfg["title_pattern"].search(e.get("title") or "")
+        ),
+        key=lambda e: e["endDate"],
+    )
+    for event in open_events:
+        parsed = _parse_data_event(event)
+        if parsed is not None:
+            _last_good_series[series] = parsed
+            return parsed
+    return _last_good_series.get(series)
+
+
+# Below this, a print reads as flat/"in-line" rather than hotter or
+# cooler — real CPI/unemployment prints move in 0.1-point increments, so
+# anything tighter than half of that is noise, not a signal worth
+# calling out.
+_IN_LINE_THRESHOLD = 0.05
+
+
+def forecast_vs_last_actual(series: str, last_actual: float | None) -> dict | None:
+    """The market's own next-print forecast for `series` compared
+    against the last actual FRED reading (there's no economist-
+    consensus figure anywhere in this app to compare against instead) —
+    {"title", "end_date", "forecast", "points", "last_actual", "delta",
+    "direction"} where direction is "hotter"/"cooler"/"in-line". None if
+    either side of the comparison isn't available yet."""
+    forecast_data = current_data_forecast(series)
+    if forecast_data is None or last_actual is None:
+        return None
+    delta = forecast_data["forecast"] - last_actual
+    if abs(delta) < _IN_LINE_THRESHOLD:
+        direction = "in-line"
+    elif delta > 0:
+        direction = "hotter"
+    else:
+        direction = "cooler"
+    return {**forecast_data, "last_actual": last_actual, "delta": delta, "direction": direction}
+
+
 def swing_alert(swing: dict) -> dict:
     """Turns a check_for_swing() result into the same {"headline",
     "category", "important"} shape every other toast source in this app

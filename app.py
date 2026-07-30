@@ -1538,7 +1538,7 @@ with st.container(key="page_body"):
     elif page == "portfolio":
         _safe_render(pages_portfolio.render)
     elif page == "predictions":
-        _safe_render(pages_predictions.render)
+        _safe_render(pages_predictions.render, readings)
     elif page == "maintenance":
         _safe_render(pages_maintenance.render)
     else:
