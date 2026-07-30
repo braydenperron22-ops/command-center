@@ -38,6 +38,7 @@ import pages_sports
 import pages_today
 import pages_weather
 import payday_schedule
+import persisted_state
 import prediction_markets_client
 import sports_alerts
 import theme
@@ -1720,14 +1721,46 @@ try:
         # continuing to render.
         st.session_state["_toast_anim_tick"] = st.session_state.get("_toast_anim_tick", 0) + 1
         _toast_variant = "a" if st.session_state["_toast_anim_tick"] % 2 == 0 else "b"
-        if current_alert.get("kind") == "commute":
-            commute_reminder.render_bar(current_alert, elapsed, _toast_variant)
-        elif current_alert.get("kind") == "sports":
-            sports_alerts.render_alert_bar(current_alert, elapsed, _toast_variant)
-        elif current_alert.get("kind") == "weather":
-            weather_alerts_bar.render_alert_bar(current_alert, elapsed, _toast_variant)
-        else:
-            news.render_alert_bar(current_alert, elapsed, _toast_variant)
+        # Session report: "the GoVi lights are going red... but the
+        # toast is not there... I get the alert, but I don't get the
+        # toast notification." The Govee block below reads this same
+        # current_alert/elapsed pair to decide whether to flash red —
+        # a genuinely separate code path from the actual st.markdown
+        # call here. Before this, a render failure inside any one of
+        # these four dispatch calls fell through to the single bare
+        # `except Exception: pass` around this whole block (see below),
+        # which left current_alert already assigned to a real, truthy
+        # alert — so the light still fired for it even though the
+        # toast HTML never actually rendered that rerun. Wrapping the
+        # dispatch itself, resetting current_alert to None on failure,
+        # and logging what broke (instead of swallowing it silently)
+        # means the light can no longer show red for a toast that
+        # didn't actually appear, and the next real failure leaves an
+        # actual trace instead of vanishing without one.
+        try:
+            if current_alert.get("kind") == "commute":
+                commute_reminder.render_bar(current_alert, elapsed, _toast_variant)
+            elif current_alert.get("kind") == "sports":
+                sports_alerts.render_alert_bar(current_alert, elapsed, _toast_variant)
+            elif current_alert.get("kind") == "weather":
+                weather_alerts_bar.render_alert_bar(current_alert, elapsed, _toast_variant)
+            else:
+                news.render_alert_bar(current_alert, elapsed, _toast_variant)
+        except Exception as toast_render_exc:
+            import traceback
+
+            print(f"TOAST RENDER FAILED: {current_alert.get('kind', 'news')} alert {current_alert!r}")
+            traceback.print_exc()
+            persisted_state.save(
+                "toast_render_error",
+                {
+                    "at": now_ts,
+                    "kind": current_alert.get("kind", "news"),
+                    "headline": current_alert.get("headline"),
+                    "error": f"{type(toast_render_exc).__name__}: {toast_render_exc}",
+                },
+            )
+            current_alert, elapsed = None, None
     elif _jumbotron_active and commute_reminder.leave_headline_active(now):
         # Session report: a golf tee time's leave-in window landing
         # during a Jays game — "that space is crucial for the

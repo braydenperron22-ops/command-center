@@ -224,7 +224,10 @@ def render(weather: dict | None) -> bool:
 # happens to land) is not an acceptable trade for a life-safety feed
 # that's supposed to "work consistently."
 MAX_SEEN_ALERTS = 200
-_seen_alert_keys: dict = dict(persisted_state.load("weather_seen_alerts", {}))
+# Per-instance (session request: "every single toast we get... every
+# terminal gets its own alert") — same reasoning as news.py/
+# commute_reminder.py/prediction_markets_client.py's own toast dedup.
+_seen_alert_keys: dict = dict(persisted_state.load_per_instance("weather_seen_alerts", {}))
 
 
 def get_new_alerts(now: datetime) -> list[dict]:
@@ -266,7 +269,7 @@ def get_new_alerts(now: datetime) -> list[dict]:
     _seen_alert_keys[key] = True
     if len(_seen_alert_keys) > MAX_SEEN_ALERTS:
         _seen_alert_keys.pop(next(iter(_seen_alert_keys)))
-    persisted_state.save("weather_seen_alerts", _seen_alert_keys)
+    persisted_state.save_per_instance("weather_seen_alerts", _seen_alert_keys)
     severity = _severity(alert["title"])
     headline = alert["title"]
     phase_info = ec_storm_timing.storm_phase(now, alert["title"], severity)

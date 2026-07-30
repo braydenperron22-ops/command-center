@@ -75,7 +75,14 @@ SLIDE_END = 3.0
 # global, save only on a genuine change (see check() below — the save
 # call only ever runs when a milestone is actually newly due, same as
 # it always did).
-_shown_state: dict = persisted_state.load("commute_reminder_shown", {"date": None, "events": {}})
+#
+# Per-instance (session request: "every single toast we get... make
+# sure every terminal gets its own alert") — "has THIS instance already
+# shown this leave-soon toast today" shouldn't block a genuinely
+# separate instance from showing its own. commute_milestones below (the
+# phone-push dedup) stays on its single shared key on purpose — the
+# same phone must never buzz twice for one milestone.
+_shown_state: dict = persisted_state.load_per_instance("commute_reminder_shown", {"date": None, "events": {}})
 
 
 def _leave_text(minutes: int) -> str:
@@ -298,7 +305,7 @@ def check(now: datetime) -> dict | None:
         return None
     shown_for_event.add(milestone)
     _shown_state["events"][event_key] = sorted(shown_for_event)
-    persisted_state.save("commute_reminder_shown", _shown_state)
+    persisted_state.save_per_instance("commute_reminder_shown", _shown_state)
 
     # Disk-persisted (persisted_state), not a plain module-level global
     # or st.session_state — session report: "I received the leave for

@@ -236,8 +236,13 @@ SWING_THRESHOLD = 0.12
 # check_for_swing below) — same persisted-cache shape this session's own
 # news.py/commute_reminder.py fixes already established, not a repeat of
 # either mistake: no per-rerun load, and no save unless the snapshot
-# actually differs from what's already on record.
-_last_seen: dict[str, dict] = persisted_state.load("prediction_market_last_seen", {})
+# actually differs from what's already on record. Per-instance (session
+# request: "every single toast we get... every terminal gets its own
+# alert") — this is exactly the mechanism the real BoE-headline incident
+# traced back to for news.py; same fix here so a swing toast for one
+# instance doesn't silently block every other instance from getting its
+# own.
+_last_seen: dict[str, dict] = persisted_state.load_per_instance("prediction_market_last_seen", {})
 
 
 def check_for_swing(bank: str) -> dict | None:
@@ -259,7 +264,7 @@ def check_for_swing(bank: str) -> dict | None:
     if prev == snapshot:
         return None
     _last_seen[bank] = snapshot
-    persisted_state.save("prediction_market_last_seen", _last_seen)
+    persisted_state.save_per_instance("prediction_market_last_seen", _last_seen)
     if prev is None or prev["title"] != snapshot["title"]:
         return None
     if prev["bucket"] != bucket:

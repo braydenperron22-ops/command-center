@@ -134,6 +134,22 @@ def _cloud_cache_rows() -> str:
     return _row("Upstash", text, tone, _relative_time(status["last_at"]))
 
 
+def _toast_health_rows() -> str:
+    """Session report: "the GoVi lights are going red... but the toast
+    is not there." app.py now catches a toast-render failure instead of
+    letting it vanish inside a bare except, and records it here — the
+    next time this happens, this tile shows exactly what broke instead
+    of leaving it a mystery."""
+    err = persisted_state.load("toast_render_error", None)
+    if not err:
+        return _row("Last render failure", "None recorded", "good")
+    return (
+        _row(f"{err['kind']} alert", "Failed", "low", _relative_time(err["at"]))
+        + f'<div class="maint-row-meta">{err["error"]}</div>'
+        + f'<div class="maint-row-meta">{(err.get("headline") or "")[:80]}</div>'
+    )
+
+
 def _system_rows() -> str:
     rows = [_row("Process uptime", meta=_format_duration(time.time() - _STARTED_AT))]
     try:
@@ -173,3 +189,6 @@ def render() -> None:
         st.markdown(_tile("System", _system_rows()), unsafe_allow_html=True)
     with row2[2]:
         st.markdown(_tile("Cloud Cache", _cloud_cache_rows()), unsafe_allow_html=True)
+    row3 = st.columns(3)
+    with row3[0]:
+        st.markdown(_tile("Toast Alerts", _toast_health_rows()), unsafe_allow_html=True)

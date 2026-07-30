@@ -127,6 +127,50 @@ def load(key: str, default):
     return _load_local(key, default)
 
 
+# Session request: "have the individual dashboard... whenever something
+# new comes up, automatically toast it... regardless of if it was shown
+# on another terminal... every single terminal gets the alert. Do this
+# for everything, every single toast we get at all." A plain load()/
+# save() pair is a single fact true for every instance alike (a
+# classification cache, a periodic content cache) — genuinely separate
+# running instances sharing one Upstash store (a second kiosk, a local
+# dev box also pointed at Upstash) SHOULD share those. But "has THIS
+# instance already shown a toast for X" is a different kind of fact:
+# with a single shared key, whichever instance's poll got there first
+# marked it seen for everyone, so every other instance silently never
+# got its own toast — confirmed live with a real BoE headline. load_
+# per_instance/save_per_instance namespace a key by INSTANCE_ID instead,
+# for exactly that "have I personally shown this" class of state.
+# Defaults to a fixed "shared" identity so a deployment that's never
+# configured INSTANCE_ID at all (true for the current single production
+# kiosk) behaves exactly as a plain load()/save() pair always did.
+INSTANCE_ID = st.secrets.get("INSTANCE_ID", "shared")
+
+
+def load_per_instance(key: str, default):
+    """Like load(), but namespaced per INSTANCE_ID, with a one-time
+    migration path: the very first load after some existing key gets
+    switched from load()/save() over to this would otherwise find
+    nothing under the new "key:shared" name and look like a brand new
+    instance — silently losing whatever real history (a seen-headline
+    set, a baseline-established flag) already lived under the old,
+    un-suffixed key. Falling back to that old key only for the default
+    "shared" identity (nothing else has any old data to inherit from,
+    since it never used to exist as an instance concept at all) closes
+    that gap with zero loss for the one instance that actually has
+    history to protect."""
+    value = load(f"{key}:{INSTANCE_ID}", None)
+    if value is not None:
+        return value
+    if INSTANCE_ID == "shared":
+        return load(key, default)
+    return default
+
+
+def save_per_instance(key: str, value) -> None:
+    save(f"{key}:{INSTANCE_ID}", value)
+
+
 def save(key: str, value) -> None:
     """Best-effort — a failed write just means this particular update
     doesn't survive the next restart/device, not a crash. `value` must
