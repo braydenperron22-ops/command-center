@@ -580,3 +580,128 @@ def swing_alert(swing: dict) -> dict:
         prev_pct = round(swing["prev_prob"] * 100)
         headline = f"{bank_label}: {bucket_label} odds jump to {prob_pct}% (from {prev_pct}%)"
     return {"headline": headline, "category": "Rate Odds", "important": swing["kind"] == "flip"}
+
+
+# --- Weekend market-close forecast (SPY, WTI Crude Oil) -----------------
+# Session request: "instead of using crypto as a proxy for weekend
+# sentiment, can we use [polymarket.com/event/spy-closes-above-on-
+# july-30-2026]? And then find that same contract for... the Nasdaq and
+# the Dow and gold and crude oil." Checked live: this "closes above $X"
+# daily contract family only actually exists for SPY and WTI Crude Oil —
+# Nasdaq, Dow, and Gold don't have a matching contract on Polymarket at
+# all (only individual mega-cap stocks otherwise run this same shape),
+# so only those two are built here rather than faking the other three.
+#
+# Genuinely different market shape from every series above: each
+# sub-market is an independent "will it close above $X" question, not a
+# set of mutually-exclusive named buckets — a survival function P(close
+# > X) sampled at a handful of strikes, not a probability distribution
+# that sums to 1 on its own. Turning that into a single expected-close
+# forecast means decomposing consecutive strikes into bucket
+# probabilities first (P(strike_i < close <= strike_i+1) = P(close >
+# strike_i) - P(close > strike_i+1)), then the same probability-weighted
+# midpoint average the macro-print forecasts above already use.
+CLOSE_SERIES = {
+    "spy": {
+        "query": "S&P 500 (SPY) closes above",
+        "label": "S&P 500 (SPY)",
+        "yf_symbol": "SPY",
+    },
+    "wti": {
+        "query": "WTI Crude Oil (WTI) closes above",
+        "label": "WTI Crude Oil",
+        "yf_symbol": "CL=F",
+    },
+}
+
+_THRESHOLD_RE = re.compile(r"\$(\d+\.?\d*)")
+
+
+def _threshold_for_question(question: str) -> float | None:
+    m = _THRESHOLD_RE.search(question)
+    return float(m.group(1)) if m else None
+
+
+def _parse_close_event(event: dict) -> dict | None:
+    points = []
+    for m in event.get("markets") or []:
+        threshold = _threshold_for_question(m.get("question") or "")
+        if threshold is None:
+            continue
+        try:
+            prices = json.loads(m.get("outcomePrices") or "[]")
+            points.append((threshold, float(prices[0])))
+        except (ValueError, IndexError, TypeError):
+            continue
+    if len(points) < 3:
+        return None
+    points.sort(key=lambda p: p[0])
+    # A real survival function is non-increasing as the strike rises —
+    # confirmed live that SPY's own far, thin strikes quote noisily
+    # (probability actually went UP at a higher strike at one snapshot),
+    # which would otherwise hand a bucket a negative probability mass
+    # below. Clamping each strike's probability to the running minimum
+    # seen so far from the low end keeps the curve well-behaved without
+    # discarding those strikes outright.
+    cleaned = []
+    running_min = 1.0
+    for threshold, prob in points:
+        running_min = min(prob, running_min)
+        cleaned.append((threshold, running_min))
+    total = 0.0
+    weighted = 0.0
+    lo_threshold, lo_prob = cleaned[0]
+    below_prob = 1.0 - lo_prob
+    total += below_prob
+    weighted += below_prob * lo_threshold
+    for (t0, p0), (t1, p1) in zip(cleaned, cleaned[1:]):
+        bucket_prob = p0 - p1
+        total += bucket_prob
+        weighted += bucket_prob * (t0 + t1) / 2
+    hi_threshold, hi_prob = cleaned[-1]
+    total += hi_prob
+    weighted += hi_prob * hi_threshold
+    if total <= 0:
+        return None
+    forecast = weighted / total
+    return {"title": event.get("title"), "end_date": event.get("endDate"), "forecast": forecast}
+
+
+_last_good_close: dict[str, dict] = {}
+
+
+def current_close_forecast(series: str) -> dict | None:
+    """{"title", "end_date", "forecast"} — the market's own
+    probability-weighted expected close for `series` (a CLOSE_SERIES
+    key), rolling to the next still-open day's contract the same way
+    current_odds() rolls to the next meeting."""
+    cfg = CLOSE_SERIES.get(series)
+    if cfg is None:
+        return None
+    try:
+        events = _search_raw(cfg["query"])
+    except Exception:
+        return _last_good_close.get(series)
+    open_events = sorted(
+        (e for e in events if not e.get("closed") and e.get("endDate")),
+        key=lambda e: e["endDate"],
+    )
+    for event in open_events:
+        parsed = _parse_close_event(event)
+        if parsed is not None:
+            _last_good_close[series] = parsed
+            return parsed
+    return _last_good_close.get(series)
+
+
+def close_forecast_return(series: str, last_close: float | None) -> dict | None:
+    """The market's own expected-close forecast for `series` turned into
+    a plain return % against `last_close` (the caller's job to supply —
+    typically the last actual trading session's close, e.g. Friday's
+    4pm print over a weekend) — {"title", "end_date", "forecast",
+    "last_close", "pct_return"}. None if either side isn't available."""
+    forecast_data = current_close_forecast(series)
+    if forecast_data is None or not last_close:
+        return None
+    pct_return = (forecast_data["forecast"] - last_close) / last_close * 100
+    return {**forecast_data, "last_close": last_close, "pct_return": pct_return}

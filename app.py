@@ -1488,15 +1488,31 @@ if FRED_API_KEY:
 
 # Intraday change of whatever instrument best represents "the market"
 # right now drives the Govee light's base color below — same open/
-# closed/weekend swap (index / futures / crypto) as the Markets page
-# itself, via market_yf_client.primary_symbol(). Fetched unconditionally
-# like the FRED readings above, but this reuses quote_for's own 5-minute
-# cache (the same cache the Markets page itself hits), so it's free
-# network-wise once anything has warmed it.
+# closed swap (index / futures) as the Markets page itself for "open"/
+# "closed". Fetched unconditionally like the FRED readings above, but
+# this reuses quote_for's own 5-minute cache (the same cache the
+# Markets page itself hits), so it's free network-wise once anything
+# has warmed it.
+#
+# Session request: "instead of using crypto as a proxy for weekend
+# sentiment, can we use [Polymarket's SPY-closes-above contract]?" —
+# on weekends this is now Polymarket's own market-implied expected SPY
+# close (prediction_markets_client.close_forecast_return), turned into
+# a plain return % against SPY's own last actual close, instead of
+# Bitcoin's intraday move. Checked live: this exact "closes above"
+# contract shape only exists for SPY and WTI Crude Oil on Polymarket —
+# Nasdaq/Dow/Gold don't have one — so SPY is what stands in here, the
+# same role "sp500" already plays in the open/closed states above it.
 try:
     market_status = market_yf_client.market_status()
-    _primary_quote = market_yf_client.quote_for(market_yf_client.primary_symbol(market_status))
-    market_intraday_pct = _primary_quote["intraday"] if _primary_quote else None
+    if market_status == "weekend":
+        _spy_quote = market_yf_client.quote_for("SPY")
+        _spy_last_close = _spy_quote["history"][-1] if _spy_quote and _spy_quote.get("history") else None
+        _spy_forecast = prediction_markets_client.close_forecast_return("spy", _spy_last_close)
+        market_intraday_pct = _spy_forecast["pct_return"] if _spy_forecast else None
+    else:
+        _primary_quote = market_yf_client.quote_for(market_yf_client.primary_symbol(market_status))
+        market_intraday_pct = _primary_quote["intraday"] if _primary_quote else None
 except Exception:
     market_status = None
     market_intraday_pct = None
