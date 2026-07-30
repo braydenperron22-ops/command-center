@@ -112,6 +112,21 @@ BUCKET_LABELS = {
     "hike_50": "+50+bps",
     "hike": "Hike",
 }
+# Session request: color the direction, not each individual bucket —
+# "CUT in ice blue, hold just normal, hike is fire red." Collapses the
+# fine-grained 50/25-bps buckets down to the three directions a display
+# actually wants to color.
+_BUCKET_DIRECTION = {
+    "cut_50": "cut", "cut_25": "cut", "cut": "cut",
+    "hold": "hold",
+    "hike_25": "hike", "hike_50": "hike", "hike": "hike",
+}
+
+
+def bucket_direction(bucket: str) -> str:
+    """"cut"/"hold"/"hike" for any bucket key, collapsing away the
+    50/25-bps detail some banks carry and others don't."""
+    return _BUCKET_DIRECTION[bucket]
 
 
 def _bucket_for_question(question: str) -> str | None:

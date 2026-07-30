@@ -538,16 +538,34 @@ html, body, [class*="css"] {
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
-/* The market's own current leading outcome — brighter text and a blue
-   fill matching the page's own accent, so it reads as "this one" at a
-   glance among the other four rows. */
+/* The market's own current leading outcome — bold, and slightly
+   brighter than the plain #ABB2C4 the other rows use, so it reads as
+   "this one" at a glance among the rest. Deliberately just emphasis,
+   not color — color now means direction (see .prediction-direction-*
+   below), same value regardless of whether this is the leading row. */
 .prediction-bar-row-leading {
+    font-weight: 700;
+}
+.prediction-bar-row-leading .prediction-bar-label,
+.prediction-bar-row-leading .prediction-bar-pct {
     color: #F5F5F7;
-    font-weight: 600;
 }
-.prediction-bar-row-leading .prediction-bar-fill {
-    background: #0A84FF;
-}
+
+/* Session request: "CUT in ice blue, hold just normal, hike is fire
+   red" — colors the DIRECTION (cut vs. hold vs. hike), not the
+   specific bucket, so a -25bps and a -50bps row read as the same
+   "cut" color (see prediction_markets_client.bucket_direction).
+   Same fire/ice values already tuned elsewhere in this app
+   (.jumbo-live-matchup-stat-hot/-cold, pages_jumbotron's batter/
+   pitcher matchup card) for exactly this look, minus the pulse
+   animation — a rate outlook is a stable read, not a live streak.
+   "hold" gets no override at all, matching this app's own plain-white
+   default everywhere else a number isn't inherently good or bad. */
+.prediction-direction-cut { color: #3DD9FF; }
+.prediction-direction-hike { color: #FF5A1F; }
+.prediction-bar-row.prediction-direction-cut .prediction-bar-fill { background: #3DD9FF; }
+.prediction-bar-row.prediction-direction-hike .prediction-bar-fill { background: #FF5A1F; }
+.prediction-bar-row.prediction-direction-hold .prediction-bar-fill { background: #5AC8FA; }
 
 /* Session follow-up: "I want all of the rate odds as many as you can
    find... I want them all on the side with the country name and then
@@ -565,9 +583,13 @@ html, body, [class*="css"] {
     flex-direction: column;
     gap: 0.1rem;
 }
+/* Session correction: bank on the left, then percentage, then outcome
+   (was country/outcome/percentage) — column widths swapped to match:
+   percentage is always short ("100%"), outcome needs a bit more room
+   ("No change" is the longest label). */
 .prediction-row {
     display: grid;
-    grid-template-columns: 1fr 5.5rem 3.2rem;
+    grid-template-columns: 1fr 3.2rem 5.5rem;
     align-items: center;
     gap: 0.6rem;
     padding: 0.45rem 0.2rem;
@@ -586,7 +608,14 @@ html, body, [class*="css"] {
 .prediction-row-outcome {
     color: #ABB2C4;
     white-space: nowrap;
+    font-weight: 600;
 }
+/* Compound selector, not just .prediction-direction-cut/-hike alone:
+   those are the same specificity as .prediction-row-outcome above and
+   lose to it on source order alone (found live — every side-list row
+   was rendering gray regardless of direction until this was added). */
+.prediction-row-outcome.prediction-direction-cut { color: #3DD9FF; }
+.prediction-row-outcome.prediction-direction-hike { color: #FF5A1F; }
 .prediction-row-pct {
     color: #F5F5F7;
     font-weight: 600;

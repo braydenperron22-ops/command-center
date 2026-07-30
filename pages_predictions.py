@@ -52,13 +52,15 @@ def _bank_tile_html(bank: str) -> str:
         )
 
     bucket, prob = pmc.most_likely_outcome(odds)
-    # Cutting rates reads as the market anticipating a weaker economy —
-    # the classic "good news is bad news" market read isn't something
-    # this tile should try to arbitrate, so tone stays neutral for every
-    # bucket rather than picking a winner/loser color the way a plain %
-    # change tile would. Consistent with pages_internals.py's own
-    # ratio tiles, which use the same neutral treatment for numbers that
-    # aren't inherently good or bad.
+    direction = pmc.bucket_direction(bucket)
+    # Session request: "CUT in ice blue, hold just normal, hike is fire
+    # red" — a cut/hike is colored by direction regardless of size (a
+    # -25bps and a -50bps bucket are both "cut," same color), hold gets
+    # no override at all (this app's own plain-white default everywhere
+    # else). Reuses the exact fire (#FF5A1F) / ice (#3DD9FF) colors
+    # already tuned elsewhere in this app (pages_jumbotron's hot/cold
+    # matchup stats) rather than picking new ones, minus the pulse
+    # animation — a rate outlook is a stable read, not a live streak.
     meeting_date = _format_meeting_date(odds.get("end_date"))
     meeting_line = f"Next meeting: {html.escape(meeting_date)}" if meeting_date else ""
 
@@ -67,9 +69,10 @@ def _bank_tile_html(bank: str) -> str:
         if b not in odds["outcomes"]:
             continue
         pct = odds["outcomes"][b] * 100
+        b_direction = pmc.bucket_direction(b)
         leading = " prediction-bar-row-leading" if b == bucket else ""
         rows.append(
-            f'<div class="prediction-bar-row{leading}">'
+            f'<div class="prediction-bar-row prediction-direction-{b_direction}{leading}">'
             f'<span class="prediction-bar-label">{html.escape(pmc.BUCKET_LABELS[b])}</span>'
             f'<span class="prediction-bar-track"><span class="prediction-bar-fill" style="width:{pct:.1f}%"></span></span>'
             f'<span class="prediction-bar-pct">{pct:.1f}%</span>'
@@ -79,7 +82,7 @@ def _bank_tile_html(bank: str) -> str:
     return (
         f'<div class="tile prediction-tile">'
         f'<div class="tile-label">{html.escape(label.upper())}</div>'
-        f'<div class="internals-verdict internals-verdict-neutral">{html.escape(pmc.BUCKET_LABELS[bucket])} · {prob * 100:.0f}%</div>'
+        f'<div class="internals-verdict prediction-direction-{direction}">{html.escape(pmc.BUCKET_LABELS[bucket])} · {prob * 100:.0f}%</div>'
         f'<div class="internals-context">{meeting_line}</div>'
         f'<div class="prediction-breakdown">{"".join(rows)}</div>'
         f"</div>"
@@ -100,11 +103,15 @@ def _side_list_html() -> str:
     entries.sort(key=lambda e: e[0])
     for _, bank, bucket, prob in entries:
         country = pmc.BANK_COUNTRIES[bank]
+        direction = pmc.bucket_direction(bucket)
+        # Session request: bank on the left, then the percentage, then
+        # the outcome — reordered from the original country/outcome/
+        # percentage layout.
         rows.append(
             f'<div class="prediction-row">'
             f'<span class="prediction-row-country">{html.escape(country)}</span>'
-            f'<span class="prediction-row-outcome">{html.escape(pmc.BUCKET_LABELS[bucket])}</span>'
             f'<span class="prediction-row-pct">{prob * 100:.0f}%</span>'
+            f'<span class="prediction-row-outcome prediction-direction-{direction}">{html.escape(pmc.BUCKET_LABELS[bucket])}</span>'
             f"</div>"
         )
     if not rows:
