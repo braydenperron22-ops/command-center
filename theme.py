@@ -2485,6 +2485,54 @@ html, body, [class*="css"] {
     color: #ABB2C4;
 }
 
+/* Session request: "redesign the mobile UI... see the full pages...
+   without issues and lag." Confirmed live (same root cause the
+   jumbotron takeover already found and fixed for itself, see
+   .block-container:has(.jumbo) > div's own comment below): every one
+   of these renders via position:fixed, or is a pure CSS/JS injection
+   with no visible content at all — so its own box is already always
+   0-height, but Streamlit's vertical block still applies its own flex
+   `gap` around it regardless (gap is the flex CONTAINER's property
+   between items, not something a zero-height item can opt out of on
+   its own). On the kiosk, centered layout (justify-content: center)
+   absorbs that slack space as part of centering the whole block, so
+   it's never visible there. Mobile's flex-start layout (below) can't
+   absorb it the same way — confirmed live this compounds into 150+px
+   of pure dead space above the first real content on every single
+   page, not just one. `display: none` looked tempting but is wrong
+   here: it would ALSO hide the actual fixed-position descendant (an
+   ancestor's display:none removes its whole subtree from rendering
+   regardless of the child's own position), which would break the
+   always-in-DOM screen-picker overlay outright the moment this global
+   rule loaded. `position: absolute` instead: takes the wrapper out of
+   flex flow (no more gap contribution) without affecting how its real
+   fixed-position content actually renders or shows/hides itself — a
+   position:fixed descendant positions against the viewport regardless
+   of its immediate parent's own position property. Global, not
+   mobile-scoped, since the underlying waste exists on every page; it's
+   just only ever visible once a page actually scrolls. */
+.stElementContainer:has(> div.stMarkdown [data-testid="stMarkdownContainer"] > style:only-child),
+.stElementContainer:has(iframe),
+.stElementContainer:has(.screen-picker),
+.stElementContainer:has(.ai-status-bar),
+.stElementContainer:has(.rotation-timer-track),
+.stElementContainer:has(.ticker-bar),
+.stElementContainer:has(.top-alert-bar),
+.stElementContainer:has(.news-alert-bar),
+.stElementContainer:has(.news-alert-bar-market),
+.stElementContainer:has(.commute-alert-bar),
+.stElementContainer:has(.sports-alert-bar-mlb),
+.stElementContainer:has(.sports-alert-bar-nhl),
+.stElementContainer:has(.sports-alert-bar-nfl),
+.stElementContainer:has(.weather-alert-bar-watch),
+.stElementContainer:has(.weather-alert-bar-statement),
+.stElementContainer:has(.weather-statement-bar) {
+    position: absolute !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+}
+
 /* Phone nav pills (app.py) — jump straight to any page instead of
    waiting out the kiosk's 5-minute rotation. Hidden by default: the
    kiosk monitor is always well above the mobile breakpoint below, so
@@ -4175,6 +4223,16 @@ html, body, [class*="css"] {
        near-fully-opaque here rather than globally, since it's only
        ever been a problem once scrolling entered the picture. */
     .ticker-bar { background: rgba(8,8,11,0.98); }
+
+    /* Confirmed live: position:fixed pins this to the same viewport
+       spot regardless of scroll, so on a genuinely scrolling mobile
+       page it permanently sits on top of whatever real content
+       happens to land there (a market-pill, in one live check) —
+       blocking taps on it and just adding clutter. It's AI-provider
+       debug telemetry, not something a quick phone glance needs; the
+       kiosk (where scrolling never happens, so this never overlaps
+       anything) keeps it. */
+    .ai-status-bar { display: none; }
 
     /* The jumbotron's 3-column bento is built for a 1080p wall, not a
        phone — stack it and let the page scroll like the other mobile
