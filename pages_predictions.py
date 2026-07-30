@@ -1,92 +1,24 @@
 """Predictions: rolling, per-meeting rate-decision odds for every central
 bank prediction_markets_client.BANKS actually covers. Session history:
 "make it its own page for just prediction market things. start by doing
-this for the biggest central banks" (shipped first for Fed/BoC/BoJ) ->
-"I want all of the rate odds as many as you can find... I want them all
-on the side with the country name and then the most likely outcome and
-the percentage. So it's like, what is expected of them?"
-
-Two-part layout: FEATURED_BANKS keep the original detailed tile (full
-verdict + the whole outcome breakdown, same "readable from across the
-room" verdict-first shape pages_internals.py already established) in
-the wider main column; every bank in BANKS — featured ones included, so
-the side list is genuinely complete on its own — gets one compact row
-(country, most likely outcome, probability) in a side list, sorted by
-whichever meeting is coming up soonest.
+this for the biggest central banks" (shipped first as big Fed/BoC/BoJ
+hero tiles) -> "I want all of the rate odds as many as you can find...
+I want them all on the side with the country name and then the most
+likely outcome and the percentage" (added the compact all-bank side
+list alongside those tiles) -> "don't make the BoC, Fed, and the other
+one big, make them fit into the same row... leave an open spot on the
+right side, we're gonna put some other things there... nice, clean
+format, like a list almost" — dropped the separate hero-tile row
+entirely; every bank (Fed/BoC/BoJ included) is just a row in the one
+list now, and the freed-up space is a deliberately empty column
+reserved for future widgets.
 """
 
 import html
-from datetime import datetime
 
 import streamlit as st
 
 import prediction_markets_client as pmc
-
-# The original three, kept as the detailed hero tiles — every other
-# bank BANKS covers gets the compact side-list treatment only, since a
-# full 5-way breakdown tile per bank wouldn't fit for a roster this
-# size (see the session request behind this file's own docstring: "as
-# many as you can find," not "in this much detail for all of them").
-FEATURED_BANKS = ["fed", "boc", "boj"]
-
-
-def _format_meeting_date(iso_date: str | None) -> str:
-    if not iso_date:
-        return ""
-    try:
-        dt = datetime.fromisoformat(iso_date.replace("Z", "+00:00"))
-        return dt.strftime("%B %-d, %Y")
-    except (ValueError, TypeError):
-        return ""
-
-
-def _bank_tile_html(bank: str) -> str:
-    label = pmc.BANK_LABELS[bank]
-    odds = pmc.current_odds(bank)
-    if not odds:
-        return (
-            f'<div class="tile prediction-tile">'
-            f'<div class="tile-label">{html.escape(label.upper())}</div>'
-            f'<div class="tile-prev">data unavailable</div>'
-            f"</div>"
-        )
-
-    bucket, prob = pmc.most_likely_outcome(odds)
-    direction = pmc.bucket_direction(bucket)
-    # Session request: "CUT in ice blue, hold just normal, hike is fire
-    # red" — a cut/hike is colored by direction regardless of size (a
-    # -25bps and a -50bps bucket are both "cut," same color), hold gets
-    # no override at all (this app's own plain-white default everywhere
-    # else). Reuses the exact fire (#FF5A1F) / ice (#3DD9FF) colors
-    # already tuned elsewhere in this app (pages_jumbotron's hot/cold
-    # matchup stats) rather than picking new ones, minus the pulse
-    # animation — a rate outlook is a stable read, not a live streak.
-    meeting_date = _format_meeting_date(odds.get("end_date"))
-    meeting_line = f"Next meeting: {html.escape(meeting_date)}" if meeting_date else ""
-
-    rows = []
-    for b in pmc.BUCKET_ORDER:
-        if b not in odds["outcomes"]:
-            continue
-        pct = odds["outcomes"][b] * 100
-        b_direction = pmc.bucket_direction(b)
-        leading = " prediction-bar-row-leading" if b == bucket else ""
-        rows.append(
-            f'<div class="prediction-bar-row prediction-direction-{b_direction}{leading}">'
-            f'<span class="prediction-bar-label">{html.escape(pmc.BUCKET_LABELS[b])}</span>'
-            f'<span class="prediction-bar-track"><span class="prediction-bar-fill" style="width:{pct:.1f}%"></span></span>'
-            f'<span class="prediction-bar-pct">{pct:.1f}%</span>'
-            f"</div>"
-        )
-
-    return (
-        f'<div class="tile prediction-tile">'
-        f'<div class="tile-label">{html.escape(label.upper())}</div>'
-        f'<div class="internals-verdict prediction-direction-{direction}">{html.escape(pmc.BUCKET_LABELS[bucket])} · {prob * 100:.0f}%</div>'
-        f'<div class="internals-context">{meeting_line}</div>'
-        f'<div class="prediction-breakdown">{"".join(rows)}</div>'
-        f"</div>"
-    )
 
 
 def _side_list_html() -> str:
@@ -127,13 +59,8 @@ def render() -> None:
         unsafe_allow_html=True,
     )
 
-    main_col, side_col = st.columns([3, 2])
-    with main_col:
-        tile_cols = st.columns(len(FEATURED_BANKS))
-        for col, bank in zip(tile_cols, FEATURED_BANKS):
-            with col:
-                st.markdown(_bank_tile_html(bank), unsafe_allow_html=True)
-    with side_col:
+    list_col, open_col = st.columns([3, 2])
+    with list_col:
         st.markdown(
             f'<div class="tile prediction-side-tile">'
             f'<div class="tile-label">ALL CENTRAL BANKS</div>'
@@ -141,3 +68,6 @@ def render() -> None:
             f"</div>",
             unsafe_allow_html=True,
         )
+    with open_col:
+        # Deliberately empty — reserved for whatever goes here next.
+        pass

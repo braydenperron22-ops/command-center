@@ -495,60 +495,15 @@ html, body, [class*="css"] {
 }
 
 /* Predictions page — session request: "make it its own page for just
-   prediction market things." Same verdict-first shape as Market
-   Internals' own tiles (big tone-colored verdict, a plain-language
-   context line below it), plus a compact 5-row breakdown of every
-   outcome bucket underneath, since "expected outcome" here means the
-   whole distribution, not just the single leading number. */
+   prediction market things." Session follow-up: "don't make the BoC,
+   Fed, and the other one big, make them fit into the same row...
+   nice, clean format, like a list almost" — every bank, Fed/BoC/BoJ
+   included, is one compact row here; there's no separate hero-tile
+   treatment anymore. */
 .prediction-source-note {
     font-size: 1rem;
     color: #ABB2C4;
     margin: -0.4rem 0 0.9rem;
-}
-.prediction-breakdown {
-    margin-top: 0.9rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-}
-.prediction-bar-row {
-    display: grid;
-    grid-template-columns: 5.5rem 1fr 3.2rem;
-    align-items: center;
-    gap: 0.6rem;
-    font-size: 0.95rem;
-    color: #ABB2C4;
-}
-.prediction-bar-label {
-    white-space: nowrap;
-}
-.prediction-bar-track {
-    background: rgba(255,255,255,0.08);
-    border-radius: 4px;
-    height: 0.6rem;
-    overflow: hidden;
-}
-.prediction-bar-fill {
-    display: block;
-    height: 100%;
-    background: #5AC8FA;
-    border-radius: 4px;
-}
-.prediction-bar-pct {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-}
-/* The market's own current leading outcome — bold, and slightly
-   brighter than the plain #ABB2C4 the other rows use, so it reads as
-   "this one" at a glance among the rest. Deliberately just emphasis,
-   not color — color now means direction (see .prediction-direction-*
-   below), same value regardless of whether this is the leading row. */
-.prediction-bar-row-leading {
-    font-weight: 700;
-}
-.prediction-bar-row-leading .prediction-bar-label,
-.prediction-bar-row-leading .prediction-bar-pct {
-    color: #F5F5F7;
 }
 
 /* Session request: "CUT in ice blue, hold just normal, hike is fire
@@ -563,15 +518,11 @@ html, body, [class*="css"] {
    default everywhere else a number isn't inherently good or bad. */
 .prediction-direction-cut { color: #3DD9FF; }
 .prediction-direction-hike { color: #FF5A1F; }
-.prediction-bar-row.prediction-direction-cut .prediction-bar-fill { background: #3DD9FF; }
-.prediction-bar-row.prediction-direction-hike .prediction-bar-fill { background: #FF5A1F; }
-.prediction-bar-row.prediction-direction-hold .prediction-bar-fill { background: #5AC8FA; }
 
 /* Session follow-up: "I want all of the rate odds as many as you can
    find... I want them all on the side with the country name and then
    the most likely outcome and the percentage." A compact scrollable
-   roster, not another full breakdown tile per bank — that's what the
-   three FEATURED_BANKS tiles are for (pages_predictions.py). */
+   roster covering every bank BANKS knows about. */
 .prediction-side-tile {
     max-height: 100%;
 }
