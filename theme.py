@@ -582,28 +582,66 @@ html, body, [class*="css"] {
 
 /* Session follow-up: "what other markets are there... pull the
    consensus... build a forecast... estimate if it's gonna be coming in
-   cooler or hotter than expected." Fills the open column reserved
-   above. Reuses the same good/bad/neutral verdict coloring
-   pages_internals.py already established (green=good, red=bad,
-   blue=neutral) rather than the cut/hike fire-ice palette — this is
-   "higher/lower than last time," not a rate direction, and it matches
-   config.py's own good_direction: "down" for both CPI and unemployment
-   (cooler is the good outcome for both). */
+   cooler or hotter than expected" -> "make it a big number... put it in
+   a box, make it all fancy... instead of having two of them that are
+   kinda random... find data for Canada as well... have the next
+   closest event show up automatically... across Canada and the US."
+   One hero box for whichever tracked series is soonest, not a fixed
+   pair (see prediction_markets_client.next_data_series()). Reuses the
+   same good/bad/neutral verdict coloring pages_internals.py already
+   established (green=good, red=bad, blue=neutral) rather than the
+   cut/hike fire-ice palette — this is "higher/lower than last time,"
+   not a rate direction, and it matches config.py's own
+   good_direction: "down" for both CPI and unemployment (cooler is the
+   good outcome for both). */
 .prediction-macro-tile {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.7rem;
 }
-.prediction-macro-label {
+.prediction-macro-heading {
     font-size: 1rem;
     color: #ABB2C4;
     text-transform: uppercase;
     letter-spacing: 0.02em;
 }
-.prediction-macro-verdict {
-    font-size: 1.5rem;
-    margin-top: 0.15rem;
+.prediction-macro-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0.4rem;
+    padding: 1.2rem 1.5rem;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
 }
+.prediction-macro-number {
+    font-size: 3.4rem;
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: #F5F5F7;
+}
+.prediction-macro-unit {
+    font-size: 1.7rem;
+    font-weight: 700;
+    margin-left: 0.2rem;
+    opacity: 0.75;
+}
+.prediction-macro-tag {
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+.prediction-macro-box-good { background: rgba(50,215,75,0.12); border-color: rgba(50,215,75,0.35); }
+.prediction-macro-box-bad { background: rgba(255,105,97,0.12); border-color: rgba(255,105,97,0.35); }
+.prediction-macro-box-neutral { background: rgba(90,200,250,0.12); border-color: rgba(90,200,250,0.35); }
+.prediction-macro-tag-good { background: #32D74B; color: #04270c; }
+.prediction-macro-tag-bad { background: #FF6961; color: #330806; }
+.prediction-macro-tag-neutral { background: #5AC8FA; color: #04202c; }
 
 .tile-extra {
     margin-top: 0.5rem;

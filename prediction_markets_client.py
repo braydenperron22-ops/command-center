@@ -283,10 +283,26 @@ def check_for_swing(bank: str) -> dict | None:
 # weighted average across every point value the event covers, a much
 # better summary of a distribution spread across 8-12 adjacent buckets
 # than picking just the single largest one.
+#
+# Session follow-up #2: "instead of having two of them that are kinda
+# random... find data for Canada as well... have the next closest event
+# show up automatically... across Canada and the US." Checked live:
+# Canada's monthly CPI/unemployment series (matching the US's cadence
+# and per-point-value shape) has gone dormant — nothing currently open
+# past Dec 2025/Feb 2026 — so `ca_unemployment` below is kept configured
+# but will legitimately come back `None` from current_data_forecast()
+# until Polymarket reopens a real one, same "don't fake it" rule this
+# file's own module docstring already applies to central banks with no
+# live market. Canada DOES have one open series right now, just a
+# coarser annual aggregate ("Canada Annual Inflation 2026", range-
+# bucketed rather than point-value) — included honestly labeled as
+# "(Annual)" rather than passed off as the same monthly-YoY shape the US
+# entries are.
 DATA_SERIES = {
-    "cpi_yoy": {
+    "us_cpi": {
         "query": "Inflation US Annual",
         "label": "CPI (YoY)",
+        "country": "United States",
         # Matches "<Month> Inflation US - Annual", not the
         # "(Higher Brackets)" duplicate some already-closed months
         # also carry.
@@ -294,9 +310,10 @@ DATA_SERIES = {
         "unit": "%",
         "reading_key": ("us", "cpi"),
     },
-    "unemployment": {
+    "us_unemployment": {
         "query": "Unemployment Rate",
         "label": "Unemployment Rate",
+        "country": "United States",
         # Matches "<Month> Unemployment Rate" only — excludes the
         # per-country variants ("... - Japan", "... - Mexico") the same
         # search also surfaces.
@@ -304,14 +321,36 @@ DATA_SERIES = {
         "unit": "%",
         "reading_key": ("us", "unemployment"),
     },
+    "ca_cpi": {
+        "query": "Canada Annual Inflation",
+        "label": "CPI (Annual)",
+        "country": "Canada",
+        "title_pattern": re.compile(r"^Canada Annual Inflation \d{4}$"),
+        "unit": "%",
+        "reading_key": ("ca", "cpi"),
+    },
+    "ca_unemployment": {
+        "query": "Unemployment Rate Canada",
+        "label": "Unemployment Rate",
+        "country": "Canada",
+        "title_pattern": re.compile(r"Unemployment Rate - Canada$"),
+        "unit": "%",
+        "reading_key": ("ca", "unemployment"),
+    },
 }
 
 _VALUE_RE = re.compile(r"(\d+\.?\d*)\s*%")
 
 
 def _value_for_question(question: str) -> float | None:
-    m = _VALUE_RE.search(question)
-    return float(m.group(1)) if m else None
+    """The bucket's own represented value — the single number for a
+    point-value question ("...be 4.2%?"), or the midpoint for a range
+    question ("...between 2.5% and 2.9%?", Canada's coarser annual
+    market uses this shape). Tail buckets ("...at least 4.0%?") fall
+    back to their one boundary number, same approximation _parse_event
+    doesn't need but this distribution-average approach does."""
+    values = [float(x) for x in _VALUE_RE.findall(question)]
+    return sum(values) / len(values) if values else None
 
 
 def _parse_data_event(event: dict) -> dict | None:
@@ -365,6 +404,24 @@ def current_data_forecast(series: str) -> dict | None:
             _last_good_series[series] = parsed
             return parsed
     return _last_good_series.get(series)
+
+
+def next_data_series() -> str | None:
+    """Whichever DATA_SERIES key has the soonest still-open, actually-
+    parseable print across every tracked country/series right now —
+    session request: "have the next closest event show up automatically
+    on that page across Canada and the US," instead of a fixed pair.
+    None if nothing across the whole roster currently parses (e.g. every
+    series' market happens to be between contracts at the same moment)."""
+    candidates = []
+    for series in DATA_SERIES:
+        forecast = current_data_forecast(series)
+        if forecast and forecast.get("end_date"):
+            candidates.append((forecast["end_date"], series))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: c[0])
+    return candidates[0][1]
 
 
 # Below this, a print reads as flat/"in-line" rather than hotter or

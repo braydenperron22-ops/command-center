@@ -11,14 +11,18 @@ right side, we're gonna put some other things there... nice, clean
 format, like a list almost" (dropped the separate hero-tile row
 entirely) -> "what other markets are there... pull the consensus...
 build a forecast... estimate if it's gonna be coming in cooler or
-hotter than expected" — the reserved right column now holds that: CPI
-and unemployment's market-implied next-print forecast vs. the last
-actual FRED reading (see prediction_markets_client.forecast_vs_last_actual;
-there's no economist-consensus figure anywhere in this app, so "last
-actual" is the only real baseline available to compare against).
+hotter than expected" (added a fixed CPI + unemployment pair) -> "make
+it a big number... put it in a box, make it all fancy... instead of
+having two of them that are kinda random... find data for Canada as
+well... have the next closest event show up automatically... across
+Canada and the US" — the reserved right column is now a single hero box
+for whichever tracked series (US or Canada, CPI or unemployment) has the
+soonest still-open print (see
+prediction_markets_client.next_data_series()), not a fixed pair.
 """
 
 import html
+from datetime import datetime
 
 import streamlit as st
 
@@ -26,6 +30,16 @@ import prediction_markets_client as pmc
 
 _DIRECTION_TONE = {"cooler": "good", "hotter": "bad", "in-line": "neutral"}
 _DIRECTION_WORD = {"cooler": "COOLER", "hotter": "HOTTER", "in-line": "IN LINE"}
+
+
+def _format_release_date(iso_date: str | None) -> str:
+    if not iso_date:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso_date.replace("Z", "+00:00"))
+        return dt.strftime("%B %-d, %Y")
+    except (ValueError, TypeError):
+        return ""
 
 
 def _side_list_html() -> str:
@@ -58,27 +72,28 @@ def _side_list_html() -> str:
     return "".join(rows)
 
 
-def _macro_row_html(series: str, readings: dict) -> str:
+def _macro_hero_html(readings: dict) -> str:
+    series = pmc.next_data_series()
+    if series is None:
+        return '<div class="tile-prev">data unavailable</div>'
     cfg = pmc.DATA_SERIES[series]
     reading = readings.get(cfg["reading_key"])
     last_actual = reading.get("current") if reading else None
     result = pmc.forecast_vs_last_actual(series, last_actual)
     if not result:
-        return (
-            f'<div class="prediction-macro-row">'
-            f'<div class="prediction-macro-label">{html.escape(cfg["label"])}</div>'
-            f'<div class="tile-prev">data unavailable</div>'
-            f"</div>"
-        )
+        return '<div class="tile-prev">data unavailable</div>'
     tone = _DIRECTION_TONE[result["direction"]]
     word = _DIRECTION_WORD[result["direction"]]
     unit = cfg["unit"]
+    release = _format_release_date(result.get("end_date"))
+    release_line = f" &middot; releases {html.escape(release)}" if release else ""
     return (
-        f'<div class="prediction-macro-row">'
-        f'<div class="prediction-macro-label">{html.escape(cfg["label"])}</div>'
-        f'<div class="internals-verdict internals-verdict-{tone} prediction-macro-verdict">{word}</div>'
-        f'<div class="internals-context">Market-implied {result["forecast"]:.2f}{unit} vs. last {result["last_actual"]:.2f}{unit}</div>'
+        f'<div class="prediction-macro-heading">{html.escape(cfg["label"].upper())} &mdash; {html.escape(cfg["country"].upper())}</div>'
+        f'<div class="prediction-macro-box prediction-macro-box-{tone}">'
+        f'<div class="prediction-macro-number">{result["forecast"]:.2f}<span class="prediction-macro-unit">{html.escape(unit)}</span></div>'
+        f'<div class="prediction-macro-tag prediction-macro-tag-{tone}">{word}</div>'
         f"</div>"
+        f'<div class="internals-context">Market-implied vs. last actual {result["last_actual"]:.2f}{unit}{release_line}</div>'
     )
 
 
@@ -103,9 +118,8 @@ def render(readings: dict | None = None) -> None:
     with open_col:
         st.markdown(
             f'<div class="tile prediction-macro-tile">'
-            f'<div class="tile-label">NEXT PRINT: MARKET vs. LAST ACTUAL</div>'
-            f'{_macro_row_html("cpi_yoy", readings)}'
-            f'{_macro_row_html("unemployment", readings)}'
+            f'<div class="tile-label">NEXT PRINT</div>'
+            f"{_macro_hero_html(readings)}"
             f"</div>",
             unsafe_allow_html=True,
         )
