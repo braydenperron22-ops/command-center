@@ -9,11 +9,23 @@ status. Intraday gets the same hero-value treatment as the macro tiles'
 current reading, with 1M/YTD as secondary rows and a full year of daily
 closes as a trend chart below — matches the Home page's visual hierarchy
 instead of treating all three timeframes (or the trend) equally.
+
+Session request: "both of the simulated forecasts go to the markets
+page — SPY takes over Bitcoin for the weekend, in the S&P spot, and
+crude oil takes over in the crude oil spot." On weekends, the "btc"
+slot's tile becomes Polymarket's own expected-close forecast for SPY
+(prediction_markets_client.close_forecast_return), and the "oil" slot
+swaps its live CL=F intraday move for the same treatment against WTI —
+1-month/YTD/the sparkline still come from the real instrument's own
+price history (still meaningful over a weekend), only the hero
+"intraday" number and its caption become the forecast, labeled as such
+rather than passed off as an observed live move.
 """
 
 import streamlit as st
 
 import market_yf_client
+import prediction_markets_client
 import tiles
 from config import (
     MARKET_INSTRUMENTS_ALWAYS,
@@ -27,6 +39,30 @@ STATUS_INSTRUMENTS = {
     "closed": MARKET_INSTRUMENTS_CLOSED,
     "weekend": MARKET_INSTRUMENTS_WEEKEND,
 }
+
+# key -> (yfinance symbol for real price history, CLOSE_SERIES key) for
+# the two weekend slots that get a Polymarket forecast instead of their
+# usual quote.
+_WEEKEND_FORECAST_SLOTS = {
+    "btc": ("SPY", "spy", "S&P 500 (SPY forecast)"),
+    "oil": ("CL=F", "wti", "Crude Oil (forecast)"),
+}
+
+
+def _weekend_forecast_quote(symbol: str, series: str) -> dict | None:
+    """The normal quote_for() shape, but with `intraday` replaced by
+    Polymarket's own expected-close return against this instrument's
+    real last close — 1-month/YTD/the sparkline stay real, since that
+    history is still meaningful over a weekend; only the hero number
+    (which would otherwise just show a stale ~0% from Friday's already-
+    priced-in close) becomes a forward-looking forecast."""
+    quote = market_yf_client.quote_for(symbol)
+    if not quote or not quote.get("history"):
+        return quote
+    forecast = prediction_markets_client.close_forecast_return(series, quote["history"][-1])
+    if not forecast:
+        return quote
+    return {**quote, "intraday": forecast["pct_return"]}
 
 
 def _metric_row(label: str, pct: float | None) -> str:
@@ -48,12 +84,18 @@ def render():
 
     cols = st.columns(len(instruments))
     for i, inst in enumerate(instruments):
-        quote = market_yf_client.quote_for(inst["symbol"])
+        forecast_slot = _WEEKEND_FORECAST_SLOTS.get(inst["key"]) if status == "weekend" else None
+        if forecast_slot:
+            symbol, series, label = forecast_slot
+            quote = _weekend_forecast_quote(symbol, series)
+        else:
+            label = inst["label"]
+            quote = market_yf_client.quote_for(inst["symbol"])
         with cols[i]:
             if not quote or quote["intraday"] is None:
                 st.markdown(
                     f"""<div class="tile">
-                        <div class="tile-label">{inst['label']}</div>
+                        <div class="tile-label">{label}</div>
                         <div class="tile-prev">data unavailable</div>
                     </div>""",
                     unsafe_allow_html=True,
@@ -66,12 +108,13 @@ def render():
             accent_class = f"tile-accent-{tone}"
             sign = "+" if intraday >= 0 else ""
             sparkline = tiles.sparkline_svg(quote["history"], tone)
+            caption = "Market-implied forecast" if forecast_slot else "Intraday change"
 
             st.markdown(
                 f"""<div class="tile {accent_class}">
-                    <div class="tile-label">{inst['label']}</div>
+                    <div class="tile-label">{label}</div>
                     <div class="tile-value market-hero-value {direction_class}">{sign}{intraday:.2f}%</div>
-                    <div class="tile-prev">Intraday change</div>
+                    <div class="tile-prev">{caption}</div>
                     {_metric_row("1 Month", quote["one_month"])}
                     {_metric_row("YTD", quote["ytd"])}
                     <div class="market-sparkline-wrap">{sparkline}</div>
