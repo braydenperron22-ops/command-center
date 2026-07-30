@@ -104,12 +104,12 @@ _BUCKET_PATTERNS = [
 ]
 BUCKET_ORDER = ["cut_50", "cut_25", "cut", "hold", "hike_25", "hike_50", "hike"]
 BUCKET_LABELS = {
-    "cut_50": "−50+bps",
-    "cut_25": "−25bps",
+    "cut_50": "Cut",
+    "cut_25": "Cut",
     "cut": "Cut",
     "hold": "No change",
-    "hike_25": "+25bps",
-    "hike_50": "+50+bps",
+    "hike_25": "Hike",
+    "hike_50": "Hike",
     "hike": "Hike",
 }
 # Session request: color the direction, not each individual bucket —
