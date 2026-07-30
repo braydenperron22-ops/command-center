@@ -521,18 +521,24 @@ html, body, [class*="css"] {
 
 /* Session follow-up: "I want all of the rate odds as many as you can
    find... I want them all on the side with the country name and then
-   the most likely outcome and the percentage." A compact scrollable
-   roster covering every bank BANKS knows about. */
+   the most likely outcome and the percentage." A compact roster
+   covering every bank BANKS knows about.
+   Found live: the old single-column `max-height: 22rem;
+   overflow-y: auto` clipped the list on the kiosk's real viewport —
+   Canada and the Fed (sorted well down the list by meeting date) fell
+   below the fold of a scrollbar nobody can actually operate on a
+   non-interactive kiosk display, so they looked like they'd vanished.
+   A 2-column grid roughly halves the row count that needs to fit
+   vertically, and there's no scroll cap left to hide anything below
+   the fold — every bank is always on-screen. */
 .prediction-side-tile {
     max-height: 100%;
 }
 .prediction-side-list {
     margin-top: 0.6rem;
-    max-height: 22rem;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    column-gap: 1.2rem;
 }
 /* Session correction: bank on the left, then percentage, then outcome
    (was country/outcome/percentage) — column widths swapped to match:
