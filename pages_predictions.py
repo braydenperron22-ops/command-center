@@ -15,10 +15,15 @@ hotter than expected" (added a fixed CPI + unemployment pair) -> "make
 it a big number... put it in a box, make it all fancy... instead of
 having two of them that are kinda random... find data for Canada as
 well... have the next closest event show up automatically... across
-Canada and the US" — the reserved right column is now a single hero box
-for whichever tracked series (US or Canada, CPI or unemployment) has the
-soonest still-open print (see
-prediction_markets_client.next_data_series()), not a fixed pair.
+Canada and the US" (added Canada, one hero box for whichever series is
+soonest) -> "is there anything more outside of just the basic stuff...
+if so, for the US, add it" — DATA_SERIES now also covers Core PCE, ISM
+Manufacturing/Services PMI, Non-Farm Payrolls, UMich Consumer
+Sentiment, and GDP growth. Not all of those have an honest "last
+actual" baseline available in this app (see _EXTRA_FRED_SERIES and
+prediction_markets_client.DATA_SERIES's own reading_key/fred_series
+fields) — those render as a plain forecast box instead of faking a
+hotter/cooler call against a baseline that isn't real.
 """
 
 import html
@@ -26,10 +31,36 @@ from datetime import datetime
 
 import streamlit as st
 
+import fred_client
 import prediction_markets_client as pmc
 
 _DIRECTION_TONE = {"cooler": "good", "hotter": "bad", "in-line": "neutral"}
 _DIRECTION_WORD = {"cooler": "COOLER", "hotter": "HOTTER", "in-line": "IN LINE"}
+
+# A few DATA_SERIES entries (Core PCE, UMich Sentiment) have a real FRED
+# series backing them but aren't in config.py's INDICATORS — adding them
+# there would also grow the Home page's tile grid and the ticker, well
+# beyond what was actually asked for here. Fetched directly instead,
+# independent of the `readings` dict pages_home.py already builds.
+_EXTRA_FRED_SERIES = {
+    "us_core_pce": ("PCEPILFE", "yoy"),
+    "us_umich_sentiment": ("UMCSENT", "level"),
+}
+
+
+def _last_actual_for_series(series: str, cfg: dict, readings: dict, fred_api_key: str | None) -> float | None:
+    reading_key = cfg.get("reading_key")
+    if reading_key:
+        reading = readings.get(reading_key)
+        return reading.get("current") if reading else None
+    extra = _EXTRA_FRED_SERIES.get(series)
+    if not extra or not fred_api_key:
+        return None
+    series_id, transform = extra
+    if transform == "yoy":
+        reading = fred_client.build_indicator_reading(series_id, fred_api_key, "yoy")
+        return reading.get("current") if reading else None
+    return fred_client.fetch_latest_value(series_id, fred_api_key)
 
 
 def _format_release_date(iso_date: str | None) -> str:
@@ -72,32 +103,44 @@ def _side_list_html() -> str:
     return "".join(rows)
 
 
-def _macro_hero_html(readings: dict) -> str:
+def _macro_hero_html(readings: dict, fred_api_key: str | None) -> str:
     series = pmc.next_data_series()
     if series is None:
         return '<div class="tile-prev">data unavailable</div>'
     cfg = pmc.DATA_SERIES[series]
-    reading = readings.get(cfg["reading_key"])
-    last_actual = reading.get("current") if reading else None
-    result = pmc.forecast_vs_last_actual(series, last_actual)
-    if not result:
+    forecast_data = pmc.current_data_forecast(series)
+    if not forecast_data:
         return '<div class="tile-prev">data unavailable</div>'
-    tone = _DIRECTION_TONE[result["direction"]]
-    word = _DIRECTION_WORD[result["direction"]]
     unit = cfg["unit"]
-    release = _format_release_date(result.get("end_date"))
+    decimals = cfg.get("decimals", 2)
+    release = _format_release_date(forecast_data.get("end_date"))
     release_line = f" &middot; releases {html.escape(release)}" if release else ""
+    last_actual = _last_actual_for_series(series, cfg, readings, fred_api_key)
+    result = pmc.forecast_vs_last_actual(series, last_actual) if last_actual is not None else None
+    if result:
+        tone = _DIRECTION_TONE[result["direction"]]
+        tag_text = _DIRECTION_WORD[result["direction"]]
+        context = f'Market-implied vs. last actual {result["last_actual"]:.{decimals}f}{unit}{release_line}'
+    else:
+        # No honest baseline to compare against (ISM's own data is
+        # proprietary, no free FRED series; Non-Farm Payrolls/GDP would
+        # need a diff/annualized transform this app doesn't otherwise
+        # use) — show the market's own number plainly rather than
+        # faking a hotter/cooler call.
+        tone = "neutral"
+        tag_text = "MARKET FORECAST"
+        context = f"Market-implied next print{release_line}"
     return (
         f'<div class="prediction-macro-heading">{html.escape(cfg["label"].upper())} &mdash; {html.escape(cfg["country"].upper())}</div>'
         f'<div class="prediction-macro-box prediction-macro-box-{tone}">'
-        f'<div class="prediction-macro-number">{result["forecast"]:.2f}<span class="prediction-macro-unit">{html.escape(unit)}</span></div>'
-        f'<div class="prediction-macro-tag prediction-macro-tag-{tone}">{word}</div>'
+        f'<div class="prediction-macro-number">{forecast_data["forecast"]:.{decimals}f}<span class="prediction-macro-unit">{html.escape(unit)}</span></div>'
+        f'<div class="prediction-macro-tag prediction-macro-tag-{tone}">{tag_text}</div>'
         f"</div>"
-        f'<div class="internals-context">Market-implied vs. last actual {result["last_actual"]:.2f}{unit}{release_line}</div>'
+        f'<div class="internals-context">{context}</div>'
     )
 
 
-def render(readings: dict | None = None) -> None:
+def render(readings: dict | None = None, fred_api_key: str | None = None) -> None:
     readings = readings or {}
     st.markdown('<div class="page-title page-title-predictions">Predictions</div>', unsafe_allow_html=True)
     st.markdown(
@@ -119,7 +162,7 @@ def render(readings: dict | None = None) -> None:
         st.markdown(
             f'<div class="tile prediction-macro-tile">'
             f'<div class="tile-label">NEXT PRINT</div>'
-            f"{_macro_hero_html(readings)}"
+            f"{_macro_hero_html(readings, fred_api_key)}"
             f"</div>",
             unsafe_allow_html=True,
         )

@@ -147,7 +147,14 @@ def _bucket_for_question(question: str) -> str | None:
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _search_raw(query: str) -> list[dict]:
     fetch_throttle.wait_turn()
-    resp = requests.get(SEARCH_URL, params={"q": query}, timeout=10)
+    # Found live while adding the macro-data-print series below: the
+    # endpoint defaults to just 5 events with no limit_per_type param,
+    # and fuzzy relevance ranking doesn't reliably put the one
+    # currently-open event in that top 5 (confirmed: "How many jobs
+    # added" without this came back with 5 closed months and not the
+    # open one). 20 comfortably covers a year+ of monthly history for
+    # any single series without this becoming a heavier request.
+    resp = requests.get(SEARCH_URL, params={"q": query, "limit_per_type": 20}, timeout=10)
     resp.raise_for_status()
     return resp.json().get("events") or []
 
@@ -298,6 +305,21 @@ def check_for_swing(bank: str) -> dict | None:
 # bucketed rather than point-value) — included honestly labeled as
 # "(Annual)" rather than passed off as the same monthly-YoY shape the US
 # entries are.
+#
+# Session follow-up #3: "is there anything more outside of just the
+# basic stuff... unemployment rate, CPI, GDP, etc.?" Checked live and
+# confirmed 6 more genuinely open, cleanly-parseable US markets: Core
+# PCE (the Fed's own preferred inflation gauge), ISM Manufacturing PMI,
+# ISM Services PMI, Non-Farm Payrolls ("How many jobs added"), UMich
+# Consumer Sentiment, and a real quarterly GDP-growth market. Not every
+# one gets a "last actual" FRED comparison, though — reading_key is None
+# for whichever ones have no honest actual-value baseline available in
+# this app (ISM is proprietary data with no free FRED series; Non-Farm
+# Payrolls' and GDP's own FRED series exist but need a diff/annualized
+# transform this app doesn't otherwise have a use for). Those render as
+# a plain market-forecast box instead of faking a hotter/cooler call
+# against a baseline that isn't real — see pages_predictions.py's
+# _macro_hero_html.
 DATA_SERIES = {
     "us_cpi": {
         "query": "Inflation US Annual",
@@ -321,6 +343,65 @@ DATA_SERIES = {
         "unit": "%",
         "reading_key": ("us", "unemployment"),
     },
+    "us_core_pce": {
+        "query": "Core PCE YoY",
+        "label": "Core PCE (YoY)",
+        "country": "United States",
+        "title_pattern": re.compile(r"^Core PCE YoY - "),
+        "unit": "%",
+        # Not in config.py's INDICATORS (that would also add a tile to
+        # the Home page and a ticker item, well beyond what was asked
+        # for here) — fetched directly, see pages_predictions.py's
+        # _EXTRA_FRED_SERIES.
+        "reading_key": None,
+        "fred_series": ("PCEPILFE", "yoy"),
+    },
+    "us_ism_manufacturing": {
+        "query": "ISM Manufacturing PMI",
+        "label": "ISM Manufacturing PMI",
+        "country": "United States",
+        "title_pattern": re.compile(r"^ISM Manufacturing PMI - "),
+        "unit": "",
+        "reading_key": None,
+        "decimals": 1,
+    },
+    "us_ism_services": {
+        "query": "ISM Services PMI",
+        "label": "ISM Services PMI",
+        "country": "United States",
+        "title_pattern": re.compile(r"^ISM Services PMI - "),
+        "unit": "",
+        "reading_key": None,
+        "decimals": 1,
+    },
+    "us_nonfarm_payrolls": {
+        "query": "How many jobs added",
+        "label": "Nonfarm Payrolls",
+        "country": "United States",
+        "title_pattern": re.compile(r"^How many jobs added in \w+\??$"),
+        "unit": "k jobs",
+        "reading_key": None,
+        "decimals": 0,
+    },
+    "us_umich_sentiment": {
+        "query": "University of Michigan Consumer Sentiment",
+        "label": "Consumer Sentiment (UMich)",
+        "country": "United States",
+        "title_pattern": re.compile(r"^University of Michigan Consumer Sentiment - "),
+        "unit": "",
+        "reading_key": None,
+        "fred_series": ("UMCSENT", "level"),
+        "decimals": 1,
+    },
+    "us_gdp_growth": {
+        "query": "US GDP growth",
+        "label": "GDP Growth (QoQ)",
+        "country": "United States",
+        "title_pattern": re.compile(r"^US GDP growth in Q\d 20\d\d\??$"),
+        "unit": "%",
+        "reading_key": None,
+        "decimals": 1,
+    },
     "ca_cpi": {
         "query": "Canada Annual Inflation",
         "label": "CPI (Annual)",
@@ -339,7 +420,16 @@ DATA_SERIES = {
     },
 }
 
-_VALUE_RE = re.compile(r"(\d+\.?\d*)\s*%")
+
+# Requires an actual decimal point rather than a trailing "%" — index-
+# level series (ISM PMI, UMich Sentiment) state their thresholds as
+# bare decimals ("below 49.0", no percent sign at all), so a "%"
+# requirement silently zeroed out every point for those. Requiring the
+# decimal point instead of dropping the check entirely is what keeps
+# this safe: it still won't match a bare year like "2026" or "2027"
+# that shows up in some questions' own wording, since those never carry
+# a decimal point.
+_VALUE_RE = re.compile(r"(\d+\.\d+)")
 
 
 def _value_for_question(question: str) -> float | None:
@@ -353,10 +443,31 @@ def _value_for_question(question: str) -> float | None:
     return sum(values) / len(values) if values else None
 
 
-def _parse_data_event(event: dict) -> dict | None:
+# Non-Farm Payrolls questions are phrased in thousands of jobs, not a
+# percentage ("...add between 0 and 50k jobs..."), and carry one bucket
+# with no number at all ("Will the US lose jobs in July?"). -50
+# (thousand) is a representative stand-in for that bucket — an
+# approximation, not a real reported figure, since the question itself
+# gives no magnitude for a loss, but this bucket's own probability is
+# usually small enough that the approximation barely moves the overall
+# weighted average.
+_NFP_VALUE_RE = re.compile(r"(\d+)k?\b")
+
+
+def _value_for_nfp_question(question: str) -> float | None:
+    if re.search(r"lose jobs", question, re.I):
+        return -50.0
+    values = [float(x) for x in _NFP_VALUE_RE.findall(question)]
+    return sum(values) / len(values) if values else None
+
+
+_VALUE_PARSERS = {"us_nonfarm_payrolls": _value_for_nfp_question}
+
+
+def _parse_data_event(event: dict, value_fn) -> dict | None:
     points = []
     for m in event.get("markets") or []:
-        value = _value_for_question(m.get("question") or "")
+        value = value_fn(m.get("question") or "")
         if value is None:
             continue
         try:
@@ -398,8 +509,9 @@ def current_data_forecast(series: str) -> dict | None:
         ),
         key=lambda e: e["endDate"],
     )
+    value_fn = _VALUE_PARSERS.get(series, _value_for_question)
     for event in open_events:
-        parsed = _parse_data_event(event)
+        parsed = _parse_data_event(event, value_fn)
         if parsed is not None:
             _last_good_series[series] = parsed
             return parsed
