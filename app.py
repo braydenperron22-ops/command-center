@@ -514,7 +514,49 @@ components.html(
       var s = doc.createElement('script');
       s.id = 'kiosk-ticker-persist';
       s.textContent = [
+        // THE root cause of the recurring "bottom bar goes blank, no
+        // toast appears" reports (news/commute/sports/weather toasts
+        // all share this one bug, all at this one call site): the
+        // ticker, the news/commute/sports/weather toast bars, and
+        // .jumbo-leave-ticker are mutually exclusive branches of ONE
+        // if/elif/else in app.py, so they all render at the exact same
+        // script position every rerun. Streamlit reuses the SAME
+        // underlying DOM node across reruns for that one position
+        // (confirmed live via a MutationObserver logging the node's own
+        // class flipping between 'ticker-bar' and 'news-alert-bar-
+        // market' rerun to rerun, not a fresh node each time) and only
+        // patches the attributes ITS OWN markup actually specifies —
+        // an inline style we set directly via plain DOM API (not
+        // through Streamlit) is invisible to that diffing and never
+        // gets cleared just because the next rerun's HTML string omits
+        // a style attribute entirely.
+        // `real.style.display = 'none'` below (a previous fix, hiding
+        // Streamlit's own ticker-bar while its animation-safe clone
+        // shows instead) sets exactly that kind of inline style. The
+        // very next time a real news/commute/sports/weather alert
+        // takes over this same slot, it lands on that same DOM node —
+        // now carrying class='news-alert-bar-market' (or whichever
+        // toast fired) but STILL with the stale display:none inline
+        // style from when it was last a hidden ticker-bar. Confirmed
+        // live: the toast's own markup, its CSS class's rules, and
+        // app.py's dispatch logic were all completely correct — the
+        // element existed in the DOM the whole time, just invisible.
+        // None of these toast classes are EVER intentionally hidden by
+        // anything else in this app, so unconditionally clearing a
+        // stale inline display:none the instant one appears on any of
+        // them is always safe.
+        "var TOAST_SEL = '.news-alert-bar, .news-alert-bar-market, .commute-alert-bar, " +
+          ".sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl, " +
+          ".weather-alert-bar-extreme, .weather-alert-bar-warning, .weather-alert-bar-warning-moderate, " +
+          ".weather-alert-bar-watch, .weather-alert-bar-statement, .jumbo-leave-ticker';",
+        "function kioskUnhideStaleToast() {",
+        "  var toastEl = document.querySelector(TOAST_SEL);",
+        "  if (toastEl && toastEl.style.display === 'none') {",
+        "    toastEl.style.display = '';",
+        "  }",
+        "}",
         "function kioskPersistTicker() {",
+        "  kioskUnhideStaleToast();",
         "  var real = document.querySelector('.ticker-bar:not(#kiosk-ticker-persistent)');",
         "  var persistent = document.getElementById('kiosk-ticker-persistent');",
         "  if (!real) {",
