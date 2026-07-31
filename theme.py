@@ -501,9 +501,17 @@ html, body, [class*="css"] {
    included, is one compact row here; there's no separate hero-tile
    treatment anymore. */
 .prediction-source-note {
-    font-size: 1rem;
+    font-size: 1.15rem;
     color: #ABB2C4;
     margin: -0.4rem 0 0.9rem;
+}
+/* Scoped rather than touching the shared .tile-label everywhere else
+   in the app — session request: "those small ass little titles" was
+   specifically about this page's own ("ALL CENTRAL BANKS", "NEXT
+   PRINT"). */
+.prediction-side-tile .tile-label,
+.prediction-macro-tile .tile-label {
+    font-size: 1.4rem;
 }
 
 /* Session request: "CUT in ice blue, hold just normal, hike is fire
@@ -538,19 +546,24 @@ html, body, [class*="css"] {
     margin-top: 0.6rem;
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    column-gap: 1.2rem;
+    column-gap: 1.6rem;
 }
-/* Session correction: bank on the left, then percentage, then outcome
-   (was country/outcome/percentage) — column widths swapped to match:
-   percentage is always short ("100%"), outcome needs a bit more room
-   ("No change" is the longest label). */
+/* Session request: "tighten up the rate cut prediction model thing
+   because now that we're not using full central bank names, we don't
+   need to have them so spaced out... make the numbers a little bigger
+   too and the outcome a little bigger... make everything legible from
+   a distance." The flag column used to be `1fr` (the widest slot) back
+   when it held a full country name — now it's a small fixed-width icon,
+   so the freed-up space goes to `outcome` (the longest real content,
+   "No change") instead, and every column's own font grew along with
+   the row. */
 .prediction-row {
     display: grid;
-    grid-template-columns: 1fr 3.2rem 5.5rem;
+    grid-template-columns: 2.6rem 4.4rem 1fr;
     align-items: center;
     gap: 0.6rem;
-    padding: 0.45rem 0.2rem;
-    font-size: 1rem;
+    padding: 0.5rem 0.2rem;
+    font-size: 1.35rem;
     border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 .prediction-row:last-child {
@@ -558,20 +571,22 @@ html, body, [class*="css"] {
 }
 /* Session request: "instead of central banks, I just want the flags."
    Same sizing convention as .ticker-flag — a plain inline SVG has no
-   intrinsic size otherwise. */
+   intrinsic size otherwise. Sized up alongside the rest of the row
+   ("make everything legible from a distance"). */
 .prediction-row-country {
     display: inline-flex;
     align-items: center;
 }
 .prediction-row-country svg {
-    width: 1.8rem;
+    width: 2.3rem;
     height: auto;
     border-radius: 2px;
 }
 .prediction-row-outcome {
     color: #ABB2C4;
     white-space: nowrap;
-    font-weight: 600;
+    font-weight: 700;
+    font-size: 1.35rem;
 }
 /* Compound selector, not just .prediction-direction-cut/-hike alone:
    those are the same specificity as .prediction-row-outcome above and
@@ -581,7 +596,8 @@ html, body, [class*="css"] {
 .prediction-row-outcome.prediction-direction-hike { color: #FF5A1F; }
 .prediction-row-pct {
     color: #F5F5F7;
-    font-weight: 600;
+    font-weight: 700;
+    font-size: 1.4rem;
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
@@ -605,8 +621,11 @@ html, body, [class*="css"] {
     flex-direction: column;
     gap: 0.7rem;
 }
+/* Session request: "make everything legible from a distance because
+   everything is not legible from a distance, especially those small
+   ass little titles." */
 .prediction-macro-heading {
-    font-size: 1rem;
+    font-size: 1.3rem;
     color: #ABB2C4;
     text-transform: uppercase;
     letter-spacing: 0.02em;
@@ -621,24 +640,24 @@ html, body, [class*="css"] {
     border: 1px solid rgba(255,255,255,0.08);
 }
 .prediction-macro-number {
-    font-size: 3.4rem;
+    font-size: 3.8rem;
     font-weight: 800;
     line-height: 1;
     font-variant-numeric: tabular-nums;
     color: #F5F5F7;
 }
 .prediction-macro-unit {
-    font-size: 1.7rem;
+    font-size: 1.9rem;
     font-weight: 700;
     margin-left: 0.2rem;
     opacity: 0.75;
 }
 .prediction-macro-tag {
-    font-size: 1.05rem;
+    font-size: 1.3rem;
     font-weight: 800;
     letter-spacing: 0.03em;
     text-transform: uppercase;
-    padding: 0.4rem 0.9rem;
+    padding: 0.45rem 1rem;
     border-radius: 999px;
     white-space: nowrap;
 }
