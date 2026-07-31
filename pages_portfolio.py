@@ -203,10 +203,12 @@ def render() -> None:
         # at the source (see portfolio_client._ACTIVITY_TYPES), and
         # only the 4 tracked accounts are included at all — what's left
         # is real deposits/withdrawals/trades/dividends/interest, the
-        # things actually worth glancing at. A bigger limit than before
-        # now that activity has its own dedicated column instead of
-        # competing with two other tiles for vertical space.
-        activities = portfolio_client.fetch_activities(limit=14)
+        # things actually worth glancing at. Trimmed from 14 to 12 after
+        # the app-wide legibility pass grew .activity-tag/.tile-label —
+        # 14 rows at the bigger row height overflowed the 1080px kiosk
+        # viewport by ~34px (below-fold rows would've been permanently
+        # invisible, non-interactive kiosk has no scrollbar).
+        activities = portfolio_client.fetch_activities(limit=12)
         if activities:
             today_local = datetime.now(ZoneInfo(TIMEZONE)).date()
             activity_rows = "".join(_activity_row(a, today_local) for a in activities)
