@@ -178,7 +178,7 @@ html, body, [class*="css"] {
     gap: 0.6rem;
     margin-top: 0.7rem;
     padding: 0.5rem 1.1rem;
-    font-size: 1.3rem;
+    font-size: 1.05rem;
 }
 
 .market-pill-label { color: #8E8E93; }
@@ -195,7 +195,7 @@ html, body, [class*="css"] {
 }
 
 .market-metric-label {
-    font-size: 1.1rem;
+    font-size: 0.85rem;
     color: #ABB2C4;
 }
 
@@ -223,7 +223,7 @@ html, body, [class*="css"] {
     border: 1px solid currentColor;
     border-radius: 8px;
     background: rgba(255,255,255,0.04);
-    font-size: 0.9rem;
+    font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -369,7 +369,7 @@ html, body, [class*="css"] {
     position: absolute;
     top: 0.8rem;
     right: 0.9rem;
-    font-size: 0.9rem;
+    font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.05em;
     color: #FFD60A;
@@ -379,13 +379,8 @@ html, body, [class*="css"] {
     padding: 0.15rem 0.5rem;
 }
 
-/* Session request: "do that thing you just did [Predictions] for
-   literally every single page... very very legible from a distance."
-   This is the shared caption class nearly every tile app-wide uses, so
-   bumping it here lifts every page at once instead of needing a
-   per-page override the way Predictions originally got one. */
 .tile-label {
-    font-size: 1.3rem;
+    font-size: 1rem;
     color: #ECECF1;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -510,9 +505,10 @@ html, body, [class*="css"] {
     color: #ABB2C4;
     margin: -0.4rem 0 0.9rem;
 }
-/* A touch bigger than the now-also-bumped shared .tile-label (1.3rem)
-   — these two ("ALL CENTRAL BANKS", "NEXT PRINT") were the original
-   "small ass little titles" complaint that started the app-wide pass. */
+/* Scoped rather than touching the shared .tile-label everywhere else
+   in the app — session request: "those small ass little titles" was
+   specifically about this page's own ("ALL CENTRAL BANKS", "NEXT
+   PRINT"). */
 .prediction-side-tile .tile-label,
 .prediction-macro-tile .tile-label {
     font-size: 1.4rem;
@@ -676,7 +672,7 @@ html, body, [class*="css"] {
     margin-top: 0.5rem;
     padding-top: 0.5rem;
     height: 1.2em;
-    font-size: 1.05rem;
+    font-size: 0.8rem;
     color: #ABB2C4;
     box-sizing: content-box;
 }
@@ -686,7 +682,7 @@ html, body, [class*="css"] {
 }
 
 .tile-prev {
-    font-size: 1.2rem;
+    font-size: 0.95rem;
     color: #D6D6DC;
     margin-top: 0.25rem;
 }
@@ -701,7 +697,7 @@ html, body, [class*="css"] {
     margin-top: 0.65rem;
     padding: 0.18rem 0.7rem;
     border-radius: 10px;
-    font-size: 1.1rem;
+    font-size: 0.85rem;
     font-weight: 600;
     letter-spacing: 0.03em;
     text-transform: uppercase;
@@ -1023,14 +1019,14 @@ html, body, [class*="css"] {
 }
 .top-alert-label {
     flex-shrink: 0;
-    font-size: 1.2rem;
+    font-size: 0.95rem;
     font-weight: 800;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: #FFFFFF;
 }
 .top-alert-headline {
-    font-size: 1.3rem;
+    font-size: 1.05rem;
     font-weight: 600;
     color: #FFFFFF;
 }
@@ -1079,14 +1075,14 @@ html, body, [class*="css"] {
 }
 .weather-statement-label {
     flex-shrink: 0;
-    font-size: 1.1rem;
+    font-size: 0.85rem;
     font-weight: 800;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: #FF9F0A;
 }
 .weather-statement-text {
-    font-size: 1.25rem;
+    font-size: 1rem;
     font-weight: 500;
     color: #F5D6A8;
 }
@@ -1253,14 +1249,14 @@ html, body, [class*="css"] {
 .regime-bar-neutral .regime-dot { background: #5AC8FA; box-shadow: 0 0 10px 2px rgba(90,200,250,0.55); }
 .regime-label {
     flex-shrink: 0;
-    font-size: 1.1rem;
+    font-size: 0.85rem;
     font-weight: 800;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: #ABB2C4;
 }
 .regime-text {
-    font-size: 1.25rem;
+    font-size: 1.05rem;
     font-weight: 500;
     color: #F5F5F7;
 }
@@ -1287,7 +1283,7 @@ html, body, [class*="css"] {
 
 .news-alert-tag {
     flex-shrink: 0;
-    font-size: 1.15rem;
+    font-size: 0.95rem;
     font-weight: 800;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -1359,7 +1355,7 @@ html, body, [class*="css"] {
 
 .severity-caption {
     margin-top: 0.4rem;
-    font-size: 1.1rem;
+    font-size: 0.85rem;
     color: #D6D6DC;
 }
 
@@ -1470,18 +1466,18 @@ html, body, [class*="css"] {
     border-bottom: none;
 }
 .maint-row-label {
-    font-size: 1.05rem;
+    font-size: 0.85rem;
     color: #D6D6DC;
     flex-shrink: 0;
 }
 .maint-row-meta {
-    font-size: 0.95rem;
+    font-size: 0.78rem;
     color: #8E8E93;
     text-align: right;
     white-space: nowrap;
 }
 .maint-pill {
-    font-size: 0.9rem;
+    font-size: 0.72rem;
     font-weight: 600;
     padding: 0.15rem 0.55rem;
     border-radius: 8px;
@@ -1537,7 +1533,7 @@ html, body, [class*="css"] {
     border-top: 1px solid rgba(255,255,255,0.08);
 }
 .form-strip-label {
-    font-size: 1rem;
+    font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -1548,10 +1544,10 @@ html, body, [class*="css"] {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 1.55rem;
-    height: 1.55rem;
+    width: 1.3rem;
+    height: 1.3rem;
     border-radius: 4px;
-    font-size: 0.9rem;
+    font-size: 0.7rem;
     font-weight: 800;
 }
 .form-dot-win { background: rgba(50,215,75,0.18); color: #32D74B; }
@@ -1571,7 +1567,7 @@ html, body, [class*="css"] {
     align-items: baseline;
     gap: 0.7rem;
     padding: 0.3rem 0;
-    font-size: 1.2rem;
+    font-size: 0.95rem;
     color: #ABB2C4;
 }
 .sports-standings-row-team {
@@ -1613,14 +1609,14 @@ html, body, [class*="css"] {
     border-top: 1px solid rgba(255,255,255,0.08);
 }
 .sports-blurb-label {
-    font-size: 1rem;
+    font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: #8E8E93;
     margin-bottom: 0.3rem;
 }
-.sports-blurb-text { font-size: 1.2rem; line-height: 1.5; color: #F5F5F7; }
+.sports-blurb-text { font-size: 0.95rem; line-height: 1.5; color: #F5F5F7; }
 
 /* Scores page — a whole league's slate can run to 15 games (MLB), too
    many for st.columns to lay out sensibly at kiosk width, so this is a
@@ -1647,28 +1643,28 @@ html, body, [class*="css"] {
     min-width: 0;
 }
 .score-card-logo {
-    width: 2.2rem;
-    height: 2.2rem;
+    width: 1.9rem;
+    height: 1.9rem;
     object-fit: contain;
     flex-shrink: 0;
 }
 .score-card-abbr {
     font-weight: 700;
-    font-size: 1.3rem;
+    font-size: 1.05rem;
     color: #F5F5F7;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 .score-card-record {
-    font-size: 1rem;
+    font-size: 0.75rem;
     font-weight: 500;
     color: #8E8E93;
     margin-left: 0.35rem;
 }
 .score-card-value {
     font-weight: 800;
-    font-size: 1.55rem;
+    font-size: 1.3rem;
     color: #F5F5F7;
     flex-shrink: 0;
     margin-left: 0.6rem;
@@ -1685,7 +1681,7 @@ html, body, [class*="css"] {
     margin-top: 0.4rem;
     padding-top: 0.4rem;
     border-top: 1px solid rgba(255,255,255,0.06);
-    font-size: 1rem;
+    font-size: 0.78rem;
     color: #ABB2C4;
     white-space: nowrap;
     overflow: hidden;
@@ -1695,7 +1691,7 @@ html, body, [class*="css"] {
     margin-top: 0.5rem;
     padding-top: 0.5rem;
     border-top: 1px solid rgba(255,255,255,0.08);
-    font-size: 1.1rem;
+    font-size: 0.85rem;
     color: #ABB2C4;
     text-align: center;
 }
@@ -1718,7 +1714,7 @@ html, body, [class*="css"] {
 .live-scoreboard-badge {
     color: #FF6961;
     font-weight: 800;
-    font-size: 1.1rem;
+    font-size: 0.85rem;
     letter-spacing: 0.04em;
 }
 /* The headline element of a live tile — session feedback: "a big score
@@ -1758,7 +1754,7 @@ html, body, [class*="css"] {
     margin-top: 0.8rem;
     padding-top: 0.7rem;
     border-top: 1px solid rgba(255,255,255,0.08);
-    font-size: 1.2rem;
+    font-size: 0.95rem;
     color: #ABB2C4;
 }
 .game-situation strong {
@@ -1819,7 +1815,7 @@ html, body, [class*="css"] {
 }
 .weather-day-summary {
     text-align: center;
-    font-size: 1.1rem;
+    font-size: 0.85rem;
 }
 
 /* Day/Night sub-rows within each day column — precip chance and UV
@@ -1833,7 +1829,7 @@ html, body, [class*="css"] {
     border-top: 1px solid rgba(255,255,255,0.08);
 }
 .weather-day-period-label {
-    font-size: 1rem;
+    font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -1852,7 +1848,7 @@ html, body, [class*="css"] {
     font-weight: 700;
 }
 .weather-day-wind {
-    font-size: 1rem;
+    font-size: 0.78rem;
     color: #ABB2C4;
     margin-top: 0.25rem;
 }
@@ -1891,7 +1887,7 @@ html, body, [class*="css"] {
     gap: 1.4rem;
     flex-wrap: wrap;
     margin-left: auto;
-    font-size: 1.15rem;
+    font-size: 0.9rem;
     color: #ABB2C4;
 }
 
@@ -1944,7 +1940,7 @@ html, body, [class*="css"] {
 .weather-radar-city-label {
     position: absolute;
     transform: translate(6px, -50%);
-    font-size: 0.8rem;
+    font-size: 0.62rem;
     font-weight: 600;
     color: rgba(255,255,255,0.55);
     white-space: nowrap;
@@ -2060,17 +2056,8 @@ html, body, [class*="css"] {
    rather than just another raw headline in the list. Absent entirely
    (no gap left behind) whenever the AI call didn't return anything. */
 .conflict-ai-summary {
-    /* Bumped from 0.92rem but not all the way to the other summary
-       classes' 1.2rem — this one wraps inside a narrow dynamic-width
-       column (st.columns(len(entries)), often 5-6 across) with AI-
-       generated 2-4 sentence text of unpredictable length, so a bigger
-       size overflowed the fixed 1080px kiosk viewport on the tallest
-       card (confirmed live: 1.2rem produced 123px overflow with 6
-       conflicts on screen; 1.05rem still ran 16px over). 1rem was the
-       largest value that stayed clear of the viewport in that same
-       live test. */
-    font-size: 1rem;
-    line-height: 1.35;
+    font-size: 0.92rem;
+    line-height: 1.45;
     color: #EDEDF2;
     font-weight: 500;
     margin-top: 0.6rem;
@@ -2404,7 +2391,7 @@ html, body, [class*="css"] {
 .ai-status-dot-low { background: #FF6961; box-shadow: 0 0 6px 1px rgba(255,105,97,0.55); }
 .ai-status-dot-neutral { background: #5AC8FA; box-shadow: 0 0 6px 1px rgba(90,200,250,0.55); }
 .ai-status-text {
-    font-size: 0.85rem;
+    font-size: 0.68rem;
     font-weight: 600;
     color: rgba(255,255,255,0.6);
     white-space: nowrap;
@@ -2455,7 +2442,7 @@ html, body, [class*="css"] {
 }
 
 .news-feed-headline {
-    font-size: 1.3rem;
+    font-size: 1.05rem;
     font-weight: 600;
     color: #F5F5F7;
 }
@@ -2465,7 +2452,7 @@ html, body, [class*="css"] {
     margin-left: 0.6rem;
     padding: 0.08rem 0.5rem;
     border-radius: 10px;
-    font-size: 1rem;
+    font-size: 0.78rem;
     font-weight: 700;
     white-space: nowrap;
     vertical-align: middle;
@@ -2475,7 +2462,7 @@ html, body, [class*="css"] {
 
 .news-feed-meta {
     flex-shrink: 0;
-    font-size: 1.1rem;
+    font-size: 0.85rem;
     color: #ABB2C4;
 }
 
