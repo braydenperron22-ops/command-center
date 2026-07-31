@@ -1637,11 +1637,24 @@ except Exception:
 # check_for_swing itself already returns None almost every call (see
 # its own docstring) — this only actually produces an alert on a real
 # consensus flip or a large probability move, not every rerun.
+#
+# Session follow-up: "as soon as a contract hits a hundred percent,
+# send us a big toast alert. I want a phone notification... that goes
+# for everything" — check_for_lock_in runs for every bank right
+# alongside check_for_swing, same isolation/None-most-of-the-time
+# shape, own try/except so one bank's lock-in check can't take down
+# another's.
 for _pm_bank in prediction_markets_client.BANKS:
     try:
         swing = prediction_markets_client.check_for_swing(_pm_bank)
         if swing:
             new_alerts.append(prediction_markets_client.swing_alert(swing))
+    except Exception:
+        pass
+    try:
+        lock_in = prediction_markets_client.check_for_lock_in(_pm_bank)
+        if lock_in:
+            new_alerts.append(prediction_markets_client.lock_in_alert(lock_in))
     except Exception:
         pass
 

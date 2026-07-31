@@ -136,14 +136,17 @@ def build_prediction_market_stat_items() -> list[dict]:
     prediction_markets_client.BANKS), naming the market's current
     single most-likely outcome for its next meeting and that outcome's
     own probability — the same rolling-contract data the Predictions
-    page shows in full, just the headline number here. Neutral tone:
-    "most likely" isn't inherently good or bad news the way a plain %
-    change is.
+    page shows in full, just the headline number here.
 
     Session request: "instead of having their acronym in the bottom
     bar, just have their flag" — same flag_for()/.ticker-flag pattern
     build_indicator_stat_items already uses for US/Canada, reusing
-    BANK_FLAG_CODES rather than each bank's acronym."""
+    BANK_FLAG_CODES rather than each bank's acronym. "color the bottom
+    bar the same way it's colored on the [Predictions] page" — tone is
+    bucket_direction() itself ("cut"/"hike" get the new ice/fire ticker
+    classes below, "hold" reuses the existing plain "neutral" one)
+    rather than good/bad, since a rate direction isn't "good or bad
+    news" the way a market move is."""
     items = []
     for bank in prediction_markets_client.BANKS:
         odds = prediction_markets_client.current_odds(bank)
@@ -151,8 +154,10 @@ def build_prediction_market_stat_items() -> list[dict]:
             continue
         bucket, prob = prediction_markets_client.most_likely_outcome(odds)
         label = prediction_markets_client.BUCKET_LABELS[bucket]
+        direction = prediction_markets_client.bucket_direction(bucket)
+        tone = direction if direction in ("cut", "hike") else "neutral"
         flag_svg = f'<span class="ticker-flag">{flag_for(prediction_markets_client.BANK_FLAG_CODES[bank])}</span>'
-        items.append({"text": f'{flag_svg} {label} {prob * 100:.0f}%', "tone": "neutral"})
+        items.append({"text": f'{flag_svg} {label} {prob * 100:.0f}%', "tone": tone})
     return items
 
 

@@ -796,6 +796,14 @@ html, body, [class*="css"] {
     color: #F5F5F7;
     font-weight: 600;
 }
+/* Session request: "color the bottom bar the same way it's colored on
+   the [Predictions] page" — same fire/ice values as
+   .prediction-direction-cut/-hike, not the green/red good/bad
+   language above (a rate direction isn't "good or bad news" the way a
+   market move is). Hold uses .ticker-item-neutral (plain white)
+   already, no separate class needed. */
+.ticker-item-cut { color: #3DD9FF; font-weight: 600; }
+.ticker-item-hike { color: #FF5A1F; font-weight: 600; }
 
 @keyframes ticker-scroll {
     from { transform: translateX(0); }

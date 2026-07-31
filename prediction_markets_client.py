@@ -44,6 +44,7 @@ import requests
 import streamlit as st
 
 import fetch_throttle
+import ntfy_client
 import persisted_state
 
 SEARCH_URL = "https://gamma-api.polymarket.com/public-search"
@@ -282,6 +283,62 @@ def check_for_swing(bank: str) -> dict | None:
     if abs(prob - prev["prob"]) >= SWING_THRESHOLD:
         return {"bank": bank, "title": odds["title"], "kind": "shift", "bucket": bucket, "prob": prob, "prev_prob": prev["prob"]}
     return None
+
+
+# Session request: "as soon as a contract hits a hundred percent, send
+# us a big toast alert. I want a phone notification, essentially
+# locking in the cut, because it's never locked in until it actually
+# settles. And that goes for everything." Real markets rarely print a
+# literal 100.000% — residual fee/liquidity noise keeps a sliver of
+# uncertainty right up to settlement — so 99% is "as locked in as this
+# market will ever show before it actually resolves," not a stricter,
+# probably-never-hit threshold.
+LOCK_IN_THRESHOLD = 0.99
+
+# Tracks "has THIS contract already had its lock-in alert fired" — a
+# different question from _last_seen's own "what was the last reading"
+# above, and deliberately a separate key: a market that crosses 99%,
+# dips back under, and crosses again shouldn't refire (still locked in,
+# same contract), but the NEXT meeting's own fresh contract reaching
+# lock-in in turn absolutely should. Per-instance, same reasoning as
+# _last_seen.
+_locked_in: dict[str, str] = persisted_state.load_per_instance("prediction_market_locked_in", {})
+
+
+def check_for_lock_in(bank: str) -> dict | None:
+    """None most of the time. A dict ({"bank", "title", "bucket",
+    "prob"}) the first time this bank's leading outcome crosses
+    LOCK_IN_THRESHOLD for its current contract — never refires for the
+    same contract once it has, but fires again once a new meeting's own
+    contract reaches lock-in in turn."""
+    odds = current_odds(bank)
+    if odds is None:
+        return None
+    bucket, prob = most_likely_outcome(odds)
+    if prob < LOCK_IN_THRESHOLD:
+        return None
+    if _locked_in.get(bank) == odds["title"]:
+        return None
+    _locked_in[bank] = odds["title"]
+    persisted_state.save_per_instance("prediction_market_locked_in", _locked_in)
+    return {"bank": bank, "title": odds["title"], "bucket": bucket, "prob": prob}
+
+
+def lock_in_alert(lock_in: dict) -> dict:
+    """Turns a check_for_lock_in() result into the same {"headline",
+    "category", "important"} toast shape swing_alert() produces below —
+    always `important` (a locked-in outcome is as decisive a signal as
+    this market ever gives before the meeting itself, the same "big
+    toast" treatment breaking news gets) — plus a direct phone push,
+    the one thing swing_alert() itself never does. Session-requested
+    consistency: "that goes for everything" — this fires the same way
+    for any tracked bank, not just whichever one prompted the ask."""
+    bank_label = BANK_LABELS[lock_in["bank"]]
+    bucket_label = BUCKET_LABELS[lock_in["bucket"]]
+    prob_pct = round(lock_in["prob"] * 100)
+    headline = f"{bank_label}: {bucket_label} locked in at {prob_pct}%"
+    ntfy_client.send(title=f"Locked in: {bank_label}", message=headline, priority="urgent", tags="lock")
+    return {"headline": headline, "category": "Rate Odds", "important": True}
 
 
 # --- Rolling macro-data-print markets (CPI, unemployment) --------------
