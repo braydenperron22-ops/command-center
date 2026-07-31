@@ -91,6 +91,7 @@ are now genuinely independent dials, not the same one.
 
 import functools
 import hashlib
+import html
 import json
 import re
 import time
@@ -1276,11 +1277,24 @@ def render_alert_bar(alert: dict) -> None:
     is_breaking = alert.get("important", category != "Market News")
     bar_class = "news-alert-bar" if is_breaking else "news-alert-bar-market"
     label_text = "BREAKING NEWS" if is_breaking else "MARKET NEWS"
+    # Found live (session report: "the red headliner... should be
+    # there, but it's not" persisting even after the category/exception
+    # fix above): `headline` here is the AI-rewritten display text (see
+    # decide()'s own docstring — "I need numbers, context, and data" —
+    # ordinary financial phrasing like "rates <4%" or "growth >2%" is
+    # completely normal LLM output), and it was going straight into this
+    # markup unescaped. A raw "<" or ">" in the text breaks the actual
+    # HTML tag structure the browser parses — no Python exception at
+    # all, so none of app.py's error handling could ever have caught
+    # it, but the rendered bar can end up empty or corrupted regardless.
+    # category never needed this in practice (it's always one of a
+    # handful of fixed strings this app controls, never AI/user text),
+    # but escaping it too costs nothing and removes the assumption.
     st.markdown(
         f"""<div class="{bar_class}">
             <span class="news-breaking-label">{label_text}</span>
-            <span class="news-alert-tag {category_class(category)}">{category}</span>
-            <span class="news-alert-headline">{headline}</span>
+            <span class="news-alert-tag {category_class(category)}">{html.escape(category)}</span>
+            <span class="news-alert-headline">{html.escape(headline)}</span>
         </div>""",
         unsafe_allow_html=True,
     )

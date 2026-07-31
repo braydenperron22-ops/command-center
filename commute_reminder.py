@@ -486,7 +486,11 @@ def render_bar(alert: dict) -> None:
     event's summary, external text same as any other unsafe_allow_html
     interpolation in this app."""
     label = html.escape(alert.get("label", "Leave soon"))
-    headline = alert.get("headline", "")
+    # _leave_text() only ever produces plain internally-generated text
+    # ("Leave now", "Leave in 15 min") today, so this was never the live
+    # bug — escaped anyway for the same reason news.render_alert_bar's
+    # headline now is, to remove the assumption rather than rely on it.
+    headline = html.escape(alert.get("headline", ""))
     st.markdown(
         f"""<div class="commute-alert-bar">
             <span class="news-breaking-label">{label}</span>
