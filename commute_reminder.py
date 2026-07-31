@@ -486,10 +486,11 @@ def render_bar(alert: dict) -> None:
     event's summary, external text same as any other unsafe_allow_html
     interpolation in this app."""
     label = html.escape(alert.get("label", "Leave soon"))
+    headline = alert.get("headline", "")
     st.markdown(
         f"""<div class="commute-alert-bar">
             <span class="news-breaking-label">{label}</span>
-            <span class="news-alert-headline">{alert['headline']}</span>
+            <span class="news-alert-headline">{headline}</span>
         </div>""",
         unsafe_allow_html=True,
     )

@@ -808,21 +808,30 @@ def render_alert_bar(alert: dict) -> None:
     mlb/nhl binary, which is what this was before the Saints) — needs
     a matching `.sports-alert-bar-{sport}` rule in theme.py for every
     sport in _LEAGUES, same convention `.jumbo-hero-{sport}`/
-    `.game-countdown-{sport}` already use elsewhere."""
-    bar_class = f"sports-alert-bar-{alert['sport']}"
-    description = html.escape(alert["description"])
+    `.game-countdown-{sport}` already use elsewhere.
+
+    Session report: "the bottom bar goes away... the red headliner...
+    should be there, but it's not." Every field below is now `.get()`
+    with a plain fallback rather than bracket access — a single
+    missing key here used to be able to crash the whole render (caught
+    upstream in app.py, but leaving the bottom bar blank for that
+    rerun instead of at least showing this alert's other fields)."""
+    bar_class = f"sports-alert-bar-{alert.get('sport', 'mlb')}"
+    description = html.escape(alert.get("description", ""))
     suffix = {"final": "FINAL", "streak": "STREAK", "pregame": "PREGAME", "start": "LIVE", "lead_change": "LEAD CHANGE"}.get(
         alert.get("type"), "UPDATE"
     )
-    label_text = f"{alert['team_label']} {suffix}"
+    label_text = f"{alert.get('team_label', '')} {suffix}"
     has_score = alert.get("team_score") is not None and alert.get("opp_score") is not None
-    score_text = f"{alert['team_score']}–{alert['opp_score']}" if has_score else ""
+    score_text = f"{alert.get('team_score')}–{alert.get('opp_score')}" if has_score else ""
+    team_logo = alert.get("team_logo", "")
+    opponent_logo = alert.get("opponent_logo", "")
     st.markdown(
         f'<div class="{bar_class}">'
         f'<span class="news-breaking-label">{label_text}</span>'
         f'<span class="sports-alert-score">'
-        f'<img src="{alert["team_logo"]}" />{score_text}'
-        f'<img src="{alert["opponent_logo"]}" /></span>'
+        f'<img src="{team_logo}" />{score_text}'
+        f'<img src="{opponent_logo}" /></span>'
         f'<span class="news-alert-headline">{description}</span>'
         f"</div>",
         unsafe_allow_html=True,

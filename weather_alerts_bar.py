@@ -295,11 +295,13 @@ def render_alert_bar(alert: dict) -> None:
     the same palette render()'s own .weather-statement-* modifiers use
     so the toast and the persistent banner never disagree about how
     urgent this looks."""
-    bar_class = f"weather-alert-bar weather-alert-bar-{alert['severity']}"
+    bar_class = f"weather-alert-bar weather-alert-bar-{alert.get('severity', 'statement')}"
+    label = html.escape(alert.get("label", "Weather Alert"))
+    headline = html.escape(alert.get("headline", ""))
     st.markdown(
         f"""<div class="{bar_class}">
-            <span class="news-breaking-label">{html.escape(alert['label'])}</span>
-            <span class="news-alert-headline">{html.escape(alert['headline'])}</span>
+            <span class="news-breaking-label">{label}</span>
+            <span class="news-alert-headline">{headline}</span>
         </div>""",
         unsafe_allow_html=True,
     )

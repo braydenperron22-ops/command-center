@@ -1705,6 +1705,66 @@ def _alert_priority(alert: dict) -> int:
     return 10
 
 
+def _render_bottom_ticker(readings: dict) -> None:
+    """A pure live-stat ticker (session request: "remove the dates for
+    data... just not [as] informational and as good as the other
+    options" — the release-date countdown machinery this used to have
+    is gone entirely, see ticker.py's own module docstring). Each
+    source isolated in its own try so a single one hiccuping (e.g.
+    yfinance briefly unreachable) only drops that one item, not the
+    whole ticker.
+
+    Session report: "the bottom bar goes away... the ticker tape goes
+    away... the red headliner... should be there, but it's not." A
+    caught toast-render failure below used to just leave current_alert
+    reset to None with nothing else rendered that rerun — the bottom
+    strip going fully blank instead of falling back to this same
+    ticker the way an empty alert queue naturally does. Factored out
+    so both paths can call it."""
+    stats = []
+    try:
+        stats.extend(ticker.build_market_stat_items())
+    except Exception:
+        pass
+    try:
+        portfolio_stat = ticker.build_portfolio_stat_item()
+        if portfolio_stat:
+            stats.append(portfolio_stat)
+    except Exception:
+        pass
+    try:
+        stats.extend(ticker.build_sports_stat_items())
+    except Exception:
+        pass
+    try:
+        stats.extend(ticker.build_indicator_stat_items(readings))
+    except Exception:
+        pass
+    try:
+        stats.extend(ticker.build_internals_stat_items())
+    except Exception:
+        pass
+    try:
+        stats.extend(ticker.build_prediction_market_stat_items())
+    except Exception:
+        pass
+    try:
+        gas_stat = ticker.build_gas_stat_item()
+        if gas_stat:
+            stats.append(gas_stat)
+    except Exception:
+        pass
+    try:
+        aqi_stat = ticker.build_aqi_stat_item()
+        if aqi_stat:
+            stats.append(aqi_stat)
+    except Exception:
+        pass
+
+    if stats:
+        st.markdown(ticker.render_html(stats), unsafe_allow_html=True)
+
+
 current_alert, elapsed = None, None
 try:
     new_alerts.sort(key=_alert_priority)
@@ -1774,6 +1834,10 @@ try:
                 },
             )
             current_alert, elapsed = None, None
+            # Falls back to the ticker rather than leaving the bottom
+            # strip fully blank for this rerun — see _render_bottom_
+            # ticker's own docstring for the session report this fixes.
+            _render_bottom_ticker(readings)
     elif _jumbotron_active and commute_reminder.leave_headline_active(now):
         # Session report: a golf tee time's leave-in window landing
         # during a Jays game — "that space is crucial for the
@@ -1791,57 +1855,31 @@ try:
         # covers the market ticker.
         commute_reminder.render_ticker_leave_bar(now)
     else:
-        # A pure live-stat ticker (session request: "remove the dates
-        # for data... just not [as] informational and as good as the
-        # other options" — the release-date countdown machinery this
-        # used to have is gone entirely, see ticker.py's own module
-        # docstring). Each source isolated in its own try so a single
-        # one hiccuping (e.g. yfinance briefly unreachable) only drops
-        # that one item, not the whole ticker.
-        stats = []
-        try:
-            stats.extend(ticker.build_market_stat_items())
-        except Exception:
-            pass
-        try:
-            portfolio_stat = ticker.build_portfolio_stat_item()
-            if portfolio_stat:
-                stats.append(portfolio_stat)
-        except Exception:
-            pass
-        try:
-            stats.extend(ticker.build_sports_stat_items())
-        except Exception:
-            pass
-        try:
-            stats.extend(ticker.build_indicator_stat_items(readings))
-        except Exception:
-            pass
-        try:
-            stats.extend(ticker.build_internals_stat_items())
-        except Exception:
-            pass
-        try:
-            stats.extend(ticker.build_prediction_market_stat_items())
-        except Exception:
-            pass
-        try:
-            gas_stat = ticker.build_gas_stat_item()
-            if gas_stat:
-                stats.append(gas_stat)
-        except Exception:
-            pass
-        try:
-            aqi_stat = ticker.build_aqi_stat_item()
-            if aqi_stat:
-                stats.append(aqi_stat)
-        except Exception:
-            pass
+        _render_bottom_ticker(readings)
+except Exception as _bottom_bar_exc:
+    # Session report: "the bottom bar goes away... the ticker tape
+    # goes away... the red headliner... should be there, but it's
+    # not." This outer catch used to be a bare `except: pass` around
+    # the ENTIRE block above — the queue sort/extend, the elapsed
+    # calc, and the toast/ticker dispatch all shared it, so a failure
+    # anywhere in the shared setup (not just inside one render call,
+    # which has its own try/except above) silently blanked the whole
+    # bottom strip with zero trace. Logged the same way the render-
+    # specific catch above does, and still attempts the ticker as a
+    # last-resort fallback (its own try/except, so a failure there
+    # can't cascade into a second silent blank).
+    import traceback
 
-        if stats:
-            st.markdown(ticker.render_html(stats), unsafe_allow_html=True)
-except Exception:
-    pass
+    print(f"BOTTOM BAR SETUP FAILED: {_bottom_bar_exc!r}")
+    traceback.print_exc()
+    persisted_state.save(
+        "toast_render_error",
+        {"at": time.time(), "kind": "setup", "headline": None, "error": f"{type(_bottom_bar_exc).__name__}: {_bottom_bar_exc}"},
+    )
+    try:
+        _render_bottom_ticker(readings)
+    except Exception:
+        pass
 
 # Bedroom Govee light/plug: reactive to the same phase/market/news signals
 # already driving the dashboard's own visuals above. Wrapped like every
