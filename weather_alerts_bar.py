@@ -287,19 +287,19 @@ def get_new_alerts(now: datetime) -> list[dict]:
     ]
 
 
-def render_alert_bar(alert: dict, elapsed: float, variant: str = "a") -> None:
-    """Bottom-strip toast for a brand-new weather alert — same stretch-
-    then-slide intro as news.render_alert_bar/commute_reminder.
-    render_bar (theme.py's toast-*-anim keyframes), colored by severity
-    via .weather-alert-bar-* (theme.py), the same palette render()'s own
-    .weather-statement-* modifiers use so the toast and the persistent
-    banner never disagree about how urgent this looks."""
-    delay = f"animation-delay: -{elapsed:.2f}s;"
+def render_alert_bar(alert: dict) -> None:
+    """Bottom-strip toast for a brand-new weather alert — same plain,
+    immediately-visible bar as news.render_alert_bar (see its own
+    docstring for why the old stretch-then-slide intro was dropped
+    entirely), colored by severity via .weather-alert-bar-* (theme.py),
+    the same palette render()'s own .weather-statement-* modifiers use
+    so the toast and the persistent banner never disagree about how
+    urgent this looks."""
     bar_class = f"weather-alert-bar weather-alert-bar-{alert['severity']}"
     st.markdown(
         f"""<div class="{bar_class}">
-            <span class="news-breaking-label toast-label-anim-{variant}" style="{delay}">{html.escape(alert['label'])}</span>
-            <span class="news-alert-headline toast-headline-anim-{variant}" style="{delay}">{html.escape(alert['headline'])}</span>
+            <span class="news-breaking-label">{html.escape(alert['label'])}</span>
+            <span class="news-alert-headline">{html.escape(alert['headline'])}</span>
         </div>""",
         unsafe_allow_html=True,
     )

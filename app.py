@@ -1711,16 +1711,16 @@ try:
             current_alert, elapsed = None, None
 
     if current_alert:
-        # Alternated every render (see the toast-*-anim comment in
-        # theme.py) — Streamlit reuses this same bottom-bar DOM node
-        # across reruns, and a burst of several alerts in a row would
-        # otherwise have every alert after the first reuse the prior
-        # one's already-completed animation and just appear instantly,
-        # with no intro. A per-rerun toggle always forces a genuine
-        # restart, whether this is a new alert or the same one
-        # continuing to render.
-        st.session_state["_toast_anim_tick"] = st.session_state.get("_toast_anim_tick", 0) + 1
-        _toast_variant = "a" if st.session_state["_toast_anim_tick"] % 2 == 0 else "b"
+        # Session report: "I'm still not getting any Toast alerts... get
+        # rid of the animation... do what you gotta do." The old intro
+        # animation needed a per-rerun a/b variant toggle (Streamlit
+        # reuses the same bottom-bar DOM node across reruns, and
+        # changing animation-name each render was the only way to force
+        # a genuine restart rather than reusing an already-completed
+        # instance) — removed entirely along with the animation itself
+        # (see news.render_alert_bar's own docstring), so there's no
+        # rerun-timing state left here to manage at all.
+        #
         # Session report: "the GoVi lights are going red... but the
         # toast is not there... I get the alert, but I don't get the
         # toast notification." The Govee block below reads this same
@@ -1739,13 +1739,13 @@ try:
         # actual trace instead of vanishing without one.
         try:
             if current_alert.get("kind") == "commute":
-                commute_reminder.render_bar(current_alert, elapsed, _toast_variant)
+                commute_reminder.render_bar(current_alert)
             elif current_alert.get("kind") == "sports":
-                sports_alerts.render_alert_bar(current_alert, elapsed, _toast_variant)
+                sports_alerts.render_alert_bar(current_alert)
             elif current_alert.get("kind") == "weather":
-                weather_alerts_bar.render_alert_bar(current_alert, elapsed, _toast_variant)
+                weather_alerts_bar.render_alert_bar(current_alert)
             else:
-                news.render_alert_bar(current_alert, elapsed, _toast_variant)
+                news.render_alert_bar(current_alert)
         except Exception as toast_render_exc:
             import traceback
 

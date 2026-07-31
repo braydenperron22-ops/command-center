@@ -139,16 +139,6 @@ TOAST_SECONDS = 30
 # volume across all 4 feeds combined at ~20-40 bytes/hash.
 MAX_SEEN_HEADLINES = 500
 
-# Intro sequencing: "BREAKING NEWS" stretches into view, holds, then slides
-# aside to reveal the headline underneath, via the toast-label-intro/
-# toast-headline-intro CSS animations in theme.py — elapsed feeds a
-# negative animation-delay (see render_alert_bar) so the clip resumes at
-# the right point every rerun and then plays smoothly on its own via the
-# browser's render loop until the next one, rather than a plain keyframe
-# animation restarting from 0% on every rerun's fresh DOM node.
-STRETCH_END = 1.8
-SLIDE_END = 3.0
-
 # name/ticker variant -> canonical ticker symbol. A dict, not a flat
 # list, so a detected company can be resolved to an actual tradable
 # symbol — used by headline_tickers.py to look up a company's 1-year
@@ -1248,20 +1238,27 @@ def get_new_alerts() -> list[dict]:
     return alerts
 
 
-def render_alert_bar(alert: dict, elapsed: float, variant: str = "a"):
-    """Bottom-strip takeover bar (normally the release-calendar ticker): a
-    label stretches into view, holds, then slides aside to reveal the
-    category tag + headline underneath.
+def render_alert_bar(alert: dict) -> None:
+    """Bottom-strip takeover bar (normally the release-calendar ticker)
+    — a plain, immediately fully-visible row: label, category tag, then
+    headline, left to right. Red "BREAKING NEWS" when decide() judged
+    this important, black "MARKET NEWS" otherwise, so the bar's own
+    color signals how urgent a given item actually is before you even
+    read the headline.
 
-    Red "BREAKING NEWS" when decide() judged this important, black
-    "MARKET NEWS" otherwise, so the bar's own color signals how urgent
-    a given item actually is before you even read the headline.
-
-    `variant` ("a"/"b") picks between two functionally identical
-    keyframe animations (theme.py) — alternated by the caller each
-    rerun so a new alert always gets a genuine restart rather than
-    reusing a completed animation instance on the same DOM node (see
-    theme.py's comment above the toast-*-intro keyframes).
+    Session report: "I'm still not getting any Toast alerts... it might
+    be running in a refresh window... which is causing it to instantly
+    die... get rid of the animation... do what you gotta do." The
+    previous version stretched a label into view over ~3 real seconds
+    via a CSS animation whose own timing was recomputed fresh every
+    5-second autorefresh rerun (a negative `animation-delay` derived
+    from `elapsed`, alternating between two keyframe variants each
+    rerun to force a restart) — real complexity purpose-built around
+    exact assumptions about how Streamlit patches this element across
+    reruns (see theme.py's now-removed toast-*-intro keyframes for that
+    full history). None of that machinery is needed to just show text:
+    this renders the whole bar in its final state immediately, with no
+    animation state tied to rerun timing left to ever get stuck in.
     """
     # Found live: `.get("important", alert["category"] != ...)` evaluates
     # that default argument eagerly regardless of whether "important" is
@@ -1279,12 +1276,11 @@ def render_alert_bar(alert: dict, elapsed: float, variant: str = "a"):
     is_breaking = alert.get("important", category != "Market News")
     bar_class = "news-alert-bar" if is_breaking else "news-alert-bar-market"
     label_text = "BREAKING NEWS" if is_breaking else "MARKET NEWS"
-    delay = f"animation-delay: -{elapsed:.2f}s;"
     st.markdown(
         f"""<div class="{bar_class}">
-            <span class="news-breaking-label toast-label-anim-{variant}" style="{delay}">{label_text}</span>
-            <span class="news-alert-tag {category_class(category)} toast-headline-anim-{variant}" style="{delay}">{category}</span>
-            <span class="news-alert-headline toast-headline-anim-{variant}" style="{delay}">{headline}</span>
+            <span class="news-breaking-label">{label_text}</span>
+            <span class="news-alert-tag {category_class(category)}">{category}</span>
+            <span class="news-alert-headline">{headline}</span>
         </div>""",
         unsafe_allow_html=True,
     )

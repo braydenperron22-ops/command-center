@@ -792,17 +792,17 @@ def plug_should_stay_on(takeover: dict | None) -> bool:
     return takeover is not None and takeover["phase"] in ("live", "postgame")
 
 
-def render_alert_bar(alert: dict, elapsed: float, variant: str = "a") -> None:
-    """Same stretch/slide toast intro as news.render_alert_bar (see its
-    own comment + theme.py's toast-*-intro keyframes) — a per-team
-    color bar (Jays blue / Habs red / Saints gold) carrying both team
-    logos and the score, plus the play/streak/lead-change that just
-    happened, the final result (session request: "make an end of game
-    alert"), or a pregame moment (session request: "expand the blue
-    jays / habs toast alerts... pre game stuff") instead of a plain
-    text headline. A pregame or game-start alert has no real score yet
-    (team_score/opp_score are None) — shown as just the two logos, no
-    score chip, rather than a misleading "0–0".
+def render_alert_bar(alert: dict) -> None:
+    """Same plain, immediately-visible bar as news.render_alert_bar (see
+    its own docstring for why the old stretch/slide intro was dropped
+    entirely) — a per-team color bar (Jays blue / Habs red / Saints
+    gold) carrying both team logos and the score, plus the play/streak/
+    lead-change that just happened, the final result (session request:
+    "make an end of game alert"), or a pregame moment (session request:
+    "expand the blue jays / habs toast alerts... pre game stuff")
+    instead of a plain text headline. A pregame or game-start alert has
+    no real score yet (team_score/opp_score are None) — shown as just
+    the two logos, no score chip, rather than a misleading "0–0".
 
     `bar_class` built from `alert["sport"]` directly (not a hardcoded
     mlb/nhl binary, which is what this was before the Saints) — needs
@@ -810,7 +810,6 @@ def render_alert_bar(alert: dict, elapsed: float, variant: str = "a") -> None:
     sport in _LEAGUES, same convention `.jumbo-hero-{sport}`/
     `.game-countdown-{sport}` already use elsewhere."""
     bar_class = f"sports-alert-bar-{alert['sport']}"
-    delay = f"animation-delay: -{elapsed:.2f}s;"
     description = html.escape(alert["description"])
     suffix = {"final": "FINAL", "streak": "STREAK", "pregame": "PREGAME", "start": "LIVE", "lead_change": "LEAD CHANGE"}.get(
         alert.get("type"), "UPDATE"
@@ -820,11 +819,11 @@ def render_alert_bar(alert: dict, elapsed: float, variant: str = "a") -> None:
     score_text = f"{alert['team_score']}–{alert['opp_score']}" if has_score else ""
     st.markdown(
         f'<div class="{bar_class}">'
-        f'<span class="news-breaking-label toast-label-anim-{variant}" style="{delay}">{label_text}</span>'
-        f'<span class="sports-alert-score toast-headline-anim-{variant}" style="{delay}">'
+        f'<span class="news-breaking-label">{label_text}</span>'
+        f'<span class="sports-alert-score">'
         f'<img src="{alert["team_logo"]}" />{score_text}'
         f'<img src="{alert["opponent_logo"]}" /></span>'
-        f'<span class="news-alert-headline toast-headline-anim-{variant}" style="{delay}">{description}</span>'
+        f'<span class="news-alert-headline">{description}</span>'
         f"</div>",
         unsafe_allow_html=True,
     )

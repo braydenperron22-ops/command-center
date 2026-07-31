@@ -56,14 +56,6 @@ LATEST_FIRE_MINUTES = -30
 HEADLINE_WINDOW_MINUTES = 120
 HEADLINE_GRACE_MINUTES = 10
 
-# Intro sequencing via the toast-label-intro/toast-headline-intro CSS
-# animations in theme.py — see news.py's STRETCH_END for why this is a
-# CSS animation with a negative animation-delay rather than plain
-# per-rerun inline styles (same mechanism, kept in sync with news.py's
-# copy of these two constants).
-STRETCH_END = 1.8
-SLIDE_END = 3.0
-
 # check() runs once per rerun (~5s during the whole commute window),
 # not once per genuine state change like the milestone/push saves below
 # it — loading this fresh from persisted_state on every single call was
@@ -362,11 +354,10 @@ def _remaining_until_leave(now: datetime) -> float | None:
 # appeared — two hours out is advance notice, not a deadline. These
 # thresholds must stay in sync with the matching ones in app.py's
 # live-countdown ticker script (JS can't call back into Python, so
-# that's the two places' agreed contract — same "kept in sync"
-# convention as this file's own STRETCH_END/SLIDE_END, mirrored in
-# news.py). This copy only decides the very first frame's tier, same
-# as _format_clock below; the JS ticker recomputes it for real every
-# second from there, independent of Streamlit's 5s rerun cadence.
+# that's the two places' agreed contract). This copy only decides the
+# very first frame's tier, same as _format_clock below; the JS ticker
+# recomputes it for real every second from there, independent of
+# Streamlit's 5s rerun cadence.
 INTENSITY_AWARE_SECONDS = 60 * 60
 INTENSITY_URGENT_SECONDS = 30 * 60
 INTENSITY_CRITICAL_SECONDS = 10 * 60
@@ -480,25 +471,25 @@ def render_ticker_leave_bar(now: datetime) -> None:
     )
 
 
-def render_bar(alert: dict, elapsed: float, variant: str = "a") -> None:
-    """Same stretch-then-slide intro as news.render_alert_bar (kept as
-    a separate, smaller implementation rather than teaching that
-    function a third "kind" — commute reminders aren't news, and
-    shouldn't grow that module's scope to accommodate them).
+def render_bar(alert: dict) -> None:
+    """Same plain, immediately-visible bar as news.render_alert_bar (see
+    its own docstring for why the old stretch-then-slide intro was
+    dropped entirely) — kept as a separate, smaller implementation
+    rather than teaching that function a third "kind" — commute
+    reminders aren't news, and shouldn't grow that module's scope to
+    accommodate them.
 
-    `variant` — see news.render_alert_bar's docstring; same reason,
-    same fix. `alert["label"]` — see _alert_label — falls back to the
-    old fixed text only for a caller that predates that key (there
-    isn't one left in this codebase, but check()'s own contract doesn't
-    guarantee it either); escaped since a non-"Work" label carries a
-    real calendar event's summary, external text same as any other
-    unsafe_allow_html interpolation in this app."""
-    delay = f"animation-delay: -{elapsed:.2f}s;"
+    `alert["label"]` — see _alert_label — falls back to the old fixed
+    text only for a caller that predates that key (there isn't one left
+    in this codebase, but check()'s own contract doesn't guarantee it
+    either); escaped since a non-"Work" label carries a real calendar
+    event's summary, external text same as any other unsafe_allow_html
+    interpolation in this app."""
     label = html.escape(alert.get("label", "Leave soon"))
     st.markdown(
         f"""<div class="commute-alert-bar">
-            <span class="news-breaking-label toast-label-anim-{variant}" style="{delay}">{label}</span>
-            <span class="news-alert-headline toast-headline-anim-{variant}" style="{delay}">{alert['headline']}</span>
+            <span class="news-breaking-label">{label}</span>
+            <span class="news-alert-headline">{alert['headline']}</span>
         </div>""",
         unsafe_allow_html=True,
     )
