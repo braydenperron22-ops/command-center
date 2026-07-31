@@ -4145,16 +4145,60 @@ html, body, [class*="css"] {
     .commute-tile .tile-prev { font-size: 1.05rem; }
     .commute-tile .severity-caption.compact { font-size: 1rem; }
     .leave-headline { font-size: 1.9rem; }
-    /* top bumped from an earlier 260px — confirmed live this collided
-       with .weather-statement-bar: that bar wraps to 3 lines at phone
-       width for a long title ("YELLOW WARNING - SEVERE THUNDERSTORM,
-       North Bay - Powassan - Mattawa"), reaching ~134px tall (ending
-       around y=328 from its own top:194) versus the single/double-line
-       height the unmodified 300px desktop offset assumes. 360px clears
-       that real case with room to spare for an even longer title (e.g.
-       the "+N more alerts" suffix render() can append). */
-    .storm-headline { font-size: 1.9rem; top: 360px; }
+    .storm-headline { font-size: 1.9rem; }
     .game-countdown-headline { font-size: 1.4rem; }
+
+    /* Session report: "when there's a red headline or the leave in
+       badge it covers the clock and weather." These, .top-alert-bar,
+       and .weather-statement-bar are all position:fixed with hardcoded
+       top:Npx stacking offsets — a deliberate fix (see each class's own
+       comment above) for the KIOSK's forced vertical-centering layout,
+       which pushes tall content off both the top and bottom of the
+       viewport. Mobile's block-container is flex-start, not centered,
+       so it never had that problem to begin with — but it inherited
+       the fixed positioning anyway. That was harmless while a separate
+       bug left ~500px of dead space above the real hero row (see the
+       .stElementContainer:has(...) rule above, "Fix huge dead-space
+       gap" commit): the fixed banners just floated over blank space.
+       Once that dead space was removed, the hero row moved up to meet
+       them, and now they float over the clock/weather instead. Static
+       here instead of fixed: each one only ever takes up real space
+       exactly when it's actually rendered, pushing whatever comes after
+       it (ultimately the clock) down by its own height, rather than
+       reserving a permanent gap or pinning over real content. The
+       hardcoded top offsets (88px/184px/194px/300-360px) that used to
+       stack these regardless of which combination was showing are now
+       meaningless once they're back in normal flow, so they're dropped
+       instead of overridden. */
+    .top-alert-bar, .weather-statement-bar, .leave-headline,
+    .storm-headline, .game-countdown-headline {
+        position: static;
+        top: auto;
+        left: auto;
+        transform: none;
+        margin: 0 0 0.7rem;
+    }
+    .leave-headline, .storm-headline, .game-countdown-headline {
+        width: fit-content;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    /* .leave-headline's own "overdue" pulse (see @keyframes
+       leave-headline-pulse-overdue above) bakes translateX(-50%) into
+       every frame because on the desktop/kiosk layout above, that's how
+       the element stays centered while position:fixed — its own
+       comment says as much. Now that this class is position:static up
+       above (centered with margin:auto instead), that same translateX
+       would instead shift the headline sideways by half its own width
+       on every pulse. Same shadow/scale pulse, transform trimmed down
+       to just the scale component. */
+    @keyframes leave-headline-pulse-overdue-mobile {
+        0%, 100% { text-shadow: 0 0 22px rgba(255,69,58,0.5); transform: scale(1); }
+        50% { text-shadow: 0 0 40px rgba(255,69,58,0.9), 0 0 70px rgba(255,69,58,0.4); transform: scale(1.03); }
+    }
+    .leave-headline.intensity-overdue {
+        animation: leave-headline-pulse-overdue-mobile 0.7s ease-in-out infinite;
+    }
     .news-breaking-label { font-size: 1.15rem; }
     .tile-value { font-size: 2rem; }
     .market-hero-value { font-size: 1.5rem; }
