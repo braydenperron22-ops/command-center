@@ -296,6 +296,65 @@ EC_FLAG = """<svg viewBox="0 0 24 16" xmlns="http://www.w3.org/2000/svg">
 <rect y="12" width="24" height="4" fill="#ED1C24"/>
 </svg>"""
 
+# Session request: central bank flags for the Predictions page/ticker —
+# added for the 5 tracked bank countries flags.py didn't already cover
+# (the rest of the 13 already existed for the Conflicts page).
+EU_FLAG = """<svg viewBox="0 0 24 16" xmlns="http://www.w3.org/2000/svg">
+<rect width="24" height="16" fill="#003399"/>
+<g fill="#FFCC00">
+<circle cx="12" cy="3.2" r="0.55"/><circle cx="14.5" cy="3.9" r="0.55"/>
+<circle cx="16.3" cy="5.7" r="0.55"/><circle cx="17" cy="8" r="0.55"/>
+<circle cx="16.3" cy="10.3" r="0.55"/><circle cx="14.5" cy="12.1" r="0.55"/>
+<circle cx="12" cy="12.8" r="0.55"/><circle cx="9.5" cy="12.1" r="0.55"/>
+<circle cx="7.7" cy="10.3" r="0.55"/><circle cx="7" cy="8" r="0.55"/>
+<circle cx="7.7" cy="5.7" r="0.55"/><circle cx="9.5" cy="3.9" r="0.55"/>
+</g>
+</svg>"""
+
+AU_FLAG = """<svg viewBox="0 0 24 16" xmlns="http://www.w3.org/2000/svg">
+<rect width="24" height="16" fill="#00247D"/>
+<path stroke="#FFFFFF" stroke-width="1.2" d="M0 0L12 8M12 0L0 8"/>
+<path stroke="#CF142B" stroke-width="0.6" d="M0 0L12 8M12 0L0 8"/>
+<rect x="5" width="2" height="8" fill="#FFFFFF"/>
+<rect y="3" width="12" height="2" fill="#FFFFFF"/>
+<rect x="5.4" width="1.2" height="8" fill="#CF142B"/>
+<rect y="3.4" width="12" height="1.2" fill="#CF142B"/>
+<g fill="#FFFFFF">
+<circle cx="18" cy="4" r="0.7"/><circle cx="20.5" cy="7" r="0.7"/>
+<circle cx="19" cy="10" r="0.7"/><circle cx="16.5" cy="11.5" r="0.5"/>
+<circle cx="21.5" cy="12.5" r="0.5"/>
+</g>
+</svg>"""
+
+NZ_FLAG = """<svg viewBox="0 0 24 16" xmlns="http://www.w3.org/2000/svg">
+<rect width="24" height="16" fill="#00247D"/>
+<path stroke="#FFFFFF" stroke-width="1.2" d="M0 0L12 8M12 0L0 8"/>
+<path stroke="#CF142B" stroke-width="0.6" d="M0 0L12 8M12 0L0 8"/>
+<rect x="5" width="2" height="8" fill="#FFFFFF"/>
+<rect y="3" width="12" height="2" fill="#FFFFFF"/>
+<rect x="5.4" width="1.2" height="8" fill="#CF142B"/>
+<rect y="3.4" width="12" height="1.2" fill="#CF142B"/>
+<g fill="#CF142B" stroke="#FFFFFF" stroke-width="0.3">
+<circle cx="17" cy="3.5" r="0.9"/><circle cx="20.5" cy="5.5" r="0.9"/>
+<circle cx="20" cy="10" r="0.9"/><circle cx="16.5" cy="11.5" r="0.7"/>
+</g>
+</svg>"""
+
+ZA_FLAG = """<svg viewBox="0 0 24 16" xmlns="http://www.w3.org/2000/svg">
+<rect width="24" height="16" fill="#FFFFFF"/>
+<rect width="24" height="5.3" fill="#DE3831"/>
+<rect y="10.7" width="24" height="5.3" fill="#002395"/>
+<path fill="#000000" d="M0 0L9 8L0 16Z"/>
+<path fill="#FFB612" d="M0 1.8L9 8L0 14.2 0 12 6.5 8 0 4Z"/>
+<path fill="#007749" d="M0 3.6L9 8L0 12.4 0 10.2 5 8 0 5.8Z"/>
+</svg>"""
+
+BR_FLAG = """<svg viewBox="0 0 24 16" xmlns="http://www.w3.org/2000/svg">
+<rect width="24" height="16" fill="#009739"/>
+<path fill="#FEDD00" d="M12 2L22 8L12 14L2 8Z"/>
+<circle cx="12" cy="8" r="3" fill="#002776"/>
+</svg>"""
+
 FLAGS = {
     "us": US_FLAG, "ca": CA_FLAG, "ru": RU_FLAG, "ua": UA_FLAG,
     "il": IL_FLAG, "ps": PS_FLAG, "sd": SD_FLAG, "mm": MM_FLAG,
@@ -310,6 +369,7 @@ FLAGS = {
     "ge": GE_FLAG, "am": AM_FLAG, "az": AZ_FLAG, "rs": RS_FLAG,
     "xk": XK_FLAG, "ve": VE_FLAG, "co": CO_FLAG, "mx": MX_FLAG,
     "ht": HT_FLAG, "ec": EC_FLAG,
+    "eu": EU_FLAG, "au": AU_FLAG, "nz": NZ_FLAG, "za": ZA_FLAG, "br": BR_FLAG,
 }
 
 

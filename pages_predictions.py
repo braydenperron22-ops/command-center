@@ -33,6 +33,7 @@ import streamlit as st
 
 import fred_client
 import prediction_markets_client as pmc
+from flags import flag_for
 
 _DIRECTION_TONE = {"cooler": "good", "hotter": "bad", "in-line": "neutral"}
 _DIRECTION_WORD = {"cooler": "COOLER", "hotter": "HOTTER", "in-line": "IN LINE"}
@@ -88,12 +89,14 @@ def _side_list_html() -> str:
     for _, bank, bucket, prob in entries:
         country = pmc.BANK_COUNTRIES[bank]
         direction = pmc.bucket_direction(bucket)
-        # Session request: bank on the left, then the percentage, then
-        # the outcome — reordered from the original country/outcome/
-        # percentage layout.
+        # Session request: "instead of central banks, I just want the
+        # flags. And then what's projected for each central bank" — the
+        # country name is replaced by its flag (title attribute keeps
+        # the name available on hover/screen readers), same bank ->
+        # percentage -> outcome column order as before.
         rows.append(
             f'<div class="prediction-row">'
-            f'<span class="prediction-row-country">{html.escape(country)}</span>'
+            f'<span class="prediction-row-country" title="{html.escape(country)}">{flag_for(pmc.BANK_FLAG_CODES[bank])}</span>'
             f'<span class="prediction-row-pct">{prob * 100:.0f}%</span>'
             f'<span class="prediction-row-outcome prediction-direction-{direction}">{html.escape(pmc.BUCKET_LABELS[bucket])}</span>'
             f"</div>"

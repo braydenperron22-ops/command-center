@@ -556,11 +556,17 @@ html, body, [class*="css"] {
 .prediction-row:last-child {
     border-bottom: none;
 }
+/* Session request: "instead of central banks, I just want the flags."
+   Same sizing convention as .ticker-flag — a plain inline SVG has no
+   intrinsic size otherwise. */
 .prediction-row-country {
-    color: #F5F5F7;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: inline-flex;
+    align-items: center;
+}
+.prediction-row-country svg {
+    width: 1.8rem;
+    height: auto;
+    border-radius: 2px;
 }
 .prediction-row-outcome {
     color: #ABB2C4;

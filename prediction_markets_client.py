@@ -78,6 +78,16 @@ BANKS = {
 }
 BANK_LABELS = {key: label for key, (_, label, _) in BANKS.items()}
 BANK_COUNTRIES = {key: country for key, (_, _, country) in BANKS.items()}
+# Session request: "instead of having their acronym... just have their
+# flag" — lowercase ISO codes for flags.flag_for(), one per bank. "eu"
+# for the ECB isn't a real ISO country code, but it's the flags.py key
+# already chosen for the EU flag itself, and there's no single country
+# a shared central bank could honestly point to instead.
+BANK_FLAG_CODES = {
+    "fed": "us", "ecb": "eu", "boe": "gb", "boj": "jp", "boc": "ca",
+    "rba": "au", "rbnz": "nz", "banxico": "mx", "rbi": "in", "boi": "il",
+    "sarb": "za", "bok": "kr", "bcb": "br",
+}
 
 # Matched against each sub-market's own `question` text (not a fixed
 # index — the API doesn't promise the markets always come back in the

@@ -132,13 +132,18 @@ def build_internals_stat_items() -> list[dict]:
 
 
 def build_prediction_market_stat_items() -> list[dict]:
-    """One compact item per tracked central bank (Fed/BoC/BoJ — see
+    """One compact item per tracked central bank (see
     prediction_markets_client.BANKS), naming the market's current
     single most-likely outcome for its next meeting and that outcome's
     own probability — the same rolling-contract data the Predictions
     page shows in full, just the headline number here. Neutral tone:
     "most likely" isn't inherently good or bad news the way a plain %
-    change is."""
+    change is.
+
+    Session request: "instead of having their acronym in the bottom
+    bar, just have their flag" — same flag_for()/.ticker-flag pattern
+    build_indicator_stat_items already uses for US/Canada, reusing
+    BANK_FLAG_CODES rather than each bank's acronym."""
     items = []
     for bank in prediction_markets_client.BANKS:
         odds = prediction_markets_client.current_odds(bank)
@@ -146,7 +151,8 @@ def build_prediction_market_stat_items() -> list[dict]:
             continue
         bucket, prob = prediction_markets_client.most_likely_outcome(odds)
         label = prediction_markets_client.BUCKET_LABELS[bucket]
-        items.append({"text": f'{bank.upper()} {label} {prob * 100:.0f}%', "tone": "neutral"})
+        flag_svg = f'<span class="ticker-flag">{flag_for(prediction_markets_client.BANK_FLAG_CODES[bank])}</span>'
+        items.append({"text": f'{flag_svg} {label} {prob * 100:.0f}%', "tone": "neutral"})
     return items
 
 
