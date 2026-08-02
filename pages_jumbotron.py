@@ -1553,6 +1553,16 @@ def _mini_row_html(g: dict) -> str:
         status_text = g["start_time"].strftime("%-I:%M") if g.get("start_time") else ""
     else:
         status_text = g.get("status_text") or ""
+        # Session report: "the rain delay in the philly/baltimore game is
+        # way too big" — ESPN's own shortDetail appends the inning to any
+        # in-progress delay ("Rain Delay, Bottom 3rd"), and .jumbo-mini-
+        # status has no nowrap/truncation, so that wraps to two lines and
+        # blows up this one row's height next to every other single-line
+        # "TOP 4TH"-style status. The inning is redundant here anyway (the
+        # row already shows the score), so a delay just keeps its own
+        # reason and drops everything ESPN tacked on after the comma.
+        if "delay" in status_text.lower():
+            status_text = status_text.split(",")[0].strip()
     row_class = "jumbo-mini" + (" jumbo-mini-live" if state == "in" else " jumbo-mini-final" if state == "post" else "")
 
     def team_row(side):
