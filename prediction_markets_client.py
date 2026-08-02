@@ -39,6 +39,8 @@ political/military markets came back for the same search terms.
 
 import json
 import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import requests
 import streamlit as st
@@ -46,6 +48,7 @@ import streamlit as st
 import fetch_throttle
 import ntfy_client
 import persisted_state
+from config import TIMEZONE
 
 SEARCH_URL = "https://gamma-api.polymarket.com/public-search"
 # Odds for a scheduled meeting weeks out don't need to be fresher than
@@ -226,6 +229,56 @@ def current_odds(bank: str) -> dict | None:
     return _last_good.get(bank)
 
 
+def days_until(end_date_iso: str | None) -> int | None:
+    """Whole calendar days from right now, in this app's own local
+    timezone, until `end_date` (the same ISO 8601 UTC string current_
+    odds()'s own "end_date" field carries) — session request: "find a
+    way to make it known when a contract is almost up... how many days
+    until the event is over." Computed against local calendar dates
+    (not a raw hour count) so "0" reads as "today" regardless of what
+    time of day the contract's own UTC deadline falls at — the more
+    intuitive answer to "how many days until" than a fractional/rounded
+    hour-based figure would be. Clamped to 0 rather than going negative
+    if `current_odds` is a beat behind the market's own actual close
+    (e.g. between the deadline passing and the next poll rolling to a
+    fresh contract) — "today" is still the honest answer in that gap,
+    not a confusing "-1". None if end_date is missing or unparseable."""
+    if not end_date_iso:
+        return None
+    try:
+        end = datetime.fromisoformat(end_date_iso.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    tz = ZoneInfo(TIMEZONE)
+    now_local = datetime.now(tz)
+    end_local = end.astimezone(tz)
+    return max(0, (end_local.date() - now_local.date()).days)
+
+
+# Tiers for days_until()'s own visual escalation — session request:
+# "make it obvious when it's actually due," as an alternative/companion
+# to the plain day count itself. "imminent" (due today or tomorrow) and
+# "soon" (within a week) are the two states worth a viewer's attention
+# at a glance; anything further out is exactly as unremarkable as every
+# other still-distant date on this page.
+DAYS_URGENCY_IMMINENT = 1
+DAYS_URGENCY_SOON = 7
+
+
+def days_until_urgency(days: int | None) -> str:
+    """"neutral"/"soon"/"imminent" for a days_until() reading — see
+    DAYS_URGENCY_IMMINENT/SOON above. "neutral" (not "unknown") for a
+    None reading too, so a caller can use this directly as a CSS class
+    suffix without a separate null-check of its own."""
+    if days is None:
+        return "neutral"
+    if days <= DAYS_URGENCY_IMMINENT:
+        return "imminent"
+    if days <= DAYS_URGENCY_SOON:
+        return "soon"
+    return "neutral"
+
+
 def most_likely_outcome(odds: dict) -> tuple[str, float]:
     """(bucket, probability) for whichever bucket the market currently
     rates most likely."""
@@ -288,6 +341,20 @@ def global_consensus() -> dict | None:
 # light, scaled up since this is a probability, not a price return.
 SWING_THRESHOLD = 0.12
 
+# Session report: "the South African Central Bank is swaying very
+# heavily between no change and hike... it's at forty percent, it's
+# less than a fifty percent chance of happening, but it keeps
+# flip-flopping." A flip used to fire regardless of magnitude — the
+# right call for a normal 5-way market where the leading bucket usually
+# does have real majority support, but a wrong one for a close 3-way
+# race (SARB, Bank of Israel) where "leading" can bounce back and forth
+# between two options neither of which ever gets real conviction. A
+# flip only counts now once the NEW leading bucket actually clears
+# FLIP_CONFIDENCE_FLOOR — real majority support, not just "highest of a
+# tied cluster." Session follow-up confirming the fix: "That's a good
+# rule."
+FLIP_CONFIDENCE_FLOOR = 0.50
+
 # Loaded once at import, saved only on a genuine change (see
 # check_for_swing below) — same persisted-cache shape this session's own
 # news.py/commute_reminder.py fixes already established, not a repeat of
@@ -307,10 +374,12 @@ def check_for_swing(bank: str) -> dict | None:
     "prev_prob"}) the first time this bank's leading outcome has moved
     meaningfully since the last time this was called — including the
     special case of the market's consensus bucket flipping outright,
-    which always counts regardless of magnitude. Never fires on the
-    very first read for a bank (nothing to compare against yet) or
-    right after rolling to a new meeting (a fresh contract starting
-    somewhere isn't a "shift" from the old one's last reading)."""
+    which counts as long as the new leading bucket clears
+    FLIP_CONFIDENCE_FLOOR (see its own comment for why that gate exists).
+    Never fires on the very first read for a bank (nothing to compare
+    against yet) or right after rolling to a new meeting (a fresh
+    contract starting somewhere isn't a "shift" from the old one's last
+    reading)."""
     odds = current_odds(bank)
     if odds is None:
         return None
@@ -324,6 +393,8 @@ def check_for_swing(bank: str) -> dict | None:
     if prev is None or prev["title"] != snapshot["title"]:
         return None
     if prev["bucket"] != bucket:
+        if prob < FLIP_CONFIDENCE_FLOOR:
+            return None
         return {"bank": bank, "title": odds["title"], "kind": "flip", "bucket": bucket, "prob": prob, "prev_bucket": prev["bucket"]}
     if abs(prob - prev["prob"]) >= SWING_THRESHOLD:
         return {"bank": bank, "title": odds["title"], "kind": "shift", "bucket": bucket, "prob": prob, "prev_prob": prev["prob"]}
@@ -686,7 +757,15 @@ def swing_alert(swing: dict) -> dict:
     produces (news.py, weather_alerts_bar.py, ...) — kept here rather
     than built inline in app.py so the actual wording lives next to the
     data it describes, same reasoning commute_reminder._leave_text has
-    for owning its own phrasing."""
+    for owning its own phrasing.
+
+    Also sends a direct phone push now, same as lock_in_alert already
+    does — session follow-up, once FLIP_CONFIDENCE_FLOOR closed off the
+    false-alarm flip-flopping that used to make these noisy: "now that
+    all three of the alerts are filtered properly, they can all be push
+    notifications since they actually bring value." One tag away from
+    lock_in's own "urgent"/"lock" — a swing is real and worth a buzz,
+    but a locked-in outcome is the more decisive of the two signals."""
     bank_label = BANK_LABELS[swing["bank"]]
     bucket_label = BUCKET_LABELS[swing["bucket"]]
     prob_pct = round(swing["prob"] * 100)
@@ -696,6 +775,7 @@ def swing_alert(swing: dict) -> dict:
     else:
         prev_pct = round(swing["prev_prob"] * 100)
         headline = f"{bank_label}: {bucket_label} odds jump to {prob_pct}% (from {prev_pct}%)"
+    ntfy_client.send(title=f"Rate odds shift: {bank_label}", message=headline, priority="high", tags="chart_with_upwards_trend")
     return {"headline": headline, "category": "Rate Odds", "important": swing["kind"] == "flip"}
 
 

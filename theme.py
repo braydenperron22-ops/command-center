@@ -582,7 +582,7 @@ html, body, [class*="css"] {
    the row. */
 .prediction-row {
     display: grid;
-    grid-template-columns: 2.6rem 4.4rem 1fr;
+    grid-template-columns: 2.6rem 4.4rem 1fr 3.2rem;
     align-items: center;
     gap: 0.6rem;
     padding: 0.5rem 0.2rem;
@@ -624,6 +624,23 @@ html, body, [class*="css"] {
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
+/* Session request: "make it known when a contract is almost up or when
+   that decision is due... a number... or have it dynamically colored."
+   Both: the plain day count is always shown, and its own color
+   escalates as the real decision date approaches (prediction_markets_
+   client.days_until_urgency) — neutral gray far out, amber within a
+   week, red within a day, so the ones actually worth a glance stand
+   out from the rest of the list without needing to read every number. */
+.prediction-row-days {
+    text-align: right;
+    font-weight: 700;
+    font-size: 1rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.prediction-row-days-neutral { color: #8E8E93; }
+.prediction-row-days-soon { color: #FFD60A; }
+.prediction-row-days-imminent { color: #FF6961; }
 
 /* Session follow-up: "what other markets are there... pull the
    consensus... build a forecast... estimate if it's gonna be coming in
@@ -866,6 +883,16 @@ html, body, [class*="css"] {
    already, no separate class needed. */
 .ticker-item-cut { color: #3DD9FF; font-weight: 600; }
 .ticker-item-hike { color: #FF5A1F; font-weight: 600; }
+/* Compact "(Nd)" companion to the Predictions page's own .prediction-
+   row-days badge (see its own comment) — same neutral/soon/imminent
+   escalation, sized for the ticker's own smaller type instead. */
+.ticker-days {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.ticker-days-neutral { color: #8E8E93; }
+.ticker-days-soon { color: #FFD60A; }
+.ticker-days-imminent { color: #FF6961; }
 
 @keyframes ticker-scroll {
     from { transform: translateX(0); }

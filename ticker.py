@@ -217,7 +217,19 @@ def build_prediction_market_stat_items() -> list[dict]:
         direction = prediction_markets_client.bucket_direction(bucket)
         tone = direction if direction in ("cut", "hike") else "neutral"
         flag_svg = f'<span class="ticker-flag">{flag_for(prediction_markets_client.BANK_FLAG_CODES[bank])}</span>'
-        items.append({"text": f'{flag_svg} {label} {prob * 100:.0f}%', "tone": tone})
+        # Session request: "find a way to make it known when a contract
+        # is almost up or when that decision is due... a number next to
+        # the odds in brackets... or have it dynamically colored." Both:
+        # a plain day count in brackets, plus an escalating color as the
+        # decision actually approaches (see days_until_urgency) rather
+        # than picking just one.
+        days = prediction_markets_client.days_until(odds.get("end_date"))
+        days_html = ""
+        if days is not None:
+            urgency = prediction_markets_client.days_until_urgency(days)
+            day_text = "today" if days == 0 else f"{days}d"
+            days_html = f' <span class="ticker-days ticker-days-{urgency}">({day_text})</span>'
+        items.append({"text": f'{flag_svg} {label} {prob * 100:.0f}%{days_html}', "tone": tone})
 
     consensus = prediction_markets_client.global_consensus()
     if consensus:

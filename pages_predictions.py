@@ -86,7 +86,7 @@ def _side_list_html() -> str:
     # Soonest meeting first — draws the eye to whatever's actually
     # coming up next, not an arbitrary or alphabetical order.
     entries.sort(key=lambda e: e[0])
-    for _, bank, bucket, prob in entries:
+    for end_date, bank, bucket, prob in entries:
         country = pmc.BANK_COUNTRIES[bank]
         direction = pmc.bucket_direction(bucket)
         # Session request: "instead of central banks, I just want the
@@ -94,11 +94,24 @@ def _side_list_html() -> str:
         # country name is replaced by its flag (title attribute keeps
         # the name available on hover/screen readers), same bank ->
         # percentage -> outcome column order as before.
+        #
+        # Session follow-up: "find a way to make it known when a
+        # contract is almost up or when that decision is due... a
+        # number next to the odds in brackets... or have it dynamically
+        # colored." Both: a plain day count, plus an escalating color as
+        # the decision actually approaches (see days_until_urgency).
+        days = pmc.days_until(end_date)
+        days_html = ""
+        if days is not None:
+            urgency = pmc.days_until_urgency(days)
+            day_text = "today" if days == 0 else f"{days}d"
+            days_html = f'<span class="prediction-row-days prediction-row-days-{urgency}">{day_text}</span>'
         rows.append(
             f'<div class="prediction-row">'
             f'<span class="prediction-row-country" title="{html.escape(country)}">{flag_for(pmc.BANK_FLAG_CODES[bank])}</span>'
             f'<span class="prediction-row-pct">{prob * 100:.0f}%</span>'
             f'<span class="prediction-row-outcome prediction-direction-{direction}">{html.escape(pmc.BUCKET_LABELS[bucket])}</span>'
+            f'{days_html}'
             f"</div>"
         )
     if not rows:
