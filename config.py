@@ -20,9 +20,22 @@ USER_PROFILE = (
     "personal loan payoff target for October 1, 2026."
 )
 
-# Corbeil, Ontario
-WEATHER_LAT = 46.2616
-WEATHER_LON = -79.2920
+# Session report: "[radar] data just looks wrong, says there should be
+# rain on my location rn but theres nothing." Root cause traced to two
+# separate coordinate gaps stacked on top of each other: this constant
+# used to be a rough "Corbeil, Ontario" town centroid, 5.2km from the
+# real home address (confirmed live via haversine distance) — and EC's
+# own forecast-text station (ec_forecast.EC_STATION_LAT/LON, the
+# nearest one that publishes rain-probability text at all) sits a
+# further 18.8km beyond THAT. A very localized shower over the distant
+# station reads as "rain now" in the text while the radar map — closer
+# to the truth, and now closer to home too — correctly shows nothing
+# nearby. This constant can only close the first gap (there's no closer
+# EC forecast station to swap in for the second), but it should still
+# be the real, precisely-geocoded home address rather than a rounded
+# town point, same as COMMUTE_ORIGIN's own coordinate already is.
+WEATHER_LAT = 46.228058
+WEATHER_LON = -79.245407
 TIMEZONE = "America/Toronto"
 
 # Reference towns shown as neutral markers on the radar map (see

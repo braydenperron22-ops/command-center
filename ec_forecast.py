@@ -32,9 +32,12 @@ _PERCENT_CHANCE_RE = re.compile(r"(\d+)\s*percent chance")
 GEOMET_URL = "https://api.weather.gc.ca/collections/citypageweather-realtime/items"
 # EC's own North Bay station (site code s0000765, from their public
 # site_list_en.geojson) — deliberately NOT config.py's WEATHER_LAT/
-# WEATHER_LON. Those pin the precise "Corbeil" point Open-Meteo forecasts
-# for, ~13km from EC's actual station; a tight bbox around the Corbeil
-# point missed EC's station entirely and silently returned zero features.
+# WEATHER_LON. Those now pin the real, precisely-geocoded home address
+# Open-Meteo forecasts for (previously a rounded "Corbeil" town centroid,
+# tightened after a session report that radar/forecast text didn't match
+# reality at the actual home) — EC's own station is a further ~18.8km
+# from that point; a tight bbox around it missed EC's station entirely
+# and silently returned zero features.
 EC_STATION_LAT = 46.31
 EC_STATION_LON = -79.46
 # A small box around the station rather than an exact-match filter —

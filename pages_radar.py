@@ -54,6 +54,25 @@ def render() -> None:
     motion_label = ec_radar.storm_motion_label(kind)
     motion_html = f'<div class="tile-prev">{motion_label}</div>' if motion_label else ""
 
+    # Session investigation: "[radar]... slow / laggy / freezes" led to
+    # a real finding (image_src above is a multi-megabyte base64 data:
+    # URI, 2MB+ confirmed live even at just 2 cached frames, re-sent on
+    # every single 5s rerun regardless of whether it actually changed)
+    # and a first attempt at fixing it via st.empty() + only calling
+    # .markdown() on a genuine change — reverted after live testing
+    # caught a real regression: Streamlit's own rerun model doesn't
+    # "leave whatever was there" when a positionally-stable element
+    # isn't touched in a given script run, it clears it, so that
+    # approach made the radar tile blank on every unchanged rerun
+    # instead of merely re-transmitting it (confirmed via MutationObserver
+    # + get_page_text: the tile's own text content was gone entirely a
+    # few reruns after a real "cache_key unchanged" cycle). A correct
+    # fix needs Streamlit's actual media-serving mechanism (st.image's
+    # own real, browser-cacheable /media/ URL instead of an inline data:
+    # URI) rather than this trick — left as a real, separate follow-up
+    # rather than shipped half-broken in this pass. Back to a plain
+    # st.markdown() every rerun, same as before this investigation.
+    #
     # One flat line, no embedded newlines/indentation — same bug class
     # already documented in pages_weather.py/pages_today.py: a
     # multi-line indented f-string reads fine to the markdown parser
