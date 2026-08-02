@@ -60,10 +60,11 @@ MORNING_WINDOW_END_HOUR = 10
 MAX_CLAUSES = 5
 
 # Duplicated from weather_client rather than imported — same convention
-# as this app's other small per-module geo/time math (see ec_radar.py's
-# own haversine/bearing helpers): this only needs day length, not a full
-# weather fetch, so it's cheaper and more self-contained to compute it
-# locally than to widen weather_client's return contract for one caller.
+# as this app's other small per-module geo/time math (see wildfire_
+# client.py's own haversine distance helper): this only needs day
+# length, not a full weather fetch, so it's cheaper and more self-
+# contained to compute it locally than to widen weather_client's return
+# contract for one caller.
 _LOCATION = LocationInfo(latitude=WEATHER_LAT, longitude=WEATHER_LON, timezone=TIMEZONE)
 
 # Every *_LINES list below got a big expansion (a handful of variants

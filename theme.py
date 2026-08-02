@@ -1490,7 +1490,7 @@ html, body, [class*="css"] {
     background: #5E5CE6;
     box-shadow: 0 0 8px 1px rgba(94,92,230,0.5);
 }
-.page-title-radar::before {
+.page-title-hourly::before {
     background: #FF375F;
     box-shadow: 0 0 8px 1px rgba(255,55,95,0.5);
 }
@@ -1961,137 +1961,41 @@ html, body, [class*="css"] {
     color: #ABB2C4;
 }
 
-/* Live radar tile — a real map image (Environment Canada's own WMS
-   composite, see ec_radar.py), not a themed chart, so it gets a plain
-   dark frame rather than the sky-gradient treatment the rest of the
-   app uses, and the location marker is just CSS-positioned dead center
-   since the image's bbox is always centered on the user's own point. */
-.weather-radar-frame {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    max-width: 22rem;
-    margin: 0 auto;
-    border-radius: 12px;
-    overflow: hidden;
-    background: #0a1420;
-}
-.weather-radar-image {
-    width: 100%;
-    height: 100%;
-    display: block;
-}
-/* Blue dot for "this is you", fixed at the map's own center. */
-.weather-radar-marker {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 10px;
-    height: 10px;
-    margin: -5px 0 0 -5px;
-    border-radius: 50%;
-    background: #64D2FF;
-    box-shadow: 0 0 8px 2px rgba(100,210,255,0.7);
-}
-
-/* Real nearby towns (see config.RADAR_NEARBY_CITIES / ec_radar.
-   nearby_city_markers) — plain neutral gray, deliberately much quieter
-   than the blue "you" marker or the red/white storm marker, since
-   these are just reference points for reading the map (where the rain
-   actually is relative to real places), not something to react to. */
-.weather-radar-city-marker {
-    position: absolute;
-    width: 5px;
-    height: 5px;
-    margin: -2.5px 0 0 -2.5px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.4);
-}
-.weather-radar-city-label {
-    position: absolute;
-    transform: translate(6px, -50%);
-    font-size: 0.62rem;
-    font-weight: 600;
-    color: rgba(255,255,255,0.55);
-    white-space: nowrap;
-    pointer-events: none;
-}
-
-/* Radar page's own version — a live map is the entire point of that
-   page, so it gets real screen space instead of sharing a column with
-   the 7-day forecast the way it briefly did on the Weather page. Was
-   capped at 28rem (too small); widening to max-width:100% alone turned
-   out worse — this frame is a square (aspect-ratio 1/1), so on a wide
-   screen "100% of the tile's width" also means "just as tall," which
-   overran the viewport and pushed most of the map (including anything
-   below the vertical center, where the location marker sits) off
-   screen entirely. Confirmed live: the marker was still mathematically
-   dead center (50.0%/50.0%) the whole time — the frame itself was just
-   taller than what was visible. Sizing *width* itself via min(): Nvh
-   (a length here, N% of viewport height) caps the width at whatever
-   height allows, and aspect-ratio derives a matching height from that
-   same resolved width — a real square, bounded by whichever of
-   width/height is the tighter constraint. 55vh still overflowed the
-   viewport in testing at both 800px and 1080px window heights — the
-   hero row/badges/morning-briefing stack above this tile is close to a
-   fixed pixel height regardless of viewport, so it doesn't shrink as a
-   share of a taller viewport the way vh math assumes. Tuned down to
-   40vh against that real content stack (measured live, page title
-   through an active alert banner and the morning-briefing box) turned
-   out to still overflow slightly on retest — that content stack isn't
-   perfectly stable even at a fixed viewport size (badges/alerts change
-   with live conditions between one test and the next — confirmed live
-   that commute_reminder's page-independent "Leave in X min" headline,
-   which shows above the clock on every page including this one during
-   the actual pre-departure window, was what grew the stack mid-testing,
-   not measurement error), so there's no single vh value that's ever
-   *guaranteed* safe against every real content combination (leave
-   headline + an active EC alert + every hero badge + a long
-   morning-briefing sentence, all at once, is the genuine worst case)
-   without JS-measuring the actual remaining space, which isn't
-   practical for a static injected stylesheet. 28vh (as a square) was
-   confirmed live to leave under 10px of margin above the bottom ticker
-   on a 768px-tall screen (a real kiosk resolution, not a hypothetical)
-   even in the calm case — no headroom at all to size up further there
-   without risking real overlap. A taller screen (1024px+, the other
-   real resolution in play here) has a lot more slack, so this stays
-   height-tiered: unchanged height budget on short screens, meaningfully
-   bigger once there's actually room for it.
-
-   No longer square, though — was a 1:1 inset sitting in the middle of
-   this tile with empty black space on either side, since the tile
-   itself is much wider than the old height-bounded square ever was.
-   ec_radar.py now fetches a genuinely wider image (2.5:1, more real
-   horizontal coverage, not a stretched/cropped version of the old
-   square one) to match, so this aspect-ratio has to track that same
-   2.5 exactly or the image and the box would disagree. The vh
-   multiplier below is the same height budget as before, just expressed
-   as a width via the new ratio (e.g. 28vh height * 2.5 = 70vh width) —
-   same technique as the square version: constrain width directly via
-   min(), let aspect-ratio derive a matching height from that, rather
-   than fighting a competing max-height (confirmed earlier that combo
-   stretches instead of shrinking proportionally). */
-.weather-radar-frame-large {
-    aspect-ratio: 2.5 / 1;
-    width: min(100%, 70vh);
-    max-width: 100%;
-}
-@media (min-height: 850px) {
-    .weather-radar-frame-large {
-        width: min(100%, 105vh);
-    }
-}
-.weather-radar-tile-large {
+/* Hourly Forecast page (see pages_hourly.py) — replaces the live radar
+   map at the user's own request ("get rid of radar and replace it with
+   hourly weather data"). Same "one tile per period" column shape
+   pages_weather.py's own 7-day row already uses, just sized for a
+   HOURS_SHOWN-wide row instead of a week-wide one. */
+.hourly-tile {
     align-items: center;
     text-align: center;
-    padding-top: 1rem;
-    padding-bottom: 0.9rem;
 }
-/* Was margin-top (the badge used to sit below the frame) — now sits
-   between the label and the map, so it needs its spacing on the other
-   side instead. */
-.weather-radar-tile-large .badge {
-    margin-bottom: 0.7rem;
+.hourly-icon svg {
+    width: 2.4rem;
+    height: 2.4rem;
+    display: block;
+    margin: 0.3rem 0;
+    color: #ABB2C4;
+}
+.hourly-temp {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #F5F5F7;
+    margin: 0.1rem 0 0.4rem;
+}
+/* Only rendered at all when EC's own hourly likelihood-of-precipitation
+   reading is a real, non-zero chance (see pages_hourly.render's own
+   comment on why this needs an explicit ">0" check rather than the
+   daily forecast's "is not None" one). */
+.hourly-chance {
+    color: #64D2FF;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+.hourly-wind {
+    font-size: 0.78rem;
+    color: #ABB2C4;
+    margin-top: 0.25rem;
 }
 
 /* .conflict-headlines/.conflict-headline (the raw sourced-headline list

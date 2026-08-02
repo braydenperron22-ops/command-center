@@ -140,6 +140,41 @@ def next_precip_at(now: datetime) -> tuple[datetime, str, int] | None:
     return None
 
 
+def hourly_forecast() -> list[dict]:
+    """Full hourly detail for the next ~24 hours of EC's own official
+    forecast — session request: "get rid of radar and replace it with
+    hourly weather data." Reads the exact same cached citypage payload
+    _fetch_hourly() above already parses for the rain-nowcast badge (no
+    extra fetch — EC's own single response already carries both the
+    coarse lop/condition pair that reads and the temperature/wind detail
+    this adds), just the fuller per-hour shape: {"at", "temp_c",
+    "condition", "category", "precip_chance", "wind_speed", "wind_dir"},
+    oldest (soonest) first. [] on any fetch failure, same as every other
+    reader of _fetch_properties()."""
+    properties = _fetch_properties()
+    if not properties:
+        return []
+    hourly = []
+    for f in properties.get("hourlyForecastGroup", {}).get("hourlyForecasts", []):
+        timestamp = f.get("timestamp")
+        temp = f.get("temperature", {}).get("value", {}).get("en")
+        if not timestamp or temp is None:
+            continue
+        condition = f.get("condition", {}).get("en", "")
+        at_utc = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        at_local = at_utc.astimezone(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
+        hourly.append({
+            "at": at_local,
+            "temp_c": temp,
+            "condition": condition,
+            "category": _classify_category(condition),
+            "precip_chance": f.get("lop", {}).get("value", {}).get("en"),
+            "wind_speed": f.get("wind", {}).get("speed", {}).get("value", {}).get("en"),
+            "wind_dir": f.get("wind", {}).get("direction", {}).get("value", {}).get("en"),
+        })
+    return hourly
+
+
 def _temp_value(temps: list[dict], cls: str) -> int | None:
     for t in temps:
         if t.get("class", {}).get("en") == cls:

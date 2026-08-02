@@ -1,6 +1,6 @@
 """Personal command-center dashboard: ambient rotation across Home (macro
 data), Conflicts, News, Markets, Internals, Today, Household, Weather,
-Radar, Sports, Scores, Portfolio, and Predictions — clock/weather header
+Hourly, Sports, Scores, Portfolio, and Predictions — clock/weather header
 stays constant. Jumbotron (sports takeover) and Maintenance (diagnostics)
 are real pages too but deliberately excluded from the passive rotation —
 see PAGES in config.py and each page's own routing comments below for
@@ -25,6 +25,7 @@ import news
 import pages_conflicts
 import pages_home
 import pages_household
+import pages_hourly
 import pages_internals
 import pages_jumbotron
 import pages_maintenance
@@ -32,7 +33,6 @@ import pages_markets
 import pages_news
 import pages_portfolio
 import pages_predictions
-import pages_radar
 import pages_scores
 import pages_sports
 import pages_today
@@ -363,95 +363,15 @@ components.html(
     height=0,
 )
 
-# Radar loop GIF — session report: "radar is so buggy," narrowed down
-# to "flickers or jumps around." Root cause: pages_radar.py's <img> for
-# the animated radar loop (ec_radar.radar_loop_data_uri) is plain
-# markdown output, so Streamlit re-emits it as a BRAND NEW <img> DOM
-# node every ~5s autorefresh rerun — same root cause class as the sky-
-# gradient fade and the win-probability bar (see those own comments
-# above), but with no CSS-transition equivalent available here: a
-# browser always restarts an animated GIF from its first frame the
-# instant a NEW <img> element is created for it, even when the `src`
-# is byte-for-byte identical to the previous element's. With the loop
-# itself often spanning close to an hour of real radar history but a
-# fresh DOM node arriving every 5 seconds, the loop almost never got
-# far enough into its own frames to show real motion — constantly
-# snapping back to the start read exactly as "flickers or jumps
-# around," not as smooth animation.
-#
-# Unlike the wp-smoother/countdown-ticker fixes above, there's no CSS
-# property to fake here (a GIF's own playback position isn't something
-# JS can set or resume) — the only real fix is to stop the DOM node
-# from ever being recreated at all. Can't just clone it as a sibling
-# INSIDE .weather-radar-frame either — that whole frame is itself part
-# of the same single unsafe_allow_html markdown string pages_radar.py
-# renders, so Streamlit replaces it wholesale (frame and all) every
-# cycle, taking any child inserted into it right along with the
-# original. The persistent <img> instead lives as a direct child of
-# <body>, entirely outside anything Streamlit ever touches, and is
-# repositioned via getBoundingClientRect() against the (now-hidden)
-# real frame on every detection cycle so it visually tracks it exactly
-# — cheap enough to recompute that often, and this kiosk's layout
-# doesn't scroll during normal operation anyway. `src` only gets
-# reassigned when it actually changed (a genuinely new radar frame,
-# which legitimately should restart the loop — that's correct, not the
-# bug); an unchanged src leaves the persistent element's own ongoing
-# GIF animation completely undisturbed.
-components.html(
-    """
-    <script>
-    (function () {
-      var doc = window.parent.document;
-      if (doc.getElementById('kiosk-radar-loop')) return;
-      var s = doc.createElement('script');
-      s.id = 'kiosk-radar-loop';
-      s.textContent = [
-        "function kioskPersistRadarImg(el) {",
-        "  var frame = el.closest('.weather-radar-frame');",
-        "  if (!frame) return;",
-        "  var persistent = document.getElementById('kiosk-radar-persistent-img');",
-        "  if (!persistent) {",
-        "    persistent = document.createElement('img');",
-        "    persistent.id = 'kiosk-radar-persistent-img';",
-        "    persistent.style.position = 'fixed';",
-        "    persistent.style.zIndex = '5';",
-        "    persistent.style.pointerEvents = 'none';",
-        "    persistent.style.display = 'block';",
-        "    document.body.appendChild(persistent);",
-        "  }",
-        "  var rect = frame.getBoundingClientRect();",
-        "  persistent.style.top = rect.top + 'px';",
-        "  persistent.style.left = rect.left + 'px';",
-        "  persistent.style.width = rect.width + 'px';",
-        "  persistent.style.height = rect.height + 'px';",
-        "  persistent.style.borderRadius = getComputedStyle(frame).borderRadius;",
-        "  var newSrc = el.getAttribute('src');",
-        "  if (newSrc && persistent.src !== newSrc) {",
-        "    persistent.src = newSrc;",
-        "  }",
-        "  el.style.display = 'none';",
-        "}",
-        "function kioskPersistRadarAll() {",
-        "  document.querySelectorAll('img.weather-radar-image').forEach(kioskPersistRadarImg);",
-        "  var persistent = document.getElementById('kiosk-radar-persistent-img');",
-        "  if (persistent && !document.querySelector('img.weather-radar-image')) {",
-        "    persistent.remove();",
-        "  }",
-        "}",
-        "kioskPersistRadarAll();",
-        "new MutationObserver(kioskPersistRadarAll).observe(document.body, {childList: true, subtree: true});",
-      ].join('\\n');
-      doc.head.appendChild(s);
-    })();
-    </script>
-    """,
-    height=0,
-)
-
 # Bottom ticker — session report: "this dashboard is really heavy...
 # the bottom bar[ is] a little janky on the old laptop." Same root
-# cause as the radar loop and win-probability bar above: ticker.
-# render_html() is one plain st.markdown call, so Streamlit replaces
+# cause class as the win-probability bar above (a plain markdown re-emit
+# recreating the DOM node every rerun, restarting whatever animation it
+# carries). A twin fix used to sit right above this one for the live
+# radar loop GIF — removed along with the whole Radar page at the
+# user's own request ("get rid of radar and replace it with hourly
+# weather data"), taking its own now-dead persistence script with it.
+# ticker.render_html() is one plain st.markdown call, so Streamlit replaces
 # its whole .ticker-bar > .ticker-track > .ticker-content tree from
 # scratch on every ~5s rerun — and .ticker-track carries a 55-second
 # CSS scroll animation (animation: ticker-scroll, theme.py), which a
@@ -786,7 +706,7 @@ except Exception:
 _PAGE_LABELS = {
     "home": "Home", "conflicts": "Conflicts", "news": "News", "markets": "Markets",
     "internals": "Internals", "today": "Today", "household": "Household",
-    "weather": "Weather", "radar": "Radar", "sports": "Sports", "scores": "Scores",
+    "weather": "Weather", "hourly": "Hourly", "sports": "Sports", "scores": "Scores",
     "portfolio": "Portfolio", "predictions": "Predictions",
 }
 
@@ -1233,8 +1153,10 @@ if weather:
 
     # Rain/snow arrival + severity badges (radar-based lookahead
     # forecasting) removed at the user's own request, judged too
-    # inconsistent to trust — see ec_radar.py's own module docstring.
-    # The Radar page still shows the live map for manual reading.
+    # inconsistent to trust. The Radar page that still showed the live
+    # map for manual reading was itself later removed too ("get rid of
+    # radar and replace it with hourly weather data") — see
+    # pages_hourly.py for its replacement.
     extras = []
     if weather["uv_index"] is not None and weather["uv_index"] > UV_HIGH_THRESHOLD:
         uv = weather["uv_index"]
@@ -1586,8 +1508,8 @@ with st.container(key="page_body"):
         _safe_render(pages_household.render, now)
     elif page == "weather":
         _safe_render(pages_weather.render)
-    elif page == "radar":
-        _safe_render(pages_radar.render)
+    elif page == "hourly":
+        _safe_render(pages_hourly.render)
     elif page == "jumbotron":
         _safe_render(pages_jumbotron.render, now, _takeover, weather, _ufc_takeover)
     elif page == "sports":
@@ -1703,7 +1625,9 @@ for _pm_bank in prediction_markets_client.BANKS:
 # Radar-based severe/tracking-started toast alerts (ec_radar.
 # severe_weather_alert / tracking_started_alert) removed along with the
 # rest of the radar lookahead-forecasting layer at the user's own
-# request — see ec_radar.py's own module docstring.
+# request, judged too inconsistent to trust — the live radar map that
+# layer sat alongside was itself removed later ("get rid of radar and
+# replace it with hourly weather data").
 
 # News alerts: strictly-filtered items queue up and take over the bottom
 # bar (normally the release calendar) for TOAST_SECONDS each, breaking-news

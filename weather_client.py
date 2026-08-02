@@ -41,7 +41,7 @@ _last_good_weather: dict | None = None
 # nothing cached yet to fall back on right after a fresh redeploy resets
 # _last_good_weather. EC's own live station reading is a real second
 # source rather than showing nothing — already a dependency of this app
-# (ec_forecast.py, used elsewhere on the Weather/Radar pages), not a new
+# (ec_forecast.py, used elsewhere on the Weather/Hourly pages), not a new
 # vendor. Its own condition wording already collapses to the same six
 # scenery.condition_category buckets Open-Meteo's numeric code does (see
 # ec_forecast._classify_category), so this just picks one representative

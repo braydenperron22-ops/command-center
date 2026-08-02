@@ -38,40 +38,6 @@ WEATHER_LAT = 46.228058
 WEATHER_LON = -79.245407
 TIMEZONE = "America/Toronto"
 
-# Reference towns shown as neutral markers on the radar map (see
-# ec_radar.nearby_city_markers) — so it's obvious where rain actually is
-# relative to real places, not just relative to Corbeil's own marker.
-# Geocoded once via commute_client.geocode() (the same TomTom API the
-# commute feature uses) and hardcoded here since these are fixed
-# locations — no reason to spend a live geocoding call rendering the
-# radar page every few minutes for coordinates that never change.
-# Sudbury was excluded at first for falling outside the radar image's
-# old square ~115km longitudinal half-span — the frame is wider now
-# (see ec_radar.IMAGE_ASPECT_RATIO), and Sudbury genuinely fits inside
-# it (confirmed live, pixel (438, 271) well within the new 1600x640
-# frame), so it's back in.
-# Callander was checked too but sits only ~7km from North Bay — close
-# enough that their labels overlapped illegibly on a narrow (mobile)
-# frame, so it's left out as redundant with North Bay at this zoom.
-RADAR_NEARBY_CITIES = [
-    {"label": "North Bay", "lat": 46.309464, "lon": -79.46163},
-    {"label": "Powassan", "lat": 46.082132, "lon": -79.359081},
-    {"label": "Sturgeon Falls", "lat": 46.3660968, "lon": -79.9309088},
-    {"label": "Mattawa", "lat": 46.3132636, "lon": -78.709835},
-    {"label": "Sudbury", "lat": 46.489459, "lon": -80.989206},
-    # Added once the radar frame widened to a 2.5:1 image (see
-    # ec_radar.py) — these sit well outside the old square bbox but
-    # comfortably inside the new one, confirmed via ec_radar's own
-    # _latlon_to_pixel/nearby_city_markers (which already silently drops
-    # anything landing outside the frame, so there's no risk in listing
-    # a town that turns out to be just out of range).
-    {"label": "Parry Sound", "lat": 45.3502, "lon": -80.0329},
-    {"label": "Huntsville", "lat": 45.3238, "lon": -79.2177},
-    {"label": "Pembroke", "lat": 45.8168, "lon": -77.1141},
-    {"label": "Temiskaming Shores", "lat": 47.5169, "lon": -79.6810},
-    {"label": "Deep River", "lat": 46.1001, "lon": -77.4931},
-]
-
 UV_HIGH_THRESHOLD = 5
 # "Feels like" only earns a hero badge once it diverges enough from the
 # actual temperature to matter — a couple degrees of humidex/wind
@@ -183,12 +149,15 @@ YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 
 # --- Multi-page ambient rotation -------------------------------------------
 # Home / Conflicts / News / Markets / Internals / Today / Household /
-# Weather / Radar / Sports / Scores / Portfolio / Predictions cycle the
+# Weather / Hourly / Sports / Scores / Portfolio / Predictions cycle the
 # same way US/CA already does: a time.time()-based index, no Streamlit
 # multipage chrome, no scrolling.
+#
+# "radar" replaced with "hourly" — session request: "get rid of radar
+# and replace it with hourly weather data." See pages_hourly.py.
 PAGES = [
     "home", "conflicts", "news", "markets", "internals", "today", "household",
-    "weather", "radar", "sports", "scores", "portfolio", "predictions",
+    "weather", "hourly", "sports", "scores", "portfolio", "predictions",
 ]
 PAGE_ROTATION_SECONDS = 5 * 60
 
