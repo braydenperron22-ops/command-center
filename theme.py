@@ -493,6 +493,13 @@ html, body, [class*="css"] {
 .internals-verdict-good { color: #32D74B; }
 .internals-verdict-bad { color: #FF6961; }
 .internals-verdict-neutral { color: #5AC8FA; }
+/* Separator between the Fear & Greed hero's own band word and its
+   weekly-change reading — session request: "every context label should
+   have different colours attached to it," which now colors each of
+   those two pieces independently (see pages_internals._render_gauge_
+   hero), so the dot between them needs its own quiet, uncolored
+   styling rather than inheriting either side's tone. */
+.internals-verdict-sep { color: rgba(236,236,241,0.45); margin: 0 0.4rem; font-weight: 400; }
 .internals-context {
     font-size: 1.25rem;
     color: #ECECF1;

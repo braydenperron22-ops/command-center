@@ -75,6 +75,29 @@ def _gauge_band(value: float) -> tuple[str, str]:
     return "Panic", "bad"
 
 
+# Session follow-up: "every context label should have different colours
+# attached to it" — the 3-bucket good/bad/neutral tone above is still
+# what the shared .tile-accent-* top strip uses (consistent with the
+# other 3 tiles on this page, which really do only have 3 states each),
+# but the word itself now gets its own distinct color per band instead
+# of reusing the same red/blue/green three times over. A single warm-to
+# -cool sweep (red -> orange -> amber -> yellow -> green), the same
+# red-to-green language every fear/greed dial already uses, rather than
+# introducing an unrelated hue like blue for the middle bands.
+_BAND_COLOR = {
+    "Panic": "#E0302A",
+    "Dread": "#F0483A",
+    "Fear": "#FF6B35",
+    "Worry": "#FF9A3D",
+    "Caution": "#FFC145",
+    "Calm": "#E4D651",
+    "Hope": "#B9D953",
+    "Optimism": "#8CCB4E",
+    "Greed": "#56B84B",
+    "Euphoria": "#22A64A",
+}
+
+
 def _render_gauge_hero() -> None:
     data = mi.fear_greed_index()
     if not data:
@@ -87,31 +110,44 @@ def _render_gauge_hero() -> None:
 
     value = data["value"]
     band_label, tone = _gauge_band(value)
+    band_color = _BAND_COLOR[band_label]
     # Session follow-up: "instead of saying rising or falling just show
-    # the amount its risen or fallen by in the last week." Replaces the
-    # earlier "↑ Toward Greed"/"↓ Toward Fear" fix (itself a fix for
-    # "Fear (arrow up rising)" reading backwards) with the actual signed
-    # point change over the real last week (data["one_week_ago"], same
-    # field feargreedmeter.com's own payload / the computed fallback's
-    # 5-trading-day-back reading already carry) — a number can't read
-    # backwards the way a directional word could, and it's more useful
-    # than a bare arrow besides. Omitted entirely, same "just omit it"
-    # rule every other optional reading on this page follows, on the
-    # rare chance a week-ago value isn't available yet.
+    # the amount its risen or fallen by in the last week" (data["one_
+    # week_ago"], same field feargreedmeter.com's own payload / the
+    # computed fallback's 5-trading-day-back reading already carry),
+    # then refined further: "change the +1 this week to show an up or
+    # down arrow instead more obvious and make it green or red based on
+    # how its moving." A bold filled triangle (▲/▼) reads more clearly
+    # at a glance than the previous thin ↑/↓, and it's colored on its
+    # own — green for a rising score, red for falling — independent of
+    # band_color above, since "the number moved up" and "which mood
+    # band we're in" are two different facts that can disagree (e.g.
+    # still in Fear territory but moving toward Greed). Omitted
+    # entirely, same "just omit it" rule every other optional reading
+    # on this page follows, on the rare chance a week-ago value isn't
+    # available yet.
     one_week_ago = data.get("one_week_ago")
     if one_week_ago is not None:
         change = value - float(one_week_ago)
-        week_text = f"{change:+.0f} this week"
+        if change > 0:
+            change_arrow, change_color = "▲", "#32D74B"
+        elif change < 0:
+            change_arrow, change_color = "▼", "#FF6961"
+        else:
+            change_arrow, change_color = "●", "#ECECF1"
+        change_html = (
+            f'<span class="internals-verdict-sep">·</span>'
+            f'<span style="color:{change_color}">{change_arrow} {abs(change):.0f} this week</span>'
+        )
     else:
-        week_text = ""
+        change_html = ""
     context = GAUGE_CONTEXT_EXTERNAL if data.get("source") == "external" else GAUGE_CONTEXT_COMPUTED
-    verdict_text = f"{band_label} · {week_text}" if week_text else band_label
 
     st.markdown(
-        f"""<div class="tile tile-accent-{tone} confidence-hero">
+        f"""<div class="tile tile-accent-{tone} confidence-hero" style="--tile-accent: {band_color};">
             <div class="tile-label">FEAR &amp; GREED INDEX</div>
             <div class="confidence-value">{value:.0f}</div>
-            <div class="internals-verdict internals-verdict-{tone}">{verdict_text}</div>
+            <div class="internals-verdict"><span style="color:{band_color}">{band_label}</span>{change_html}</div>
             <div class="internals-context">{context}</div>
         </div>""",
         unsafe_allow_html=True,
