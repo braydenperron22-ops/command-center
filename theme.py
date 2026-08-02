@@ -3613,6 +3613,20 @@ html, body, [class*="css"] {
     text-overflow: ellipsis;
 }
 .jumbo-lineup-pos { flex: 0 0 36px; color: var(--mut); font-size: 15px; text-align: center; }
+/* Today's-game hit line ("1/2", "0/4"), session request: "add the
+   results from the at bat in the lineup... gives meaningful context."
+   Deliberately plain/muted, not tier-colored like OPS below — this is
+   a per-game line score, not a "good or bad" judgment the way OPS
+   percentile is. Empty for a hitter with no at-bat yet this game (see
+   _batting_order_row_html), so the column silently holds its width
+   rather than showing a misleading 0/0. */
+.jumbo-lineup-gameline {
+    flex: 0 0 46px;
+    color: var(--mut);
+    font-size: 16px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
 .jumbo-lineup-ops {
     flex: 0 0 64px;
     color: var(--bone);

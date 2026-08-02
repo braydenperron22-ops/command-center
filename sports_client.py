@@ -1415,6 +1415,42 @@ def fetch_mlb_lineup_live_ops(entries: list[dict]) -> list[dict]:
     return [{**e, "ops": live_ops.get(e["id"]) or e.get("ops")} for e in entries]
 
 
+def fetch_mlb_lineup_game_line(game_id: int, entries: list[dict]) -> list[dict]:
+    """`entries` with each hitter's today's-game "game_line" added
+    ("1/2", "0/4", "3/3", ...) — session request: "add the results from
+    the at bat in the lineup... a little 1/2 0/4 or 3/3 gives meaningful
+    context... dont show anything if theres nothing." None whenever this
+    hitter hasn't recorded an official at-bat yet this game — a leadoff
+    walk before their first real AB isn't "0-for-0," it's simply nothing
+    to show yet, same distinction the request drew.
+
+    Reads the boxscore's own per-player stats.batting (hits/atBats) — a
+    different field than fetch_mlb_batting_order's seasonStats.batting.ops
+    above: genuinely per-game, not per-season. Unlike that season OPS,
+    though, a hit that just happened is exactly the kind of ahead-of-
+    broadcast spoiler the jumbotron's delay stepper exists to hold back
+    (see delayed()'s own docstring) — so this reads the same delayed
+    boxscore snapshot _mlb_game_pitching_totals already reads for this
+    exact game (same "mlb_boxscore_{game_id}" key, same underlying
+    buffer, no extra fetch). {} / unchanged entries on any fetch failure,
+    same "stale beats missing, but never lead the broadcast" reasoning
+    every other live panel here follows."""
+    try:
+        data = delayed(f"mlb_boxscore_{game_id}", _fetch_mlb_boxscore_raw(game_id))
+    except Exception:
+        return entries
+    lines: dict[int, str] = {}
+    for side in ("home", "away"):
+        players = ((data.get("teams") or {}).get(side) or {}).get("players") or {}
+        for p in players.values():
+            pid = (p.get("person") or {}).get("id")
+            batting = (p.get("stats") or {}).get("batting") or {}
+            at_bats = batting.get("atBats") or 0
+            if pid and at_bats:
+                lines[pid] = f"{batting.get('hits', 0)}/{at_bats}"
+    return [{**e, "game_line": lines.get(e["id"])} for e in entries]
+
+
 LEAGUE_STATS_URL = "https://statsapi.mlb.com/api/v1/stats"
 # Session request: "find the league average ops... make it dynamic so
 # it shows exactly where they are in context to the entire league."

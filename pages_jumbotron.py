@@ -742,6 +742,12 @@ def _batting_order_row_html(entry: dict, is_current: bool, tier: str | None) -> 
     ops = html.escape(entry["ops"]) if entry.get("ops") else "—"
     number = html.escape(str(entry["number"])) if entry.get("number") else ""
     position = html.escape(entry.get("position") or "")
+    # Session request: "add the results from the at bat in the
+    # lineup... dont show anything if theres nothing" — an empty span
+    # (not a placeholder dash) whenever this hitter has no official at-
+    # bat yet this game, so the column just goes quiet instead of
+    # showing a misleading "0/0" for someone who hasn't hit yet.
+    game_line = html.escape(entry["game_line"]) if entry.get("game_line") else ""
     row_class = "jumbo-lineup-row jumbo-lineup-row-current" if is_current else "jumbo-lineup-row"
     ops_class = f"jumbo-lineup-ops jumbo-lineup-ops-{tier}" if tier else "jumbo-lineup-ops"
     return (
@@ -749,6 +755,7 @@ def _batting_order_row_html(entry: dict, is_current: bool, tier: str | None) -> 
         f'<span class="jumbo-lineup-num">{number}</span>'
         f'<span class="jumbo-lineup-name">{html.escape(entry["short_name"].upper())}</span>'
         f'<span class="jumbo-lineup-pos">{position}</span>'
+        f'<span class="jumbo-lineup-gameline">{game_line}</span>'
         f'<span class="{ops_class}">{ops}</span>'
         f"</div>"
     )
@@ -759,6 +766,7 @@ _BATTING_ORDER_HEADER = (
     '<span class="jumbo-lineup-num">#</span>'
     '<span class="jumbo-lineup-name">PLAYER</span>'
     '<span class="jumbo-lineup-pos">POS</span>'
+    '<span class="jumbo-lineup-gameline">AB</span>'
     '<span class="jumbo-lineup-ops">OPS</span>'
     "</div>"
 )
@@ -2019,6 +2027,7 @@ def render(now: datetime, state: dict, weather: dict | None, ufc_state: dict | N
         batting_side = ("home" if inning_state in ("Bottom", "Middle") else "away") if inning_state else None
         if full_order and batting_side:
             batting_entries = sports_client.fetch_mlb_lineup_live_ops(full_order[batting_side])
+            batting_entries = sports_client.fetch_mlb_lineup_game_line(game_id, batting_entries)
             current_batter = live_detail.get("batter")
 
     if batting_entries:
