@@ -738,17 +738,18 @@ def _current_matchup_html(game_id: int) -> str:
     )
 
 
-def _batting_order_row_html(entry: dict, is_current: bool) -> str:
+def _batting_order_row_html(entry: dict, is_current: bool, tier: str | None) -> str:
     ops = html.escape(entry["ops"]) if entry.get("ops") else "—"
     number = html.escape(str(entry["number"])) if entry.get("number") else ""
     position = html.escape(entry.get("position") or "")
     row_class = "jumbo-lineup-row jumbo-lineup-row-current" if is_current else "jumbo-lineup-row"
+    ops_class = f"jumbo-lineup-ops jumbo-lineup-ops-{tier}" if tier else "jumbo-lineup-ops"
     return (
         f'<div class="{row_class}">'
         f'<span class="jumbo-lineup-num">{number}</span>'
         f'<span class="jumbo-lineup-name">{html.escape(entry["short_name"].upper())}</span>'
         f'<span class="jumbo-lineup-pos">{position}</span>'
-        f'<span class="jumbo-lineup-ops">{ops}</span>'
+        f'<span class="{ops_class}">{ops}</span>'
         f"</div>"
     )
 
@@ -787,7 +788,21 @@ def _batting_order_rail_html(entries: list[dict], team: dict, current_batter: st
     game. The logo block reuses the same team dict _sides()/_side_html
     already build (same "logo"/"name" keys), so this needed no new data
     of its own. See render()'s own comment for how the at-bat side and
-    the rail-takeover gating (live + top MLB priority) are decided."""
+    the rail-takeover gating (live + top MLB priority) are decided.
+
+    Third follow-up, after seeing color-option drafts: "get me B [the
+    performance-heat option], but... find the league average ops...
+    top ten percent gets brightest green, top twenty five medium green,
+    average or near average neutral white, bottom twenty five red...
+    dynamic so it shows exactly where they are in context to the
+    entire league." Each row's OPS color comes from sports_client.
+    ops_tier() against fetch_league_ops_tiers()' real, current
+    qualified-hitter percentile cutoffs (a fresh 149-hitter distribution
+    this session, not a fixed number) — the at-bat highlight itself
+    moved to a left accent bar (jumbo-lineup-row-current) rather than a
+    full-row color wash specifically so it doesn't fight the tier
+    color sitting right next to it in the same row."""
+    tiers = sports_client.fetch_league_ops_tiers()
     head = (
         f'<div class="jumbo-lineup-head">'
         f'<img class="jumbo-lineup-logo" src="{html.escape(team["logo"])}" />'
@@ -796,7 +811,14 @@ def _batting_order_rail_html(entries: list[dict], team: dict, current_batter: st
         f'<div class="jumbo-lineup-atbat">At Bat</div>'
         f"</div></div>"
     )
-    rows = "".join(_batting_order_row_html(e, current_batter is not None and e.get("name") == current_batter) for e in entries)
+    rows = "".join(
+        _batting_order_row_html(
+            e,
+            current_batter is not None and e.get("name") == current_batter,
+            sports_client.ops_tier(e.get("ops"), tiers),
+        )
+        for e in entries
+    )
     return f"{head}{_BATTING_ORDER_HEADER}{rows}"
 
 

@@ -3615,11 +3615,25 @@ html, body, [class*="css"] {
 .jumbo-lineup-pos { flex: 0 0 36px; color: var(--mut); font-size: 15px; text-align: center; }
 .jumbo-lineup-ops {
     flex: 0 0 64px;
-    color: var(--led);
+    color: var(--bone);
     font-weight: 800;
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
+/* League-context OPS color, session follow-up: "get me [the
+   performance-heat option], but... find the league average ops...
+   top ten percent gets brightest green, top twenty five medium green,
+   average or near average neutral white, bottom twenty five red...
+   dynamic so it shows exactly where they are in context to the entire
+   league." Tier itself (sports_client.ops_tier) is computed against a
+   real, current qualified-hitter percentile distribution, not a fixed
+   threshold — these four classes are just the color each tier maps
+   to. "average" gets no override at all (falls back to the plain
+   .jumbo-lineup-ops rule above), same "not inherently good or bad"
+   default this app uses everywhere else a number sits in the middle. */
+.jumbo-lineup-ops-elite { color: #32D74B; }
+.jumbo-lineup-ops-good { color: #4C9960; }
+.jumbo-lineup-ops-below { color: #FF6961; }
 /* Team identity block, session follow-up: "add the team logos at top.
    Put, like, cardinal's logo, then lineup." Same logo asset _side_html
    already uses for the Featured board's own team boxes, just at a much
@@ -3645,22 +3659,22 @@ html, body, [class*="css"] {
     text-transform: uppercase;
     color: var(--led);
 }
-/* Current batter highlight, same session follow-up: "highlight who's
+/* Current batter highlight, session follow-up: "highlight who's
    actually up to bat right now." Same --led gold this whole board
    already reserves for "this is the one that matters right now"
    (.jumbo-final-badge, the UFC card's own main-event row) rather than
-   --live red — a batter being up is the spotlight, not an alert. */
+   --live red — a batter being up is the spotlight, not an alert.
+   A left accent bar rather than the original full-row color wash —
+   once OPS itself started carrying real color (see .jumbo-lineup-ops-*
+   above), a gold background behind an elite-green or below-red OPS
+   value read as two colors fighting in the same row. The bar sits
+   entirely in the row's own gutter (negative margin matching its own
+   width + border), so it doesn't nudge the text columns out of line
+   with every plain row above/below it. */
 .jumbo-lineup-row-current {
-    background: rgba(255,179,0,0.12);
-    border-radius: 6px;
-    /* Margin/padding cancel out horizontally — this just lets the
-       highlight bleed slightly past the text columns without actually
-       shifting them, so a highlighted row's numbers still line up with
-       every plain row's above/below it. */
-    margin-left: -6px;
-    margin-right: -6px;
-    padding-left: 6px;
-    padding-right: 6px;
+    border-left: 3px solid var(--led);
+    margin-left: -13px;
+    padding-left: 10px;
 }
 .jumbo-lineup-row-current .jumbo-lineup-num,
 .jumbo-lineup-row-current .jumbo-lineup-name { color: var(--led); }

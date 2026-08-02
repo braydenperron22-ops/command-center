@@ -1412,6 +1412,98 @@ def fetch_mlb_lineup_live_ops(entries: list[dict]) -> list[dict]:
     return [{**e, "ops": live_ops.get(e["id"]) or e.get("ops")} for e in entries]
 
 
+LEAGUE_STATS_URL = "https://statsapi.mlb.com/api/v1/stats"
+# Session request: "find the league average ops... make it dynamic so
+# it shows exactly where they are in context to the entire league."
+# League-wide percentile cutoffs drift slowly over a season (a handful
+# of games' worth of at-bats barely moves a 149-hitter distribution) —
+# nothing like the per-player live OPS above, which genuinely needs to
+# track this exact game's at-bats. 6 hours comfortably keeps this
+# "today's real league shape," not stale, without a real fetch on
+# anywhere near every rerun.
+LEAGUE_OPS_TIERS_CACHE_TTL_SECONDS = 6 * 60 * 60
+
+
+@st.cache_data(ttl=LEAGUE_OPS_TIERS_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_league_hitting_ops_raw(season: int) -> list[float]:
+    """Every QUALIFIED hitter's season OPS league-wide, sorted ascending
+    — MLB's own /stats leaderboard already applies its standard
+    qualification filter (roughly 3.1 PA/team-game) with no extra
+    params needed on this end; confirmed live it returns the exact same
+    149-hitter total regardless of the `limit` requested, so that
+    count is the API's own filter, not a page-size artifact. limit=200
+    is just "comfortably above any real qualified-hitter count," not a
+    real cap."""
+    fetch_throttle.wait_turn()
+    resp = requests.get(
+        LEAGUE_STATS_URL,
+        params={
+            "stats": "season", "group": "hitting", "season": season, "sportId": 1,
+            "limit": 200, "sortStat": "onBasePlusSlugging", "order": "desc",
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    splits = resp.json()["stats"][0]["splits"]
+    return sorted(float(s["stat"]["ops"]) for s in splits if s["stat"].get("ops"))
+
+
+def _percentile(sorted_values: list[float], p: float) -> float:
+    """Linear-interpolated percentile (same convention numpy/Excel use)
+    over an already-sorted list — no numpy dependency needed for just
+    this one calculation."""
+    n = len(sorted_values)
+    if n == 0:
+        return 0.0
+    idx = (n - 1) * p
+    lo = int(idx)
+    hi = min(lo + 1, n - 1)
+    frac = idx - lo
+    return sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * frac
+
+
+def fetch_league_ops_tiers(season: int | None = None) -> dict | None:
+    """{"p25", "p75", "p90"} — real, current qualified-hitter OPS cutoffs
+    league-wide this season (confirmed live for the current season:
+    p25=.706, p75=.816, p90=.873, 149 qualified hitters) — session
+    request: "find the league average ops... top ten percent... top
+    twenty five... bottom twenty five... dynamic... exactly where they
+    are in context to the entire league." Every threshold is a real
+    percentile of the real distribution, not a fixed number picked once
+    and left to go stale as the season moves. None on a fetch failure
+    or a genuinely empty league (shouldn't happen once the season's
+    underway, but ops_tier below already treats None gracefully)."""
+    season = season or datetime.now(ZoneInfo(TIMEZONE)).year
+    try:
+        opses = _fetch_league_hitting_ops_raw(season)
+    except Exception:
+        return None
+    if not opses:
+        return None
+    return {"p25": _percentile(opses, 0.25), "p75": _percentile(opses, 0.75), "p90": _percentile(opses, 0.90)}
+
+
+def ops_tier(ops, tiers: dict | None) -> str | None:
+    """"elite" (top 10%), "good" (top 25%), "average" (the middle half),
+    or "below" (bottom 25%) for one OPS value against fetch_league_ops_
+    tiers' own real cutoffs — None if either input is missing or `ops`
+    doesn't parse as a number, so a caller can just fall back to a
+    plain neutral color rather than guessing."""
+    if not tiers or ops is None:
+        return None
+    try:
+        value = float(ops)
+    except (TypeError, ValueError):
+        return None
+    if value >= tiers["p90"]:
+        return "elite"
+    if value >= tiers["p75"]:
+        return "good"
+    if value >= tiers["p25"]:
+        return "average"
+    return "below"
+
+
 def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
     """This specific game's pitch count, balls/strikes split, and full
     line, so far for one pitcher — {"pitches", "balls", "strikes",
