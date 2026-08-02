@@ -3596,9 +3596,17 @@ html, body, [class*="css"] {
     border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 .jumbo-lineup-row:last-child { border-bottom: none; }
+/* Session request: "make the elements brighter" — num/pos/gameline
+   were sitting at --mut-2/--mut (this rail's dimmest tones, meant for
+   captions elsewhere), noticeably duller than the name/OPS columns
+   right next to them in the same row. Bumped one step brighter each
+   (--mut-2 -> --mut, --mut -> --bone) rather than matching name/OPS
+   exactly, so the jersey number/position/game-line still read as
+   secondary detail, just no longer dim enough to strain against from
+   across the room. */
 .jumbo-lineup-num {
     flex: 0 0 30px;
-    color: var(--mut-2);
+    color: var(--mut);
     font-weight: 700;
     text-align: right;
     font-variant-numeric: tabular-nums;
@@ -3612,17 +3620,17 @@ html, body, [class*="css"] {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.jumbo-lineup-pos { flex: 0 0 36px; color: var(--mut); font-size: 15px; text-align: center; }
+.jumbo-lineup-pos { flex: 0 0 36px; color: var(--bone); font-size: 15px; text-align: center; }
 /* Today's-game hit line ("1/2", "0/4"), session request: "add the
    results from the at bat in the lineup... gives meaningful context."
-   Deliberately plain/muted, not tier-colored like OPS below — this is
-   a per-game line score, not a "good or bad" judgment the way OPS
-   percentile is. Empty for a hitter with no at-bat yet this game (see
-   _batting_order_row_html), so the column silently holds its width
-   rather than showing a misleading 0/0. */
+   Not tier-colored like OPS below — this is a per-game line score, not
+   a "good or bad" judgment the way OPS percentile is. Empty for a
+   hitter with no at-bat yet this game (see _batting_order_row_html),
+   so the column silently holds its width rather than showing a
+   misleading 0/0. */
 .jumbo-lineup-gameline {
     flex: 0 0 46px;
-    color: var(--mut);
+    color: var(--bone);
     font-size: 16px;
     text-align: right;
     font-variant-numeric: tabular-nums;
@@ -3674,22 +3682,42 @@ html, body, [class*="css"] {
     color: var(--led);
 }
 /* Current batter highlight, session follow-up: "highlight who's
-   actually up to bat right now." Same --led gold this whole board
-   already reserves for "this is the one that matters right now"
-   (.jumbo-final-badge, the UFC card's own main-event row) rather than
-   --live red — a batter being up is the spotlight, not an alert.
-   A left accent bar rather than the original full-row color wash —
-   once OPS itself started carrying real color (see .jumbo-lineup-ops-*
-   above), a gold background behind an elite-green or below-red OPS
-   value read as two colors fighting in the same row. The bar sits
-   entirely in the row's own gutter (negative margin matching its own
-   width + border), so it doesn't nudge the text columns out of line
-   with every plain row above/below it. */
+   actually up to bat right now," then later "add a selector thing that
+   selects the entire bar of the player thats up to bat" — a full-row
+   selection box rather than just the left-edge accent bar the first
+   version used. Same --led gold this whole board already reserves for
+   "this is the one that matters right now" (.jumbo-final-badge, the
+   UFC card's own main-event row) rather than --live red — a batter
+   being up is the spotlight, not an alert.
+   A traced border + a faint tint rather than the very first version's
+   solid color wash — once OPS started carrying real tier color (see
+   .jumbo-lineup-ops-* above), a strong gold background behind an
+   elite-green or below-red OPS value read as two colors fighting in
+   the same row; a border "selects" the row the way a UI list item
+   does without recoloring what's inside it.
+   box-sizing: border-box (this row only — the rest of the rail stays
+   plain content-box) makes the border eat into this one row's own
+   content space instead of adding to its outer width, which is what
+   actually matters: a first attempt using negative margins to bleed
+   the box into the panel's gutter measured live at 7px past the real
+   panel edge on each side (getBoundingClientRect confirmed the row
+   spanning wider than .jumbo-panel.jumbo-rail itself) — this row is
+   just as wide as every sibling row now, no overflow possible. */
 .jumbo-lineup-row-current {
-    border-left: 3px solid var(--led);
-    margin-left: -13px;
-    padding-left: 10px;
+    box-sizing: border-box;
+    border: 2px solid var(--led);
+    border-radius: 8px;
+    background: rgba(255, 179, 0, 0.10);
 }
+/* .jumbo-lineup-row:last-child's own border-bottom: none (above) is a
+   more specific selector (two classes-worth of specificity via the
+   pseudo-class) than plain .jumbo-lineup-row-current, so it would
+   silently win and erase this row's bottom edge whenever the batter
+   up right now also happens to be 9th in the order — confirmed live,
+   Jordan batting produced a broken bottom border before this rule was
+   added. Same specificity as that rule, so source order (this comes
+   after) decides in this one's favor. */
+.jumbo-lineup-row-current:last-child { border-bottom: 2px solid var(--led); }
 .jumbo-lineup-row-current .jumbo-lineup-num,
 .jumbo-lineup-row-current .jumbo-lineup-name { color: var(--led); }
 
