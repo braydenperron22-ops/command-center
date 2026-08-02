@@ -668,6 +668,26 @@ html, body, [class*="css"] {
 .prediction-macro-tag-bad { background: #FF6961; color: #330806; }
 .prediction-macro-tag-neutral { background: #5AC8FA; color: #04202c; }
 
+/* Global Central Bank consensus (pages_predictions._global_consensus_
+   html) — session request: "take the implied odds of every single
+   outcome of every single central bank and make a single number...
+   the central bank of the world." Reuses the same big-number-box shape
+   as the NEXT PRINT hero right above these rules, but toned by rate
+   direction (same #3DD9FF/#FF5A1F ice/fire values as .prediction-
+   direction-cut/-hike) instead of good/bad/neutral — a rate outlook
+   isn't "good or bad news" the way a hotter/cooler CPI surprise is
+   (see that box's own comment for the identical reasoning). "hold" gets
+   a plain neutral-gray treatment, matching this app's own "not
+   inherently good or bad" default used everywhere else a hold/no-
+   change reads as neither ice nor fire. */
+.prediction-macro-box-cut { background: rgba(61,217,255,0.12); border-color: rgba(61,217,255,0.35); }
+.prediction-macro-box-hike { background: rgba(255,90,31,0.12); border-color: rgba(255,90,31,0.35); }
+.prediction-macro-box-hold { background: rgba(171,178,196,0.10); border-color: rgba(171,178,196,0.3); }
+.prediction-macro-tag-cut { background: #3DD9FF; color: #032a33; }
+.prediction-macro-tag-hike { background: #FF5A1F; color: #330d02; }
+.prediction-macro-tag-hold { background: #ABB2C4; color: #1c1c1e; }
+.prediction-global-tile { margin-top: 1.1rem; }
+
 .tile-extra {
     margin-top: 0.5rem;
     padding-top: 0.5rem;

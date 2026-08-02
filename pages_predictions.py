@@ -106,6 +106,38 @@ def _side_list_html() -> str:
     return "".join(rows)
 
 
+def _global_consensus_html() -> str:
+    """One big number below the full bank list — session request: "I'm
+    a guy who likes simplicity... a clear, easy to see signal... take
+    the implied odds of every single outcome of every single central
+    bank and make a single number, which is like the central bank of
+    the world, and what the world is doing on average." Same big-
+    number-in-a-colored-box shape as the NEXT PRINT hero (_macro_hero_
+    html) below, but toned by rate direction (cut/hold/hike, the same
+    ice/fire palette .prediction-direction-cut/-hike already use) —
+    good/bad/neutral doesn't apply to a rate direction the way it does
+    to a hotter/cooler CPI surprise (see that box's own comment).
+    "" whenever pmc.global_consensus() itself has nothing (no bank
+    anywhere has live data), same "just omit it" rule every other
+    optional tile in this app already follows."""
+    consensus = pmc.global_consensus()
+    if not consensus:
+        return ""
+    direction, prob, count = consensus["direction"], consensus["probability"], consensus["bank_count"]
+    tag_text = pmc.DIRECTION_LABELS[direction].upper()
+    return (
+        f'<div class="tile prediction-global-tile">'
+        f'<div class="tile-label">GLOBAL CENTRAL BANK</div>'
+        f'<div class="prediction-macro-box prediction-macro-box-{direction}">'
+        f'<div class="prediction-macro-number">{prob * 100:.0f}<span class="prediction-macro-unit">%</span></div>'
+        f'<div class="prediction-macro-tag prediction-macro-tag-{direction}">{html.escape(tag_text)}</div>'
+        f"</div>"
+        f'<div class="internals-context">Average across all {count} tracked banks — real money\'s own '
+        f"combined lean on what's coming next, not this app's own forecast.</div>"
+        f"</div>"
+    )
+
+
 def _macro_hero_html(readings: dict, fred_api_key: str | None) -> str:
     series = pmc.next_data_series()
     if series is None:
@@ -161,6 +193,9 @@ def render(readings: dict | None = None, fred_api_key: str | None = None) -> Non
             f"</div>",
             unsafe_allow_html=True,
         )
+        global_html = _global_consensus_html()
+        if global_html:
+            st.markdown(global_html, unsafe_allow_html=True)
     with open_col:
         st.markdown(
             f'<div class="tile prediction-macro-tile">'

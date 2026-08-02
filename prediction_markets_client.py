@@ -232,6 +232,51 @@ def most_likely_outcome(odds: dict) -> tuple[str, float]:
     return max(odds["outcomes"].items(), key=lambda kv: kv[1])
 
 
+# Shared cut/hold/hike -> display word, used everywhere a *direction*
+# (not a specific bucket) needs a label — BUCKET_LABELS above still
+# covers the finer-grained bucket keys (cut_50/cut_25/...) for the
+# per-bank displays that show those directly.
+DIRECTION_LABELS = {"cut": "Cut", "hold": "No change", "hike": "Hike"}
+
+
+def global_consensus() -> dict | None:
+    """Probability-weighted average outcome across every tracked central
+    bank — session request: "take the implied odds of every single
+    outcome of every single central bank and make a single number...
+    the central bank of the world, and what the world is doing on
+    average."
+
+    Each bank's own outcomes dict is first collapsed to its real
+    cut/hold/hike split via bucket_direction (a 25bp and a 50bp cut are
+    both just "cut" probability mass here — the same collapse the
+    ticker/side-list already color by), then those three shares are
+    averaged evenly across every bank that currently has real data — a
+    plain average, not weighted by meeting proximity or market size:
+    "on average" and "I like simplicity" both point at the plain
+    reading, and BANKS itself has no existing notion of one bank
+    mattering more than another to lean on instead.
+
+    {"direction": "cut"|"hold"|"hike", "probability": float,
+    "bank_count": int} — probability is this aggregate's own average,
+    not any single bank's number, and bank_count is how many actually
+    had data (13 normally, fewer only if some fetches are currently
+    failing — see current_odds' own last-good fallback). None only if
+    not a single bank has data right now."""
+    totals = {"cut": 0.0, "hold": 0.0, "hike": 0.0}
+    count = 0
+    for bank in BANKS:
+        odds = current_odds(bank)
+        if not odds:
+            continue
+        for bucket, prob in odds["outcomes"].items():
+            totals[bucket_direction(bucket)] += prob
+        count += 1
+    if count == 0:
+        return None
+    direction, total = max(totals.items(), key=lambda kv: kv[1])
+    return {"direction": direction, "probability": total / count, "bank_count": count}
+
+
 # Session request: surface a toast when the market's own view shifts in
 # a way actually worth knowing about — either the leading bucket
 # outright flips (the market's consensus call on the meeting changed),
