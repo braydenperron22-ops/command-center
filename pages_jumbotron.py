@@ -522,6 +522,50 @@ def _top_performers_html(match: dict | None, now_ts: float) -> str:
     )
 
 
+_TOP3_ROLE_LABEL = {"hitter": "Hitter", "starter": "Starting Pitcher", "reliever": "Reliever", "closer": "Closer"}
+
+
+def _top_3_performers_html(performers: list[dict]) -> str:
+    """Postgame replacement for the single rotating ESPN leader card —
+    session request: "can we fix post game so it shows the 3 best
+    players of the game if ESPN has something like that. if not make
+    your own algorithm that ranks players." ESPN's free API had nothing
+    like it, but MLB's own boxscore endpoint turned out to already
+    carry exactly this (sports_client.fetch_mlb_top_performers's own
+    docstring has the full story) — always exactly 3, already ranked by
+    a real Game Score, so this just lays out all 3 at once rather than
+    rotating through them one at a time the way the season-stat-leader
+    version above does. The best of the 3 (always index 0 — MLB's own
+    list is pre-sorted) gets the same gold spotlight treatment this
+    board already reserves for "the one that matters most" elsewhere
+    (.jumbo-final-badge, the current-batter row). [] performers means
+    the caller should fall back to _top_performers_html instead — see
+    _board_html's own postgame branch."""
+    if not performers:
+        return ""
+    cards = []
+    for i, p in enumerate(performers):
+        photo = (
+            f'<img class="jumbo-top3-photo" src="{html.escape(p["photo"])}" onerror="this.style.display=\'none\'" />'
+            if p.get("photo")
+            else ""
+        )
+        logo = f'<img class="jumbo-top3-logo" src="{html.escape(p["logo"])}" />' if p.get("logo") else ""
+        role = html.escape(_TOP3_ROLE_LABEL.get(p.get("role"), (p.get("role") or "").title()))
+        card_class = "jumbo-top3-card jumbo-top3-card-best" if i == 0 else "jumbo-top3-card"
+        cards.append(
+            f'<div class="{card_class}">'
+            f'<div class="jumbo-top3-photowrap">{photo}{logo}</div>'
+            f'<div class="jumbo-top3-name">{html.escape(p["name"])}</div>'
+            f'<div class="jumbo-top3-role">{role}</div>'
+            f'<div class="jumbo-top3-summary">{html.escape(p["summary"])}</div>'
+            f'<div class="jumbo-top3-score"><span class="jumbo-top3-score-num">{p["game_score"]}</span>'
+            f'<span class="jumbo-top3-score-label">Game Score</span></div>'
+            f"</div>"
+        )
+    return f'<div class="jumbo-leaders"><div class="jumbo-sl">Top Performers</div><div class="jumbo-top3">{"".join(cards)}</div></div>'
+
+
 # Session request: "at the end of an inning on the last out, it'll
 # automatically go to the other team's batter when I'm on delay, before
 # the play even populates for me." sports_client.delayed() already
@@ -1171,6 +1215,16 @@ def _board_html(state: dict, now: datetime) -> str:
     if phase == "live" and sport == "mlb":
         leaders_html = _current_matchup_html(game["game_id"])
         last_play_html = _last_play_html(game["game_id"], away, home)
+    elif phase == "postgame" and sport == "mlb":
+        # Session request: "fix post game so it shows the 3 best
+        # players of the game." Real MLB Game Score ranking (see
+        # sports_client.fetch_mlb_top_performers's own docstring) rather
+        # than the season-stat-leader rotation below — falls back to
+        # that same rotation on the rare chance MLB's own boxscore
+        # doesn't have it for some reason, so postgame never goes blank.
+        performers = sports_client.fetch_mlb_top_performers(game["game_id"])
+        leaders_html = _top_3_performers_html(performers) if performers else _top_performers_html(match, time.time())
+        last_play_html = ""
     else:
         # Season-long stat leaders, not per-game box score — confirmed
         # live ESPN's own scoreboard payload carries these regardless

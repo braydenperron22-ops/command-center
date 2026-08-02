@@ -1582,6 +1582,54 @@ def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
     return {}
 
 
+def fetch_mlb_top_performers(game_id: int) -> list[dict]:
+    """The 3 best players of this game, ranked — session request: "can
+    we fix post game so it shows the 3 best players of the game if ESPN
+    has something like that. if not make your own algorithm." ESPN's
+    free API turned out to have nothing like it (checked a real final
+    game's full summary payload for "award"/"mvp"/"star"/"topPerformer"
+    — every "star" hit was just "Games Started"/"quality starts",
+    nothing resembling a player-of-the-game field). No custom ranking
+    needed, though: MLB's OWN boxscore endpoint already carries this
+    exact thing under "topPerformers" — confirmed live across several
+    real games (final and still in-progress) that it's always exactly
+    3 entries, pre-sorted descending by "gameScore" (Bill James' real
+    sabermetric Game Score, computed the same way for hitters and
+    pitchers so both land on one comparable scale — e.g. a real final
+    game returned Matt Olson 56 (2-4, HR, RBI, R), Didier Fuentes 56
+    (2.0 IP, 0 ER, 4 K), Mike Yastrzemski 54 (1-2, HR, 2 RBI, R)).
+
+    {"name", "role" ("hitter"/"starter"/"reliever"/"closer" — MLB's own
+    "type" field), "game_score", "summary", "photo", "logo"} per entry,
+    already in MLB's own rank order (best first). [] on any fetch
+    failure or if this field isn't present for some reason (an ordinary
+    game far enough along always has it, per the above)."""
+    try:
+        data = _fetch_mlb_boxscore_raw(game_id)
+    except Exception:
+        return []
+    out = []
+    for item in data.get("topPerformers") or []:
+        player = item.get("player") or {}
+        person = player.get("person") or {}
+        stats = player.get("stats") or {}
+        role = item.get("type") or ""
+        summary = ((stats.get("batting") or {}).get("summary") if role == "hitter" else (stats.get("pitching") or {}).get("summary")) or ""
+        pid = person.get("id")
+        team_id = player.get("parentTeamId")
+        out.append(
+            {
+                "name": person.get("fullName") or "",
+                "role": role,
+                "game_score": item.get("gameScore"),
+                "summary": summary,
+                "photo": _mlb_headshot_url(pid) if pid else None,
+                "logo": _mlb_logo_url(team_id) if team_id else None,
+            }
+        )
+    return out
+
+
 def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     """{"batter": {"id", "name", "ops", "season_ops_heat",
     "overall_percentile", "vs_pitcher", "vs_pitcher_heat", "photo"}, "pitcher":

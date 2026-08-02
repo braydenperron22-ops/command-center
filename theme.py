@@ -3343,6 +3343,85 @@ html, body, [class*="css"] {
     font-weight: 700;
 }
 .jumbo-leader-name-active .jumbo-leader-name-stat { color: var(--led); font-weight: 700; }
+/* Postgame "3 best players of the game," session request: "fix post
+   game so it shows the 3 best players... if not make your own
+   algorithm that ranks players." Real MLB Game Score ranking (see
+   sports_client.fetch_mlb_top_performers), always exactly 3 — laid out
+   as 3 equal cards side by side rather than the rotating single-card
+   pattern above, since all 3 are meant to be seen at once, not cycled
+   through. */
+.jumbo-top3 { display: flex; gap: 16px; }
+.jumbo-top3-card {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 4px;
+    background: rgba(8,11,17,0.65);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid var(--glass-edge);
+    border-radius: 18px;
+    padding: 16px 12px;
+}
+/* Best of the 3 (always index 0 — MLB's own list is pre-sorted by
+   Game Score) gets the same gold spotlight border this board already
+   reserves for "the one that matters most" elsewhere, rather than all
+   3 cards looking identically weighted. */
+.jumbo-top3-card-best { border-color: var(--led); box-shadow: 0 0 0 1px rgba(255,179,0,0.3); }
+.jumbo-top3-photowrap { position: relative; width: 72px; height: 72px; margin-bottom: 4px; }
+.jumbo-top3-photo {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    object-fit: cover;
+    object-position: top;
+    background: #141A25;
+    border: 2px solid var(--edge);
+}
+.jumbo-top3-card-best .jumbo-top3-photo { border-color: var(--led); }
+.jumbo-top3-logo {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 26px;
+    height: 26px;
+    object-fit: contain;
+    background: #0B0F16;
+    border-radius: 50%;
+    padding: 2px;
+    box-shadow: 0 0 0 2px #0B0F16;
+}
+.jumbo-top3-name {
+    font-family: var(--label);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--bone);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+.jumbo-top3-role {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--mut-2);
+}
+.jumbo-top3-summary {
+    font-size: 13px;
+    color: var(--mut);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+.jumbo-top3-score { margin-top: 6px; display: flex; flex-direction: column; align-items: center; }
+.jumbo-top3-score-num { font-family: var(--label); font-size: 34px; line-height: 1; color: var(--bone); font-variant-numeric: tabular-nums; }
+.jumbo-top3-card-best .jumbo-top3-score-num { color: var(--led); }
+.jumbo-top3-score-label { font-size: 9px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--mut-2); margin-top: 2px; }
 /* Current batter/pitcher, live-game replacement for the Top Performers
    card — session request: "during the game can you make the top
    performers tab show current pitcher and batter and their stats use
