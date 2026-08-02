@@ -1037,16 +1037,23 @@ def _offseason_countdown_html(sport: str, now: datetime) -> str:
     )
 
 
-def _blurb_html(sport: str, game: dict, team_label: str, postgame: bool) -> str:
+def _blurb_html(sport: str, game: dict, team_label: str, postgame: bool, status: dict | None = None) -> str:
     """"" whenever ESPN doesn't have this game or the AI call itself
     failed/hasn't landed yet — same "just omit it" rule every other
     optional jumbotron panel already follows, not a loading spinner or
-    placeholder text."""
+    placeholder text.
+
+    `status` (fetch_jays()/fetch_habs()/fetch_saints() shape — see
+    game_blurb._stakes_line) is only ever passed by the pregame call
+    site below; postgame's own "what happened" framing doesn't need
+    season-stakes context the way a preview does."""
     our_name = _TEAM_FULL_NAME[sport]
     away_name = our_name if not game["is_home"] else game["opponent"]
     home_name = game["opponent"] if not game["is_home"] else our_name
-    get_blurb = game_blurb.get_postgame_blurb if postgame else game_blurb.get_pregame_blurb
-    text = get_blurb(sport, game["game_id"], team_label, away_name, home_name, game["opponent"])
+    if postgame:
+        text = game_blurb.get_postgame_blurb(sport, game["game_id"], team_label, away_name, home_name, game["opponent"])
+    else:
+        text = game_blurb.get_pregame_blurb(sport, game["game_id"], team_label, away_name, home_name, game["opponent"], status)
     if not text:
         return ""
     label = "AI Recap" if postgame else "AI Preview"
@@ -1104,7 +1111,7 @@ def _board_html(state: dict, now: datetime) -> str:
         start_label = _PREGAME_SITUATION_LABEL.get(sport, "START")
         situation = f'<div class="jumbo-situ"><span class="jumbo-situ-hot">{html.escape(start_label)} {html.escape(start_text)}</span></div>'
         situation += _pregame_extra_html(sport, game["game_id"])
-        blurb_html = _blurb_html(sport, game, league["label"].title(), postgame=False)
+        blurb_html = _blurb_html(sport, game, league["label"].title(), postgame=False, status=status)
         # Session request: "can we use money line to get approximate
         # win odds" — ESPN's own live win-probability model is always
         # None pregame (_win_probability_html falls back to the

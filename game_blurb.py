@@ -61,6 +61,51 @@ def _remember(cache: dict[str, str], persist_key: str, key: str, text: str) -> N
     persisted_state.save(persist_key, cache)
 
 
+def _ordinal(n: int) -> str:
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def _stakes_line(status: dict | None) -> str | None:
+    """Real season-stakes context for OUR team — division position,
+    wild-card standing, and playoff odds — from the same fetch_jays()/
+    fetch_habs()/fetch_saints() dict sports_alerts.takeover_state()
+    already computed for whichever game is featured (threaded through
+    from pages_jumbotron._blurb_html, pregame only — a recap doesn't
+    need "why this mattered going in" the way a preview does).
+
+    Session request: "give it a season context... what are the teams
+    fighting for... what's the importance of this game." The existing
+    facts below (records, probable starters, odds) say who's playing
+    and how they've been doing, but nothing about why tonight actually
+    matters — which is exactly what read as generic ("exciting
+    matchup," "watch it live") regardless of the real stakes.
+
+    None whenever status itself is None (this game isn't one of the 3
+    tracked teams' own — shouldn't happen given the call site, but no
+    crash either way) or nothing in it resolves to a real line (e.g.
+    NFL's wildcard is always None — see fetch_saints()'s own comment on
+    why that's a deliberately lighter integration)."""
+    if not status:
+        return None
+    parts = []
+    our_row = next((r for r in status.get("standings") or [] if r.get("is_team")), None)
+    division = status.get("division_name")
+    if our_row and division:
+        gb = our_row.get("extra")
+        gb_text = f", {gb} GB" if gb not in (None, "-", "") else ""
+        parts.append(f"{_ordinal(our_row['rank'])} in {division} ({our_row['wins']}-{our_row['losses']}{gb_text})")
+    wildcard = status.get("wildcard") or {}
+    if wildcard.get("rank") is not None:
+        value, unit = wildcard.get("value"), wildcard.get("unit", "")
+        gap_text = "holding a spot" if not value else f"{value} {unit} back"
+        parts.append(f"Wild Card rank {wildcard['rank']} ({gap_text})")
+    odds = status.get("playoff_odds") or {}
+    if odds.get("display"):
+        parts.append(f"{odds['display']} chance to make the playoffs")
+    return "; ".join(parts) if parts else None
+
+
 def _records_line(competition: dict) -> str | None:
     parts = []
     for c in competition.get("competitors", []):
@@ -152,14 +197,18 @@ def _leader_line(competition: dict) -> str | None:
     return f"{leader['name']}: {leader['stat_line']}" if leader else None
 
 
-def _gather_context(sport_key: str, away_name: str, home_name: str, postgame: bool) -> str | None:
+def _gather_context(sport_key: str, away_name: str, home_name: str, postgame: bool, stakes: str | None = None) -> str | None:
     """A short, plain-text bullet list of real ESPN facts for this
     matchup — None if ESPN simply doesn't carry this game
     (find_espn_competition's own "skip this feature" case) or if
     nothing at all came back usable. Every line is independently
     optional (a field ESPN doesn't have for this sport/game just isn't
     added), so a thin payload still produces a shorter, still-honest
-    blurb rather than a mostly-empty prompt."""
+    blurb rather than a mostly-empty prompt.
+
+    `stakes` (see _stakes_line) is listed first, ahead of the plain
+    matchup facts — it's the one line that answers "why does tonight
+    matter," so the AI sees it before anything else."""
     match = scores_client.find_espn_competition(sport_key, away_name, home_name)
     if match is None:
         return None
@@ -167,6 +216,8 @@ def _gather_context(sport_key: str, away_name: str, home_name: str, postgame: bo
     competition = match["competition"]
 
     lines = []
+    if stakes:
+        lines.append(f"Season stakes: {stakes}")
     for label, value in (
         ("Records", _records_line(competition)),
         ("Venue/broadcast", _venue_broadcast_line(competition)),
@@ -193,9 +244,12 @@ def _gather_context(sport_key: str, away_name: str, home_name: str, postgame: bo
 def _pregame_prompt(team_label: str, opponent: str, context: str) -> str:
     return (
         f"Write a short, exciting pregame preview (2-3 sentences, no more) for {team_label} vs "
-        f"{opponent}, for a fan about to watch the game. Use ONLY the facts below — never invent "
-        f"a stat, injury, or storyline that isn't listed. Natural broadcast-preview voice, not a "
-        f"dry list of the facts themselves.\n\n{context}"
+        f"{opponent}, for a fan about to watch the game. If a 'Season stakes' fact is listed below, "
+        f"lead with THAT — the division race, wild card chase, or playoff push it describes — as "
+        f"the real reason tonight matters, rather than just narrating who's playing and where to "
+        f"watch. Use ONLY the facts below — never invent a stat, injury, standing, or storyline "
+        f"that isn't listed. Natural broadcast-preview voice, not a dry list of the facts "
+        f"themselves.\n\n{context}"
     )
 
 
@@ -208,17 +262,24 @@ def _postgame_prompt(team_label: str, opponent: str, context: str) -> str:
     )
 
 
-def get_pregame_blurb(sport_key: str, game_id, team_label: str, away_name: str, home_name: str, opponent: str) -> str | None:
+def get_pregame_blurb(
+    sport_key: str, game_id, team_label: str, away_name: str, home_name: str, opponent: str, status: dict | None = None
+) -> str | None:
     """Generated exactly once per game_id, then remembered across
     reruns, browser sessions, AND process restarts (see this module's
     own docstring on why that last part matters now). None whenever
     ESPN doesn't have this game or the AI call itself fails — the
     caller just shows nothing, same as every other optional jumbotron
-    panel."""
+    panel.
+
+    `status` is the same fetch_jays()/fetch_habs()/fetch_saints() dict
+    pages_jumbotron._blurb_html already has in scope (from sports_
+    alerts.takeover_state()) — optional and pregame-only, see
+    _stakes_line's own docstring for why."""
     key = f"{sport_key}_{game_id}"
     if key in _pregame_cache:
         return _pregame_cache[key]
-    context = _gather_context(sport_key, away_name, home_name, postgame=False)
+    context = _gather_context(sport_key, away_name, home_name, postgame=False, stakes=_stakes_line(status))
     if context is None:
         return None
     text = gemini_client.generate(_pregame_prompt(team_label, opponent, context), max_output_tokens=MAX_OUTPUT_TOKENS)
