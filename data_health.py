@@ -46,6 +46,18 @@ THRESHOLDS_SECONDS = {
     "fear_greed": 6 * 60 * 60,
     "shiller_cape": 24 * 60 * 60,  # multpl.com's own value barely moves day to day; cached 6h, so this just needs to be well past that
     "scoreboard": 24 * 60 * 60,  # a scoreboard pull succeeds daily even on a slate with nothing live (an empty games list is still a real success)
+    # Session request: "put yfinance in the watchdog" — unofficial,
+    # reverse-engineered against Yahoo's own internal endpoints, the
+    # single most fragile source in the app by design (breaks outright
+    # whenever Yahoo changes something, no key/support tier to fall back
+    # on), and previously had no data_health coverage at all despite the
+    # Markets page's own fear_greed/shiller_cape tiles already being
+    # tracked. Real indices/futures/crypto trade continuously (crypto
+    # even on weekends — market_yf_client's own docstring), refreshed
+    # every MARKET_DATA_TTL_SECONDS (5 min), so same 3h threshold as
+    # weather above: generous enough not to false-alarm on a normal
+    # blip, still catches a real outage same-day.
+    "markets": 3 * 60 * 60,
 }
 
 LABELS = {
@@ -56,6 +68,7 @@ LABELS = {
     "fear_greed": "Fear & Greed Index",
     "shiller_cape": "Shiller CAPE",
     "scoreboard": "Scoreboard",
+    "markets": "Markets (yfinance)",
 }
 
 

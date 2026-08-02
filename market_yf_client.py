@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 import yfinance as yf
 
+import data_health
 import fetch_throttle
 from config import (
     MARKET_DATA_TTL_SECONDS,
@@ -99,6 +100,14 @@ def _fetch_history(symbol: str) -> pd.DataFrame | None:
     except Exception:
         return _last_good_history.get(symbol)
     _last_good_history[symbol] = hist
+    # Session request: "put yfinance in the watchdog" — the Markets page
+    # had no data_health coverage at all despite yfinance being the
+    # single most fragile source in the app (unofficial, reverse-
+    # engineered against Yahoo's own internal endpoints, confirmed to
+    # break outright when those change). Same "record on a genuine
+    # fresh fetch, not a last-good reuse" convention weather_client.py's
+    # own fetch_weather already follows.
+    data_health.record_success("markets")
     return hist
 
 
