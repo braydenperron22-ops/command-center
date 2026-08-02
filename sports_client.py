@@ -1290,7 +1290,7 @@ def _fetch_mlb_boxscore_raw(game_id: int) -> dict:
 
 
 def fetch_mlb_batting_order(game_id: int) -> dict | None:
-    """{"away": [{"order": 1-9, "number", "name", "short_name",
+    """{"away": [{"id", "order": 1-9, "number", "name", "short_name",
     "position", "ops"}, ...], "home": [...]}, each side sorted 1-9 —
     session request, after attending a real Jays game: "they had the
     batting order... the only stat they showed was OPS. This gave me an
@@ -1307,13 +1307,16 @@ def fetch_mlb_batting_order(game_id: int) -> dict | None:
     (no new request) — the boxscore's own team["battingOrder"] is an
     ordered list of player ids (MLB's real lineup-position field,
     confirmed live it also sits on each player's own entry as "100"/
-    "200".../"900", divided by 100 here for a plain 1-9 rank), and
-    every hitter's seasonStats.batting.ops, jerseyNumber, and
-    position.abbreviation are all already sitting right there in the
-    same payload (".690"/"18"/"DH" — the ops field is the same one
-    fetch_mlb_live_matchup's own per-player /people call reads, just
-    bulk-available here for all 18 hitters in one response instead of a
-    separate request per player).
+    "200".../"900", divided by 100 here for a plain 1-9 rank), and every
+    hitter's seasonStats.batting.ops, jerseyNumber, and position.
+    abbreviation are all already sitting right there in the same
+    payload (".690"/"18"/"DH"). "id" is the same raw player id "ops"
+    here is silently a beat or two behind the /people-endpoint OPS
+    fetch_mlb_live_matchup's own batter card uses — confirmed live,
+    same player, same moment: boxscore read .735, /people read .733 —
+    so this "ops" is a same-rerun-cost starting point, not the final
+    word; see fetch_mlb_lineup_live_ops below for the up-to-the-play
+    refresh that actually replaces it before display.
 
     Not run through the live-delay mechanism (delayed()) the pitch-by-
     pitch boxscore reads elsewhere in this module use — a starting
@@ -1349,6 +1352,7 @@ def fetch_mlb_batting_order(game_id: int) -> dict | None:
             box_name = person.get("boxscoreName") or person.get("fullName") or ""
             rows.append(
                 {
+                    "id": pid,
                     "order": rank,
                     "number": p.get("jerseyNumber"),
                     "name": person.get("fullName"),
@@ -1360,6 +1364,52 @@ def fetch_mlb_batting_order(game_id: int) -> dict | None:
         rows.sort(key=lambda r: r["order"])
         result[side] = rows
     return result
+
+
+# Session request: "can you source ops the same way its sourced in the
+# head to head matchup so it updates after plays in the batting order
+# too please." fetch_mlb_live_matchup's own batter card reads OPS from
+# a per-player /people call (_fetch_mlb_player_season_stat_raw) rather
+# than the boxscore's own seasonStats snapshot fetch_mlb_batting_order
+# above uses — confirmed live these two really do drift (.735 vs .733
+# for the same player, same moment). Refetching all 9 hitters that same
+# way, though, is a genuinely different cost than the Current Matchup
+# card's own one-batter/one-pitcher read: fetch_throttle enforces a
+# real >=0.5s gap between ANY two real (cache-miss) fetches app-wide, so
+# 9 of them back to back is a real ~4.5s+ serialized wait, not free.
+# LIVE_DETAIL_CACHE_TTL_SECONDS (5s) matches the app's own rerun
+# cadence exactly, which is right for the Current Matchup card's one or
+# two players but would mean re-paying that full ~4.5s burst on every
+# single rerun for the whole lineup. 20s instead — still far faster
+# than a real at-bat takes (a batter rarely comes up again inside 20
+# seconds), without hammering the shared throttle every 5s.
+LINEUP_LIVE_OPS_CACHE_TTL_SECONDS = 20
+
+
+@st.cache_data(ttl=LINEUP_LIVE_OPS_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_lineup_live_ops(player_ids: tuple[int, ...]) -> dict[int, str | None]:
+    result = {}
+    for pid in player_ids:
+        try:
+            result[pid] = _fetch_mlb_player_season_stat_raw(pid, "hitting").get("ops")
+        except Exception:
+            result[pid] = None
+    return result
+
+
+def fetch_mlb_lineup_live_ops(entries: list[dict]) -> list[dict]:
+    """`entries` (one side of fetch_mlb_batting_order's own return) with
+    each "ops" replaced by a fresh per-player /people read — the same
+    source and same live-updating behavior fetch_mlb_live_matchup's own
+    batter card already has, see _fetch_lineup_live_ops' own comment on
+    why this batches all 9 into one 20s-cached unit rather than each
+    player refetching independently every 5s. A fresh list of dicts,
+    not a mutation of `entries` — every field but "ops" carried over
+    unchanged. A player whose own fetch failed keeps their existing
+    (boxscore-sourced) OPS rather than losing the number entirely — a
+    beat-old real value beats a blank one."""
+    live_ops = _fetch_lineup_live_ops(tuple(e["id"] for e in entries))
+    return [{**e, "ops": live_ops.get(e["id"]) or e.get("ops")} for e in entries]
 
 
 def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:

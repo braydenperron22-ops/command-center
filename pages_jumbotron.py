@@ -1970,6 +1970,14 @@ def render(now: datetime, state: dict, weather: dict | None, ufc_state: dict | N
     # gives both "which side is up" (inning_state) and "who's actually
     # at the plate" (batter, matched against the lineup by name in
     # _batting_order_rail_html) in one call.
+    #
+    # Second follow-up: "source ops the same way its sourced in the head
+    # to head matchup so it updates after plays in the batting order
+    # too." fetch_mlb_lineup_live_ops swaps each entry's boxscore-
+    # sourced OPS for the same per-player /people read the Current
+    # Matchup card's own batter stat uses (its own 20s cache, not the
+    # usual 5s — see that function's own comment on why 9 players is a
+    # genuinely different cost than that card's one or two).
     batting_entries = None
     if state.get("phase") == "live" and state.get("game") and state["league"]["sport"] == "mlb":
         game_id = state["game"]["game_id"]
@@ -1978,7 +1986,7 @@ def render(now: datetime, state: dict, weather: dict | None, ufc_state: dict | N
         inning_state = live_detail.get("inning_state") if live_detail else None
         batting_side = ("home" if inning_state in ("Bottom", "Middle") else "away") if inning_state else None
         if full_order and batting_side:
-            batting_entries = full_order[batting_side]
+            batting_entries = sports_client.fetch_mlb_lineup_live_ops(full_order[batting_side])
             current_batter = live_detail.get("batter")
 
     if batting_entries:
