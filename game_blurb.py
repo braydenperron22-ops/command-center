@@ -71,8 +71,9 @@ def _stakes_line(status: dict | None) -> str | None:
     wild-card standing, and playoff odds — from the same fetch_jays()/
     fetch_habs()/fetch_saints() dict sports_alerts.takeover_state()
     already computed for whichever game is featured (threaded through
-    from pages_jumbotron._blurb_html, pregame only — a recap doesn't
-    need "why this mattered going in" the way a preview does).
+    from pages_jumbotron._blurb_html for both pregame and postgame —
+    a preview says why the race matters going in, a recap says what
+    this result meant for it).
 
     Session request: "give it a season context... what are the teams
     fighting for... what's the importance of this game." The existing
@@ -256,8 +257,11 @@ def _pregame_prompt(team_label: str, opponent: str, context: str) -> str:
 def _postgame_prompt(team_label: str, opponent: str, context: str) -> str:
     return (
         f"Write a short postgame recap (2-3 sentences, no more) for {team_label} vs {opponent}, "
-        f"for a fan who just watched the game. Use ONLY the facts below — never invent a play or "
-        f"stat that isn't listed. Natural broadcast-recap voice, not a dry list of the facts "
+        f"for a fan who just watched the game. If a 'Season stakes' fact is listed below, weave in "
+        f"what this result actually means for that race — a step forward, a step back, still very "
+        f"much alive, whatever the facts support — rather than just restating the final score and "
+        f"the box-score highlight. Use ONLY the facts below — never invent a play, stat, or "
+        f"standing that isn't listed. Natural broadcast-recap voice, not a dry list of the facts "
         f"themselves.\n\n{context}"
     )
 
@@ -288,15 +292,23 @@ def get_pregame_blurb(
     return text
 
 
-def get_postgame_blurb(sport_key: str, game_id, team_label: str, away_name: str, home_name: str, opponent: str) -> str | None:
+def get_postgame_blurb(
+    sport_key: str, game_id, team_label: str, away_name: str, home_name: str, opponent: str, status: dict | None = None
+) -> str | None:
     """Same one-shot-per-game_id shape as get_pregame_blurb above, in
     its own cache/key space (a doubleheader's two games, or the same
     game_id showing up in both a pregame and postgame call across the
-    day, never collide)."""
+    day, never collide).
+
+    `status` — same fetch_jays()/fetch_habs()/fetch_saints() dict as
+    get_pregame_blurb's own — lets the recap say what the result
+    actually meant for the race, not just what happened in the game
+    itself. See _stakes_line's own docstring for the session request
+    behind this."""
     key = f"{sport_key}_{game_id}"
     if key in _postgame_cache:
         return _postgame_cache[key]
-    context = _gather_context(sport_key, away_name, home_name, postgame=True)
+    context = _gather_context(sport_key, away_name, home_name, postgame=True, stakes=_stakes_line(status))
     if context is None:
         return None
     # The one deliberate exception to gemini_client.generate's own

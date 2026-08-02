@@ -1044,14 +1044,14 @@ def _blurb_html(sport: str, game: dict, team_label: str, postgame: bool, status:
     placeholder text.
 
     `status` (fetch_jays()/fetch_habs()/fetch_saints() shape — see
-    game_blurb._stakes_line) is only ever passed by the pregame call
-    site below; postgame's own "what happened" framing doesn't need
-    season-stakes context the way a preview does."""
+    game_blurb._stakes_line) is passed to both pregame and postgame now —
+    a recap says what the result meant for the race, a preview says why
+    the race matters going in."""
     our_name = _TEAM_FULL_NAME[sport]
     away_name = our_name if not game["is_home"] else game["opponent"]
     home_name = game["opponent"] if not game["is_home"] else our_name
     if postgame:
-        text = game_blurb.get_postgame_blurb(sport, game["game_id"], team_label, away_name, home_name, game["opponent"])
+        text = game_blurb.get_postgame_blurb(sport, game["game_id"], team_label, away_name, home_name, game["opponent"], status)
     else:
         text = game_blurb.get_pregame_blurb(sport, game["game_id"], team_label, away_name, home_name, game["opponent"], status)
     if not text:
@@ -1186,7 +1186,7 @@ def _board_html(state: dict, now: datetime) -> str:
                 situation = _nfl_situation_html(match)
         else:
             situation = ""
-        blurb_html = _blurb_html(sport, game, league["label"].title(), postgame=True) if phase == "postgame" else ""
+        blurb_html = _blurb_html(sport, game, league["label"].title(), postgame=True, status=status) if phase == "postgame" else ""
         wp_html = _win_probability_html(sport, match, away, home) if phase == "live" else ""
         # Only a finished game has a settled winner to dim the loser
         # against — during a live game the trailing side is still very
