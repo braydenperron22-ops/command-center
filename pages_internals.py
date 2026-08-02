@@ -39,18 +39,36 @@ RSP_SPY_TILE = {
 
 
 def _gauge_band(value: float) -> tuple[str, str]:
-    """CNN's own five bands, and their own intuitive fear=red/greed=green
-    coloring — unlike the old page's asymmetric treatment (which colored
-    high confidence "neutral" rather than "good"), both ends of a
-    genuinely balanced fear<->greed scale get their obvious color."""
-    if value >= 75:
+    """Ten bands instead of CNN's own five — session request: "expand on
+    the typical Extreme Fear, Fear, Neutral, Greed, Extreme Greed bars
+    ... make it so its 10 labels instead of just 5." Each of CNN's five
+    real published bands (Extreme Fear <25, Fear 25-44, Neutral 45-54,
+    Greed 55-74, Extreme Greed 75+) is split in half rather than
+    redrawing the boundaries from scratch, so the same four threshold
+    points (25/45/55/75) still decide "good"/"bad"/"neutral" tone/color
+    exactly as before — only the label text gets finer-grained, the
+    coloring behavior is unchanged. Symmetric naming (Extreme/Severe/
+    [plain]/Mild/Slight, mirrored on each side of the midpoint) rather
+    than CNN's own asymmetric band widths translating awkwardly into
+    ten uneven names."""
+    if value >= 87.5:
         return "Extreme Greed", "good"
-    if value >= 55:
+    if value >= 75:
+        return "Severe Greed", "good"
+    if value >= 65:
         return "Greed", "good"
+    if value >= 55:
+        return "Mild Greed", "good"
+    if value >= 50:
+        return "Slight Greed", "neutral"
     if value >= 45:
-        return "Neutral", "neutral"
+        return "Slight Fear", "neutral"
+    if value >= 35:
+        return "Mild Fear", "bad"
     if value >= 25:
         return "Fear", "bad"
+    if value >= 12.5:
+        return "Severe Fear", "bad"
     return "Extreme Fear", "bad"
 
 
@@ -67,14 +85,31 @@ def _render_gauge_hero() -> None:
     value = data["value"]
     band_label, tone = _gauge_band(value)
     yesterday = data.get("yesterday")
-    arrow, _ = mi.trend(value, yesterday if yesterday is not None else data["prior_value"], higher_is_good=True)
+    raw_arrow, _ = mi.trend(value, yesterday if yesterday is not None else data["prior_value"], higher_is_good=True)
+    # Session report: "it says Fear (arrow up rising) which is actually
+    # not fearful so make it not sound counterintuitive." trend()'s own
+    # "↑ Rising"/"↓ Falling" describes the raw NUMBER — but a rising
+    # score means LESS fear (moving toward Greed, not deeper into it),
+    # so "Fear · ↑ Rising" read as if fear itself were increasing, the
+    # opposite of what's true. Same fix the ratio tiles below already
+    # use for this exact class of problem (just the arrow glyph, paired
+    # with a direction-aware word instead of "Rising"/"Falling") —
+    # "Toward Greed"/"Toward Fear" is correct in every band and never
+    # contradicts whichever label happens to be showing.
+    glyph = raw_arrow.split()[0]
+    if glyph == "↑":
+        direction = "Toward Greed"
+    elif glyph == "↓":
+        direction = "Toward Fear"
+    else:
+        direction = "Flat"
     context = GAUGE_CONTEXT_EXTERNAL if data.get("source") == "external" else GAUGE_CONTEXT_COMPUTED
 
     st.markdown(
         f"""<div class="tile tile-accent-{tone} confidence-hero">
             <div class="tile-label">FEAR &amp; GREED INDEX</div>
             <div class="confidence-value">{value:.0f}</div>
-            <div class="internals-verdict internals-verdict-{tone}">{band_label} · {arrow}</div>
+            <div class="internals-verdict internals-verdict-{tone}">{band_label} · {glyph} {direction}</div>
             <div class="internals-context">{context}</div>
         </div>""",
         unsafe_allow_html=True,
