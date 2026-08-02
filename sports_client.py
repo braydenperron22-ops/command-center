@@ -1219,12 +1219,15 @@ def _pitcher_season_heat(season_era, career_era) -> str | None:
 
 
 # MLB's own headshot CDN, keyed by player id — no API call, same idea
-# as _mlb_logo_url (confirmed live this returns a real photo for a
-# real player id, 404s harmlessly otherwise — callers already handle a
-# broken image with onerror).
+# as _mlb_logo_url. Uses the "silo" cutout path rather than the plain
+# "67" crop: the silo version is a transparent-background PNG (confirmed
+# live — ~47% of a real headshot's pixels are fully transparent), while
+# "67" is a flat JPEG with a solid background behind the player. Same
+# failure mode as before: 404s harmlessly on a bad id, callers already
+# handle a broken image with onerror.
 _MLB_HEADSHOT_URL = (
     "https://img.mlbstatic.com/mlb-photos/image/upload/"
-    "w_213,d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/{player_id}/headshot/67/current"
+    "w_213,d_people:generic:headshot:silo:current.png,q_auto:best,f_auto/v1/people/{player_id}/headshot/silo/current"
 )
 
 
