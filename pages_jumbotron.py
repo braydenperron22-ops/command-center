@@ -64,6 +64,17 @@ _AROUND_LEAGUES = ["mlb", "nhl", "nba", "nfl"]
 _AROUND_PAGE_SIZE = 6
 _AROUND_ROTATE_SECONDS = 12
 _FORM_GAMES_SHOWN = 8
+# Session follow-up: "I want the live fight to take up like the whole
+# screen" shrank the full-card panel down to a 1fr reference strip
+# under the now-dominant hero (see .jumbo-ufc-grid's own comment) —
+# confirmed live (real 14-bout card, real row height) only 4 rows fit
+# cleanly in that strip without clipping the last one, nowhere near all
+# of them (kiosk never scrolls, so anything past that would just be
+# permanently invisible rather than merely below the fold). Same
+# fixed-page-size-cycling-on-a-wall-clock-timer shape as
+# _AROUND_LEAGUES/_AROUND_PAGE_SIZE above, same 12s cadence.
+_UFC_CARD_PAGE_SIZE = 4
+_UFC_CARD_ROTATE_SECONDS = 12
 
 
 def _fmt_countdown(target: datetime, now: datetime) -> str:
@@ -1623,6 +1634,114 @@ def _ufc_card_row_html(bout: dict) -> str:
     )
 
 
+def _parse_control_time_seconds(text: str | None) -> int:
+    """"1:24" -> 84 — only ever used to size the comparison bar below,
+    never displayed itself (ESPN's own "M:SS" string is what's actually
+    shown). 0 for None/empty/anything unparseable, same as a bout that
+    hasn't had any control time yet."""
+    if not text:
+        return 0
+    try:
+        minutes, seconds = text.split(":")
+        return int(minutes) * 60 + int(seconds)
+    except (ValueError, AttributeError):
+        return 0
+
+
+def _ufc_stat_bar_html(label: str, a_short: str, b_short: str, a_display: str, b_display: str, a_val: float, b_val: float) -> str:
+    """One live stat comparison row — same big-flanking-numbers-plus-
+    bar shape as _win_probability_html's own bar (session request:
+    "live fight stats... similar to how a baseball or hockey game would
+    look"), adapted for a raw count/time comparison instead of a
+    percentage: there's no real MMA win-probability model to substitute
+    (ESPN's pickcenterAvailable is false on every bout — confirmed
+    live, see ufc_client.fetch_bout_stats' own docstring), so the bar's
+    width reflects each fighter's actual share of the two combined
+    (landed strikes, landed takedowns, seconds of control) rather than
+    a probability — real volume/control differential is genuinely what
+    a fight gets read by, unlike a score-derived model."""
+    total = a_val + b_val
+    a_pct = round(100 * a_val / total) if total else 50
+    b_pct = 100 - a_pct
+    return (
+        f'<div class="jumbo-ufc-stat-row">'
+        f'<div class="jumbo-ufc-stat-title">{html.escape(label)}</div>'
+        f'<div class="jumbo-ufc-stat-line">'
+        f'<div class="jumbo-ufc-stat-value jumbo-ufc-stat-a">{html.escape(a_display)}</div>'
+        f'<div class="jumbo-ufc-stat-bar">'
+        f'<div class="jumbo-ufc-stat-seg jumbo-ufc-stat-seg-a" style="width:{a_pct}%"></div>'
+        f'<div class="jumbo-ufc-stat-seg jumbo-ufc-stat-seg-b" style="width:{b_pct}%"></div>'
+        f"</div>"
+        f'<div class="jumbo-ufc-stat-value jumbo-ufc-stat-b">{html.escape(b_display)}</div>'
+        f"</div>"
+        f'<div class="jumbo-ufc-stat-labels"><span>{html.escape(a_short)}</span><span>{html.escape(b_short)}</span></div>'
+        f"</div>"
+    )
+
+
+def _ufc_stats_html(fighter_a: dict, fighter_b: dict, stats: dict) -> str:
+    """Significant Strikes / Takedowns / Control Time — the same trio a
+    real UFC broadcast's own lower-third leans on — for whichever bout
+    is the current hero. "" whenever fetch_bout_stats itself came back
+    None (a real fetch failure, not just a scoreless bout — see that
+    function's own docstring); a scoreless-but-fetched bout still shows
+    real 0s/0:00, an honest "nothing's happened yet" rather than
+    missing content."""
+    if not stats:
+        return ""
+    a, b = stats["fighter_a"], stats["fighter_b"]
+
+    def num(text: str | None) -> float:
+        try:
+            return float(text)
+        except (TypeError, ValueError):
+            return 0.0
+
+    rows = [
+        _ufc_stat_bar_html(
+            "SIG. STRIKES",
+            fighter_a["short_name"],
+            fighter_b["short_name"],
+            f'{a.get("sig_strikes_landed") or 0}/{a.get("sig_strikes_attempted") or 0}',
+            f'{b.get("sig_strikes_landed") or 0}/{b.get("sig_strikes_attempted") or 0}',
+            num(a.get("sig_strikes_landed")),
+            num(b.get("sig_strikes_landed")),
+        ),
+        _ufc_stat_bar_html(
+            "TAKEDOWNS",
+            fighter_a["short_name"],
+            fighter_b["short_name"],
+            f'{a.get("takedowns_landed") or 0}/{a.get("takedowns_attempted") or 0}',
+            f'{b.get("takedowns_landed") or 0}/{b.get("takedowns_attempted") or 0}',
+            num(a.get("takedowns_landed")),
+            num(b.get("takedowns_landed")),
+        ),
+        _ufc_stat_bar_html(
+            "CONTROL TIME",
+            fighter_a["short_name"],
+            fighter_b["short_name"],
+            a.get("control_time") or "0:00",
+            b.get("control_time") or "0:00",
+            _parse_control_time_seconds(a.get("control_time")),
+            _parse_control_time_seconds(b.get("control_time")),
+        ),
+    ]
+    return f'<div class="jumbo-ufc-stats">{"".join(rows)}</div>'
+
+
+def _ufc_kd_badge_html(stat_line: dict | None) -> str:
+    """Small "KD x2" badge — knockdowns are rare and dramatic enough to
+    call out on their own rather than bury in a bar row alongside
+    steadier volume stats like strikes/takedowns. "" whenever there
+    genuinely aren't any (the common case) or stats didn't load."""
+    kd = (stat_line or {}).get("knockdowns")
+    try:
+        kd_n = int(float(kd))
+    except (TypeError, ValueError):
+        return ""
+    return f'<span class="jumbo-ufc-kd-badge">KD ×{kd_n}</span>' if kd_n > 0 else ""
+
+
 def _ufc_board_html(ufc_state: dict, now: datetime) -> str:
     """Full board content for a UFC takeover — session request: "add
     UFC to the jumbotron," scoped by follow-up answers to exactly two
@@ -1635,9 +1754,13 @@ def _ufc_board_html(ufc_state: dict, now: datetime) -> str:
     The Leagues panel below it — those are all built around one
     team's single evolving score (see this module's own render()
     docstring on why UFC needed a genuinely separate render path, not
-    a config tweak to the existing one). This is a much simpler two-
-    panel layout: a hero card for whichever bout matters most right
-    now, and the full ordered card underneath it.
+    a config tweak to the existing one). Two panels: a hero card for
+    whichever bout matters most right now, and the full ordered card
+    underneath it — session follow-up: "I want the live fight to take
+    up like the whole screen... both fighters and live fight stats" —
+    the hero panel is now the dominant 3fr share of the grid (see
+    .jumbo-ufc-grid's own comment), with the full card list shrunk to a
+    reference strip underneath rather than splitting the screen evenly.
 
     The hero shows the MAIN EVENT specifically during "countdown"
     (the actual draw worth building anticipation for — ufc_client.
@@ -1658,8 +1781,22 @@ def _ufc_board_html(ufc_state: dict, now: datetime) -> str:
         phase_html = '<div class="jumbo-ufc-phase">CARD UNDERWAY</div>'
 
     a, b = hero["fighter_a"], hero["fighter_b"]
-    a_rec = f'<div class="jumbo-ufc-hero-record">{html.escape(a["record"])}</div>' if a["record"] else ""
-    b_rec = f'<div class="jumbo-ufc-hero-record">{html.escape(b["record"])}</div>' if b["record"] else ""
+
+    # Only once the hero bout has actually started — a countdown/
+    # not-yet-fought hero has nothing real to compare yet (see
+    # fetch_bout_stats' own docstring on why an all-zero fetch is still
+    # "real," just not worth a whole panel before first punch).
+    stats = None
+    if phase != "countdown" and hero["state"] in ("live", "final"):
+        try:
+            stats = ufc_client.fetch_bout_stats(event["event_id"], hero["bout_id"], a["id"], b["id"])
+        except Exception:
+            stats = None
+
+    a_kd_badge = _ufc_kd_badge_html(stats["fighter_a"] if stats else None)
+    b_kd_badge = _ufc_kd_badge_html(stats["fighter_b"] if stats else None)
+    a_rec = f'<div class="jumbo-ufc-hero-record">{html.escape(a["record"])}{a_kd_badge}</div>' if a["record"] else a_kd_badge
+    b_rec = f'<div class="jumbo-ufc-hero-record">{html.escape(b["record"])}{b_kd_badge}</div>' if b["record"] else b_kd_badge
     a_hl = " jumbo-ufc-winner" if hero["state"] == "final" and a["winner"] else ""
     b_hl = " jumbo-ufc-winner" if hero["state"] == "final" and b["winner"] else ""
 
@@ -1674,16 +1811,26 @@ def _ufc_board_html(ufc_state: dict, now: datetime) -> str:
         f"</div>"
     )
 
-    card_rows = "".join(_ufc_card_row_html(bout) for bout in bouts)
+    stats_html = _ufc_stats_html(a, b, stats)
+
+    # Paginated the same way _around_html above handles a slate that
+    # doesn't fit — see _UFC_CARD_PAGE_SIZE's own comment on why the
+    # now-much-shorter card strip needs this for a real full-size card.
+    pages = [bouts[i : i + _UFC_CARD_PAGE_SIZE] for i in range(0, len(bouts), _UFC_CARD_PAGE_SIZE)]
+    page_total = len(pages) or 1
+    page_index = int(time.time() // _UFC_CARD_ROTATE_SECONDS) % page_total
+    page_bouts = pages[page_index] if pages else []
+    card_label = "Full Card" + (f" · {page_index + 1}/{page_total}" if page_total > 1 else "")
+    card_rows = "".join(_ufc_card_row_html(bout) for bout in page_bouts)
 
     return (
         f'<div class="jumbo-grid jumbo-ufc-grid">'
         f'<div class="jumbo-panel jumbo-ufc-hero-panel">'
         f'<div class="jumbo-ph"><span>{html.escape(event["name"])}</span></div>'
-        f"{phase_html}{hero_html}"
+        f"{phase_html}{hero_html}{stats_html}"
         f"</div>"
         f'<div class="jumbo-panel jumbo-ufc-card-panel">'
-        f'<div class="jumbo-ph"><span>Full Card</span></div>'
+        f'<div class="jumbo-ph"><span>{html.escape(card_label)}</span></div>'
         f'<div class="jumbo-ufc-card-body">{card_rows}</div>'
         f"</div>"
         f"</div>"

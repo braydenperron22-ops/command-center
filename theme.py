@@ -3595,10 +3595,28 @@ html, body, [class*="css"] {
    applies to a multi-bout fight card, see pages_jumbotron._ufc_
    board_html's own docstring) — just a hero panel for whichever bout
    matters most right now, and the full ordered card underneath it. */
+/* Session follow-up: "I want the live fight to take up like the whole
+   screen... similar to how a baseball or hockey game would look" — the
+   hero row's own previous "auto" row sizing left it exactly as tall as
+   its content needed, which read as small/cramped next to the full
+   card list splitting the rest of the screen with it evenly. 3fr:1fr
+   makes the hero panel explicitly dominant regardless of exact content
+   height, the same way the team-scoreboard grid's own center column
+   (see .jumbo-grid above) is always the visual anchor of that board —
+   the full card list becomes a reference strip underneath it instead
+   of co-equal billing. */
 .jumbo-ufc-grid {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: 3fr 1fr;
 }
+/* During "countdown" (before the card's first bout), _ufc_stats_html
+   never renders (nothing's happened yet to compare — see its own
+   docstring), so this panel's only children are the phase line and
+   the hero VS row, neither of which grows to fill the panel's new,
+   much taller 3fr share. Centered rather than left pinned to the top
+   with dead space below it once .jumbo-ufc-stats (flex:1, so it
+   already absorbs all real leftover space on its own) isn't there. */
+.jumbo-ufc-hero-panel { justify-content: center; }
 .jumbo-ufc-phase {
     flex: 0 0 auto;
     text-align: center;
@@ -3610,31 +3628,36 @@ html, body, [class*="css"] {
 }
 .jumbo-ufc-phase-live { color: var(--live); animation: jumbo-blink 1.4s infinite; }
 .jumbo-ufc-hero {
-    flex: 1;
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 40px;
-    padding: 24px 20px;
+    gap: 56px;
+    padding: 28px 20px 20px;
 }
 .jumbo-ufc-hero-fighter { flex: 1; text-align: center; min-width: 0; }
+/* Sized up from 34px alongside the rest of this hero — session
+   follow-up asked for this to read like the team-scoreboard's own big
+   score digits (92px, see .jumbo-digit above), not a small caption;
+   fighter names run longer than a 1-2 digit score though, so this
+   lands well under that to avoid wrapping/overflow at 2-3 word names. */
 .jumbo-ufc-hero-name {
     font-family: var(--disp);
     font-weight: 600;
-    font-size: 34px;
+    font-size: 56px;
     letter-spacing: 0.01em;
     line-height: 1.1;
 }
 .jumbo-ufc-hero-record {
     font-family: var(--num);
-    font-size: 18px;
+    font-size: 22px;
     color: var(--mut);
-    margin-top: 6px;
+    margin-top: 10px;
 }
 .jumbo-ufc-winner .jumbo-ufc-hero-name { color: var(--ok); }
 .jumbo-ufc-hero-mid { flex: 0 0 auto; text-align: center; }
 .jumbo-ufc-hero-weight {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 300;
     letter-spacing: 0.2em;
     color: var(--mut-2);
@@ -3642,10 +3665,81 @@ html, body, [class*="css"] {
 }
 .jumbo-ufc-hero-vs {
     font-family: var(--num);
-    font-size: 28px;
+    font-size: 40px;
     color: var(--led);
     text-shadow: 0 0 16px var(--ledglow);
-    margin-top: 6px;
+    margin-top: 10px;
+}
+/* Knockdown callout — rare and dramatic enough (session follow-up:
+   "everything" this board can honestly show) to flag on its own next
+   to a fighter's record rather than bury inside the steadier volume
+   stats below (see _ufc_stats_html's own docstring on why it's split
+   out from the strikes/takedowns/control-time trio). */
+.jumbo-ufc-kd-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-family: var(--label);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: #0A0D12;
+    background: var(--live);
+}
+/* Live stat comparison (pages_jumbotron._ufc_stats_html) — session
+   follow-up: "live fight stats... implied odds to win if that's
+   available." Same big-flanking-numbers-plus-bar shape as the team
+   board's own .jumbo-wp-* win-probability bar, deliberately its own
+   class family rather than reusing those directly: there's no real
+   MMA win-probability model behind this (ESPN's pickcenterAvailable is
+   false on every UFC bout — confirmed live, see ufc_client.
+   fetch_bout_stats' own docstring), so the bar here reflects each
+   fighter's actual share of real landed strikes/takedowns/control
+   seconds, not a probability the way the team board's bar does. Two
+   fixed accent colors (gold/blue) rather than per-side team colors —
+   fighters don't have one the way a team's own color does, and ESPN's
+   fighter_a/fighter_b order isn't a real red-corner/blue-corner
+   assignment worth asserting. */
+.jumbo-ufc-stats { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 14px; padding: 4px 40px 20px; }
+.jumbo-ufc-stat-row {}
+.jumbo-ufc-stat-title {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.35em;
+    color: var(--mut-2);
+    margin-bottom: 6px;
+}
+.jumbo-ufc-stat-line { display: flex; align-items: center; gap: 14px; }
+.jumbo-ufc-stat-value {
+    font-family: var(--label);
+    font-size: 22px;
+    font-weight: 700;
+    flex: 0 0 auto;
+    min-width: 64px;
+}
+.jumbo-ufc-stat-value.jumbo-ufc-stat-a { text-align: right; color: var(--led); }
+.jumbo-ufc-stat-value.jumbo-ufc-stat-b { color: #5AC8FA; }
+.jumbo-ufc-stat-bar {
+    flex: 1;
+    height: 16px;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    border: 1px solid var(--edge);
+}
+.jumbo-ufc-stat-seg-a { background: var(--led); }
+.jumbo-ufc-stat-seg-b { background: #5AC8FA; }
+.jumbo-ufc-stat-labels {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--label);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--mut);
+    margin-top: 4px;
+    letter-spacing: 0.03em;
 }
 .jumbo-ufc-card-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .jumbo-ufc-card-row {

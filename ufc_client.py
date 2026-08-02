@@ -59,6 +59,10 @@ def _normalize_bout(comp: dict, order: int, is_main_event: bool) -> dict:
         athlete = c["athlete"]
         record = next((r["summary"] for r in c.get("records", []) if r.get("name") == "overall"), None)
         return {
+            # This competitor id (distinct from the athlete's own id) is
+            # what the core-API live-stats path below actually keys on
+            # — confirmed live it's the same id fetch_bout_stats needs.
+            "id": c["id"],
             "name": athlete["displayName"],
             "short_name": athlete.get("shortName") or athlete["displayName"],
             "record": record,
@@ -90,6 +94,86 @@ def _normalize_event(e: dict) -> dict:
         "state": _STATE_MAP.get(((e.get("status") or {}).get("type") or {}).get("state"), "upcoming"),
         "bouts": bouts,
     }
+
+
+# Session request: "I want the live fight to take up like the whole
+# screen... you have both fighters and live fight stats." ESPN's plain
+# scoreboard payload above (competitors[].statistics) is confirmed live
+# to always come back an empty list for MMA — the real per-fighter
+# numbers live on ESPN's separate "core" API instead (a different host
+# entirely, not used anywhere else in this app yet). Also confirmed
+# live: pickcenterAvailable is false on every single bout of a real
+# card — ESPN simply doesn't run a moneyline/odds product for MMA the
+# way it does for the team sports, so there's no real "implied win
+# odds" number to show here at all; inventing one would break this
+# app's own "never show a stat that isn't real" rule. These live
+# strike/takedown/control-time numbers are the honest substitute — for
+# a fight, real-time volume and control genuinely are what a viewer (or
+# a judge) reads the fight by, unlike a score-derived model.
+UFC_CORE_API_BASE = "https://sports.core.api.espn.com/v2/sports/mma/leagues/ufc"
+# Matches sports_client.py's own LIVE_DETAIL_CACHE_TTL_SECONDS — the
+# same 5s cadence as the app's own rerun timer, since these numbers
+# genuinely change mid-round, unlike the scoreboard fetch above.
+LIVE_STATS_CACHE_TTL_SECONDS = 5
+
+# The handful of splits a real broadcast's own "tale of the tape"
+# leans on — ESPN's core API actually returns 35+ granular categories
+# per fighter (strike location/target breakdowns, advances, reversals,
+# slam rate...), most of it too in-the-weeds to read from across a
+# room. displayValue is already a clean pre-formatted string (same
+# preference for ESPN's own formatting scores_client.team_record/
+# game_leader already have), used verbatim rather than re-deriving it
+# from the raw numeric value.
+_STAT_FIELDS = {
+    "sig_strikes_landed": "SSL",
+    "sig_strikes_attempted": "SSA",
+    "takedowns_landed": "TDL",
+    "takedowns_attempted": "TDA",
+    "knockdowns": "KD",
+    "control_time": "TIC",
+}
+
+
+@st.cache_data(ttl=LIVE_STATS_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_fighter_stats_raw(event_id: str, bout_id: str, fighter_id: str) -> dict:
+    fetch_throttle.wait_turn()
+    url = f"{UFC_CORE_API_BASE}/events/{event_id}/competitions/{bout_id}/competitors/{fighter_id}/statistics"
+    resp = requests.get(url, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _fighter_stat_line(event_id: str, bout_id: str, fighter_id: str) -> dict | None:
+    try:
+        raw = _fetch_fighter_stats_raw(event_id, bout_id, fighter_id)
+    except Exception:
+        return None
+    # .strip(): a few of ESPN's own abbreviations carry a stray trailing
+    # tab character in the raw payload (confirmed live, e.g. "SCBL\t") —
+    # harmless for the fields actually used here, but cheap enough to
+    # guard against regardless of which fields get pulled in later.
+    values = {
+        s["abbreviation"].strip(): s.get("displayValue")
+        for cat in (raw.get("splits") or {}).get("categories", [])
+        for s in cat.get("stats", [])
+    }
+    return {key: values.get(abbrev) for key, abbrev in _STAT_FIELDS.items()}
+
+
+def fetch_bout_stats(event_id: str, bout_id: str, fighter_a_id: str, fighter_b_id: str) -> dict | None:
+    """{"fighter_a": {...}, "fighter_b": {...}}, each a dict of
+    _STAT_FIELDS' keys -> ESPN's own pre-formatted display string (e.g.
+    control_time is already "1:24", not raw seconds). None only if
+    either fetch genuinely failed — a bout that hasn't started yet still
+    returns a real dict of zeros (an honest "nothing's happened," not
+    missing data), so this isn't gated on bout state; callers decide
+    whether zeros are worth showing (see pages_jumbotron._ufc_board_html
+    — pregame countdown skips this entirely, nothing to show yet)."""
+    a = _fighter_stat_line(event_id, bout_id, fighter_a_id)
+    b = _fighter_stat_line(event_id, bout_id, fighter_b_id)
+    if a is None or b is None:
+        return None
+    return {"fighter_a": a, "fighter_b": b}
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
