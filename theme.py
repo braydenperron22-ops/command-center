@@ -3551,6 +3551,51 @@ html, body, [class*="css"] {
     100% { transform: scale(1); color: var(--bone); text-shadow: none; }
 }
 
+/* Batting order (pages_jumbotron._batting_order_rail_html) — session
+   request, after attending a real Jays game: "the only stat they
+   showed was OPS... gave me a very easy way of seeing who is the best
+   hitter." Plain rows, name + OPS only (no photos, no extra stat
+   categories) — the deliberate minimalism the real ballpark board used
+   is exactly what made it scannable. Session follow-up redirected this
+   from the wide Featured board into the narrow My Teams rail instead
+   ("go over the ufc, the saints, the blue jays, and the canadiens") —
+   away and home stack one above the other here rather than sitting
+   side by side, since the rail has nowhere near the width for two
+   columns; .jumbo-lineup-team-second's own top margin is the only
+   thing separating the two stacked 9-row blocks. */
+.jumbo-lineup-team {
+    font-family: var(--label);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--mut);
+    padding-bottom: 4px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--edge);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.jumbo-lineup-team-second { margin-top: 10px; }
+.jumbo-lineup-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2.5px 0;
+    font-family: var(--label);
+    font-size: 13px;
+}
+.jumbo-lineup-num { flex: 0 0 16px; color: var(--mut-2); font-weight: 700; text-align: right; }
+.jumbo-lineup-name {
+    flex: 1;
+    min-width: 0;
+    color: var(--bone);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.jumbo-lineup-ops { flex: 0 0 auto; color: var(--led); font-weight: 700; font-variant-numeric: tabular-nums; }
+
 .jumbo-sl {
     font-family: var(--label);
     font-size: 8.5px;

@@ -1289,6 +1289,72 @@ def _fetch_mlb_boxscore_raw(game_id: int) -> dict:
     return resp.json()
 
 
+def fetch_mlb_batting_order(game_id: int) -> dict | None:
+    """{"away": [{"order": 1-9, "name", "short_name", "ops"}, ...],
+    "home": [...]}, each side sorted 1-9 — session request, after
+    attending a real Jays game: "they had the batting order... the only
+    stat they showed was OPS. This gave me an easy way of seeing who is
+    the best hitter for each team."
+
+    Same boxscore fetch _mlb_game_pitching_totals below already uses
+    (no new request) — the boxscore's own team["battingOrder"] is an
+    ordered list of player ids (MLB's real lineup-position field,
+    confirmed live it also sits on each player's own entry as "100"/
+    "200".../"900", divided by 100 here for a plain 1-9 rank), and
+    every hitter's seasonStats.batting.ops is already sitting right
+    there in the same payload as a pre-formatted string (".690" — same
+    field fetch_mlb_live_matchup's own per-player /people call reads
+    "ops" from, just bulk-available here for all 18 hitters in one
+    response instead of a separate request per player). "short_name" is
+    the boxscore's own "boxscoreName" (already the compact, sometimes
+    disambiguated form broadcasts use — e.g. "Walker, J" vs "Torres, B"
+    when two teammates share a surname), falling back to the full name
+    on the rare id MLB didn't supply one for.
+
+    Not run through the live-delay mechanism (delayed()) the pitch-by-
+    pitch boxscore reads elsewhere in this module use — a starting
+    lineup and each player's SEASON stat line aren't the kind of "ahead
+    of the broadcast" spoiler that delay exists to prevent; this is
+    just the raw 5s-cached boxscore fetch directly.
+
+    None entirely before today's lineups are actually announced
+    (battingOrder comes back [] on both sides that early — same "just
+    omit it" rule every other pregame-timing-dependent panel in this
+    app already follows) or on a genuine fetch failure."""
+    try:
+        data = _fetch_mlb_boxscore_raw(game_id)
+    except Exception:
+        return None
+    result = {}
+    for side in ("away", "home"):
+        team = (data.get("teams") or {}).get(side) or {}
+        order_ids = team.get("battingOrder") or []
+        if not order_ids:
+            return None
+        players = team.get("players") or {}
+        rows = []
+        for pid in order_ids:
+            p = players.get(f"ID{pid}")
+            if not p:
+                continue
+            try:
+                rank = int(p.get("battingOrder")) // 100
+            except (TypeError, ValueError):
+                continue
+            person = p.get("person") or {}
+            rows.append(
+                {
+                    "order": rank,
+                    "name": person.get("fullName"),
+                    "short_name": person.get("boxscoreName") or person.get("fullName"),
+                    "ops": ((p.get("seasonStats") or {}).get("batting") or {}).get("ops"),
+                }
+            )
+        rows.sort(key=lambda r: r["order"])
+        result[side] = rows
+    return result
+
+
 def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
     """This specific game's pitch count, balls/strikes split, and full
     line, so far for one pitcher — {"pitches", "balls", "strikes",
