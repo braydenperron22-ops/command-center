@@ -8,6 +8,7 @@ elsewhere in this app — nothing here makes its own new network request
 beyond what those modules' own callers already pay for.
 """
 
+import commute_client
 import market_internals
 import market_yf_client
 import portfolio_client
@@ -15,6 +16,7 @@ import prediction_markets_client
 import sports_client
 import air_quality_client
 import fuel_price_client
+import wildfire_client
 from flags import flag_for
 from config import (
     INDICATORS,
@@ -85,6 +87,54 @@ def build_sports_stat_items() -> list[dict]:
         text = f'{label} {game["team_score"]}-{game["opp_score"]} {opponent_word} {game["opponent"]} (LIVE)'
         items.append({"text": text, "tone": "neutral"})
     return items
+
+
+def build_playoff_odds_stat_items() -> list[dict]:
+    """Session request: "add more stuff to the ticker" — ESPN's own
+    playoff-odds simulation (see sports_client._espn_playoff_odds), one
+    per tracked team, using the exact same fetch_jays()/fetch_habs()/
+    fetch_saints() dict this file's own build_sports_stat_items and
+    game_blurb's season-stakes context already pull "playoff_odds" from
+    — no new fetch shape, just a third caller of data this app already
+    has fully plumbed. Unlike the live-score item above, not gated on a
+    game being underway right now — a team's playoff push is a season-
+    long story, worth a glance any time, not just mid-game. [] entirely
+    for a team that's out of season (status itself is None) or whose
+    odds haven't posted yet (NHL/NFL in the off-season — see
+    fetch_habs/fetch_saints' own comments on why "percent"/"display"
+    come back None then even though the team itself is still "in
+    season" by these fetchers' own SEASON_WINDOW_DAYS)."""
+    items = []
+    for label, fetch_status in (
+        ("BLUE JAYS", sports_client.fetch_jays),
+        ("CANADIENS", sports_client.fetch_habs),
+        ("SAINTS", sports_client.fetch_saints),
+    ):
+        status = fetch_status()
+        odds = (status or {}).get("playoff_odds") or {}
+        if not odds.get("display"):
+            continue
+        items.append({"text": f'{label} Playoff Odds {odds["display"]}', "tone": "neutral"})
+    return items
+
+
+def build_commute_stat_item() -> dict | None:
+    """Real-time drive time to the default commute destination — the
+    same TomTom-backed number pages_today._commute_html shows, "no
+    delays" (good/green) vs. a real traffic delay with its own reason
+    when TomTom has one (bad/red) — same wording/threshold convention
+    as that tile. None whenever TOMTOM_API_KEY isn't configured or the
+    route fetch itself failed (commute_client.route's own None case),
+    same as that tile's own empty state."""
+    data = commute_client.route(None)
+    if not data:
+        return None
+    minutes = round(data["duration_seconds"] / 60)
+    delay_minutes = round(data["delay_seconds"] / 60)
+    if delay_minutes >= 1:
+        reason = f" ({data['incident']})" if data.get("incident") else ""
+        return {"text": f"Commute {minutes} min (+{delay_minutes} min traffic{reason})", "tone": "bad"}
+    return {"text": f"Commute {minutes} min (no delays)", "tone": "good"}
 
 
 def build_indicator_stat_items(readings: dict) -> list[dict]:
@@ -195,6 +245,22 @@ def build_aqi_stat_item() -> dict | None:
     if not data or data.get("us_aqi") is None:
         return None
     return {"text": f'AQI {data["us_aqi"]:.0f}', "tone": "neutral"}
+
+
+def build_wildfire_stat_item() -> dict | None:
+    """Nearest detected wildfire, only when wildfire_client.
+    nearest_wildfire itself has something real to say — outside
+    wildfire season, or on a day with nothing within its own
+    SHOW_RADIUS_KM, this is None entirely (same quiet-by-default
+    behavior app.py's own AQI-badge intensity effect and morning_
+    briefing's mention of it already rely on). Neutral tone, same as
+    AQI/gas above — a proximity fact, not a call on how worried to be
+    about it (no distance-tier judgment currently exists to color it
+    by)."""
+    wildfire = wildfire_client.nearest_wildfire()
+    if not wildfire:
+        return None
+    return {"text": f'Wildfire {wildfire["distance_km"]:.0f} km away', "tone": "neutral"}
 
 
 def render_html(items: list[dict]) -> str:

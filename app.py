@@ -1779,6 +1779,10 @@ def _render_bottom_ticker(readings: dict) -> None:
     except Exception:
         pass
     try:
+        stats.extend(ticker.build_playoff_odds_stat_items())
+    except Exception:
+        pass
+    try:
         stats.extend(ticker.build_indicator_stat_items(readings))
     except Exception:
         pass
@@ -1797,9 +1801,21 @@ def _render_bottom_ticker(readings: dict) -> None:
     except Exception:
         pass
     try:
+        commute_stat = ticker.build_commute_stat_item()
+        if commute_stat:
+            stats.append(commute_stat)
+    except Exception:
+        pass
+    try:
         aqi_stat = ticker.build_aqi_stat_item()
         if aqi_stat:
             stats.append(aqi_stat)
+    except Exception:
+        pass
+    try:
+        wildfire_stat = ticker.build_wildfire_stat_item()
+        if wildfire_stat:
+            stats.append(wildfire_stat)
     except Exception:
         pass
 
