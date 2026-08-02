@@ -179,7 +179,7 @@ def render() -> None:
     st.markdown('<div class="page-title page-title-internals">Market Internals</div>', unsafe_allow_html=True)
 
     _render_gauge_hero()
-    st.markdown('<div style="height: 0.4rem;"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="internals-section-gap"></div>', unsafe_allow_html=True)
 
     cols = st.columns(3)
     with cols[0]:

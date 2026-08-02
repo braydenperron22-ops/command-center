@@ -438,8 +438,8 @@ html, body, [class*="css"] {
 .confidence-hero {
     align-items: center;
     text-align: center;
-    padding-top: 0.8rem;
-    padding-bottom: 0.7rem;
+    padding-top: 1.4rem;
+    padding-bottom: 1.3rem;
 }
 .confidence-value {
     font-size: 6.4rem;
@@ -449,13 +449,22 @@ html, body, [class*="css"] {
     line-height: 1.1;
     margin: 0.1rem 0 0.35rem;
 }
-/* Market Internals' 3 supporting ratio tiles — deliberately more
-   compact than the shared .tile padding, since they're secondary
-   content next to the confidence hero and this page needs real margin
-   to fit reliably across zoom levels, not just at exactly 100%. */
+/* Session report: "reformat this page to look a lot cleaner" — this
+   page is only 4 tiles total, and the 3 ratio tiles' old cramped
+   1.1rem padding (deliberately more compact than the shared .tile
+   padding, back when this page was still finding its own proportions)
+   left a large flat dead zone below them with nothing to balance it,
+   confirmed live via getBoundingClientRect: real content ended
+   ~792px into a 1080px-tall viewport, meaning nearly 300px of
+   unbalanced empty space at the bottom. Roomier padding plus bigger
+   value/verdict type gives the row real visual weight of its own
+   instead of reading like an afterthought under the hero, closing
+   most of that gap as a side effect of the tiles actually filling
+   their own presence rather than by fighting Streamlit's own
+   block-container layout to force it. */
 .internals-ratio-tile {
-    padding-top: 1.1rem;
-    padding-bottom: 1.1rem;
+    padding-top: 1.9rem;
+    padding-bottom: 1.9rem;
 }
 /* Verdict-first Internals typography — session feedback: the meaning
    has to be readable from across the room, not fine print ("super tiny
@@ -465,18 +474,18 @@ html, body, [class*="css"] {
    severity-caption small print entirely on this page. */
 .internals-ratio-tile .tile-label {
     height: auto;
-    font-size: 1.05rem;
+    font-size: 1.1rem;
 }
 .internals-ratio-tile .tile-value {
-    font-size: 3rem;
+    font-size: 3.6rem;
 }
 .internals-verdict {
-    font-size: 1.8rem;
+    font-size: 2rem;
     font-weight: 800;
     letter-spacing: 0.01em;
     line-height: 1.15;
     text-transform: uppercase;
-    margin-top: 0.25rem;
+    margin-top: 0.3rem;
 }
 .confidence-hero .internals-verdict {
     font-size: 2.3rem;
@@ -485,13 +494,20 @@ html, body, [class*="css"] {
 .internals-verdict-bad { color: #FF6961; }
 .internals-verdict-neutral { color: #5AC8FA; }
 .internals-context {
-    font-size: 1.2rem;
+    font-size: 1.25rem;
     color: #ECECF1;
-    line-height: 1.4;
-    margin-top: 0.55rem;
+    line-height: 1.45;
+    margin-top: 0.6rem;
 }
 .confidence-hero .internals-context {
     max-width: 46rem;
+}
+/* Clearer separation between the hero and the supporting row than the
+   old bare 0.4rem inline spacer (see pages_internals.render) gave —
+   the two now read as distinct, deliberately composed sections rather
+   than a hero with an afterthought crammed underneath it. */
+.internals-section-gap {
+    height: 1.6rem;
 }
 
 /* Predictions page — session request: "make it its own page for just
