@@ -66,6 +66,7 @@ CAPE_HISTORICAL_AVERAGE = 17.1
 # is generally described as being.
 ZSCORE_WINDOW = 252
 TREND_LOOKBACK_DAYS = 21  # ~1 trading month
+ONE_WEEK_TRADING_DAYS = 5  # session request: show the actual point change over "the last week"
 
 _last_good_history: dict[str, pd.DataFrame] = {}
 _last_good_cape: float | None = None
@@ -202,14 +203,17 @@ def _external_fear_greed_index() -> dict | None:
 
 
 def _computed_fear_greed_index() -> dict | None:
-    """{"value", "prior_value", "components": {name: score}, "history",
-    "source": "computed"} — the four-component fallback gauge described
-    in the module docstring, used only when feargreedmeter.com itself
-    isn't reachable. Degrades gracefully on its own too: computed from
-    whichever components actually came back (a single symbol failing,
-    e.g. IEF briefly unreachable, doesn't take down the whole gauge),
-    returning None only once fewer than half of the four are
-    available."""
+    """{"value", "prior_value", "one_week_ago", "components": {name:
+    score}, "history", "source": "computed"} — the four-component
+    fallback gauge described in the module docstring, used only when
+    feargreedmeter.com itself isn't reachable. Degrades gracefully on
+    its own too: computed from whichever components actually came back
+    (a single symbol failing, e.g. IEF briefly unreachable, doesn't take
+    down the whole gauge), returning None only once fewer than half of
+    the four are available. "one_week_ago" (ONE_WEEK_TRADING_DAYS back)
+    mirrors the same field _external_fear_greed_index already gets
+    straight from feargreedmeter.com — None rather than a misleading
+    guess if there isn't yet a full week of composite history."""
     try:
         series_by_component = {
             "Momentum": _momentum_series(),
@@ -229,11 +233,13 @@ def _computed_fear_greed_index() -> dict | None:
         current = float(composite.iloc[-1])
         prior = float(composite.iloc[-TREND_LOOKBACK_DAYS]) if len(composite) > TREND_LOOKBACK_DAYS else current
         yesterday = float(composite.iloc[-2]) if len(composite) > 1 else current
+        one_week_ago = float(composite.iloc[-1 - ONE_WEEK_TRADING_DAYS]) if len(composite) > ONE_WEEK_TRADING_DAYS else None
 
         return {
             "value": current,
             "prior_value": prior,
             "yesterday": yesterday,
+            "one_week_ago": one_week_ago,
             "components": {k: float(v.iloc[-1]) for k, v in combined.items()},
             "component_count": len(valid),
             "history": [float(v) for v in composite.tail(90)],

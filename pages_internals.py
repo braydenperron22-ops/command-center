@@ -41,35 +41,38 @@ RSP_SPY_TILE = {
 def _gauge_band(value: float) -> tuple[str, str]:
     """Ten bands instead of CNN's own five — session request: "expand on
     the typical Extreme Fear, Fear, Neutral, Greed, Extreme Greed bars
-    ... make it so its 10 labels instead of just 5." Each of CNN's five
-    real published bands (Extreme Fear <25, Fear 25-44, Neutral 45-54,
-    Greed 55-74, Extreme Greed 75+) is split in half rather than
-    redrawing the boundaries from scratch, so the same four threshold
-    points (25/45/55/75) still decide "good"/"bad"/"neutral" tone/color
-    exactly as before — only the label text gets finer-grained, the
-    coloring behavior is unchanged. Symmetric naming (Extreme/Severe/
-    [plain]/Mild/Slight, mirrored on each side of the midpoint) rather
-    than CNN's own asymmetric band widths translating awkwardly into
-    ten uneven names."""
+    ... make it so its 10 labels instead of just 5," then refined:
+    "the context labels should only be one word you can expand beyond
+    just fear and greed." Each of CNN's five real published bands
+    (Extreme Fear <25, Fear 25-44, Neutral 45-54, Greed 55-74, Extreme
+    Greed 75+) is split in half, keeping the same four threshold points
+    (25/45/55/75) so "good"/"bad"/"neutral" tone/color is unchanged —
+    but rather than "Mild Fear"/"Slight Greed"-style two-word compounds,
+    each band gets its own distinct single word drawn from real,
+    commonly-used market-sentiment vocabulary (the same "Fear"/"Greed"/
+    "Euphoria"/"Panic" language financial press already uses for these
+    exact states, not invented terms) — ordered fear -> greed:
+    Panic, Dread, Fear, Worry, Caution, Calm, Hope, Optimism, Greed,
+    Euphoria."""
     if value >= 87.5:
-        return "Extreme Greed", "good"
+        return "Euphoria", "good"
     if value >= 75:
-        return "Severe Greed", "good"
-    if value >= 65:
         return "Greed", "good"
+    if value >= 65:
+        return "Optimism", "good"
     if value >= 55:
-        return "Mild Greed", "good"
+        return "Hope", "good"
     if value >= 50:
-        return "Slight Greed", "neutral"
+        return "Calm", "neutral"
     if value >= 45:
-        return "Slight Fear", "neutral"
+        return "Caution", "neutral"
     if value >= 35:
-        return "Mild Fear", "bad"
+        return "Worry", "bad"
     if value >= 25:
         return "Fear", "bad"
     if value >= 12.5:
-        return "Severe Fear", "bad"
-    return "Extreme Fear", "bad"
+        return "Dread", "bad"
+    return "Panic", "bad"
 
 
 def _render_gauge_hero() -> None:
@@ -84,32 +87,31 @@ def _render_gauge_hero() -> None:
 
     value = data["value"]
     band_label, tone = _gauge_band(value)
-    yesterday = data.get("yesterday")
-    raw_arrow, _ = mi.trend(value, yesterday if yesterday is not None else data["prior_value"], higher_is_good=True)
-    # Session report: "it says Fear (arrow up rising) which is actually
-    # not fearful so make it not sound counterintuitive." trend()'s own
-    # "↑ Rising"/"↓ Falling" describes the raw NUMBER — but a rising
-    # score means LESS fear (moving toward Greed, not deeper into it),
-    # so "Fear · ↑ Rising" read as if fear itself were increasing, the
-    # opposite of what's true. Same fix the ratio tiles below already
-    # use for this exact class of problem (just the arrow glyph, paired
-    # with a direction-aware word instead of "Rising"/"Falling") —
-    # "Toward Greed"/"Toward Fear" is correct in every band and never
-    # contradicts whichever label happens to be showing.
-    glyph = raw_arrow.split()[0]
-    if glyph == "↑":
-        direction = "Toward Greed"
-    elif glyph == "↓":
-        direction = "Toward Fear"
+    # Session follow-up: "instead of saying rising or falling just show
+    # the amount its risen or fallen by in the last week." Replaces the
+    # earlier "↑ Toward Greed"/"↓ Toward Fear" fix (itself a fix for
+    # "Fear (arrow up rising)" reading backwards) with the actual signed
+    # point change over the real last week (data["one_week_ago"], same
+    # field feargreedmeter.com's own payload / the computed fallback's
+    # 5-trading-day-back reading already carry) — a number can't read
+    # backwards the way a directional word could, and it's more useful
+    # than a bare arrow besides. Omitted entirely, same "just omit it"
+    # rule every other optional reading on this page follows, on the
+    # rare chance a week-ago value isn't available yet.
+    one_week_ago = data.get("one_week_ago")
+    if one_week_ago is not None:
+        change = value - float(one_week_ago)
+        week_text = f"{change:+.0f} this week"
     else:
-        direction = "Flat"
+        week_text = ""
     context = GAUGE_CONTEXT_EXTERNAL if data.get("source") == "external" else GAUGE_CONTEXT_COMPUTED
+    verdict_text = f"{band_label} · {week_text}" if week_text else band_label
 
     st.markdown(
         f"""<div class="tile tile-accent-{tone} confidence-hero">
             <div class="tile-label">FEAR &amp; GREED INDEX</div>
             <div class="confidence-value">{value:.0f}</div>
-            <div class="internals-verdict internals-verdict-{tone}">{band_label} · {glyph} {direction}</div>
+            <div class="internals-verdict internals-verdict-{tone}">{verdict_text}</div>
             <div class="internals-context">{context}</div>
         </div>""",
         unsafe_allow_html=True,
