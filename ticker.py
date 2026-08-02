@@ -148,12 +148,15 @@ def build_prediction_market_stat_items() -> list[dict]:
     rather than good/bad, since a rate direction isn't "good or bad
     news" the way a market move is.
 
-    One extra item beyond the per-bank roster: a plain-language "GLOBAL"
-    reading of prediction_markets_client.global_consensus() — session
-    request: "a global central bank outcome and odds... put it in the
-    ticker tape too," the same aggregate the Predictions page's own new
-    tile below the bank list shows. No flag (it isn't any one country's
-    number); same tone convention as every other item here."""
+    One extra item beyond the per-bank roster: a plain-language reading
+    of prediction_markets_client.global_consensus() — session request:
+    "a global central bank outcome and odds... put it in the ticker
+    tape too," the same aggregate the Predictions page's own new tile
+    below the bank list shows. A 🌐 stands in for a flag (it isn't any
+    one country's number — session follow-up: "make it a global
+    emoji," in place of the plain text "GLOBAL" every other item's real
+    flag icon used to be the odd one out next to); same tone convention
+    as every other item here."""
     items = []
     for bank in prediction_markets_client.BANKS:
         odds = prediction_markets_client.current_odds(bank)
@@ -171,7 +174,7 @@ def build_prediction_market_stat_items() -> list[dict]:
         direction = consensus["direction"]
         tone = direction if direction in ("cut", "hike") else "neutral"
         label = prediction_markets_client.DIRECTION_LABELS[direction]
-        items.append({"text": f'GLOBAL {label} {consensus["probability"] * 100:.0f}%', "tone": tone})
+        items.append({"text": f'🌐 {label} {consensus["probability"] * 100:.0f}%', "tone": tone})
     return items
 
 
