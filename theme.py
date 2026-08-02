@@ -3620,6 +3620,50 @@ html, body, [class*="css"] {
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
+/* Team identity block, session follow-up: "add the team logos at top.
+   Put, like, cardinal's logo, then lineup." Same logo asset _side_html
+   already uses for the Featured board's own team boxes, just at a much
+   smaller "compact identity strip" scale here — this rail is 420px
+   wide, nowhere near that card's own 132px hero treatment. */
+.jumbo-lineup-head { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; margin-bottom: 8px; }
+.jumbo-lineup-logo { width: 46px; height: 46px; object-fit: contain; flex: 0 0 auto; }
+.jumbo-lineup-headtext { flex: 1; min-width: 0; }
+.jumbo-lineup-teamname {
+    font-family: var(--label);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--bone);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.jumbo-lineup-atbat {
+    font-family: var(--label);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--led);
+}
+/* Current batter highlight, same session follow-up: "highlight who's
+   actually up to bat right now." Same --led gold this whole board
+   already reserves for "this is the one that matters right now"
+   (.jumbo-final-badge, the UFC card's own main-event row) rather than
+   --live red — a batter being up is the spotlight, not an alert. */
+.jumbo-lineup-row-current {
+    background: rgba(255,179,0,0.12);
+    border-radius: 6px;
+    /* Margin/padding cancel out horizontally — this just lets the
+       highlight bleed slightly past the text columns without actually
+       shifting them, so a highlighted row's numbers still line up with
+       every plain row's above/below it. */
+    margin-left: -6px;
+    margin-right: -6px;
+    padding-left: 6px;
+    padding-right: 6px;
+}
+.jumbo-lineup-row-current .jumbo-lineup-num,
+.jumbo-lineup-row-current .jumbo-lineup-name { color: var(--led); }
 
 .jumbo-sl {
     font-family: var(--label);

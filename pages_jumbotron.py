@@ -738,12 +738,13 @@ def _current_matchup_html(game_id: int) -> str:
     )
 
 
-def _batting_order_row_html(entry: dict) -> str:
+def _batting_order_row_html(entry: dict, is_current: bool) -> str:
     ops = html.escape(entry["ops"]) if entry.get("ops") else "—"
     number = html.escape(str(entry["number"])) if entry.get("number") else ""
     position = html.escape(entry.get("position") or "")
+    row_class = "jumbo-lineup-row jumbo-lineup-row-current" if is_current else "jumbo-lineup-row"
     return (
-        f'<div class="jumbo-lineup-row">'
+        f'<div class="{row_class}">'
         f'<span class="jumbo-lineup-num">{number}</span>'
         f'<span class="jumbo-lineup-name">{html.escape(entry["short_name"].upper())}</span>'
         f'<span class="jumbo-lineup-pos">{position}</span>'
@@ -762,7 +763,7 @@ _BATTING_ORDER_HEADER = (
 )
 
 
-def _batting_order_rail_html(entries: list[dict]) -> str:
+def _batting_order_rail_html(entries: list[dict], team: dict, current_batter: str | None) -> str:
     """The batting order for whichever team is actually at bat right
     now — one clean stat per hitter — session request, after attending
     a real Jays game: "they had the batting order, and the only stat
@@ -774,27 +775,29 @@ def _batting_order_rail_html(entries: list[dict]) -> str:
     batting position (1st through 9th) exactly like the real board —
     the number shown per row is the player's jersey number, not a
     lineup slot (see sports_client.fetch_mlb_batting_order's own
-    docstring). See render()'s own comment for how the at-bat side and
+    docstring).
+
+    Second follow-up: "bonus points if you can highlight who's actually
+    up to bat right now and add the team logos at top." `current_batter`
+    (a full name, from the same live-detail fetch render() already made
+    to pick which side is up) is matched against each entry's own real
+    name — a plain string compare, not an id, since that's all the
+    boxscore's own hitter entries carry, but a lineup's 9 real full
+    names are exactly as reliable a key as an id would be within one
+    game. The logo block reuses the same team dict _sides()/_side_html
+    already build (same "logo"/"name" keys), so this needed no new data
+    of its own. See render()'s own comment for how the at-bat side and
     the rail-takeover gating (live + top MLB priority) are decided."""
-    rows = "".join(_batting_order_row_html(e) for e in entries)
-    return f"{_BATTING_ORDER_HEADER}{rows}"
-
-
-def _mlb_batting_side(game_id: int) -> str | None:
-    """"away"/"home" for whichever side is actually at bat right now,
-    from the same live-detail feed _mlb_situation_html already polls
-    (5s TTL, no extra request this costs). "Top"/"End" innings states
-    mean the away team is up (an "End" state is the bottom half just
-    finished, so away leads off the next inning); "Bottom"/"Middle"
-    mean home is (a "Middle" state is the top half just finished, home
-    is next). None if the live feed has nothing yet (very early
-    pregame, or a genuine fetch failure) — same "just omit it" rule
-    every other live-data-dependent panel in this app follows."""
-    detail = sports_client.fetch_mlb_live_detail(game_id)
-    state = detail.get("inning_state") if detail else None
-    if not state:
-        return None
-    return "home" if state in ("Bottom", "Middle") else "away"
+    head = (
+        f'<div class="jumbo-lineup-head">'
+        f'<img class="jumbo-lineup-logo" src="{html.escape(team["logo"])}" />'
+        f'<div class="jumbo-lineup-headtext">'
+        f'<div class="jumbo-lineup-teamname">{html.escape(team["name"])}</div>'
+        f'<div class="jumbo-lineup-atbat">At Bat</div>'
+        f"</div></div>"
+    )
+    rows = "".join(_batting_order_row_html(e, current_batter is not None and e.get("name") == current_batter) for e in entries)
+    return f"{head}{_BATTING_ORDER_HEADER}{rows}"
 
 
 def _last_play_html(game_id: int, away: dict, home: dict) -> str:
@@ -1960,23 +1963,29 @@ def render(now: datetime, state: dict, weather: dict | None, ufc_state: dict | N
     # don't replace the rail, only an actual live game does.
     #
     # Session follow-up, with a real photo of the actual Rogers Centre
-    # board as the reference: "make it just the team that's up to bat."
-    # _mlb_batting_side reads the same live-detail feed the situation
-    # strip already polls to pick which of the two fetched lineups
-    # (fetch_mlb_batting_order always returns both) is actually shown.
+    # board as the reference: "make it just the team that's up to bat...
+    # highlight who's actually up to bat right now and add the team
+    # logos at top." One live-detail fetch (the same one _mlb_situation_
+    # html/_current_matchup_html already poll — 5s TTL, no extra request)
+    # gives both "which side is up" (inning_state) and "who's actually
+    # at the plate" (batter, matched against the lineup by name in
+    # _batting_order_rail_html) in one call.
     batting_entries = None
     if state.get("phase") == "live" and state.get("game") and state["league"]["sport"] == "mlb":
         game_id = state["game"]["game_id"]
         full_order = sports_client.fetch_mlb_batting_order(game_id)
-        batting_side = _mlb_batting_side(game_id) if full_order else None
+        live_detail = sports_client.fetch_mlb_live_detail(game_id) if full_order else None
+        inning_state = live_detail.get("inning_state") if live_detail else None
+        batting_side = ("home" if inning_state in ("Bottom", "Middle") else "away") if inning_state else None
         if full_order and batting_side:
             batting_entries = full_order[batting_side]
+            current_batter = live_detail.get("batter")
 
     if batting_entries:
         away, home = _sides(state["status"], state["game"], state["league"]["label"])
         batting_team = home if batting_side == "home" else away
-        rail_label = f'{html.escape(batting_team["name"].upper())} &middot; AT BAT'
-        rail = _batting_order_rail_html(batting_entries)
+        rail_label = "Batting Order"
+        rail = _batting_order_rail_html(batting_entries, batting_team, current_batter)
     else:
         rail_label = "My Teams"
         rail = "".join(_rail_hero_html(entry, now) for entry in _RAIL) + _ufc_rail_hero_html(now)
