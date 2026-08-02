@@ -57,6 +57,7 @@ import requests
 import streamlit as st
 
 import fetch_throttle
+import persisted_state
 import scores_client
 import sports_client
 from config import TIMEZONE
@@ -144,6 +145,25 @@ TAKEOVER_LEAD_MINUTES = 60
 # linescore and scoring summary are actually readable before the kiosk
 # releases back to its normal rotation.
 TAKEOVER_POSTGAME_MINUTES = 15
+
+# Session report: "the post game recap ended almost immediately...
+# hardwire that it must stay for 15 mins postgame so no refresh can
+# take it out." Root cause: jumbotron_seen_games/jumbotron_final_at used
+# to live in st.session_state, which is scoped per browser connection —
+# any reconnect (a kiosk auto-reload, a Streamlit websocket hiccup) wiped
+# both dicts, so the very next rerun found this final game missing from
+# "seen" and dropped the postgame takeover immediately, no matter how
+# recently it had actually gone final. Same fix news.py's own
+# _decided/_seen_headlines already use: a module-level global, loaded
+# from persisted_state ONCE at import time (not on every 5s rerun — see
+# persisted_state.py's own module docstring on Upstash's command cap),
+# so these survive any browser reconnect within this running process,
+# and a real process restart besides. Written back to persisted_state
+# only on an actual change (a game newly seen/newly final), not every
+# read, keeping write volume the same as the old occasional session-
+# state mutation would have been.
+_jumbotron_seen_games: dict = dict(persisted_state.load("jumbotron_seen_games", {}))
+_jumbotron_final_at: dict = dict(persisted_state.load("jumbotron_final_at", {}))
 
 # Session request: when several alerts/headlines are active at once,
 # the order is "leave in at the top, then Habs, then Jays" — this is
@@ -691,13 +711,23 @@ def takeover_state(now: datetime) -> dict | None:
     Jays — the same priority order everything else in this module uses
     (see COUNTDOWN_PRIORITY).
 
-    The postgame hold only applies to a game this session actually
-    watched (tracked in `jumbotron_seen_games`). sports_client's own
-    _pick_current_game keeps returning today's game for the rest of the
-    day once it's final, so without that gate a kiosk started in the
-    evening would take the screen over for a game that finished hours
-    earlier — and a fresh restart mid-postgame simply falls back to the
-    normal rotation, which is the safe direction to fail.
+    The postgame hold only applies to a game this app actually watched
+    (tracked in the persisted `_jumbotron_seen_games`, see its own
+    module-level comment) — sports_client's own _pick_current_game keeps
+    returning today's game for the rest of the day once it's final, so
+    without that gate a kiosk started in the evening would take the
+    screen over for a game that finished hours earlier. Because both
+    that flag and the actual final-time stamp now survive a browser
+    reconnect or process restart (rather than resetting with
+    st.session_state), a restart mid-postgame resumes the real 15-minute
+    countdown exactly where it left off instead of dropping the takeover
+    early — session report: "the post game recap ended almost
+    immediately... hardwire that it must stay for 15 mins postgame so no
+    refresh can take it out." A restart hours after a game's real end
+    still correctly stays out of postgame: the stamp reflects when the
+    game actually went final, not when this process happened to notice,
+    so the elapsed-time check below is just as true across a restart as
+    within one continuous run.
     """
     candidates = []
     for league in _LEAGUES:
@@ -708,8 +738,7 @@ def takeover_state(now: datetime) -> dict | None:
     if not candidates:
         return None
 
-    seen = st.session_state.setdefault("jumbotron_seen_games", {})
-    final_at = st.session_state.setdefault("jumbotron_final_at", {})
+    _prune_jumbotron_postgame_state()
 
     live = sorted(
         (c for c in candidates if c[2]["state"] == "live"),
@@ -717,7 +746,7 @@ def takeover_state(now: datetime) -> dict | None:
     )
     if live:
         league, status, game = live[0]
-        seen[game["game_id"]] = True
+        _mark_jumbotron_seen(game["game_id"])
         return {"phase": "live", "league": league, "status": status, "game": game, "minutes_until": None}
 
     pregame = []
@@ -734,18 +763,18 @@ def takeover_state(now: datetime) -> dict | None:
     if pregame:
         pregame.sort(key=lambda c: _takeover_priority(c[0], c[2]))
         league, status, game, minutes_until = pregame[0]
-        seen[game["game_id"]] = True
+        _mark_jumbotron_seen(game["game_id"])
         return {"phase": "pregame", "league": league, "status": status, "game": game, "minutes_until": minutes_until}
 
     postgame = []
     for league, status, game in candidates:
-        if game["state"] != "final" or game["game_id"] not in seen:
+        if game["state"] != "final" or str(game["game_id"]) not in _jumbotron_seen_games:
             continue
         # Stamped on first sighting rather than read from the feed —
         # neither league's compact game dict carries an "ended at", and
         # what this actually needs to measure is "how long has this been
         # on screen since it ended," which is a wall-clock question.
-        stamped = final_at.setdefault(game["game_id"], time.time())
+        stamped = _mark_jumbotron_final(game["game_id"])
         if time.time() - stamped <= TAKEOVER_POSTGAME_MINUTES * 60:
             postgame.append((league, status, game))
     if postgame:
@@ -754,6 +783,53 @@ def takeover_state(now: datetime) -> dict | None:
         return {"phase": "postgame", "league": league, "status": status, "game": game, "minutes_until": None}
 
     return None
+
+
+def _mark_jumbotron_seen(game_id) -> None:
+    """Records that this game was actually watched live/pregame this
+    process — a no-op past the first call for a given game_id, so this
+    doesn't write to persisted_state on every 5s rerun, only the one
+    rerun that actually changes anything. Keyed by str(game_id): JSON
+    (both the local file and Upstash) only has string keys, so an int
+    game_id round-trips back from persisted_state.load() as a string —
+    confirmed live this silently broke the lookup after a simulated
+    restart before switching every key here to str() consistently."""
+    key = str(game_id)
+    if key not in _jumbotron_seen_games:
+        _jumbotron_seen_games[key] = True
+        persisted_state.save("jumbotron_seen_games", _jumbotron_seen_games)
+
+
+def _mark_jumbotron_final(game_id) -> float:
+    """The real wall-clock moment this game was first observed as final
+    — stamped once and persisted immediately, same "only write on an
+    actual change" reasoning as _mark_jumbotron_seen above (including
+    the str(game_id) keying — see its own comment)."""
+    key = str(game_id)
+    if key not in _jumbotron_final_at:
+        _jumbotron_final_at[key] = time.time()
+        persisted_state.save("jumbotron_final_at", _jumbotron_final_at)
+    return _jumbotron_final_at[key]
+
+
+# How long a decided game_id sticks around in persisted state after its
+# postgame window closes — comfortably longer than TAKEOVER_POSTGAME_
+# MINUTES so nothing currently relevant is ever at risk, just cleaning
+# up entries with no further reason to exist so this doesn't grow
+# unbounded across a whole season.
+_JUMBOTRON_STATE_PRUNE_SECONDS = 4 * 60 * 60
+
+
+def _prune_jumbotron_postgame_state() -> None:
+    cutoff = time.time() - _JUMBOTRON_STATE_PRUNE_SECONDS
+    stale = [gid for gid, stamped in _jumbotron_final_at.items() if stamped <= cutoff]
+    if not stale:
+        return
+    for gid in stale:
+        del _jumbotron_final_at[gid]
+        _jumbotron_seen_games.pop(gid, None)
+    persisted_state.save("jumbotron_final_at", _jumbotron_final_at)
+    persisted_state.save("jumbotron_seen_games", _jumbotron_seen_games)
 
 
 def takeover_preview_state() -> dict | None:
