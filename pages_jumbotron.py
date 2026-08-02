@@ -740,40 +740,61 @@ def _current_matchup_html(game_id: int) -> str:
 
 def _batting_order_row_html(entry: dict) -> str:
     ops = html.escape(entry["ops"]) if entry.get("ops") else "—"
+    number = html.escape(str(entry["number"])) if entry.get("number") else ""
+    position = html.escape(entry.get("position") or "")
     return (
         f'<div class="jumbo-lineup-row">'
-        f'<span class="jumbo-lineup-num">{entry["order"]}</span>'
-        f'<span class="jumbo-lineup-name">{html.escape(entry["short_name"])}</span>'
+        f'<span class="jumbo-lineup-num">{number}</span>'
+        f'<span class="jumbo-lineup-name">{html.escape(entry["short_name"].upper())}</span>'
+        f'<span class="jumbo-lineup-pos">{position}</span>'
         f'<span class="jumbo-lineup-ops">{ops}</span>'
         f"</div>"
     )
 
 
-def _batting_order_rail_html(batting_order: dict, away: dict, home: dict) -> str:
-    """Both teams' full 9-man batting order, one clean stat per hitter —
-    session request, after attending a real Jays game: "they had the
-    batting order, and the only stat they showed was OPS. This gave me
-    a very easy way of seeing who is the best hitter for each team...
-    we gotta strike out these two guys with 800 OPS, and then we've got
-    the bottom of the order." Name + OPS only, nothing else — the same
-    deliberate minimalism the real ballpark board used is exactly what
-    made it easy to scan in the first place; see sports_client.
-    fetch_mlb_batting_order's own docstring for where the data comes
-    from.
+_BATTING_ORDER_HEADER = (
+    '<div class="jumbo-lineup-header">'
+    '<span class="jumbo-lineup-num">#</span>'
+    '<span class="jumbo-lineup-name">PLAYER</span>'
+    '<span class="jumbo-lineup-pos">POS</span>'
+    '<span class="jumbo-lineup-ops">OPS</span>'
+    "</div>"
+)
 
-    Session follow-up redirected this from the Featured board into the
-    My Teams rail instead — "put the batting order in the my teams
-    section... go over the UFC, the saints, the blue jays, and the
-    canadiens... only show it when the blue jays have top priority" —
-    so this stacks one team above the other (away, then home) rather
-    than side by side; the rail column is nowhere near wide enough for
-    two. See render()'s own comment for the priority/live gating."""
-    away_rows = "".join(_batting_order_row_html(e) for e in batting_order["away"])
-    home_rows = "".join(_batting_order_row_html(e) for e in batting_order["home"])
-    return (
-        f'<div class="jumbo-lineup-team">{html.escape(away["name"])}</div>{away_rows}'
-        f'<div class="jumbo-lineup-team jumbo-lineup-team-second">{html.escape(home["name"])}</div>{home_rows}'
-    )
+
+def _batting_order_rail_html(entries: list[dict]) -> str:
+    """The batting order for whichever team is actually at bat right
+    now — one clean stat per hitter — session request, after attending
+    a real Jays game: "they had the batting order, and the only stat
+    they showed was OPS. This gave me a very easy way of seeing who is
+    the best hitter for each team." Session follow-up, with a real
+    photo of Rogers Centre's own board as the reference: "make it just
+    the team that's up to bat... number, player, position, and OPS...
+    make it look as close to that as possible." Row order alone conveys
+    batting position (1st through 9th) exactly like the real board —
+    the number shown per row is the player's jersey number, not a
+    lineup slot (see sports_client.fetch_mlb_batting_order's own
+    docstring). See render()'s own comment for how the at-bat side and
+    the rail-takeover gating (live + top MLB priority) are decided."""
+    rows = "".join(_batting_order_row_html(e) for e in entries)
+    return f"{_BATTING_ORDER_HEADER}{rows}"
+
+
+def _mlb_batting_side(game_id: int) -> str | None:
+    """"away"/"home" for whichever side is actually at bat right now,
+    from the same live-detail feed _mlb_situation_html already polls
+    (5s TTL, no extra request this costs). "Top"/"End" innings states
+    mean the away team is up (an "End" state is the bottom half just
+    finished, so away leads off the next inning); "Bottom"/"Middle"
+    mean home is (a "Middle" state is the top half just finished, home
+    is next). None if the live feed has nothing yet (very early
+    pregame, or a genuine fetch failure) — same "just omit it" rule
+    every other live-data-dependent panel in this app follows."""
+    detail = sports_client.fetch_mlb_live_detail(game_id)
+    state = detail.get("inning_state") if detail else None
+    if not state:
+        return None
+    return "home" if state in ("Bottom", "Middle") else "away"
 
 
 def _last_play_html(game_id: int, away: dict, home: dict) -> str:
@@ -1937,14 +1958,25 @@ def render(now: datetime, state: dict, weather: dict | None, ufc_state: dict | N
     # within a phase), so this only needs to check which league
     # actually won: MLB, and specifically "live" — pregame/postgame
     # don't replace the rail, only an actual live game does.
-    batting_order = None
+    #
+    # Session follow-up, with a real photo of the actual Rogers Centre
+    # board as the reference: "make it just the team that's up to bat."
+    # _mlb_batting_side reads the same live-detail feed the situation
+    # strip already polls to pick which of the two fetched lineups
+    # (fetch_mlb_batting_order always returns both) is actually shown.
+    batting_entries = None
     if state.get("phase") == "live" and state.get("game") and state["league"]["sport"] == "mlb":
-        batting_order = sports_client.fetch_mlb_batting_order(state["game"]["game_id"])
+        game_id = state["game"]["game_id"]
+        full_order = sports_client.fetch_mlb_batting_order(game_id)
+        batting_side = _mlb_batting_side(game_id) if full_order else None
+        if full_order and batting_side:
+            batting_entries = full_order[batting_side]
 
-    if batting_order:
+    if batting_entries:
         away, home = _sides(state["status"], state["game"], state["league"]["label"])
-        rail_label = "Batting Order &middot; OPS"
-        rail = _batting_order_rail_html(batting_order, away, home)
+        batting_team = home if batting_side == "home" else away
+        rail_label = f'{html.escape(batting_team["name"].upper())} &middot; AT BAT'
+        rail = _batting_order_rail_html(batting_entries)
     else:
         rail_label = "My Teams"
         rail = "".join(_rail_hero_html(entry, now) for entry in _RAIL) + _ufc_rail_hero_html(now)

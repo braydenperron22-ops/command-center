@@ -1290,26 +1290,30 @@ def _fetch_mlb_boxscore_raw(game_id: int) -> dict:
 
 
 def fetch_mlb_batting_order(game_id: int) -> dict | None:
-    """{"away": [{"order": 1-9, "name", "short_name", "ops"}, ...],
-    "home": [...]}, each side sorted 1-9 — session request, after
-    attending a real Jays game: "they had the batting order... the only
-    stat they showed was OPS. This gave me an easy way of seeing who is
-    the best hitter for each team."
+    """{"away": [{"order": 1-9, "number", "name", "short_name",
+    "position", "ops"}, ...], "home": [...]}, each side sorted 1-9 —
+    session request, after attending a real Jays game: "they had the
+    batting order... the only stat they showed was OPS. This gave me an
+    easy way of seeing who is the best hitter for each team." Session
+    follow-up, with a real photo of Rogers Centre's own board as the
+    reference: "number, player, position, and OPS" — "short_name" is
+    now plain last name (no suffix beyond what the real surname itself
+    carries, e.g. "Guerrero Jr." stays intact — only the disambiguation
+    comma MLB adds for a genuine same-surname teammate, "Walker, J", is
+    stripped down to "Walker"), and "number"/"position" are new fields
+    for that same column layout.
 
     Same boxscore fetch _mlb_game_pitching_totals below already uses
     (no new request) — the boxscore's own team["battingOrder"] is an
     ordered list of player ids (MLB's real lineup-position field,
     confirmed live it also sits on each player's own entry as "100"/
     "200".../"900", divided by 100 here for a plain 1-9 rank), and
-    every hitter's seasonStats.batting.ops is already sitting right
-    there in the same payload as a pre-formatted string (".690" — same
-    field fetch_mlb_live_matchup's own per-player /people call reads
-    "ops" from, just bulk-available here for all 18 hitters in one
-    response instead of a separate request per player). "short_name" is
-    the boxscore's own "boxscoreName" (already the compact, sometimes
-    disambiguated form broadcasts use — e.g. "Walker, J" vs "Torres, B"
-    when two teammates share a surname), falling back to the full name
-    on the rare id MLB didn't supply one for.
+    every hitter's seasonStats.batting.ops, jerseyNumber, and
+    position.abbreviation are all already sitting right there in the
+    same payload (".690"/"18"/"DH" — the ops field is the same one
+    fetch_mlb_live_matchup's own per-player /people call reads, just
+    bulk-available here for all 18 hitters in one response instead of a
+    separate request per player).
 
     Not run through the live-delay mechanism (delayed()) the pitch-by-
     pitch boxscore reads elsewhere in this module use — a starting
@@ -1342,11 +1346,14 @@ def fetch_mlb_batting_order(game_id: int) -> dict | None:
             except (TypeError, ValueError):
                 continue
             person = p.get("person") or {}
+            box_name = person.get("boxscoreName") or person.get("fullName") or ""
             rows.append(
                 {
                     "order": rank,
+                    "number": p.get("jerseyNumber"),
                     "name": person.get("fullName"),
-                    "short_name": person.get("boxscoreName") or person.get("fullName"),
+                    "short_name": box_name.split(",")[0].strip() or person.get("fullName"),
+                    "position": (p.get("position") or {}).get("abbreviation"),
                     "ops": ((p.get("seasonStats") or {}).get("batting") or {}).get("ops"),
                 }
             )

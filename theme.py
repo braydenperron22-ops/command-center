@@ -3554,47 +3554,72 @@ html, body, [class*="css"] {
 /* Batting order (pages_jumbotron._batting_order_rail_html) — session
    request, after attending a real Jays game: "the only stat they
    showed was OPS... gave me a very easy way of seeing who is the best
-   hitter." Plain rows, name + OPS only (no photos, no extra stat
-   categories) — the deliberate minimalism the real ballpark board used
-   is exactly what made it scannable. Session follow-up redirected this
-   from the wide Featured board into the narrow My Teams rail instead
-   ("go over the ufc, the saints, the blue jays, and the canadiens") —
-   away and home stack one above the other here rather than sitting
-   side by side, since the rail has nowhere near the width for two
-   columns; .jumbo-lineup-team-second's own top margin is the only
-   thing separating the two stacked 9-row blocks. */
-.jumbo-lineup-team {
-    font-family: var(--label);
+   hitter." Plain rows, no photos or extra stat categories beyond what
+   the real ballpark board itself shows — deliberate minimalism, exactly
+   what made it scannable in person. Session follow-up, with a real
+   photo of Rogers Centre's own board as the reference: "make it just
+   the team that's up to bat... number, player, position, and OPS...
+   as close to that as possible... still legible from across the room."
+   Only 9 rows now (one team, not two stacked), so each one gets real
+   room — sized up well past the original two-team-stacked pass, closer
+   to how big the reference board's own rows read. */
+.jumbo-lineup-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 6px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--edge);
+}
+/* Higher specificity than the plain .jumbo-lineup-num/-name/-pos/-ops
+   rules below (2 classes vs. 1), so the header's own small caption
+   style wins there without needing a separate markup shape — same
+   compound-selector trick already used elsewhere in this app
+   (.prediction-row-outcome.prediction-direction-cut) for exactly this
+   "shared column widths, different type scale" situation. */
+.jumbo-lineup-header .jumbo-lineup-num,
+.jumbo-lineup-header .jumbo-lineup-name,
+.jumbo-lineup-header .jumbo-lineup-pos,
+.jumbo-lineup-header .jumbo-lineup-ops {
     font-size: 11px;
     font-weight: 700;
-    letter-spacing: 0.04em;
-    color: var(--mut);
-    padding-bottom: 4px;
-    margin-bottom: 4px;
-    border-bottom: 1px solid var(--edge);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    letter-spacing: 0.08em;
+    color: var(--mut-2);
 }
-.jumbo-lineup-team-second { margin-top: 10px; }
 .jumbo-lineup-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 2.5px 0;
+    gap: 10px;
+    padding: 7px 0;
     font-family: var(--label);
-    font-size: 13px;
+    font-size: 22px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
 }
-.jumbo-lineup-num { flex: 0 0 16px; color: var(--mut-2); font-weight: 700; text-align: right; }
+.jumbo-lineup-row:last-child { border-bottom: none; }
+.jumbo-lineup-num {
+    flex: 0 0 30px;
+    color: var(--mut-2);
+    font-weight: 700;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
 .jumbo-lineup-name {
     flex: 1;
     min-width: 0;
     color: var(--bone);
+    font-weight: 700;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.jumbo-lineup-ops { flex: 0 0 auto; color: var(--led); font-weight: 700; font-variant-numeric: tabular-nums; }
+.jumbo-lineup-pos { flex: 0 0 36px; color: var(--mut); font-size: 15px; text-align: center; }
+.jumbo-lineup-ops {
+    flex: 0 0 64px;
+    color: var(--led);
+    font-weight: 800;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
 
 .jumbo-sl {
     font-family: var(--label);
