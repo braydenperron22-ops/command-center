@@ -14,6 +14,7 @@ import streamlit as st
 import ec_alerts
 import ec_aqhi
 import ec_storm_timing
+import groq_client
 import persisted_state
 from config import EXTREME_COLD_THRESHOLD_C, EXTREME_HEAT_THRESHOLD_C, TIMEZONE
 
@@ -284,18 +285,66 @@ def get_new_alerts(now: datetime) -> list[dict]:
             "label": "Environment Canada",
             "headline": headline,
             # Session request: "can you make it read the entire alert from
-            # EC when its first issued" — EC's own ATOM <summary> (or the
-            # AQHI-synthesized equivalent, ec_aqhi.aqhi_alert's own
-            # "summary" key, same shape) carries the real bulletin body
-            # text, not just the hazard title. Only meaningful for this
-            # one-shot "just came in" toast — get_storm_proximity_alerts's
-            # own repeating milestone toasts below intentionally don't
-            # carry this (nothing new to read out again every few
-            # minutes), so their dicts have no "summary" key at all and
-            # render_alert_bar's own .get("summary", "") default covers it.
-            "summary": alert.get("summary", ""),
+            # EC when its first issued" — see _spoken_summary's own
+            # docstring for where this text actually comes from and why.
+            # Only meaningful for this one-shot "just came in" toast —
+            # get_storm_proximity_alerts's own repeating milestone toasts
+            # below intentionally don't carry this (nothing new to read
+            # out again every few minutes), so their dicts have no
+            # "summary" key at all and render_alert_bar's own
+            # .get("summary", "") default covers it.
+            "summary": _spoken_summary(alert),
         }
     ]
+
+
+def _spoken_summary(alert: dict) -> str:
+    """The text kioskPlayWeatherAlert (app.py) speaks in full for a
+    genuine new alert. Session discovery, live-testing against a real
+    active alert: EC's own ATOM <summary> is NOT the real bulletin for a
+    genuine alert — just an "Issued: {time}" stub — so this reaches for
+    ec_alerts.fetch_full_description() instead, which pulls the real
+    hazard/timing/impacts/safety text off EC's own human-readable report
+    page. Falls back to the ATOM summary (or AQHI's own synthesized one)
+    if that comes back empty — a real EC/AQHI hiccup, not the normal
+    path, same fallback shape every other client in this app already
+    uses for a fetch that can genuinely fail.
+
+    Session follow-up: "can we feed weather alerts to chatgpt and tell
+    it to turn it into a flowy paragraph that our TTS can read" — the
+    raw bulletin is EC's own plain-text advisory format (section labels,
+    bulleted-feeling line breaks), fine on a screen but choppy read
+    aloud verbatim even after app.py's own kioskCleanSpokenSummary strips
+    the labels themselves. Rewritten through groq_client.generate (low
+    temperature — faithfulness matters far more than creative variety
+    here) into one flowing, natural-sounding paragraph, explicitly
+    instructed not to add or invent anything beyond what EC actually
+    wrote. groq_client.generate already returns None (never raises)
+    during its own overnight pause, a tracked game window, or a genuine
+    rate limit — this falls back to the raw (unrewritten but still
+    complete and accurate) text in that case rather than losing the
+    alert's content entirely; only a Groq/Gemini outage AND an empty
+    fetch at the same time ever loses real content, not either alone.
+
+    Only reached for a genuine EC alert (has its own "id" —
+    ec_aqhi.aqhi_alert's own synthesized alert has none): that one's
+    "summary" is already a short, plain one-liner with nothing
+    structural to smooth over, so it's returned as-is."""
+    if "id" not in alert:
+        return alert.get("summary", "")
+    raw = ec_alerts.fetch_full_description() or alert.get("summary", "")
+    if not raw:
+        return ""
+    rewritten = groq_client.generate(
+        "Rewrite this Environment Canada weather alert bulletin as a single smooth, natural-sounding "
+        "paragraph meant to be read aloud by a text-to-speech voice. Keep every real fact — hazard, "
+        "timing, impacts, safety guidance — but remove section labels like 'What:'/'When:'/'Additional "
+        "information:' and turn it into flowing spoken sentences. Don't add anything that isn't in the "
+        "original text, and don't editorialize.\n\n" + raw,
+        temperature=0.3,
+        max_output_tokens=400,
+    )
+    return rewritten or raw
 
 
 def render_alert_bar(alert: dict) -> None:
