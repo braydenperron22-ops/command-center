@@ -783,8 +783,31 @@ components.html(
         "    osc.stop(ctx.currentTime + 0.05);",
         "  } catch (e) {}",
         "}",
+        // Session report: "the client side animations... don't show up"
+        // for a real toast, despite its chime firing (confirmed heard
+        // live) — chime doesn't depend on layout, this does. Measuring
+        // el.getBoundingClientRect() synchronously inside the
+        // MutationObserver callback risks the exact race
+        // news.render_alert_bar's own docstring already names ("it
+        // might be running in a refresh window... causing it to
+        // instantly die"): a just-inserted real toast can still be
+        // mid-layout the instant the mutation fires, so the rect this
+        // reads can be zero-sized — the overlay still gets created, just
+        // sized to nothing, so nothing visible ever animates even though
+        // every other part of the mechanism ran correctly. Deferred with
+        // setTimeout (not requestAnimationFrame — confirmed live that rAF
+        // callbacks can be suspended indefinitely by the browser while a
+        // tab is backgrounded/hidden, and a kiosk's display sleeping or
+        // losing focus at exactly the wrong moment shouldn't silently
+        // swallow a severe weather alert's own animation) so the rect is
+        // read on the next tick instead, after layout has had a chance to
+        // settle either way, and skipped outright if it's still
+        // zero-sized (the toast was removed again before ever being
+        // laid out — nothing real to reveal, not worth animating garbage).
         "function kioskRevealOverlay(el, urgent) {",
+        "  setTimeout(function () {",
         "  var rect = el.getBoundingClientRect();",
+        "  if (!rect.width || !rect.height) return;",
         "  var overlay = document.getElementById('kiosk-toast-overlay');",
         "  if (!overlay) {",
         "    overlay = document.createElement('div');",
@@ -812,6 +835,7 @@ components.html(
         "  overlay.style.transition = 'clip-path 0.55s cubic-bezier(.4,0,.2,1), opacity 0.25s ease-in 0.55s';",
         "  overlay.style.clipPath = 'inset(0 0 0 100%)';",
         "  overlay.style.opacity = '0';",
+        "  }, 0);",
         "}",
         "function kioskCheckToastChime() {",
         "  var weatherEl = document.querySelector(KIOSK_WEATHER_VOICE_SEL);",
