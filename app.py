@@ -562,7 +562,7 @@ components.html(
       s.id = 'kiosk-toast-chime';
       s.textContent = [
         "var KIOSK_CHIME_URGENT_SEL = '.news-alert-bar';",
-        "var KIOSK_CHIME_GENTLE_SEL = '.weather-alert-bar-warning-moderate, .jumbo-leave-ticker';",
+        "var KIOSK_CHIME_GENTLE_SEL = '.jumbo-leave-ticker';",
         // Session follow-up to the Aaron work: "can we improve the sound
         // design with the same intention we did with aaron" — scoped (by
         // the user's own answer) to just the one-shot "leave in" toast,
@@ -577,17 +577,27 @@ components.html(
         // render_bar), so it doesn't have that problem.
         "var KIOSK_LEAVE_VOICE_SEL = '.commute-alert-bar';",
         // Session request, after clicking through a set of options built
-        // for this exact purpose: "low bell + AARON for sure." Genuinely
-        // severe weather (extreme/warning — a real Thunderstorm/Tornado/
-        // etc. Warning, not an advisory-level watch/statement) gets its
-        // own treatment instead of the generic 3-note urgent chime: the
-        // single low "gloomy ping" plus a real spoken announcement
-        // naming the actual hazard, not a canned recording — the whole
-        // point of doing this with SpeechSynthesisUtterance instead of a
-        // fixed audio file is that "or whatever the situation is" just
-        // works, straight off the real toast's own headline text, with
-        // no new recording needed for the next hazard type EC ever adds.
-        "var KIOSK_WEATHER_VOICE_SEL = '.weather-alert-bar-extreme, .weather-alert-bar-warning';",
+        // for this exact purpose: "low bell + AARON for sure." Weather
+        // alerts get their own treatment instead of the generic 3-note
+        // urgent chime: the single low "gloomy ping" plus a real spoken
+        // announcement naming the actual hazard, not a canned recording —
+        // the whole point of doing this with SpeechSynthesisUtterance
+        // instead of a fixed audio file is that "or whatever the
+        // situation is" just works, straight off the real toast's own
+        // headline text, with no new recording needed for the next
+        // hazard type EC ever adds.
+        //
+        // Follow-up session request: "make a voiceline for each type of
+        // special weather statement that exists" — originally only
+        // extreme/warning were in this tier (watch/statement/moderate-
+        // warning toasts got no audio at all, a real coverage gap).
+        // Every weather severity theme.py defines a .weather-alert-bar-*
+        // color for is included now; kioskPlayWeatherAlert itself reads
+        // which one off the element's own class list to pick a tier-
+        // appropriate spoken lead-in (a Special Weather Statement
+        // shouldn't open with the same "This is an alert" urgency as a
+        // Tornado Warning even though both read the full EC bulletin).
+        "var KIOSK_WEATHER_VOICE_SEL = '.weather-alert-bar-extreme, .weather-alert-bar-warning, .weather-alert-bar-warning-moderate, .weather-alert-bar-watch, .weather-alert-bar-statement';",
         "var kioskLastChimeKey = null;",
         // Session request: "make it so the audio alerts are dynamic based
         // on time of day starting quiet and dynamically getting louder
@@ -745,7 +755,33 @@ components.html(
         "    } else if (suffix.indexOf('clearing now') === 0) {",
         "      sentence = 'The ' + lower + ' is now clearing.';",
         "    } else {",
-        "      sentence = 'This is an alert. A ' + lower + ' has just been issued for your area.';",
+        // Session requests: "make it read the entire alert from EC when
+        // its first issued" and "make a voiceline for each type of
+        // special weather statement that exists." data-summary carries
+        // EC's own full bulletin text (weather_alerts_bar.render_alert_
+        // bar) — only ever set on a genuine brand-new-alert toast, which
+        // is exactly this branch (a milestone toast never reaches here:
+        // it always has an arrive/clear suffix instead). Wrapper phrase
+        // scales with severity read off the element's own class list —
+        // a Special Weather Statement shouldn't open with the same
+        // urgency as a Tornado Warning even though both read the full
+        // text; "warning-moderate" is checked before the bare "warning"
+        // substring it would otherwise also match.
+        "      var cls = el.className;",
+        "      var wrapper;",
+        "      if (cls.indexOf('extreme') !== -1) {",
+        "        wrapper = 'This is an alert.';",
+        "      } else if (cls.indexOf('warning-moderate') !== -1) {",
+        "        wrapper = 'Weather warning in effect.';",
+        "      } else if (cls.indexOf('warning') !== -1) {",
+        "        wrapper = 'This is an alert.';",
+        "      } else if (cls.indexOf('watch') !== -1) {",
+        "        wrapper = 'Weather watch issued.';",
+        "      } else {",
+        "        wrapper = 'Special weather statement.';",
+        "      }",
+        "      var summary = el.getAttribute('data-summary') || '';",
+        "      sentence = summary ? (wrapper + ' ' + summary) : (wrapper + ' A ' + lower + ' has just been issued for your area.');",
         "    }",
         "    setTimeout(function () {",
         "      window.speechSynthesis.cancel();",

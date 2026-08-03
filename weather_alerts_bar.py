@@ -283,6 +283,17 @@ def get_new_alerts(now: datetime) -> list[dict]:
             "severity": severity,
             "label": "Environment Canada",
             "headline": headline,
+            # Session request: "can you make it read the entire alert from
+            # EC when its first issued" — EC's own ATOM <summary> (or the
+            # AQHI-synthesized equivalent, ec_aqhi.aqhi_alert's own
+            # "summary" key, same shape) carries the real bulletin body
+            # text, not just the hazard title. Only meaningful for this
+            # one-shot "just came in" toast — get_storm_proximity_alerts's
+            # own repeating milestone toasts below intentionally don't
+            # carry this (nothing new to read out again every few
+            # minutes), so their dicts have no "summary" key at all and
+            # render_alert_bar's own .get("summary", "") default covers it.
+            "summary": alert.get("summary", ""),
         }
     ]
 
@@ -298,8 +309,14 @@ def render_alert_bar(alert: dict) -> None:
     bar_class = f"weather-alert-bar weather-alert-bar-{alert.get('severity', 'statement')}"
     label = html.escape(alert.get("label", "Weather Alert"))
     headline = html.escape(alert.get("headline", ""))
+    # data-summary carries EC's full bulletin text for the kiosk's own
+    # client-side voice line (app.py's kioskPlayWeatherAlert) to read in
+    # full on a brand-new alert — empty for a milestone toast, which has
+    # no "summary" key at all (see get_new_alerts/get_storm_proximity_
+    # alerts's own docstrings for why that split is deliberate).
+    summary = html.escape(alert.get("summary", ""))
     st.markdown(
-        f"""<div class="{bar_class}">
+        f"""<div class="{bar_class}" data-summary="{summary}">
             <span class="news-breaking-label">{label}</span>
             <span class="news-alert-headline">{headline}</span>
         </div>""",
