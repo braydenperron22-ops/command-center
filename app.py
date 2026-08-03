@@ -627,12 +627,22 @@ components.html(
         // sentence built from the toast's own actual headline text, so
         // "or whatever the situation is" is genuinely handled: whatever
         // hazard EC's own alert names, this reads it out loud correctly
-        // without needing a new voice line recorded for it. The " — "
-        // arriving/clearing clock suffix get_new_alerts appends to the
-        // VISUAL headline is dropped for the spoken version specifically
-        // — "a new tornado warning is now active in your area — arriving
-        // around 3:45 PM" reads fine on screen but awkwardly out loud;
-        // the plain hazard name alone matches the phrasing asked for.
+        // without needing a new voice line recorded for it.
+        //
+        // Follow-up session request: "when a severe thunderstorm...is
+        // approaching...it'll give us the chime, and then Aaron will say
+        // severe thunderstorm approaching in ___." weather_alerts_bar's
+        // own get_storm_proximity_alerts fires repeating milestone toasts
+        // ("{title} — expected to arrive in about {N} min" /
+        // "...expected to clear in about {N} min") on the same
+        // .weather-alert-bar-extreme/-warning DOM slot the brand-new-
+        // alert toast uses (get_new_alerts's "{title} — arriving around
+        // {clock}" / "...clearing by {clock}"), so both are told apart
+        // here by parsing the " — " suffix rather than always dropping
+        // it: a milestone toast gets the user's own requested "{title}
+        // approaching/clearing in {N} minutes" phrasing (the clock-based
+        // brand-new-alert suffix still reads awkwardly aloud and stays
+        // dropped, falling to the plain "a new X is now active" line).
         "function kioskPlayWeatherAlert(el) {",
         "  try {",
         "    var Ctx = window.AudioContext || window.webkitAudioContext;",
@@ -652,8 +662,26 @@ components.html(
         "  try {",
         "    if (!window.speechSynthesis) return;",
         "    var headlineEl = el.querySelector('.news-alert-headline');",
-        "    var headline = (headlineEl ? headlineEl.textContent : el.textContent).split(' — ')[0];",
-        "    var sentence = 'A new ' + headline.toLowerCase() + ' is now active in your area.';",
+        "    var fullText = headlineEl ? headlineEl.textContent : el.textContent;",
+        "    var parts = fullText.split(' — ');",
+        "    var title = parts[0];",
+        "    var suffix = parts[1] || '';",
+        "    var arrivePrefix = 'expected to arrive in about ';",
+        "    var clearPrefix = 'expected to clear in about ';",
+        "    var sentence;",
+        "    if (suffix.indexOf(arrivePrefix) === 0) {",
+        "      var mins = suffix.slice(arrivePrefix.length).replace(' min', '');",
+        "      sentence = title + ' approaching in ' + mins + ' minutes.';",
+        "    } else if (suffix.indexOf(clearPrefix) === 0) {",
+        "      var mins2 = suffix.slice(clearPrefix.length).replace(' min', '');",
+        "      sentence = title + ' clearing in ' + mins2 + ' minutes.';",
+        "    } else if (suffix.indexOf('arriving now') === 0) {",
+        "      sentence = title + ' arriving now.';",
+        "    } else if (suffix.indexOf('clearing now') === 0) {",
+        "      sentence = title + ' clearing now.';",
+        "    } else {",
+        "      sentence = 'A new ' + title.toLowerCase() + ' is now active in your area.';",
+        "    }",
         "    setTimeout(function () {",
         "      window.speechSynthesis.cancel();",
         "      var utter = new SpeechSynthesisUtterance(sentence);",
