@@ -755,33 +755,40 @@ components.html(
         "    } else if (suffix.indexOf('clearing now') === 0) {",
         "      sentence = 'The ' + lower + ' is now clearing.';",
         "    } else {",
-        // Session requests: "make it read the entire alert from EC when
-        // its first issued" and "make a voiceline for each type of
-        // special weather statement that exists." data-summary carries
-        // EC's own full bulletin text (weather_alerts_bar.render_alert_
-        // bar) — only ever set on a genuine brand-new-alert toast, which
-        // is exactly this branch (a milestone toast never reaches here:
-        // it always has an arrive/clear suffix instead). Wrapper phrase
-        // scales with severity read off the element's own class list —
-        // a Special Weather Statement shouldn't open with the same
-        // urgency as a Tornado Warning even though both read the full
-        // text; "warning-moderate" is checked before the bare "warning"
+        // Session follow-up: "i want it to read the description directly
+        // from EC when issued like the full description they release" —
+        // a correction on the previous version, which prepended an
+        // invented lead-in ("This is an alert." etc.) before the real
+        // text. data-summary carries EC's own full bulletin verbatim
+        // (weather_alerts_bar.render_alert_bar) — only ever set on a
+        // genuine brand-new-alert toast, which is exactly this branch (a
+        // milestone toast never reaches here: it always has an
+        // arrive/clear suffix instead). Spoken exactly as EC wrote it,
+        // no added framing — EC's own wording already carries whatever
+        // urgency that hazard type warrants. The severity-based wrapper
+        // only survives as a fallback for the rare case summary comes
+        // back empty (a real EC/AQHI failure, not the normal path);
+        // "warning-moderate" is checked before the bare "warning"
         // substring it would otherwise also match.
-        "      var cls = el.className;",
-        "      var wrapper;",
-        "      if (cls.indexOf('extreme') !== -1) {",
-        "        wrapper = 'This is an alert.';",
-        "      } else if (cls.indexOf('warning-moderate') !== -1) {",
-        "        wrapper = 'Weather warning in effect.';",
-        "      } else if (cls.indexOf('warning') !== -1) {",
-        "        wrapper = 'This is an alert.';",
-        "      } else if (cls.indexOf('watch') !== -1) {",
-        "        wrapper = 'Weather watch issued.';",
-        "      } else {",
-        "        wrapper = 'Special weather statement.';",
-        "      }",
         "      var summary = el.getAttribute('data-summary') || '';",
-        "      sentence = summary ? (wrapper + ' ' + summary) : (wrapper + ' A ' + lower + ' has just been issued for your area.');",
+        "      if (summary) {",
+        "        sentence = summary;",
+        "      } else {",
+        "        var cls = el.className;",
+        "        var wrapper;",
+        "        if (cls.indexOf('extreme') !== -1) {",
+        "          wrapper = 'This is an alert.';",
+        "        } else if (cls.indexOf('warning-moderate') !== -1) {",
+        "          wrapper = 'Weather warning in effect.';",
+        "        } else if (cls.indexOf('warning') !== -1) {",
+        "          wrapper = 'This is an alert.';",
+        "        } else if (cls.indexOf('watch') !== -1) {",
+        "          wrapper = 'Weather watch issued.';",
+        "        } else {",
+        "          wrapper = 'Special weather statement.';",
+        "        }",
+        "        sentence = wrapper + ' A ' + lower + ' has just been issued for your area.';",
+        "      }",
         "    }",
         "    setTimeout(function () {",
         "      window.speechSynthesis.cancel();",
