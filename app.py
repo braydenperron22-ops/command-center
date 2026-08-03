@@ -561,8 +561,20 @@ components.html(
       var s = doc.createElement('script');
       s.id = 'kiosk-toast-chime';
       s.textContent = [
-        "var KIOSK_CHIME_URGENT_SEL = '.news-alert-bar, .weather-alert-bar-extreme, .weather-alert-bar-warning';",
+        "var KIOSK_CHIME_URGENT_SEL = '.news-alert-bar';",
         "var KIOSK_CHIME_GENTLE_SEL = '.weather-alert-bar-warning-moderate, .commute-alert-bar, .jumbo-leave-ticker';",
+        // Session request, after clicking through a set of options built
+        // for this exact purpose: "low bell + AARON for sure." Genuinely
+        // severe weather (extreme/warning — a real Thunderstorm/Tornado/
+        // etc. Warning, not an advisory-level watch/statement) gets its
+        // own treatment instead of the generic 3-note urgent chime: the
+        // single low "gloomy ping" plus a real spoken announcement
+        // naming the actual hazard, not a canned recording — the whole
+        // point of doing this with SpeechSynthesisUtterance instead of a
+        // fixed audio file is that "or whatever the situation is" just
+        // works, straight off the real toast's own headline text, with
+        // no new recording needed for the next hazard type EC ever adds.
+        "var KIOSK_WEATHER_VOICE_SEL = '.weather-alert-bar-extreme, .weather-alert-bar-warning';",
         "var kioskLastChimeKey = null;",
         "function kioskPlayChime(urgent) {",
         "  try {",
@@ -586,6 +598,71 @@ components.html(
         "      osc.start(t0);",
         "      osc.stop(t0 + 0.5);",
         "    });",
+        "  } catch (e) {}",
+        "}",
+        // "Aaron" is a real macOS voice name and won't exist on every
+        // kiosk (Windows/Linux browsers report an entirely different
+        // voice list) — matched by name, case-insensitively, with a
+        // graceful fallback rather than a hard requirement: the same
+        // male-name heuristic used to sort the options page's own voice
+        // list, then simply whichever voice the browser reports first.
+        // getVoices() can briefly return [] right after a page load
+        // before the browser's voice list finishes loading async, but a
+        // kiosk tab stays open for hours between real alerts, so by the
+        // time one actually fires this has always resolved in practice.
+        "function kioskFindVoice() {",
+        "  if (!window.speechSynthesis) return null;",
+        "  var voices = window.speechSynthesis.getVoices();",
+        "  if (!voices.length) return null;",
+        "  var byName = voices.find(function (v) { return v.name.toLowerCase().indexOf('aaron') !== -1; });",
+        "  if (byName) return byName;",
+        "  var maleHints = ['male', 'david', 'daniel', 'alex', 'mark', 'guy', 'fred', 'james', 'tom', 'george'];",
+        "  var byHint = voices.find(function (v) { return maleHints.some(function (h) { return v.name.toLowerCase().indexOf(h) !== -1; }); });",
+        "  return byHint || voices[0];",
+        "}",
+        // Session request, after clicking through a set of built-for-
+        // this-purpose options: "low bell + AARON for sure." A single
+        // low sine-tone ping (the exact "Low Bell" candidate from that
+        // comparison), then — not a fixed recording — a real spoken
+        // sentence built from the toast's own actual headline text, so
+        // "or whatever the situation is" is genuinely handled: whatever
+        // hazard EC's own alert names, this reads it out loud correctly
+        // without needing a new voice line recorded for it. The " — "
+        // arriving/clearing clock suffix get_new_alerts appends to the
+        // VISUAL headline is dropped for the spoken version specifically
+        // — "a new tornado warning is now active in your area — arriving
+        // around 3:45 PM" reads fine on screen but awkwardly out loud;
+        // the plain hazard name alone matches the phrasing asked for.
+        "function kioskPlayWeatherAlert(el) {",
+        "  try {",
+        "    var Ctx = window.AudioContext || window.webkitAudioContext;",
+        "    if (Ctx) {",
+        "      var ctx = window.__kioskChimeCtx || (window.__kioskChimeCtx = new Ctx());",
+        "      if (ctx.state === 'suspended') { ctx.resume(); }",
+        "      var now = ctx.currentTime;",
+        "      var osc = ctx.createOscillator(), gain = ctx.createGain();",
+        "      osc.type = 'sine'; osc.frequency.value = 220;",
+        "      gain.gain.setValueAtTime(0, now);",
+        "      gain.gain.linearRampToValueAtTime(0.4, now + 0.02);",
+        "      gain.gain.exponentialRampToValueAtTime(0.001, now + 1.9);",
+        "      osc.connect(gain); gain.connect(ctx.destination);",
+        "      osc.start(now); osc.stop(now + 1.9);",
+        "    }",
+        "  } catch (e) {}",
+        "  try {",
+        "    if (!window.speechSynthesis) return;",
+        "    var headlineEl = el.querySelector('.news-alert-headline');",
+        "    var headline = (headlineEl ? headlineEl.textContent : el.textContent).split(' — ')[0];",
+        "    var sentence = 'A new ' + headline.toLowerCase() + ' is now active in your area.';",
+        "    setTimeout(function () {",
+        "      window.speechSynthesis.cancel();",
+        "      var utter = new SpeechSynthesisUtterance(sentence);",
+        "      var voice = kioskFindVoice();",
+        "      if (voice) utter.voice = voice;",
+        "      utter.rate = 0.95;",
+        "      utter.pitch = 0.9;",
+        "      window.speechSynthesis.speak(utter);",
+        "    }, 2150);",
         "  } catch (e) {}",
         "}",
         // Session request: "make it so the kiosk plays a muted sound
@@ -655,15 +732,20 @@ components.html(
         "  overlay.style.opacity = '0';",
         "}",
         "function kioskCheckToastChime() {",
-        "  var urgentEl = document.querySelector(KIOSK_CHIME_URGENT_SEL);",
-        "  var gentleEl = urgentEl ? null : document.querySelector(KIOSK_CHIME_GENTLE_SEL);",
-        "  var el = urgentEl || gentleEl;",
+        "  var weatherEl = document.querySelector(KIOSK_WEATHER_VOICE_SEL);",
+        "  var urgentEl = weatherEl ? null : document.querySelector(KIOSK_CHIME_URGENT_SEL);",
+        "  var gentleEl = (weatherEl || urgentEl) ? null : document.querySelector(KIOSK_CHIME_GENTLE_SEL);",
+        "  var el = weatherEl || urgentEl || gentleEl;",
         "  if (!el || el.style.display === 'none') { kioskLastChimeKey = null; return; }",
         "  var key = el.className + '|' + el.textContent;",
         "  if (key === kioskLastChimeKey) return;",
         "  kioskLastChimeKey = key;",
-        "  kioskPlayChime(!!urgentEl);",
-        "  kioskRevealOverlay(el, !!urgentEl);",
+        "  if (weatherEl) {",
+        "    kioskPlayWeatherAlert(weatherEl);",
+        "  } else {",
+        "    kioskPlayChime(!!urgentEl);",
+        "  }",
+        "  kioskRevealOverlay(el, !!(weatherEl || urgentEl));",
         "}",
         "kioskCheckToastChime();",
         "new MutationObserver(kioskCheckToastChime).observe(document.body, {childList: true, subtree: true, characterData: true});",
