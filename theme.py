@@ -1981,7 +1981,22 @@ html, body, [class*="css"] {
     font-size: 1.6rem;
     font-weight: 700;
     color: #F5F5F7;
-    margin: 0.1rem 0 0.4rem;
+    margin: 0.1rem 0 0.2rem;
+}
+/* EC's own real hourly condition wording ("Mainly cloudy," "A mix of
+   sun and cloud") — session follow-up: "make it look better and a
+   little more complete." Same "trust the real sentence over a
+   synthesized label" preference this app already applies elsewhere
+   (jumbotron scoring-play text, pitcher line summaries). Fixed height
+   at this small size comfortably fits EC's longer real phrases across
+   two lines without pushing the wind/precip rows below it out of
+   alignment between columns. */
+.hourly-condition {
+    font-size: 0.78rem;
+    color: #ABB2C4;
+    line-height: 1.25;
+    min-height: 2em;
+    margin-bottom: 0.3rem;
 }
 /* Only rendered at all when EC's own hourly likelihood-of-precipitation
    reading is a real, non-zero chance (see pages_hourly.render's own
@@ -1996,6 +2011,24 @@ html, body, [class*="css"] {
     font-size: 0.78rem;
     color: #ABB2C4;
     margin-top: 0.25rem;
+}
+/* The soonest real hourly reading — this page's own version of "the one
+   that matters right now" other live boards in this app already
+   highlight (the jumbotron's current-batter row, the Fear & Greed
+   gauge's own accent). box-sizing: border-box on just this one tile
+   (not the whole .hourly-tile rule) so its border eats into the tile's
+   own content space instead of adding to its outer width — a plain
+   negative-margin bleed was tried elsewhere this session for a similar
+   highlight and measured live to actually overflow past its real
+   container edge; this avoids that same mistake outright rather than
+   repeating it. */
+.hourly-tile-now {
+    box-sizing: border-box;
+    border: 2px solid #FFB300;
+    background: rgba(255,179,0,0.08);
+}
+.hourly-tile-now .tile-label {
+    color: #FFB300;
 }
 
 /* .conflict-headlines/.conflict-headline (the raw sourced-headline list
