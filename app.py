@@ -506,6 +506,139 @@ components.html(
     height=0,
 )
 
+# Toast chime + client-side reveal overlay — session request: "add
+# chimes for important news or severe weather alerts or leave in
+# notifications... without needing an autoclicker to keep the screen
+# engaged. Also add client side animations for the toast bar because we
+# had to get rid of them because they were causing complications."
+#
+# The original toast-bar animation (news.render_alert_bar's own
+# docstring has the full story) stretched a label into view via a CSS
+# animation whose own timing was recomputed from `elapsed` every 5s
+# Streamlit rerun — real complexity purpose-built around exact
+# assumptions of how Streamlit patches this element, and it broke:
+# "I'm still not getting any Toast alerts... it might be running in a
+# refresh window... causing it to instantly die." Removed entirely
+# rather than fixed at the time. This is a genuinely different design,
+# not a repeat of that one: the toast bar itself renders in its final
+# state immediately, same as it does today, with zero Streamlit-timed
+# animation state of its own to ever get stuck in. Everything below —
+# the chime and the reveal — is a client-side script watching the
+# ALREADY-persisted toast slot (kioskPersistTicker/TOAST_SEL above) via
+# the same MutationObserver pattern, entirely independent of Streamlit's
+# own rerun cadence: it fires once, the moment this script's own DOM
+# read notices genuinely new toast content (not on every 5s rerun that
+# just re-renders the SAME still-active toast), and its animation is a
+# fixed-duration CSS transition set once in JS, never recomputed against
+# `elapsed` the way the old one was.
+#
+# Chime-worthy is a deliberate subset, not every toast this app fires:
+# "important news" -> real breaking news only (.news-alert-bar), not
+# routine .news-alert-bar-market; "severe weather" -> the genuinely
+# severe tiers (extreme/warning), not every advisory-level watch/
+# statement; "leave in notifications" -> the commute alert and the
+# jumbotron's own leave-ticker. Two loudness tiers (a 3-note chime for
+# the most urgent bracket, a softer 2-note one for the rest) rather
+# than one flat sound for everything.
+#
+# Audio autoplay: browsers block JS-triggered sound without a prior user
+# gesture on that page — this script still calls play() the instant a
+# real chime-worthy toast appears, but on a kiosk that's never clicked
+# at all, the browser may keep the AudioContext silently suspended
+# forever with no error surfaced here. That's a real, one-time browser
+# setting to fix (chrome://settings/content/sound -> add this
+# dashboard's own URL to "Allowed to play sound," or launch the kiosk
+# browser itself with --autoplay-policy=no-user-gesture-required) — not
+# something any script running inside the page can grant itself, and
+# not the same thing as an autoclicker: a one-time setting survives
+# every future reboot/reload on its own, nothing has to keep running.
+components.html(
+    """
+    <script>
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-toast-chime')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-toast-chime';
+      s.textContent = [
+        "var KIOSK_CHIME_URGENT_SEL = '.news-alert-bar, .weather-alert-bar-extreme, .weather-alert-bar-warning';",
+        "var KIOSK_CHIME_GENTLE_SEL = '.weather-alert-bar-warning-moderate, .commute-alert-bar, .jumbo-leave-ticker';",
+        "var kioskLastChimeKey = null;",
+        "function kioskPlayChime(urgent) {",
+        "  try {",
+        "    var Ctx = window.AudioContext || window.webkitAudioContext;",
+        "    if (!Ctx) return;",
+        "    var ctx = window.__kioskChimeCtx || (window.__kioskChimeCtx = new Ctx());",
+        "    if (ctx.state === 'suspended') { ctx.resume(); }",
+        "    var notes = urgent ? [659.25, 830.61, 1046.50] : [523.25, 659.25];",
+        "    var now = ctx.currentTime;",
+        "    notes.forEach(function (freq, i) {",
+        "      var osc = ctx.createOscillator();",
+        "      var gain = ctx.createGain();",
+        "      osc.type = 'sine';",
+        "      osc.frequency.value = freq;",
+        "      var t0 = now + i * 0.14;",
+        "      gain.gain.setValueAtTime(0, t0);",
+        "      gain.gain.linearRampToValueAtTime(0.25, t0 + 0.02);",
+        "      gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.5);",
+        "      osc.connect(gain);",
+        "      gain.connect(ctx.destination);",
+        "      osc.start(t0);",
+        "      osc.stop(t0 + 0.5);",
+        "    });",
+        "  } catch (e) {}",
+        "}",
+        "function kioskRevealOverlay(el, urgent) {",
+        "  var rect = el.getBoundingClientRect();",
+        "  var overlay = document.getElementById('kiosk-toast-overlay');",
+        "  if (!overlay) {",
+        "    overlay = document.createElement('div');",
+        "    overlay.id = 'kiosk-toast-overlay';",
+        "    overlay.style.position = 'fixed';",
+        "    overlay.style.zIndex = '9999';",
+        "    overlay.style.pointerEvents = 'none';",
+        "    document.body.appendChild(overlay);",
+        "  }",
+        "  overlay.style.top = rect.top + 'px';",
+        "  overlay.style.left = rect.left + 'px';",
+        "  overlay.style.width = rect.width + 'px';",
+        "  overlay.style.height = rect.height + 'px';",
+        "  overlay.style.background = urgent ? '#FF3B30' : '#FFB300';",
+        "  overlay.style.transition = 'none';",
+        "  overlay.style.clipPath = 'inset(0 0 0 0%)';",
+        "  overlay.style.opacity = '1';",
+        // Forces the browser to apply the reset styles above before the
+        // transition below is set, so the transition actually animates
+        // FROM fully-covering TO cleared rather than jumping straight
+        // to its end state with nothing visibly happening — the same
+        // reflow-forcing trick this app's other one-shot CSS triggers
+        // already rely on.
+        "  overlay.offsetHeight;",
+        "  overlay.style.transition = 'clip-path 0.55s cubic-bezier(.4,0,.2,1), opacity 0.25s ease-in 0.55s';",
+        "  overlay.style.clipPath = 'inset(0 0 0 100%)';",
+        "  overlay.style.opacity = '0';",
+        "}",
+        "function kioskCheckToastChime() {",
+        "  var urgentEl = document.querySelector(KIOSK_CHIME_URGENT_SEL);",
+        "  var gentleEl = urgentEl ? null : document.querySelector(KIOSK_CHIME_GENTLE_SEL);",
+        "  var el = urgentEl || gentleEl;",
+        "  if (!el || el.style.display === 'none') { kioskLastChimeKey = null; return; }",
+        "  var key = el.className + '|' + el.textContent;",
+        "  if (key === kioskLastChimeKey) return;",
+        "  kioskLastChimeKey = key;",
+        "  kioskPlayChime(!!urgentEl);",
+        "  kioskRevealOverlay(el, !!urgentEl);",
+        "}",
+        "kioskCheckToastChime();",
+        "new MutationObserver(kioskCheckToastChime).observe(document.body, {childList: true, subtree: true, characterData: true});",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+    </script>
+    """,
+    height=0,
+)
+
 FRED_API_KEY = st.secrets.get("FRED_API_KEY")
 
 # Resolved early (not down by the page-routing block that used to live
