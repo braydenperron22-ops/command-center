@@ -588,6 +588,42 @@ components.html(
         "    });",
         "  } catch (e) {}",
         "}",
+        // Session request: "make it so the kiosk plays a muted sound
+        // every 5 to 10 sec so it never goes stale... primed for when a
+        // real alert comes through." Doesn't replace the one-time
+        // browser sound-permission setting (chrome://settings/content/
+        // sound, or --autoplay-policy=no-user-gesture-required) — if
+        // that's genuinely never been granted, resume() below still
+        // silently does nothing, same as kioskPlayChime's own attempt
+        // would. What this DOES fix is a real, separate failure mode:
+        // some browsers auto-suspend an AudioContext that's sat with
+        // nothing scheduled on it for a while (a power-saving
+        // heuristic), even after it was properly unlocked earlier — a
+        // real chime hitting a re-suspended context would either play
+        // late (after resume() completes) or not at all depending on
+        // the browser. A truly silent tick (gain permanently at 0, not
+        // just quiet) every KIOSK_AUDIO_KEEPALIVE_MS keeps real work
+        // scheduled on the shared context often enough that it never
+        // sits idle long enough to trigger that auto-suspend, so a real
+        // chime always hits an already-running context instead of
+        // paying that resume cost on the one moment it actually matters.
+        "var KIOSK_AUDIO_KEEPALIVE_MS = 7000;",
+        "function kioskAudioKeepAlive() {",
+        "  try {",
+        "    var Ctx = window.AudioContext || window.webkitAudioContext;",
+        "    if (!Ctx) return;",
+        "    var ctx = window.__kioskChimeCtx || (window.__kioskChimeCtx = new Ctx());",
+        "    if (ctx.state === 'suspended') { ctx.resume(); }",
+        "    var osc = ctx.createOscillator();",
+        "    var gain = ctx.createGain();",
+        "    gain.gain.value = 0;",
+        "    osc.frequency.value = 440;",
+        "    osc.connect(gain);",
+        "    gain.connect(ctx.destination);",
+        "    osc.start();",
+        "    osc.stop(ctx.currentTime + 0.05);",
+        "  } catch (e) {}",
+        "}",
         "function kioskRevealOverlay(el, urgent) {",
         "  var rect = el.getBoundingClientRect();",
         "  var overlay = document.getElementById('kiosk-toast-overlay');",
@@ -631,6 +667,8 @@ components.html(
         "}",
         "kioskCheckToastChime();",
         "new MutationObserver(kioskCheckToastChime).observe(document.body, {childList: true, subtree: true, characterData: true});",
+        "kioskAudioKeepAlive();",
+        "setInterval(kioskAudioKeepAlive, KIOSK_AUDIO_KEEPALIVE_MS);",
       ].join('\\n');
       doc.head.appendChild(s);
     })();
