@@ -562,7 +562,20 @@ components.html(
       s.id = 'kiosk-toast-chime';
       s.textContent = [
         "var KIOSK_CHIME_URGENT_SEL = '.news-alert-bar';",
-        "var KIOSK_CHIME_GENTLE_SEL = '.weather-alert-bar-warning-moderate, .commute-alert-bar, .jumbo-leave-ticker';",
+        "var KIOSK_CHIME_GENTLE_SEL = '.weather-alert-bar-warning-moderate, .jumbo-leave-ticker';",
+        // Session follow-up to the Aaron work: "can we improve the sound
+        // design with the same intention we did with aaron" — scoped (by
+        // the user's own answer) to just the one-shot "leave in" toast,
+        // not the persistent .jumbo-leave-ticker: that element's own
+        // .live-countdown child rewrites its text every second (see the
+        // kiosk-countdown-ticker script above), so fingerprinting it by
+        // textContent the way kioskCheckToastChime does for every other
+        // toast would re-chime once a second for as long as it's on
+        // screen — confirmed live (6 chimes in 5 seconds) before this
+        // was scoped away from it. .commute-alert-bar's own headline is
+        // plain static text set once per toast (commute_reminder.
+        // render_bar), so it doesn't have that problem.
+        "var KIOSK_LEAVE_VOICE_SEL = '.commute-alert-bar';",
         // Session request, after clicking through a set of options built
         // for this exact purpose: "low bell + AARON for sure." Genuinely
         // severe weather (extreme/warning — a real Thunderstorm/Tornado/
@@ -693,6 +706,47 @@ components.html(
         "    }, 2150);",
         "  } catch (e) {}",
         "}",
+        // Same follow-up request, for the "leave in" toast: read the
+        // real calendar context out loud instead of a canned line, same
+        // as the weather voice above. commute_reminder._alert_label
+        // only ever produces exactly "Work" or "Leave soon: {event
+        // summary}" (see its own docstring) — the latter's summary half
+        // is genuinely dynamic (any calendar event name), so it's
+        // spoken as the subject ("Golf tee time — leave in 15
+        // minutes.") rather than assuming a fixed set of event types; a
+        // plain "Work" shift just speaks the countdown on its own
+        // ("Leave in 15 minutes.") since naming it wouldn't add
+        // anything. Kept on the SAME 2-note gentle chime (kioskPlayChime
+        // (false)) rather than a new tone — this session's ask was
+        // specifically to add the voice, not redesign the ping.
+        "function kioskPlayLeaveVoice(el) {",
+        "  kioskPlayChime(false);",
+        "  try {",
+        "    if (!window.speechSynthesis) return;",
+        "    var labelEl = el.querySelector('.news-breaking-label');",
+        "    var headlineEl = el.querySelector('.news-alert-headline');",
+        "    var label = labelEl ? labelEl.textContent : '';",
+        "    var headline = headlineEl ? headlineEl.textContent : el.textContent;",
+        "    if (headline.slice(-4) === ' min') { headline = headline.slice(0, -4) + ' minutes'; }",
+        "    var sentence;",
+        "    if (label && label !== 'Work') {",
+        "      var idx = label.indexOf(': ');",
+        "      var eventName = idx !== -1 ? label.slice(idx + 2) : label;",
+        "      sentence = eventName + ' — ' + headline.toLowerCase() + '.';",
+        "    } else {",
+        "      sentence = headline + '.';",
+        "    }",
+        "    setTimeout(function () {",
+        "      window.speechSynthesis.cancel();",
+        "      var utter = new SpeechSynthesisUtterance(sentence);",
+        "      var voice = kioskFindVoice();",
+        "      if (voice) utter.voice = voice;",
+        "      utter.rate = 0.95;",
+        "      utter.pitch = 0.9;",
+        "      window.speechSynthesis.speak(utter);",
+        "    }, 800);",
+        "  } catch (e) {}",
+        "}",
         // Session request: "make it so the kiosk plays a muted sound
         // every 5 to 10 sec so it never goes stale... primed for when a
         // real alert comes through." Doesn't replace the one-time
@@ -762,14 +816,27 @@ components.html(
         "function kioskCheckToastChime() {",
         "  var weatherEl = document.querySelector(KIOSK_WEATHER_VOICE_SEL);",
         "  var urgentEl = weatherEl ? null : document.querySelector(KIOSK_CHIME_URGENT_SEL);",
-        "  var gentleEl = (weatherEl || urgentEl) ? null : document.querySelector(KIOSK_CHIME_GENTLE_SEL);",
-        "  var el = weatherEl || urgentEl || gentleEl;",
+        "  var leaveEl = (weatherEl || urgentEl) ? null : document.querySelector(KIOSK_LEAVE_VOICE_SEL);",
+        "  var gentleEl = (weatherEl || urgentEl || leaveEl) ? null : document.querySelector(KIOSK_CHIME_GENTLE_SEL);",
+        "  var el = weatherEl || urgentEl || leaveEl || gentleEl;",
         "  if (!el || el.style.display === 'none') { kioskLastChimeKey = null; return; }",
-        "  var key = el.className + '|' + el.textContent;",
+        // .jumbo-leave-ticker's own child .live-countdown span rewrites
+        // its textContent once a second (kiosk-countdown-ticker script
+        // above) — fingerprinting straight off el.textContent the way
+        // every other toast does would re-chime every second for as
+        // long as that ticker's on screen (confirmed live: 6 chimes in
+        // 5 seconds). Its own data-target-ms is the stable identity
+        // instead — same countdown instance, same target, no re-chime;
+        // a genuinely new countdown (a different leave-by time) always
+        // carries a different target-ms and still chimes once for real.
+        "  var tickerEl = el.querySelector('.live-countdown');",
+        "  var key = el.className + '|' + (tickerEl ? tickerEl.getAttribute('data-target-ms') : el.textContent);",
         "  if (key === kioskLastChimeKey) return;",
         "  kioskLastChimeKey = key;",
         "  if (weatherEl) {",
         "    kioskPlayWeatherAlert(weatherEl);",
+        "  } else if (leaveEl) {",
+        "    kioskPlayLeaveVoice(leaveEl);",
         "  } else {",
         "    kioskPlayChime(!!urgentEl);",
         "  }",
