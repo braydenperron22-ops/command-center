@@ -1,6 +1,22 @@
-"""Open-Meteo access for the North Bay, ON current conditions + solar times."""
+"""Open-Meteo access for the North Bay, ON current conditions + solar
+times, plus (session request: "I think Open-Meteo is a little more
+accurate... I wanna start using it as our main provider... is there a
+way to make Open-Meteo bulletproof") the hourly and 7-day forecasts —
+previously EC-only (see ec_forecast.py's own docstring for why EC was
+chosen there in the first place: its official numbers beat Open-Meteo's
+generic global blend for one specific real thunderstorm morning). Both
+readings stay real options rather than picking one and deleting the
+other — hourly_forecast()/daily_forecast() below try Open-Meteo first
+and fall back to ec_forecast's own equivalent on any failure, same
+"two independent free providers" resilience shape fetch_weather()
+itself already has for current conditions. The one piece deliberately
+NOT switched: next_precip_at's own rain-probability reading below stays
+EC-sourced specifically, because that's the one exact case with a real,
+observed instance of Open-Meteo being wrong (see fetch_weather()'s own
+comment) — everything else here didn't have that history against it.
+"""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
@@ -11,7 +27,9 @@ from astral.sun import sun
 import data_health
 import ec_forecast
 import fetch_throttle
+import scenery
 from config import TIMEZONE, WEATHER_LAT, WEATHER_LON
+from icons import label_for
 
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 
@@ -162,3 +180,167 @@ def fetch_weather() -> dict | None:
     if result is not None:
         data_health.record_success("weather")
     return result
+
+
+_WIND_COMPASS = [
+    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+]
+
+
+def _compass_abbr(degrees: float) -> str:
+    """Open-Meteo gives wind direction as a plain compass bearing (e.g.
+    237), not a pre-abbreviated string the way EC's own feed does — this
+    is the whole conversion, a fixed 16-point rose."""
+    return _WIND_COMPASS[round(degrees / 22.5) % 16]
+
+
+@st.cache_data(ttl=15 * 60, show_spinner=False)
+def _fetch_hourly_raw() -> dict:
+    fetch_throttle.wait_turn()
+    resp = requests.get(
+        WEATHER_URL,
+        params={
+            "latitude": WEATHER_LAT, "longitude": WEATHER_LON,
+            "hourly": "temperature_2m,weather_code,precipitation_probability,wind_speed_10m,wind_direction_10m",
+            "temperature_unit": "celsius", "wind_speed_unit": "kmh",
+            "timezone": TIMEZONE, "forecast_days": 2,
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def hourly_forecast() -> list[dict]:
+    """Same shape ec_forecast.hourly_forecast() returns ({"at", "temp_c",
+    "condition", "category", "precip_chance", "wind_speed", "wind_dir"},
+    soonest first) — session request: "I wanna start using [Open-Meteo]
+    as our main provider... is there a way to make [it] bulletproof."
+    Open-Meteo's own hourly array always starts at today's midnight
+    (confirmed live), not "now," so this filters down to the current
+    hour onward itself rather than assuming the caller wants the whole
+    48-hour block. Falls back to ec_forecast's own hourly reading on any
+    failure — a second, independent, equally free/keyless provider
+    behind this one, not a single point of failure for this page."""
+    try:
+        data = _fetch_hourly_raw()
+        hourly = data.get("hourly") or {}
+        times = hourly.get("time") or []
+        if not times:
+            raise ValueError("no hourly data in Open-Meteo response")
+        now_hour = datetime.now(ZoneInfo(TIMEZONE)).replace(minute=0, second=0, microsecond=0, tzinfo=None)
+        result = []
+        for i, t in enumerate(times):
+            at = datetime.fromisoformat(t)
+            if at < now_hour:
+                continue
+            code = hourly["weather_code"][i]
+            result.append({
+                "at": at,
+                "temp_c": hourly["temperature_2m"][i],
+                "condition": label_for(code),
+                "category": scenery.condition_category(code),
+                "precip_chance": hourly["precipitation_probability"][i],
+                "wind_speed": round(hourly["wind_speed_10m"][i]),
+                "wind_dir": _compass_abbr(hourly["wind_direction_10m"][i]),
+            })
+        if not result:
+            raise ValueError("Open-Meteo hourly data was entirely in the past")
+        return result
+    except Exception:
+        return ec_forecast.hourly_forecast()
+
+
+@st.cache_data(ttl=15 * 60, show_spinner=False)
+def _fetch_daily_raw() -> dict:
+    fetch_throttle.wait_turn()
+    resp = requests.get(
+        WEATHER_URL,
+        params={
+            "latitude": WEATHER_LAT, "longitude": WEATHER_LON,
+            "daily": (
+                "weather_code,temperature_2m_max,temperature_2m_min,"
+                "precipitation_probability_max,wind_speed_10m_max,"
+                "wind_direction_10m_dominant,uv_index_max"
+            ),
+            "temperature_unit": "celsius", "wind_speed_unit": "kmh",
+            "timezone": TIMEZONE, "forecast_days": 7,
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _normalize_ec_daily(ec_days: list[dict]) -> list[dict]:
+    """Flattens ec_forecast.daily_forecast()'s own day/night-paired shape
+    down to the same one-reading-per-day shape the Open-Meteo path above
+    produces — so pages_weather.py has exactly one render path to
+    maintain regardless of which provider actually answered, rather than
+    needing to know both providers' native shapes. Prefers the day
+    period's own detail (a lone leading night period, night is None,
+    falls back to night's own detail instead — see ec_forecast.
+    daily_forecast's own docstring on when that happens). precip_chance
+    is the higher of day/night's own reading when both are present (the
+    same "worth mentioning at all today" question a flat single-value
+    card is actually asking), not an average that could hide a real
+    night-only shower behind a dry day."""
+    result = []
+    for d in ec_days:
+        primary = d["day"] or d["night"] or {}
+        secondary = d["night"] if d["day"] else None
+        chances = [x["precip_chance"] for x in (primary, secondary) if x and x.get("precip_chance") is not None]
+        result.append({
+            "name": d["name"],
+            "high": d["high"],
+            "low": d["low"],
+            "category": d["category"],
+            "condition": primary.get("summary") or "",
+            "precip_chance": max(chances) if chances else None,
+            "wind": primary.get("wind") or "",
+            "uv_index": primary.get("uv_index"),
+        })
+    return result
+
+
+def daily_forecast() -> list[dict]:
+    """Up to 7 days ahead — {"name", "high", "low", "category",
+    "condition", "precip_chance", "wind", "uv_index"} per day, today
+    first. Deliberately one reading per day, not ec_forecast.
+    daily_forecast()'s own day/night pair — Open-Meteo's daily endpoint
+    doesn't carry that finer split at all (a genuine difference in what
+    each provider publishes, not a gap in this parsing). Falls back to
+    ec_forecast's own daily_forecast() on any failure, same "second
+    independent provider" resilience hourly_forecast() above has —
+    _normalize_ec_daily flattens that fallback down to this exact same
+    shape so pages_weather.py only ever has one card layout to render,
+    regardless of which provider actually answered."""
+    try:
+        data = _fetch_daily_raw()
+        daily = data.get("daily") or {}
+        times = daily.get("time") or []
+        if not times:
+            raise ValueError("no daily data in Open-Meteo response")
+        today = datetime.now(ZoneInfo(TIMEZONE)).date()
+        result = []
+        for i, t in enumerate(times):
+            day = date.fromisoformat(t)
+            code = daily["weather_code"][i]
+            name = "Today" if day == today else day.strftime("%A")
+            wind_speed = round(daily["wind_speed_10m_max"][i])
+            wind_dir = _compass_abbr(daily["wind_direction_10m_dominant"][i])
+            uv = daily["uv_index_max"][i]
+            result.append({
+                "name": name,
+                "high": round(daily["temperature_2m_max"][i]),
+                "low": round(daily["temperature_2m_min"][i]),
+                "category": scenery.condition_category(code),
+                "condition": label_for(code),
+                "precip_chance": daily["precipitation_probability_max"][i],
+                "wind": f"{wind_dir} {wind_speed} km/h",
+                "uv_index": round(uv) if uv is not None else None,
+            })
+        return result
+    except Exception:
+        return _normalize_ec_daily(ec_forecast.daily_forecast())

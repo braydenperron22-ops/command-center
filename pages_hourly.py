@@ -1,32 +1,28 @@
-"""Hourly Forecast page: Environment Canada's own hour-by-hour outlook
-(see ec_forecast.hourly_forecast) — replaces the live radar map. Session
-request: "get rid of radar and replace it with hourly weather data,"
-then "make it look better and a little more complete."
+"""Hourly Forecast page: hour-by-hour outlook (see weather_client.
+hourly_forecast) — replaces the live radar map. Session history: "get
+rid of radar and replace it with hourly weather data" -> "make it look
+better and a little more complete" -> "I think Open-Meteo is a little
+more accurate... I wanna start using it as our main provider... is
+there a way to make Open-Meteo bulletproof."
 
-Same authoritative EC source the 7-Day Forecast and rain-nowcast badge
-already use, just the hourly slice of that one payload instead of the
-daily one. Shows the next HOURS_SHOWN hours as columns, the same "one
-tile per period" shape pages_weather.py's 7-day row already uses — a
-fixed count rather than a scrolling timeline, since this kiosk has no
-way to scroll to reveal anything below/beyond the fold (see this
-session's own "no-scroll content" precedent).
+Open-Meteo primary, Environment Canada as an automatic fallback on any
+failure (see weather_client.hourly_forecast's own docstring) — genuine
+redundancy across two independent, free, no-key providers rather than
+a single point of failure, not a one-time swap that just trades which
+provider is the single point of failure.
 
-"More complete" additions over the first version: a current-conditions
-header (reusing the same real EC station reading and .weather-current-*
-styling the Weather page's own tile already uses, so the page has a
-real anchor instead of opening straight into a bare row of cards), each
-hour's actual condition text (not just an icon), correct day/night icon
-phase per hour (the first version always passed "day," which only
-visibly mattered for the "clear" category's sun/moon icon but was still
-wrong for real overnight hours), and a highlighted "NOW" card so the
-current hour reads as the anchor point for the rest of the row.
+Shows the next HOURS_SHOWN hours as columns, the same "one tile per
+period" shape pages_weather.py's 7-day row already uses — a fixed count
+rather than a scrolling timeline, since this kiosk has no way to scroll
+to reveal anything below/beyond the fold (see this session's own
+"no-scroll content" precedent).
 """
 
 import streamlit as st
 
-import ec_forecast
+import scenery
 import weather_client
-from icons import icon_for
+from icons import icon_for, label_for
 
 HOURS_SHOWN = 12
 
@@ -37,32 +33,32 @@ def _hour_label(at) -> str:
     return at.strftime("%-I %p")
 
 
-def _render_current(current: dict | None) -> None:
-    """Same tile pages_weather._render_current renders — duplicated
-    rather than imported (each page here owns its own markup; the CSS
-    classes are already shared, generic names, not weather-page-
-    specific) so this page opens with a real "right now" anchor instead
-    of starting straight into the hour-by-hour row."""
-    if not current:
+def _render_current(weather: dict | None) -> None:
+    """Same real reading (and the same Open-Meteo-primary/EC-fallback
+    resilience) the hero row's own clock/weather header already uses —
+    this page's own header is just a bigger, dedicated version of that
+    same number, not a separate source of truth, so the two can never
+    disagree with each other the way this page's first version (reading
+    EC's own station directly here, Open-Meteo up top) briefly could."""
+    if not weather:
         return
-    icon_svg = icon_for(current["category"], "day")
-    wind = ""
-    if current.get("wind_speed") is not None:
-        gust = f" gust {current['wind_gust']}" if current.get("wind_gust") else ""
-        wind_dir = current.get("wind_dir") or ""
-        wind = f"{wind_dir} {current['wind_speed']} km/h{gust}"
-    wind_html = f"<span>Wind {wind}</span>" if wind else ""
-    humidity_html = f"<span>Humidity {current['humidity']}%</span>" if current.get("humidity") is not None else ""
+    code = weather.get("weather_code") or 0
+    category = scenery.condition_category(code)
+    icon_svg = icon_for(category, "day")
+    feels_like = weather.get("feels_like_c")
+    feels_html = f"<span>Feels like {feels_like:.0f}°C</span>" if feels_like is not None else ""
+    uv = weather.get("uv_index")
+    uv_html = f"<span>UV {uv:.0f}</span>" if uv is not None else ""
 
     st.markdown(
         f"""<div class="tile weather-current-tile">
-            <div class="tile-label compact">CURRENT · {current['station'].upper()}</div>
+            <div class="tile-label compact">CURRENT CONDITIONS</div>
             <div class="weather-current-row">
                 <div class="weather-current-icon">{icon_svg}</div>
-                <div class="weather-current-temp">{current['temp_c']:.0f}°C</div>
-                <div class="weather-current-condition">{current['condition']}</div>
+                <div class="weather-current-temp">{weather['temp_c']:.0f}°C</div>
+                <div class="weather-current-condition">{label_for(code)}</div>
                 <div class="weather-current-metrics">
-                    {humidity_html}{wind_html}
+                    {feels_html}{uv_html}
                 </div>
             </div>
         </div>""",
@@ -85,12 +81,13 @@ def _day_or_night(at, sunrise, sunset) -> str:
 
 
 def render() -> None:
-    st.markdown('<div class="page-title page-title-hourly">Hourly Forecast — Environment Canada</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-title page-title-hourly">Hourly Forecast</div>', unsafe_allow_html=True)
 
-    _render_current(ec_forecast.current_conditions())
+    weather = weather_client.fetch_weather()
+    _render_current(weather)
     st.markdown('<div class="internals-section-gap"></div>', unsafe_allow_html=True)
 
-    hours = ec_forecast.hourly_forecast()[:HOURS_SHOWN]
+    hours = weather_client.hourly_forecast()[:HOURS_SHOWN]
     if not hours:
         st.markdown(
             '<div class="tile"><div class="tile-prev">Forecast unavailable right now.</div></div>',
@@ -98,7 +95,6 @@ def render() -> None:
         )
         return
 
-    weather = weather_client.fetch_weather()
     sunrise = weather.get("sunrise") if weather else None
     sunset = weather.get("sunset") if weather else None
 
@@ -106,13 +102,13 @@ def render() -> None:
     for i, hour in enumerate(hours):
         phase = _day_or_night(hour["at"], sunrise, sunset)
         icon_svg = icon_for(hour["category"], phase)
-        # Only shown when there's a real chance — an EC hourly reading
-        # always carries a structured lop value even at a genuine 0%,
-        # unlike the daily forecast's text-parsed precip_chance (which
-        # is only ever present at all when EC's own summary actually
-        # mentions a real chance) — so this needs its own explicit ">0"
-        # guard rather than the daily page's "is not None" one, or every
-        # dry hour would carry a cluttering "☔ 0%" badge.
+        # Only shown when there's a real chance — an hourly reading
+        # always carries a structured precip_chance value even at a
+        # genuine 0% (both providers), unlike the daily forecast's own
+        # normalized precip_chance (which can be None when neither
+        # provider's own reading for that day mentions one at all) — so
+        # this needs its own explicit ">0" guard, or every dry hour
+        # would carry a cluttering "☔ 0%" badge.
         chance_html = (
             f'<div class="hourly-chance">☔ {hour["precip_chance"]}%</div>' if hour["precip_chance"] else ""
         )
@@ -120,7 +116,7 @@ def render() -> None:
             f'<div class="hourly-wind">{hour["wind_dir"]} {hour["wind_speed"]}</div>'
             if hour.get("wind_speed") is not None else ""
         )
-        # First card is always the soonest real reading EC has — the
+        # First card is always the soonest real reading available — the
         # closest thing to "right now" this hourly grid has, so it
         # gets the same left-accent-bar "this is the one that matters"
         # treatment other live boards in this app already use, and its
