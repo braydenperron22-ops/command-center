@@ -675,6 +675,28 @@ components.html(
         "  var byHint = voices.find(function (v) { return maleHints.some(function (h) { return v.name.toLowerCase().indexOf(h) !== -1; }); });",
         "  return byHint || voices[0];",
         "}",
+        // Session request: "make it so the whole thing flows quicker by
+        // removing the words like WHEN:" — EC's own CAP bulletin text
+        // (data-summary) is structured with plain-text section labels
+        // like "What:"/"When:"/"Additional information:" meant for a
+        // reader's eye, not a listener's ear; spoken verbatim they land
+        // as an abrupt, disconnected word breaking the sentence's flow.
+        // Strips just the label text (plain string replace, not regex —
+        // see this app's own established gotcha: a JS regex literal
+        // embedded in this same kind of string-array script silently
+        // loses its backslashes when the array is built, since it's
+        // parsed as a JS string literal once building the array and
+        // AGAIN as real source once assigned to s.textContent) so the
+        // sentence continues straight into what follows each label,
+        // rather than dropping the whole section.
+        "function kioskCleanSpokenSummary(text) {",
+        "  var labels = ['What:', 'When:', 'Where:', 'Who:', 'Why:', 'Additional information:'];",
+        "  labels.forEach(function (label) {",
+        "    while (text.indexOf(label) !== -1) { text = text.replace(label, ''); }",
+        "  });",
+        "  while (text.indexOf('  ') !== -1) { text = text.replace('  ', ' '); }",
+        "  return text.trim();",
+        "}",
         // Session request, after clicking through a set of built-for-
         // this-purpose options: "low bell + AARON for sure." A single
         // low sine-tone ping (the exact "Low Bell" candidate from that
@@ -772,7 +794,7 @@ components.html(
         // substring it would otherwise also match.
         "      var summary = el.getAttribute('data-summary') || '';",
         "      if (summary) {",
-        "        sentence = summary;",
+        "        sentence = kioskCleanSpokenSummary(summary);",
         "      } else {",
         "        var cls = el.className;",
         "        var wrapper;",
