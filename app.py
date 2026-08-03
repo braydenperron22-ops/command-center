@@ -589,8 +589,40 @@ components.html(
         // no new recording needed for the next hazard type EC ever adds.
         "var KIOSK_WEATHER_VOICE_SEL = '.weather-alert-bar-extreme, .weather-alert-bar-warning';",
         "var kioskLastChimeKey = null;",
+        // Session request: "make it so the audio alerts are dynamic based
+        // on time of day starting quiet and dynamically getting louder
+        // during mid day then dropping off to complete silence during
+        // the 10pm to 5am window with the exception of severe weather as
+        // that can sound at a moderate frequency overnight." Returns a
+        // 0..1 multiplier read off the KIOSK's OWN clock (not the
+        // server's — this is client-side so a kiosk sitting in the
+        // user's own room is already on the right local time without
+        // needing the Python side's TIMEZONE constant threaded through):
+        // a full 0->1->0 sine hump across the 5am-10pm "day" window (a
+        // single symmetric hump rather than separate ramp-up/ramp-down
+        // pieces, since 5am-1:30pm and 1:30pm-10pm are exactly equal
+        // spans), floored at a quiet-but-audible 0.3 rather than
+        // hitting true 0 right at the 5am/10pm boundary, and a hard 0
+        // for the 10pm-5am window itself — except for severe weather,
+        // which gets a fixed "moderate" 0.5 overnight instead of the
+        // day curve, per the one exception the user's own request
+        // carved out (everything else stays at true 0 overnight: this
+        // deliberately doesn't broaden past severe weather, matching
+        // this app's own existing storm-hazard-scope precedent for
+        // other night-gate exceptions).
+        "function kioskAlertVolume(severe) {",
+        "  var d = new Date();",
+        "  var hour = d.getHours() + d.getMinutes() / 60;",
+        "  var isNight = hour >= 22 || hour < 5;",
+        "  if (isNight) { return severe ? 0.5 : 0; }",
+        "  var fraction = (hour - 5) / (22 - 5);",
+        "  var curve = Math.sin(fraction * Math.PI);",
+        "  return 0.3 + 0.7 * curve;",
+        "}",
         "function kioskPlayChime(urgent) {",
         "  try {",
+        "    var vol = kioskAlertVolume(false);",
+        "    if (vol <= 0) return;",
         "    var Ctx = window.AudioContext || window.webkitAudioContext;",
         "    if (!Ctx) return;",
         "    var ctx = window.__kioskChimeCtx || (window.__kioskChimeCtx = new Ctx());",
@@ -604,7 +636,7 @@ components.html(
         "      osc.frequency.value = freq;",
         "      var t0 = now + i * 0.14;",
         "      gain.gain.setValueAtTime(0, t0);",
-        "      gain.gain.linearRampToValueAtTime(0.25, t0 + 0.02);",
+        "      gain.gain.linearRampToValueAtTime(0.25 * vol, t0 + 0.02);",
         "      gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.5);",
         "      osc.connect(gain);",
         "      gain.connect(ctx.destination);",
@@ -657,6 +689,10 @@ components.html(
         // brand-new-alert suffix still reads awkwardly aloud and stays
         // dropped, falling to the plain "a new X is now active" line).
         "function kioskPlayWeatherAlert(el) {",
+        // Severe weather is the one exception to the night-quiet-hours
+        // gate (kioskAlertVolume's own "severe" flag) — never silenced,
+        // just quieter overnight than during the day.
+        "  var vol = kioskAlertVolume(true);",
         "  try {",
         "    var Ctx = window.AudioContext || window.webkitAudioContext;",
         "    if (Ctx) {",
@@ -666,7 +702,7 @@ components.html(
         "      var osc = ctx.createOscillator(), gain = ctx.createGain();",
         "      osc.type = 'sine'; osc.frequency.value = 220;",
         "      gain.gain.setValueAtTime(0, now);",
-        "      gain.gain.linearRampToValueAtTime(0.4, now + 0.02);",
+        "      gain.gain.linearRampToValueAtTime(0.4 * vol, now + 0.02);",
         "      gain.gain.exponentialRampToValueAtTime(0.001, now + 1.9);",
         "      osc.connect(gain); gain.connect(ctx.destination);",
         "      osc.start(now); osc.stop(now + 1.9);",
@@ -702,6 +738,7 @@ components.html(
         "      if (voice) utter.voice = voice;",
         "      utter.rate = 0.95;",
         "      utter.pitch = 0.9;",
+        "      utter.volume = vol;",
         "      window.speechSynthesis.speak(utter);",
         "    }, 2150);",
         "  } catch (e) {}",
@@ -720,7 +757,9 @@ components.html(
         // (false)) rather than a new tone — this session's ask was
         // specifically to add the voice, not redesign the ping.
         "function kioskPlayLeaveVoice(el) {",
+        "  var vol = kioskAlertVolume(false);",
         "  kioskPlayChime(false);",
+        "  if (vol <= 0) return;",
         "  try {",
         "    if (!window.speechSynthesis) return;",
         "    var labelEl = el.querySelector('.news-breaking-label');",
@@ -743,6 +782,7 @@ components.html(
         "      if (voice) utter.voice = voice;",
         "      utter.rate = 0.95;",
         "      utter.pitch = 0.9;",
+        "      utter.volume = vol;",
         "      window.speechSynthesis.speak(utter);",
         "    }, 800);",
         "  } catch (e) {}",
