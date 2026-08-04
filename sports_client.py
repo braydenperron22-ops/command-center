@@ -1543,26 +1543,30 @@ def ops_tier(ops, tiers: dict | None) -> str | None:
 
 
 def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
-    """This specific game's pitch count, balls/strikes split, and full
-    line, so far for one pitcher — {"pitches", "balls", "strikes",
-    "line"}, any of which is None if genuinely not available yet.
-    Session request: "for pitchers add number of pitches below ERA,"
-    then clarified to "how many of the pitches have been balls and how
-    many have been strikes over the entire outing" (not the live
-    at-bat's own count, which the situation strip above already
-    shows), then "add the full line score for the active pitchers" —
-    "line" is the boxscore's own ready-made "summary" string (e.g.
-    "2.2 IP, ER, 4 K, 3 BB"), used verbatim rather than hand-assembled
-    from the individual innings/earnedRuns/strikeOuts/baseOnBalls
-    fields sitting right next to it, same "MLB already wrote the real
-    sentence, don't re-synthesize it" reasoning as the scoring-play/
-    last-play descriptions elsewhere in this app. Season ERA comes from
-    the /people stat line, but all of these are inherently per-game,
-    only in the boxscore's own per-player stats. {} on any fetch
-    failure or before this pitcher has thrown a pitch this game (not
-    yet in the boxscore's player list). Delayed the same amount as the
-    linescore feed, so this pitcher's count doesn't tick up before the
-    pitch it reflects has aired."""
+    """This specific game's pitch count, balls/strikes split, strikeout
+    total, and full line, so far for one pitcher — {"pitches", "balls",
+    "strikes", "strikeouts", "line"}, any of which is None if genuinely
+    not available yet. Session request: "for pitchers add number of
+    pitches below ERA," then clarified to "how many of the pitches have
+    been balls and how many have been strikes over the entire outing"
+    (not the live at-bat's own count, which the situation strip above
+    already shows), then "add the full line score for the active
+    pitchers" — "line" is the boxscore's own ready-made "summary" string
+    (e.g. "2.2 IP, ER, 4 K, 3 BB"), used verbatim rather than hand-
+    assembled from the individual innings/earnedRuns/strikeOuts/
+    baseOnBalls fields sitting right next to it, same "MLB already wrote
+    the real sentence, don't re-synthesize it" reasoning as the scoring-
+    play/last-play descriptions elsewhere in this app. "strikeouts"
+    (this same boxscore's own "strikeOuts" field) was added later,
+    session request: "add the strikeouts to the big stats for pitchers"
+    — a real, separate number of its own alongside the line summary that
+    already mentions it in passing. Season ERA comes from the /people
+    stat line, but all of these are inherently per-game, only in the
+    boxscore's own per-player stats. {} on any fetch failure or before
+    this pitcher has thrown a pitch this game (not yet in the boxscore's
+    player list). Delayed the same amount as the linescore feed, so this
+    pitcher's count doesn't tick up before the pitch it reflects has
+    aired."""
     try:
         data = delayed(f"mlb_boxscore_{game_id}", _fetch_mlb_boxscore_raw(game_id))
     except Exception:
@@ -1576,6 +1580,7 @@ def _mlb_game_pitching_totals(game_id: int, pitcher_id: int) -> dict:
                     "pitches": pitching.get("numberOfPitches"),
                     "balls": pitching.get("balls"),
                     "strikes": pitching.get("strikes"),
+                    "strikeouts": pitching.get("strikeOuts"),
                     "line": pitching.get("summary"),
                 }
     return {}
@@ -1632,8 +1637,8 @@ def fetch_mlb_top_performers(game_id: int) -> list[dict]:
 def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     """{"batter": {"id", "name", "ops", "season_ops_heat", "vs_pitcher",
     "vs_pitcher_heat", "photo"}, "pitcher": {"id", "name", "era",
-    "season_era_heat", "pitches", "balls", "strikes", "line", "photo"}}
-    for whoever's actually at the plate/on the mound right now — session
+    "season_era_heat", "pitches", "strikeouts", "balls", "strikes",
+    "line", "photo"}} for whoever's actually at the plate/on the mound right now — session
     request: "during the game can you make the top performers tab show
     current pitcher and batter and their stats... ideally add the
     pitcher and batter pics," later refined to "for pitchers add number
@@ -1715,6 +1720,7 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
             "era": pitcher_stat.get("era"),
             "season_era_heat": _pitcher_season_heat(pitcher_stat.get("era"), pitcher_career.get("era")),
             "pitches": pitcher_totals.get("pitches"),
+            "strikeouts": pitcher_totals.get("strikeouts"),
             "balls": pitcher_totals.get("balls"),
             "strikes": pitcher_totals.get("strikes"),
             "line": pitcher_totals.get("line"),

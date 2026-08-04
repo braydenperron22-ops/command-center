@@ -729,6 +729,11 @@ def _current_matchup_html(game_id: int) -> str:
         [
             (pitcher.get("era"), "ERA", pitcher.get("season_era_heat")),
             (pitcher.get("pitches"), "PITCHES", None),
+            # Session request: "add the strikeouts to the big stats for
+            # pitchers" — this game's own strikeout total (sports_client.
+            # fetch_mlb_live_matchup's "strikeouts", off the same boxscore
+            # PITCHES/line already come from), not judged hot/cold.
+            (pitcher.get("strikeouts"), "K", None),
         ],
         [(strike_pct, "STRIKE%", strike_pct_heat)],
     ]
