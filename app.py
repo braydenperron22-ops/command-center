@@ -701,9 +701,14 @@ components.html(
         "  if (hour <= peak) { return (hour - dayStart) / (peak - dayStart); }",
         "  return 1 - (hour - peak) / (dayEnd - peak);",
         "}",
-        "function kioskPlayChime(urgent) {",
+        // Session request: "make it so the alert fires at 100% for leave
+        // in notifications regardless of time." forceVol (optional) lets
+        // a caller override the day/night curve entirely — kioskPlayLeaveVoice
+        // passes 1 explicitly; every other caller (breaking news) omits
+        // it and gets the normal time-of-day-scaled behavior unchanged.
+        "function kioskPlayChime(urgent, forceVol) {",
         "  try {",
-        "    var vol = kioskAlertVolume(false);",
+        "    var vol = (typeof forceVol === 'number') ? forceVol : kioskAlertVolume(false);",
         "    if (vol <= 0) return;",
         "    var Ctx = window.AudioContext || window.webkitAudioContext;",
         "    if (!Ctx) return;",
@@ -909,10 +914,14 @@ components.html(
         // anything. Kept on the SAME 2-note gentle chime (kioskPlayChime
         // (false)) rather than a new tone — this session's ask was
         // specifically to add the voice, not redesign the ping.
+        // Session request: "make it so the alert fires at 100% for leave
+        // in notifications regardless of time" — bypasses kioskAlertVolume
+        // entirely for this one alert type; every other alert (breaking
+        // news, moderate weather, severe weather) still follows the
+        // normal day/night curve untouched.
         "function kioskPlayLeaveVoice(el) {",
-        "  var vol = kioskAlertVolume(false);",
-        "  kioskPlayChime(false);",
-        "  if (vol <= 0) return;",
+        "  var vol = 1;",
+        "  kioskPlayChime(false, vol);",
         "  try {",
         "    if (!window.speechSynthesis) return;",
         "    var labelEl = el.querySelector('.news-breaking-label');",
