@@ -227,7 +227,20 @@ def _mlb_situation_html(game_id: int) -> str:
     arrow = _INNING_ARROW.get(inning_state)
     inning = f"{arrow} {inning_num}" if arrow and inning_num else f"{inning_state} {inning_num or ''}".strip()
 
-    parts = [f'<span class="jumbo-situ-hot">{html.escape(inning)}</span>'] if inning else []
+    # Session request: "how can we improve the experience watching the
+    # game... feel good and seamless" — fades in on a genuine inning/
+    # half change rather than popping straight to the new text (see
+    # app.py's kiosk-jumbo-fade); value is inning_state+number together
+    # so "Top 4" -> "Bottom 4" still counts as a real change even though
+    # the number alone didn't move.
+    parts = (
+        [
+            f'<span class="jumbo-situ-hot" data-fade-slot="inning-{game_id}" '
+            f'data-fade-value="{html.escape(inning_state)}:{inning_num}">{html.escape(inning)}</span>'
+        ]
+        if inning
+        else []
+    )
     parts.append(diamond)
     parts.append(
         f'<span class="jumbo-situ-count"><span class="jumbo-dim">COUNT</span> '
@@ -645,13 +658,20 @@ def _zone_svg_y(pz: float) -> float:
     return _ZONE_SVG_H - (pz - _ZONE_PZ_MIN_FT) / (_ZONE_PZ_MAX_FT - _ZONE_PZ_MIN_FT) * _ZONE_SVG_H
 
 
-def _strike_zone_svg(zone_top: float, zone_bottom: float, pitches: list[dict]) -> str:
+def _strike_zone_svg(game_id: int, zone_top: float, zone_bottom: float, pitches: list[dict]) -> str:
     """The zone box (this batter's own real strikeZoneTop/Bottom, not a
     generic average — varies by stance/height) plus one dot per pitch,
     plotted at its own real (px, pz). Older pitches fade toward
     transparent and shrink slightly; the most recent gets a white
     outline and full opacity, so the sequence itself — not just each
-    pitch's own color — is readable at a glance."""
+    pitch's own color — is readable at a glance.
+
+    Session request: "how can we improve the experience watching the
+    game... feel good and seamless." The newest dot gets a real fade-in
+    (data-fade-slot/-value, see app.py's kiosk-jumbo-fade) keyed by that
+    pitch's own identity (location+speed+type) rather than just an
+    index, so a genuinely new pitch fades in while a rerun that hasn't
+    seen a new one yet doesn't replay the animation on the same dot."""
     if zone_top is None or zone_bottom is None or not pitches:
         return ""
     zx1, zx2 = _zone_svg_x(-_ZONE_PLATE_HALF_WIDTH_FT), _zone_svg_x(_ZONE_PLATE_HALF_WIDTH_FT)
@@ -665,7 +685,14 @@ def _strike_zone_svg(zone_top: float, zone_bottom: float, pitches: list[dict]) -
         r = 8 if is_last else 6
         stroke = ' stroke="#fff" stroke-width="1.5"' if is_last else ""
         opacity = 0.5 + 0.5 * (i + 1) / n
-        dots.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="{color}"{stroke} opacity="{opacity:.2f}" />')
+        fade_attrs = ""
+        if is_last:
+            pitch_identity = f"{p['px']:.3f}-{p['pz']:.3f}-{p.get('speed')}-{p.get('type')}"
+            fade_attrs = f' data-fade-slot="pitchdot-{game_id}" data-fade-value="{html.escape(pitch_identity)}"'
+        dots.append(
+            f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="{color}"{stroke} '
+            f'opacity="{opacity:.2f}"{fade_attrs} />'
+        )
     return (
         f'<svg class="jumbo-strikezone-svg" viewBox="0 0 {_ZONE_SVG_W} {_ZONE_SVG_H}" xmlns="http://www.w3.org/2000/svg">'
         f'<rect x="{zx1:.1f}" y="{zy1:.1f}" width="{zx2 - zx1:.1f}" height="{zy2 - zy1:.1f}" '
@@ -699,7 +726,7 @@ def _strike_zone_block_html(game_id: int) -> str:
     if not pitch_info:
         return '<div class="jumbo-live-matchup-vs">VS</div>'
     shown = pitch_info["pitches"][-_MAX_PITCHES_SHOWN:]
-    zone_svg = _strike_zone_svg(pitch_info["zone_top"], pitch_info["zone_bottom"], shown)
+    zone_svg = _strike_zone_svg(game_id, pitch_info["zone_top"], pitch_info["zone_bottom"], shown)
     if not zone_svg:
         return '<div class="jumbo-live-matchup-vs">VS</div>'
     return f'<div class="jumbo-strikezone">{zone_svg}{_recent_pitches_html(shown)}</div>'
@@ -800,8 +827,17 @@ def _current_matchup_html(game_id: int) -> str:
         # nothing here that could move them: this is the last thing in
         # the column, not an insertion above anything already placed.
         line_html = f'<div class="jumbo-live-matchup-line">{html.escape(line)}</div>' if line else ""
+        # Session request: "how can we improve the experience watching
+        # the game... feel good and seamless and like its all
+        # orchestrated" — this whole column (photo/name/every stat)
+        # fades in together whenever the actual player changes (a new
+        # batter up, a pitching change), instead of every piece just
+        # popping to the new player's values independently. Slot is
+        # per-tag ("At Bat" vs "Pitching") so the two columns' fades
+        # are tracked separately (see app.py's kiosk-jumbo-fade).
+        slot = f"matchup-{tag.lower().replace(' ', '-')}"
         return (
-            f'<div class="jumbo-live-matchup-col">{photo}'
+            f'<div class="jumbo-live-matchup-col" data-fade-slot="{slot}" data-fade-value="{player.get("id", "")}">{photo}'
             f'<div class="jumbo-live-matchup-tag">{html.escape(tag)}</div>'
             f'<div class="jumbo-live-matchup-name">{html.escape(player["name"])}</div>'
             f"{rows_html}{line_html}"
@@ -834,7 +870,7 @@ def _current_matchup_html(game_id: int) -> str:
     )
 
 
-def _batting_order_row_html(entry: dict, is_current: bool, tier: str | None) -> str:
+def _batting_order_row_html(entry: dict, is_current: bool, tier: str | None, team_key: str = "") -> str:
     ops = html.escape(entry["ops"]) if entry.get("ops") else "—"
     number = html.escape(str(entry["number"])) if entry.get("number") else ""
     position = html.escape(entry.get("position") or "")
@@ -846,8 +882,20 @@ def _batting_order_row_html(entry: dict, is_current: bool, tier: str | None) -> 
     game_line = html.escape(entry["game_line"]) if entry.get("game_line") else ""
     row_class = "jumbo-lineup-row jumbo-lineup-row-current" if is_current else "jumbo-lineup-row"
     ops_class = f"jumbo-lineup-ops jumbo-lineup-ops-{tier}" if tier else "jumbo-lineup-ops"
+    # Session request: "how can we improve the experience watching the
+    # game... feel good and seamless" — the current-batter row fades in
+    # when the highlight moves to a new hitter, rather than the accent
+    # bar just snapping onto whichever row happens to render with
+    # jumbo-lineup-row-current this time (see app.py's kiosk-jumbo-fade).
+    # Only the currently-highlighted row carries the attributes at
+    # all — a row that's never "current" has nothing to fade.
+    fade_attrs = (
+        f' data-fade-slot="lineup-current-{html.escape(team_key)}" data-fade-value="{html.escape(entry.get("name", ""))}"'
+        if is_current
+        else ""
+    )
     return (
-        f'<div class="{row_class}">'
+        f'<div class="{row_class}"{fade_attrs}>'
         f'<span class="jumbo-lineup-num">{number}</span>'
         f'<span class="jumbo-lineup-name">{html.escape(entry["short_name"].upper())}</span>'
         f'<span class="jumbo-lineup-pos">{position}</span>'
@@ -920,6 +968,7 @@ def _batting_order_rail_html(entries: list[dict], team: dict, current_batter: st
             e,
             current_batter is not None and e.get("name") == current_batter,
             sports_client.ops_tier(e.get("ops"), tiers),
+            team["name"],
         )
         for e in entries
     )
@@ -947,8 +996,16 @@ def _last_play_html(game_id: int, away: dict, home: dict) -> str:
     # momentarily disagree.
     away_score = play["away_score"] if play["away_score"] is not None else "–"
     home_score = play["home_score"] if play["home_score"] is not None else "–"
+    # Session request: "how can we improve the experience watching the
+    # game... feel good and seamless" — the whole strip fades in when a
+    # genuinely new play lands (keyed by the play's own description
+    # text — a real new sentence every time, unlike the score alone,
+    # which can repeat across reruns while this same play is still the
+    # latest one), instead of the score/description just snapping to
+    # the new play's text (see app.py's kiosk-jumbo-fade).
+    play_key = html.escape(play["description"])
     return (
-        f'<div class="jumbo-lastplay">'
+        f'<div class="jumbo-lastplay" data-fade-slot="lastplay-{game_id}" data-fade-value="{play_key}">'
         f'<div class="jumbo-lastplay-score">'
         f'<img class="jumbo-lastplay-logo" src="{html.escape(away["logo"])}" />'
         f'<span class="jumbo-lastplay-tally">{away_score}–{home_score}</span>'

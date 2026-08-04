@@ -315,6 +315,69 @@ components.html(
     height=0,
 )
 
+# Session request: "how can we improve the experience watching the game
+# on the jumbotron... everything to feel good and seamless and like
+# its all orchestrated" — a general-purpose version of the win-
+# probability smoother just above, for every OTHER jumbotron element
+# that currently just pops to its new value/state on each rerun (same
+# root cause: Streamlit re-renders the whole markdown block from
+# scratch, so there's never an existing DOM node for a CSS transition
+# to animate from). Any element opts in with two data attributes —
+# data-fade-slot (a stable logical identity for "this one spot," e.g.
+# "matchup-batter" or "lineup-current-Blue Jays" — NOT the DOM node,
+# which is new every time) and data-fade-value (whatever value means
+# "this is genuinely the same thing as last rerun" — a player id, a
+# play description, an inning+half string) — rather than each feature
+# needing its own bespoke smoother script the way the win-probability
+# bar has. A first sighting of a slot, or an unchanged value, sets
+# nothing (already rendered correctly, nothing to animate); a genuine
+# change snaps opacity to 0, forces a reflow, then transitions to 1 —
+# same reflow-then-transition trick as kiosk-wp-smoother, opacity
+# instead of width since these are appear/replace moments, not a
+# continuous bar. 0.45s cubic-bezier(.2,.8,.2,1) matches this board's
+# own existing card fade-in convention (.jumbo-around-fade-a/-b in
+# theme.py) rather than introducing a new easing feel.
+components.html(
+    """
+    <script>
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-jumbo-fade')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-jumbo-fade';
+      s.textContent = [
+        "window.kioskFadeState = window.kioskFadeState || {};",
+        "function kioskApplyFadeIn(el) {",
+        "  var slot = el.getAttribute('data-fade-slot');",
+        "  var value = el.getAttribute('data-fade-value');",
+        "  if (!slot || value === null) return;",
+        "  var last = window.kioskFadeState[slot];",
+        "  if (last === undefined) {",
+        "    window.kioskFadeState[slot] = value;",
+        "    return;",
+        "  }",
+        "  if (last !== value) {",
+        "    window.kioskFadeState[slot] = value;",
+        "    el.style.transition = 'none';",
+        "    el.style.opacity = '0';",
+        "    void el.offsetHeight;",
+        "    el.style.transition = 'opacity 0.45s cubic-bezier(.2,.8,.2,1)';",
+        "    el.style.opacity = '1';",
+        "  }",
+        "}",
+        "function kioskApplyFadeInAll() {",
+        "  document.querySelectorAll('[data-fade-slot]').forEach(kioskApplyFadeIn);",
+        "}",
+        "kioskApplyFadeInAll();",
+        "new MutationObserver(kioskApplyFadeInAll).observe(document.body, {childList: true, subtree: true});",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+    </script>
+    """,
+    height=0,
+)
+
 # Connection watchdog — session report: "why is my dashboard stuck at
 # 12:48pm" while the real time was 7:29pm, ~7 hours stale. Confirmed
 # not a code bug: a fresh instance of the exact same deployed code
