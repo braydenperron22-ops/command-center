@@ -672,37 +672,34 @@ components.html(
         // user's own room is already on the right local time without
         // needing the Python side's TIMEZONE constant threaded through).
         //
-        // Session follow-up: "make the adjusted sound system based on
+        // Session follow-up #1: "make the adjusted sound system based on
         // time a little more strict, its currently almost 7 and my
         // alert jumpscared me." The original curve was a single
         // symmetric sine hump spanning the WHOLE 5am-10pm day window
         // (peak at 1:30pm, decaying all the way back down across the
         // following 8.5 hours) — confirmed by hand, that put ~7pm at
-        // roughly 0.67, still two-thirds of full volume, nowhere near
-        // "winding down for the evening." Now piecewise: the morning
-        // rise is unchanged (5am->1:30pm, quarter-sine, same 0.3 floor
-        // ->1.0 peak), but the evening decay is compressed into a
-        // shorter, steeper window (1:30pm->8pm instead of stretching
-        // all the way to 10pm) — the same ~7pm moment now lands closer
-        // to 0.47, a real, noticeable difference, not just a hair
-        // quieter. 8pm->10pm holds flat at the quiet 0.3 floor (already
-        // wound down by then) right up until the existing hard cutoff
-        // to true silence at 10pm.
+        // roughly 0.67, still two-thirds of full volume.
+        //
+        // Session follow-up #2: "it should slowly drop down and hit
+        // silence... and ramp back up in the morning... in a straight
+        // line increase decrease." Replaced the sine easing (and its
+        // 0.3 quiet floor) with a plain linear triangle wave: 0 right
+        // at 5am, climbing in a straight line to 1.0 at 1:30pm, then
+        // back down in a straight line to 0 right at 10pm — the day
+        // curve itself now reaches true silence exactly at the night
+        // boundary instead of arriving at a 0.3 floor and then hard-
+        // cutting, so the transition into night is seamless rather than
+        // a drop. Severe weather's own fixed 0.5 overnight exception is
+        // unchanged — it only ever applies once isNight is already true,
+        // never during the day curve itself.
         "function kioskAlertVolume(severe) {",
         "  var d = new Date();",
         "  var hour = d.getHours() + d.getMinutes() / 60;",
         "  var isNight = hour >= 22 || hour < 5;",
         "  if (isNight) { return severe ? 0.5 : 0; }",
-        "  var dayStart = 5, peak = 13.5, eveningFloor = 20;",
-        "  if (hour <= peak) {",
-        "    var riseFrac = (hour - dayStart) / (peak - dayStart);",
-        "    return 0.3 + 0.7 * Math.sin(riseFrac * Math.PI / 2);",
-        "  }",
-        "  if (hour <= eveningFloor) {",
-        "    var fallFrac = (hour - peak) / (eveningFloor - peak);",
-        "    return 0.3 + 0.7 * Math.sin((1 - fallFrac) * Math.PI / 2);",
-        "  }",
-        "  return 0.3;",
+        "  var dayStart = 5, peak = 13.5, dayEnd = 22;",
+        "  if (hour <= peak) { return (hour - dayStart) / (peak - dayStart); }",
+        "  return 1 - (hour - peak) / (dayEnd - peak);",
         "}",
         "function kioskPlayChime(urgent) {",
         "  try {",
