@@ -1883,6 +1883,96 @@ def fetch_mlb_last_play(game_id: int) -> dict | None:
     return None
 
 
+def fetch_mlb_recent_pitches(game_id: int) -> dict | None:
+    """{"zone_top", "zone_bottom", "pitches": [{"px", "pz", "result",
+    "speed", "type"}, ...]} for every pitch of the at-bat currently in
+    progress (or, between at-bats, the just-completed one) — session
+    request: "add a strike zone between the 2 players and show balls in
+    green strikes in red and fouls with 2 strikes are just grey... pull
+    the most recent pitches in their short form with speeds."
+
+    "zone_top"/"zone_bottom" are THIS BATTER's own real strike zone
+    bounds (MLB's own pitchData.strikeZoneTop/Bottom, in feet — varies
+    by stance/height, same batter for every pitch in one at-bat) so the
+    zone box can be drawn to scale rather than a generic average.
+    "px"/"pz" are the pitch's own real plate-crossing coordinates (feet,
+    Statcast convention: pX=0 is the middle of the plate, pZ is height
+    off the ground) — everything needed to plot it accurately, not just
+    classify it. Deliberately scoped to ONE at-bat's own pitches, never
+    reaching back into a previous batter's — mixing pitches plotted
+    against a different batter's own zone bounds would be misleading.
+
+    "result" is "ball"/"strike"/"foul_frozen" — MLB's own per-pitch
+    isBall/isStrike flags mark EVERY foul as isStrike (confirmed live),
+    even one thrown after the count already had 2 strikes, where a foul
+    is a real, functional no-op (the count doesn't advance — a genuine
+    baseball rule, not a data quirk). "foul_frozen" is exactly that
+    case: a foul (details.code == "F") whose strike count didn't
+    actually change from the pitch before it. Tracked by walking this
+    at-bat's own pitches in order and comparing each one's post-pitch
+    strike count to the running total, not just trusting isStrike
+    alone, which would color it identically to a real strike.
+
+    "type" is MLB's own 2-letter pitch-type code (e.g. "FF"/"SL"/"CH"),
+    already exactly the "short form" asked for — no abbreviating needed.
+    "speed" is startSpeed (mph at release, not endSpeed at the plate —
+    the number every real broadcast shows).
+
+    Reuses the same cached full live-feed fetch fetch_mlb_last_play
+    already pulls this rerun (no extra request), delayed the same
+    wall-clock amount (own buffer key — a different raw view of the
+    same underlying payload) so these pitches never appear ahead of the
+    broadcast the rest of the board is synced to. None on any fetch
+    failure or if the current/most recent play genuinely has no pitch
+    events yet (a play that ended on a non-pitch event, or truly the
+    first pitch of the game about to be thrown)."""
+    try:
+        data = delayed(f"mlb_pitches_{game_id}", _fetch_mlb_live_feed_raw(game_id))
+    except Exception:
+        return None
+    all_plays = data.get("liveData", {}).get("plays", {}).get("allPlays", [])
+    pitch_events = []
+    for play in reversed(all_plays):
+        events = [e for e in (play.get("playEvents") or []) if e.get("isPitch")]
+        if events:
+            pitch_events = events
+            break
+    if not pitch_events:
+        return None
+    last_pitch_data = pitch_events[-1].get("pitchData") or {}
+    zone_top = last_pitch_data.get("strikeZoneTop")
+    zone_bottom = last_pitch_data.get("strikeZoneBottom")
+    pitches = []
+    prev_strikes = 0
+    for e in pitch_events:
+        details = e.get("details") or {}
+        pitch_data = e.get("pitchData") or {}
+        coords = pitch_data.get("coordinates") or {}
+        px, pz = coords.get("pX"), coords.get("pZ")
+        if px is None or pz is None:
+            continue
+        strikes_after = (e.get("count") or {}).get("strikes", prev_strikes)
+        if details.get("code") == "F" and strikes_after == prev_strikes:
+            result = "foul_frozen"
+        elif details.get("isBall"):
+            result = "ball"
+        else:
+            result = "strike"
+        prev_strikes = strikes_after
+        pitches.append(
+            {
+                "px": px,
+                "pz": pz,
+                "result": result,
+                "speed": pitch_data.get("startSpeed"),
+                "type": (details.get("type") or {}).get("code"),
+            }
+        )
+    if not pitches:
+        return None
+    return {"zone_top": zone_top, "zone_bottom": zone_bottom, "pitches": pitches}
+
+
 NHL_LANDING_URL = "https://api-web.nhle.com/v1/gamecenter/{game_id}/landing"
 
 

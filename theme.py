@@ -3550,6 +3550,22 @@ html, body, [class*="css"] {
     letter-spacing: 0.1em;
     flex: 0 0 auto;
 }
+/* Session request: "add a strike zone between the 2 players... pull
+   the most recent pitches in their short form with speeds to go below
+   the zone" — replaces .jumbo-live-matchup-vs above in the same flex
+   slot (pages_jumbotron._strike_zone_block_html falls back to the
+   plain VS text itself when there's no pitch data yet, so this class
+   only ever appears with real content to show). */
+.jumbo-strikezone { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 0 0 auto; }
+.jumbo-strikezone-svg { width: 92px; height: auto; }
+.jumbo-pitch-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px 6px; max-width: 120px; }
+.jumbo-pitch-chip {
+    font-family: var(--label);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
 .jumbo-diamond { width: 84px; height: 84px; display: inline-block; vertical-align: -24px; margin: 0 22px; }
 /* Session request: "make the bases react when someone gets on with a
    smooth lighting up animation" — the plain transition covers every

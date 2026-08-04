@@ -618,6 +618,93 @@ def _strike_pct_heat(strikes: int, total_pitches: int) -> str | None:
     return None
 
 
+# Session request: "add a strike zone between the 2 players and show
+# balls in green strikes in red and fouls with 2 strikes are just
+# grey... pull the most recent pitches in their short form with speeds
+# to go below the zone." Real Statcast plate coordinates (feet, 0 = the
+# middle of the plate) plotted to scale rather than a stylized/fake
+# zone graphic — sports_client.fetch_mlb_recent_pitches already does
+# the fetching/classifying; this just draws it. Viewbox is wider/taller
+# than the real zone itself so a genuine ball well outside it still
+# shows up on the diagram instead of clipping at the edge; pZ range
+# (0.5-4.5ft) comfortably covers real strike-zone bounds for any batter
+# height plus a couple feet of margin either side.
+_ZONE_PLATE_HALF_WIDTH_FT = 17 / 2 / 12  # real MLB plate width (17in), halved for center-relative px
+_ZONE_PX_RANGE_FT = 1.75  # +/- feet shown horizontally
+_ZONE_PZ_MIN_FT, _ZONE_PZ_MAX_FT = 0.5, 4.5  # feet shown vertically
+_ZONE_SVG_W, _ZONE_SVG_H = 140, 160
+_MAX_PITCHES_SHOWN = 8  # a full-count battle can run well past this; only the most recent stay legible at this size
+_PITCH_RESULT_COLOR = {"ball": "#32D74B", "strike": "#FF6961", "foul_frozen": "#9BA6BA"}
+
+
+def _zone_svg_x(px: float) -> float:
+    return (px + _ZONE_PX_RANGE_FT) / (2 * _ZONE_PX_RANGE_FT) * _ZONE_SVG_W
+
+
+def _zone_svg_y(pz: float) -> float:
+    return _ZONE_SVG_H - (pz - _ZONE_PZ_MIN_FT) / (_ZONE_PZ_MAX_FT - _ZONE_PZ_MIN_FT) * _ZONE_SVG_H
+
+
+def _strike_zone_svg(zone_top: float, zone_bottom: float, pitches: list[dict]) -> str:
+    """The zone box (this batter's own real strikeZoneTop/Bottom, not a
+    generic average — varies by stance/height) plus one dot per pitch,
+    plotted at its own real (px, pz). Older pitches fade toward
+    transparent and shrink slightly; the most recent gets a white
+    outline and full opacity, so the sequence itself — not just each
+    pitch's own color — is readable at a glance."""
+    if zone_top is None or zone_bottom is None or not pitches:
+        return ""
+    zx1, zx2 = _zone_svg_x(-_ZONE_PLATE_HALF_WIDTH_FT), _zone_svg_x(_ZONE_PLATE_HALF_WIDTH_FT)
+    zy1, zy2 = _zone_svg_y(zone_top), _zone_svg_y(zone_bottom)
+    n = len(pitches)
+    dots = []
+    for i, p in enumerate(pitches):
+        cx, cy = _zone_svg_x(p["px"]), _zone_svg_y(p["pz"])
+        color = _PITCH_RESULT_COLOR.get(p["result"], "#9BA6BA")
+        is_last = i == n - 1
+        r = 8 if is_last else 6
+        stroke = ' stroke="#fff" stroke-width="1.5"' if is_last else ""
+        opacity = 0.5 + 0.5 * (i + 1) / n
+        dots.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="{color}"{stroke} opacity="{opacity:.2f}" />')
+    return (
+        f'<svg class="jumbo-strikezone-svg" viewBox="0 0 {_ZONE_SVG_W} {_ZONE_SVG_H}" xmlns="http://www.w3.org/2000/svg">'
+        f'<rect x="{zx1:.1f}" y="{zy1:.1f}" width="{zx2 - zx1:.1f}" height="{zy2 - zy1:.1f}" '
+        f'fill="none" stroke="#9BA6BA" stroke-width="2" rx="2" />'
+        f'{"".join(dots)}'
+        f"</svg>"
+    )
+
+
+def _recent_pitches_html(pitches: list[dict]) -> str:
+    """The short-form pitch sequence below the zone — speed + MLB's own
+    2-letter pitch-type code ("97 FF"), color-matched to that pitch's
+    own dot in the zone above, oldest to newest left to right so the
+    order reads the same direction as the at-bat actually happened."""
+    chips = []
+    for p in pitches:
+        color = _PITCH_RESULT_COLOR.get(p["result"], "#9BA6BA")
+        speed = round(p["speed"]) if p.get("speed") is not None else "—"
+        ptype = html.escape(p.get("type") or "—")
+        chips.append(f'<div class="jumbo-pitch-chip" style="color:{color}">{speed} {ptype}</div>')
+    return f'<div class="jumbo-pitch-chips">{"".join(chips)}</div>'
+
+
+def _strike_zone_block_html(game_id: int) -> str:
+    """The full replacement for the plain "VS" divider — falls back to
+    that plain text whenever there's genuinely no pitch data yet for
+    the current at-bat (sports_client.fetch_mlb_recent_pitches's own
+    None cases), rather than leaving a blank gap between the two player
+    columns."""
+    pitch_info = sports_client.fetch_mlb_recent_pitches(game_id)
+    if not pitch_info:
+        return '<div class="jumbo-live-matchup-vs">VS</div>'
+    shown = pitch_info["pitches"][-_MAX_PITCHES_SHOWN:]
+    zone_svg = _strike_zone_svg(pitch_info["zone_top"], pitch_info["zone_bottom"], shown)
+    if not zone_svg:
+        return '<div class="jumbo-live-matchup-vs">VS</div>'
+    return f'<div class="jumbo-strikezone">{zone_svg}{_recent_pitches_html(shown)}</div>'
+
+
 def _current_matchup_html(game_id: int) -> str:
     """Replaces the Top Performers panel with the two players actually
     involved in the live at-bat while a game is live — session request:
@@ -741,7 +828,7 @@ def _current_matchup_html(game_id: int) -> str:
         f'<div class="jumbo-leaders"><div class="jumbo-sl">Current Matchup</div>'
         f'<div class="jumbo-live-matchup">'
         f'{col("At Bat", batter, batter_rows)}'
-        f'<div class="jumbo-live-matchup-vs">VS</div>'
+        f'{_strike_zone_block_html(game_id)}'
         f'{col("Pitching", pitcher, pitcher_rows, pitcher.get("line"))}'
         f"</div></div>"
     )
