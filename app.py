@@ -670,27 +670,39 @@ components.html(
         // 0..1 multiplier read off the KIOSK's OWN clock (not the
         // server's — this is client-side so a kiosk sitting in the
         // user's own room is already on the right local time without
-        // needing the Python side's TIMEZONE constant threaded through):
-        // a full 0->1->0 sine hump across the 5am-10pm "day" window (a
-        // single symmetric hump rather than separate ramp-up/ramp-down
-        // pieces, since 5am-1:30pm and 1:30pm-10pm are exactly equal
-        // spans), floored at a quiet-but-audible 0.3 rather than
-        // hitting true 0 right at the 5am/10pm boundary, and a hard 0
-        // for the 10pm-5am window itself — except for severe weather,
-        // which gets a fixed "moderate" 0.5 overnight instead of the
-        // day curve, per the one exception the user's own request
-        // carved out (everything else stays at true 0 overnight: this
-        // deliberately doesn't broaden past severe weather, matching
-        // this app's own existing storm-hazard-scope precedent for
-        // other night-gate exceptions).
+        // needing the Python side's TIMEZONE constant threaded through).
+        //
+        // Session follow-up: "make the adjusted sound system based on
+        // time a little more strict, its currently almost 7 and my
+        // alert jumpscared me." The original curve was a single
+        // symmetric sine hump spanning the WHOLE 5am-10pm day window
+        // (peak at 1:30pm, decaying all the way back down across the
+        // following 8.5 hours) — confirmed by hand, that put ~7pm at
+        // roughly 0.67, still two-thirds of full volume, nowhere near
+        // "winding down for the evening." Now piecewise: the morning
+        // rise is unchanged (5am->1:30pm, quarter-sine, same 0.3 floor
+        // ->1.0 peak), but the evening decay is compressed into a
+        // shorter, steeper window (1:30pm->8pm instead of stretching
+        // all the way to 10pm) — the same ~7pm moment now lands closer
+        // to 0.47, a real, noticeable difference, not just a hair
+        // quieter. 8pm->10pm holds flat at the quiet 0.3 floor (already
+        // wound down by then) right up until the existing hard cutoff
+        // to true silence at 10pm.
         "function kioskAlertVolume(severe) {",
         "  var d = new Date();",
         "  var hour = d.getHours() + d.getMinutes() / 60;",
         "  var isNight = hour >= 22 || hour < 5;",
         "  if (isNight) { return severe ? 0.5 : 0; }",
-        "  var fraction = (hour - 5) / (22 - 5);",
-        "  var curve = Math.sin(fraction * Math.PI);",
-        "  return 0.3 + 0.7 * curve;",
+        "  var dayStart = 5, peak = 13.5, eveningFloor = 20;",
+        "  if (hour <= peak) {",
+        "    var riseFrac = (hour - dayStart) / (peak - dayStart);",
+        "    return 0.3 + 0.7 * Math.sin(riseFrac * Math.PI / 2);",
+        "  }",
+        "  if (hour <= eveningFloor) {",
+        "    var fallFrac = (hour - peak) / (eveningFloor - peak);",
+        "    return 0.3 + 0.7 * Math.sin((1 - fallFrac) * Math.PI / 2);",
+        "  }",
+        "  return 0.3;",
         "}",
         "function kioskPlayChime(urgent) {",
         "  try {",
