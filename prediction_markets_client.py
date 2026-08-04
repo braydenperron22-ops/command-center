@@ -199,15 +199,40 @@ def _parse_event(event: dict) -> dict | None:
 _last_good: dict[str, dict] = {}
 
 
+def _already_past(end_date_iso: str) -> bool:
+    """True if `end_date` (the same ISO 8601 UTC string current_odds's
+    own "end_date" field carries) is already in the past. Session
+    report: "why is the brazil central bank contract not actively
+    swapping to the next contract as the contract ended yesterday" —
+    confirmed live against Polymarket's own API: the August BCB
+    contract's endDate had passed by nearly a full day and its own
+    `closed` flag was STILL false. Relying on `closed` alone (as
+    current_odds used to) trusts Polymarket to flip that flag promptly
+    right at the deadline — real behavior is closer to "once the market
+    is fully resolved/settled," which can lag the actual decision by
+    more than the "a beat behind" gap days_until's own docstring
+    originally assumed. Checking the real endDate directly means this
+    app rolls to the next meeting on time regardless of how slowly
+    Polymarket's own flag catches up."""
+    try:
+        end = datetime.fromisoformat(end_date_iso.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return False
+    return end <= datetime.now(end.tzinfo)
+
+
 def current_odds(bank: str) -> dict | None:
     """{"title", "end_date", "outcomes": {bucket: probability, ...}} for
     the nearest still-open rate-decision meeting for `bank` (one of
     BANKS' own keys) — rolls to the next meeting automatically the
-    moment the current one closes. Tries every still-open search result
-    in end-date order, not just the earliest, so one loosely-related
-    result that doesn't actually parse as a rate-decision market (fuzzy
-    text search, not an exact filter) doesn't block a real one further
-    down the list. None if nothing usable has ever come back for this
+    moment the current one closes. "Still open" checks the event's own
+    real endDate against right now, not just Polymarket's own `closed`
+    flag (see _already_past's own docstring for why that flag alone
+    isn't enough). Tries every still-open search result in end-date
+    order, not just the earliest, so one loosely-related result that
+    doesn't actually parse as a rate-decision market (fuzzy text
+    search, not an exact filter) doesn't block a real one further down
+    the list. None if nothing usable has ever come back for this
     bank."""
     entry = BANKS.get(bank)
     if entry is None:
@@ -218,7 +243,7 @@ def current_odds(bank: str) -> dict | None:
     except Exception:
         return _last_good.get(bank)
     open_events = sorted(
-        (e for e in events if not e.get("closed") and e.get("endDate")),
+        (e for e in events if not e.get("closed") and e.get("endDate") and not _already_past(e["endDate"])),
         key=lambda e: e["endDate"],
     )
     for event in open_events:
@@ -682,7 +707,10 @@ def current_data_forecast(series: str) -> dict | None:
     """{"title", "end_date", "forecast", "points"} — the market's own
     probability-weighted point forecast for the next print of `series`
     (a DATA_SERIES key), rolling to the next month's event the same way
-    current_odds() rolls to the next meeting."""
+    current_odds() rolls to the next meeting — including the same real-
+    endDate check (see _already_past's own docstring; Polymarket's own
+    `closed` flag alone can lag the actual deadline by nearly a full
+    day, confirmed live)."""
     cfg = DATA_SERIES.get(series)
     if cfg is None:
         return None
@@ -693,7 +721,10 @@ def current_data_forecast(series: str) -> dict | None:
     open_events = sorted(
         (
             e for e in events
-            if not e.get("closed") and e.get("endDate") and cfg["title_pattern"].search(e.get("title") or "")
+            if not e.get("closed")
+            and e.get("endDate")
+            and not _already_past(e["endDate"])
+            and cfg["title_pattern"].search(e.get("title") or "")
         ),
         key=lambda e: e["endDate"],
     )
@@ -871,7 +902,11 @@ def current_close_forecast(series: str) -> dict | None:
     """{"title", "end_date", "forecast"} — the market's own
     probability-weighted expected close for `series` (a CLOSE_SERIES
     key), rolling to the next still-open day's contract the same way
-    current_odds() rolls to the next meeting."""
+    current_odds() rolls to the next meeting — including the same real-
+    endDate check (see _already_past's own docstring); a daily-
+    granularity series like this one is if anything more exposed to
+    Polymarket's own `closed` flag lagging the actual deadline, not
+    less."""
     cfg = CLOSE_SERIES.get(series)
     if cfg is None:
         return None
@@ -880,7 +915,7 @@ def current_close_forecast(series: str) -> dict | None:
     except Exception:
         return _last_good_close.get(series)
     open_events = sorted(
-        (e for e in events if not e.get("closed") and e.get("endDate")),
+        (e for e in events if not e.get("closed") and e.get("endDate") and not _already_past(e["endDate"])),
         key=lambda e: e["endDate"],
     )
     for event in open_events:
