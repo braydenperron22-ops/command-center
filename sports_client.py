@@ -18,7 +18,6 @@ import streamlit as st
 import data_health
 import fetch_throttle
 import persisted_state
-import savant_client
 from config import TIMEZONE
 
 MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
@@ -1631,56 +1630,55 @@ def fetch_mlb_top_performers(game_id: int) -> list[dict]:
 
 
 def fetch_mlb_live_matchup(game_id: int) -> dict | None:
-    """{"batter": {"id", "name", "ops", "season_ops_heat",
-    "overall_percentile", "vs_pitcher", "vs_pitcher_heat", "photo"}, "pitcher":
-    {"id", "name", "era", "season_era_heat", "overall_percentile", "pitches", "balls",
-    "strikes", "line", "photo"}} for whoever's actually at the plate/on
-    the mound right now — session request: "during the game can you make
-    the top performers tab show current pitcher and batter and their
-    stats... ideally add the pitcher and batter pics," later refined to
-    "for pitchers add number of pitches below ERA" (briefly swapped the
-    batter stat to AVG in the same request, then "keep ops, screw avg"
-    put it right back) and then "how many of the pitches have been
-    balls and how many have been strikes over the entire outing."
+    """{"batter": {"id", "name", "ops", "season_ops_heat", "vs_pitcher",
+    "vs_pitcher_heat", "photo"}, "pitcher": {"id", "name", "era",
+    "season_era_heat", "pitches", "balls", "strikes", "line", "photo"}}
+    for whoever's actually at the plate/on the mound right now — session
+    request: "during the game can you make the top performers tab show
+    current pitcher and batter and their stats... ideally add the
+    pitcher and batter pics," later refined to "for pitchers add number
+    of pitches below ERA" (briefly swapped the batter stat to AVG in the
+    same request, then "keep ops, screw avg" put it right back) and then
+    "how many of the pitches have been balls and how many have been
+    strikes over the entire outing."
     "vs_pitcher" added for a later session request ("does espn show hot
     streaks or anything?") — see _fetch_mlb_vs_pitcher_raw for why that
-    and not a literal hitting-streak count. Its "_heat" field ("hot"/
-    "cold"/None) came from a follow-up request to color-pulse it when
-    running hot or cold — computed here rather than in pages_jumbotron
-    so the thresholds/deltas live next to the stat they're judging.
-    "season_ops_heat"/"season_era_heat" (a second follow-up: "same thing
-    with the players season ops compared to his career average... same
-    with pitchers but opposite rules lower = hot") are a DELTA off the
-    player's own career line (_batter_season_heat/_pitcher_season_heat),
-    not a fixed threshold like vs_pitcher's — "hot" means "better than
-    his own normal," a different question than vs_pitcher's absolute
-    cutoff. The batter's "overall_percentile" replaced the original
-    rolling last-15-games OPS ("last15_ops"/"last15_heat") per a later
-    session request: "instead of the last fifteen OPS... replace it
-    with the average of every single one of their percentiles" from
-    Baseball Savant — refined by a follow-up question ("does this truly
-    bring up the full story?") into an average of just the value/
-    outcome-denominated columns (xwOBA-family, barrel%, hard-hit%,
-    plate discipline, OAA), not literally every column Savant has — see
-    savant_client.batter_overall_percentile's own docstring and
-    _VALUE_METRIC_COLUMNS for exactly which and why. The pitcher's own
-    "overall_percentile" followed immediately after ("add the same
-    thing for Baseball Pitcher") — savant_client.pitcher_overall_
-    percentile, same curated-average rule, off Savant's separate
-    pitcher-side percentile table (xERA in place of the batter's OAA,
-    same reasoning). Reuses the same cached linescore fetch_mlb_live_detail already
+    and not a literal hitting-streak count; it's this batter's career
+    BATTING AVERAGE against this exact pitcher (MLB's own pre-formatted
+    "avg" field on the vsPlayer stat, e.g. ".333" — session request: "vs
+    pitcher stat to a Batting Average," replacing an earlier hits-atBats
+    line like "2-6"). Its "_heat" field ("hot"/"cold"/None) came from a
+    follow-up request to color-pulse it when running hot or cold —
+    computed here rather than in pages_jumbotron so the thresholds/
+    deltas live next to the stat they're judging. "season_ops_heat"/
+    "season_era_heat" (a second follow-up: "same thing with the players
+    season ops compared to his career average... same with pitchers but
+    opposite rules lower = hot") are a DELTA off the player's own career
+    line (_batter_season_heat/_pitcher_season_heat), not a fixed
+    threshold like vs_pitcher's — "hot" means "better than his own
+    normal," a different question than vs_pitcher's absolute cutoff.
+
+    A Baseball Savant percentile-average "OVERALL" score briefly lived
+    on both dicts here (replacing, for the batter, an even earlier
+    rolling last-15-games OPS) — removed again per session feedback:
+    "let's get rid of the overall rating from baseball... OPS is just a
+    better stat." savant_client.py (and its own leaderboard fetch) is
+    gone with it; OPS is the batter's one season-level number again, and
+    the pitcher's second stat row is just STRIKE% again, matching the
+    shape before either OVERALL was ever added.
+
+    Reuses the same cached linescore fetch_mlb_live_detail already
     pulls this rerun (no extra request for the matchup itself), one
     small extra request each for the two players' own season+career
     stat lines (both come back in the same hydrate call — see
     _fetch_mlb_player_raw), the batter's vs-pitcher history, plus one
     boxscore request for the pitcher's game-total pitch/ball/strike
-    counts (the Savant percentile lookup itself is a long-TTL cached
-    league-wide table, not a per-matchup request — see savant_client.py).
-    None on any fetch failure or once there's genuinely no one at the
-    plate/mound to name (the linescore payload omits offense/defense
-    between innings). Uses the same _mlb_linescore_delayed snapshot as
-    fetch_mlb_live_detail (see its own docstring) so the matchup shown
-    here never gets ahead of the situation strip above it."""
+    counts. None on any fetch failure or once there's genuinely no one
+    at the plate/mound to name (the linescore payload omits offense/
+    defense between innings). Uses the same _mlb_linescore_delayed
+    snapshot as fetch_mlb_live_detail (see its own docstring) so the
+    matchup shown here never gets ahead of the situation strip above
+    it."""
     try:
         data = _mlb_linescore_delayed(game_id)
     except Exception:
@@ -1698,17 +1696,16 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
     batter_career = _fetch_mlb_player_stat_raw(batter["id"], "hitting", "career")
     pitcher_career = _fetch_mlb_player_stat_raw(pitcher["id"], "pitching", "career")
     vs_pitcher = _fetch_mlb_vs_pitcher_raw(batter["id"], pitcher["id"])
-    # "0-0" (no career at-bats vs this pitcher) reads as a real stat, not
+    # ".000" (no career at-bats vs this pitcher) reads as a real stat, not
     # "no history yet" — only show it once there's an actual at-bat on record.
-    vs_pitcher_line = f"{vs_pitcher['hits']}-{vs_pitcher['atBats']}" if vs_pitcher.get("atBats") else None
+    vs_pitcher_avg = vs_pitcher.get("avg") if vs_pitcher.get("atBats") else None
     return {
         "batter": {
             "id": batter["id"],
             "name": batter["fullName"],
             "ops": batter_stat.get("ops"),
             "season_ops_heat": _batter_season_heat(batter_stat.get("ops"), batter_career.get("ops")),
-            "overall_percentile": savant_client.batter_overall_percentile(batter["id"]),
-            "vs_pitcher": vs_pitcher_line,
+            "vs_pitcher": vs_pitcher_avg,
             "vs_pitcher_heat": _vs_pitcher_heat(vs_pitcher.get("hits"), vs_pitcher.get("atBats")),
             "photo": _mlb_headshot_url(batter["id"]),
         },
@@ -1717,7 +1714,6 @@ def fetch_mlb_live_matchup(game_id: int) -> dict | None:
             "name": pitcher["fullName"],
             "era": pitcher_stat.get("era"),
             "season_era_heat": _pitcher_season_heat(pitcher_stat.get("era"), pitcher_career.get("era")),
-            "overall_percentile": savant_client.pitcher_overall_percentile(pitcher["id"]),
             "pitches": pitcher_totals.get("pitches"),
             "balls": pitcher_totals.get("balls"),
             "strikes": pitcher_totals.get("strikes"),

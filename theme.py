@@ -3486,10 +3486,7 @@ html, body, [class*="css"] {
    vs-pitcher line and the season OPS/ERA deltas only (sports_client's
    _vs_pitcher_heat/_batter_season_heat/_pitcher_season_heat) —
    everything else on this card stays the plain .jumbo-live-matchup-stat
-   white above, including the batter's OVERALL Savant percentile, which
-   gets its own continuous red/blue gradient via an inline style instead
-   (see pages_jumbotron._savant_gradient_color) rather than this fixed
-   hot/cold pulse. Same text-shadow-pulse pattern as .leave-headline's
+   white above. Same text-shadow-pulse pattern as .leave-headline's
    intensity tiers, just fire/ice instead of amber/red. */
 /* Session feedback: "can you make the hot cold colours a little
    better?" The old cold (#5AC8FA, Apple's own systemBlue-light) sat
