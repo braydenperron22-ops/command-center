@@ -2866,6 +2866,18 @@ html, body, [class*="css"] {
     min-height: 0;
     overflow: hidden;
 }
+/* Session request: "how can we improve the experience watching the
+   game... feel like its all orchestrated in a sophisticated manner" —
+   the two side panels recede a touch (slightly more transparent glass,
+   slightly dimmer edge) so the featured board (.jumbo-board, styled
+   separately above) reads as the visual hero at a glance, not three
+   equally-weighted boxes. Subtle on purpose — My Teams/Around The
+   Leagues still need to be read clearly, just not compete for
+   attention with the actual live game. */
+.jumbo-rail, .jumbo-around {
+    background: rgba(16,22,32,0.52);
+    border-color: rgba(255,255,255,0.07);
+}
 .jumbo-ph {
     flex: 0 0 auto;
     display: flex;
@@ -3021,14 +3033,32 @@ html, body, [class*="css"] {
 .jumbo-standings-odds { flex: 0 0 auto; text-align: right; color: var(--led); font-weight: 600; margin-left: 8px; }
 
 /* ---- Featured board ---- */
-.jumbo-board { position: relative; }
+/* Session request: "how can we improve the experience watching the
+   game... feel good and seamless and like its all orchestrated in a
+   sophisticated manner." The three-panel grid (My Teams rail / this
+   featured board / Around The Leagues) used to share identical
+   .jumbo-panel styling with nothing setting the live game apart at
+   rest — this establishes the featured board as the visual hero: a
+   marginally brighter glass surface and edge than the two side panels
+   (see .jumbo-rail/.jumbo-around's own recede rule further down),
+   independent of the live-pulse glow below, so the hierarchy holds
+   pregame/postgame too, not just while a game's actually live. */
+.jumbo-board {
+    position: relative;
+    background: rgba(20,27,40,0.74);
+    border-color: rgba(255,255,255,0.13);
+}
 .jumbo-board-live {
-    border-color: rgba(255,69,58,0.5);
+    /* --live-glow-rgb (pages_jumbotron._board_html) is OUR team's own
+       real accent color for whichever sport is live, not a fixed
+       generic red — falls back to the old red if a caller ever leaves
+       it unset. */
+    border-color: rgba(var(--live-glow-rgb, 255,69,58), 0.5);
     animation: jumbo-boardpulse 2.6s ease-in-out infinite;
 }
 @keyframes jumbo-boardpulse {
-    0%, 100% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 0 rgba(255,69,58,0); }
-    50% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 26px rgba(255,69,58,0.22); }
+    0%, 100% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 0 rgba(var(--live-glow-rgb, 255,69,58), 0); }
+    50% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 26px rgba(var(--live-glow-rgb, 255,69,58), 0.22); }
 }
 /* Win celebration (pages_jumbotron._board_html) — session request:
    "the j's win." One-shot gold burst around the whole board the

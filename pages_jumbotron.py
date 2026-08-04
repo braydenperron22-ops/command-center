@@ -1480,6 +1480,20 @@ def _board_html(state: dict, now: datetime) -> str:
         "postgame": "FINAL",
     }[phase]
     live_class = " jumbo-board-live" if phase == "live" else ""
+    # Session request: "how can we improve the experience watching the
+    # game... feel good and seamless and like its all orchestrated in a
+    # sophisticated manner." The live pulse used to glow a fixed generic
+    # red (--live) regardless of which team was actually playing — this
+    # ties it to OUR team's own real accent color instead (the same
+    # _TEAM_COLOR_RGB the board gradient/win-probability bar already
+    # use for "our" side), so the whole board's own identity feels
+    # specific to whichever sport/team is actually up, not a stock
+    # "something's live" indicator. A plain CSS variable rather than a
+    # new class per sport — theme.py's .jumbo-board-live reads it with
+    # a fallback to the old red, so a sport this ever runs for without
+    # setting it still looks exactly as it did before.
+    live_glow = _TEAM_COLOR_RGB.get(sport)
+    board_style = f' style="--live-glow-rgb:{live_glow[0]},{live_glow[1]},{live_glow[2]}"' if live_glow else ""
 
     # Session request: "in the original prototype there was a cool dark
     # gradient behind the big score section with both team's colors."
@@ -1502,7 +1516,7 @@ def _board_html(state: dict, now: datetime) -> str:
     )
 
     return (
-        f'<div class="jumbo-panel jumbo-board{live_class}{win_burst}">'
+        f'<div class="jumbo-panel jumbo-board{live_class}{win_burst}"{board_style}>'
         f'<div class="jumbo-ph"><span>{html.escape(league["label"])} · FEATURED</span>'
         f'<span class="jumbo-ph-right">{state_label}</span></div>'
         f'<div class="jumbo-board-body" style="{board_gradient}">'
