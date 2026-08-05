@@ -23,12 +23,13 @@ free public feeds over paid data APIs). Piper is free, local, offline,
 no account, no key, no per-character cost, ever, matching this app's
 own established preference.
 
-Voice: en_US-lessac-medium (piper_voices/) — a natural, clear male
-voice, chosen instead of the notably worse default voices on other
-Piper models tested live. Committed directly into the repo (~63MB)
-rather than downloaded at runtime, since a fresh Streamlit Cloud
-container has no persistent disk to cache it on between redeploys and
-a first-request download would add real, repeated latency."""
+Voice: en_US-hfc_male-medium (piper_voices/) — picked after listening
+to it side by side with 6 other candidates (lessac, ryan, joe, norman,
+alan, bryce) speaking the kiosk's own real alert sentence. Committed
+directly into the repo (~63MB) rather than downloaded at runtime,
+since a fresh Streamlit Cloud container has no persistent disk to
+cache it on between redeploys and a first-request download would add
+real, repeated latency."""
 
 import base64
 import io
@@ -37,8 +38,8 @@ import wave
 import streamlit as st
 from piper import PiperVoice
 
-VOICE_MODEL_PATH = "piper_voices/en_US-lessac-medium.onnx"
-VOICE_CONFIG_PATH = "piper_voices/en_US-lessac-medium.onnx.json"
+VOICE_MODEL_PATH = "piper_voices/en_US-hfc_male-medium.onnx"
+VOICE_CONFIG_PATH = "piper_voices/en_US-hfc_male-medium.onnx.json"
 
 # Confirmed live: ~0.66s one-time model load, ~0.35s to synthesize a
 # full alert-length sentence after that — fast enough to run inline in
