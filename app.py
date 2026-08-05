@@ -693,16 +693,32 @@ components.html(
         //
         // Session follow-up #3: "severe weather should ring at 100%
         // during the day regardless of time and 50% at night regardless
-        // of time." Severe weather no longer follows the ramp at all —
-        // a flat step function instead, same isNight boundary (10pm-5am)
-        // everything else already uses, just two fixed levels instead of
-        // a continuous curve. Only severe weather gets this; breaking
-        // news and the leave-in ticker still ride the full ramp below.
+        // of time." Severe weather stopped following the ramp — a flat
+        // step function instead, same isNight boundary (10pm-5am)
+        // everything else uses, two fixed levels instead of a
+        // continuous curve.
+        //
+        // Session follow-up #4, live at 5am: "make it ramp up slower.
+        // It's five AM... its keeping me up." That flat step jumped
+        // straight from 0.5 to 1.0 the instant the clock hit 5am — the
+        // exact moment someone's still asleep, the worst possible time
+        // for an abrupt doubling in volume. Now a short linear ramp
+        // (5am-8am) carries it from the night's own 0.5 up to the day's
+        // 1.0 gradually instead of snapping — continuous at both ends
+        // (0.5 at 4:59am, 0.5 again at 5:00am, reaching 1.0 by 8am),
+        // so the moment the night cutoff ends is never itself the
+        // loudest possible jump. Full 1.0 holds flat from 8am to 10pm
+        // same as before; only the first 3 morning hours changed.
         "function kioskAlertVolume(severe) {",
         "  var d = new Date();",
         "  var hour = d.getHours() + d.getMinutes() / 60;",
         "  var isNight = hour >= 22 || hour < 5;",
-        "  if (severe) { return isNight ? 0.5 : 1; }",
+        "  if (severe) {",
+        "    if (isNight) { return 0.5; }",
+        "    var morningRampEnd = 8;",
+        "    if (hour < morningRampEnd) { return 0.5 + 0.5 * (hour - 5) / (morningRampEnd - 5); }",
+        "    return 1;",
+        "  }",
         "  if (isNight) { return 0; }",
         "  var dayStart = 5, peak = 13.5, dayEnd = 22;",
         "  if (hour <= peak) { return (hour - dayStart) / (peak - dayStart); }",
