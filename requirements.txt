@@ -10,3 +10,4 @@ recurring-ical-events==3.8.2
 astral==3.2
 Pillow==12.3.0
 snaptrade-python-sdk==11.0.212
+piper-tts==1.6.0

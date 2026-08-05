@@ -775,51 +775,27 @@ components.html(
         "  var byHint = voices.find(function (v) { return maleHints.some(function (h) { return v.name.toLowerCase().indexOf(h) !== -1; }); });",
         "  return byHint || voices[0];",
         "}",
-        // Session request: "make it so the whole thing flows quicker by
-        // removing the words like WHEN:" — EC's own CAP bulletin text
-        // (data-summary) is structured with plain-text section labels
-        // like "What:"/"When:"/"Additional information:" meant for a
-        // reader's eye, not a listener's ear; spoken verbatim they land
-        // as an abrupt, disconnected word breaking the sentence's flow.
-        // Strips just the label text (plain string replace, not regex —
-        // see this app's own established gotcha: a JS regex literal
-        // embedded in this same kind of string-array script silently
-        // loses its backslashes when the array is built, since it's
-        // parsed as a JS string literal once building the array and
-        // AGAIN as real source once assigned to s.textContent) so the
-        // sentence continues straight into what follows each label,
-        // rather than dropping the whole section.
-        "function kioskCleanSpokenSummary(text) {",
-        "  var labels = ['What:', 'When:', 'Where:', 'Who:', 'Why:', 'Additional information:'];",
-        "  labels.forEach(function (label) {",
-        "    while (text.indexOf(label) !== -1) { text = text.replace(label, ''); }",
-        "  });",
-        "  while (text.indexOf('  ') !== -1) { text = text.replace('  ', ' '); }",
-        "  return text.trim();",
-        "}",
         // Session request, after clicking through a set of built-for-
         // this-purpose options: "low bell + AARON for sure." A single
         // low sine-tone ping (the exact "Low Bell" candidate from that
-        // comparison), then — not a fixed recording — a real spoken
-        // sentence built from the toast's own actual headline text, so
-        // "or whatever the situation is" is genuinely handled: whatever
-        // hazard EC's own alert names, this reads it out loud correctly
-        // without needing a new voice line recorded for it.
+        // comparison), then a real spoken sentence for whatever the
+        // situation actually is.
         //
-        // Follow-up session request: "when a severe thunderstorm...is
-        // approaching...it'll give us the chime, and then Aaron will say
-        // severe thunderstorm approaching in ___." weather_alerts_bar's
-        // own get_storm_proximity_alerts fires repeating milestone toasts
-        // ("{title} — expected to arrive in about {N} min" /
-        // "...expected to clear in about {N} min") on the same
-        // .weather-alert-bar-extreme/-warning DOM slot the brand-new-
-        // alert toast uses (get_new_alerts's "{title} — arriving around
-        // {clock}" / "...clearing by {clock}"), so both are told apart
-        // here by parsing the " — " suffix rather than always dropping
-        // it: a milestone toast gets the user's own requested "{title}
-        // approaching/clearing in {N} minutes" phrasing (the clock-based
-        // brand-new-alert suffix still reads awkwardly aloud and stays
-        // dropped, falling to the plain "a new X is now active" line).
+        // Session follow-up: "voices on Dell suck... is there a way to
+        // have a streamlit side text to speech" — the sentence itself
+        // (EC's full bulletin, smoothed; a milestone's "approaching in
+        // N minutes" phrasing) now gets built ONCE, server-side, in
+        // weather_alerts_bar.py (_spoken_summary / _milestone_spoken_
+        // text), then rendered to actual audio there too via Piper
+        // (kiosk_tts.py) — every kiosk plays back the identical WAV
+        // regardless of its own OS or installed voices, instead of each
+        // device's own speechSynthesis picking a different (and on
+        // Windows, notably worse) voice for the same text. This
+        // function no longer parses or reconstructs any sentence at
+        // all — data-summary always already IS the final text to say;
+        // data-audio-b64 is that text already rendered, only absent if
+        // Piper synthesis itself failed, in which case speechSynthesis
+        // is still the safety net.
         "function kioskPlayWeatherAlert(el) {",
         // Severe weather is the one exception to the night-quiet-hours
         // gate (kioskAlertVolume's own "severe" flag) — never silenced,
@@ -853,90 +829,36 @@ components.html(
         "    }",
         "  } catch (e) {}",
         "  try {",
-        "    if (!window.speechSynthesis) return;",
-        "    var headlineEl = el.querySelector('.news-alert-headline');",
-        "    var fullText = headlineEl ? headlineEl.textContent : el.textContent;",
-        "    var parts = fullText.split(' — ');",
-        "    var title = parts[0];",
-        "    var suffix = parts[1] || '';",
-        "    var lower = title.toLowerCase();",
-        "    var arrivePrefix = 'expected to arrive in about ';",
-        "    var clearPrefix = 'expected to clear in about ';",
-        "    var sentence;",
-        // Session choice, after clicking through 4 candidate styles in a
-        // comparison artifact: "broadcast anchor" — fuller sentences,
-        // like a news break-in, over the plainer original phrasing.
-        "    if (suffix.indexOf(arrivePrefix) === 0) {",
-        "      var mins = suffix.slice(arrivePrefix.length).replace(' min', '');",
-        "      sentence = 'A ' + lower + ' is expected to arrive in ' + mins + ' minutes.';",
-        "    } else if (suffix.indexOf(clearPrefix) === 0) {",
-        "      var mins2 = suffix.slice(clearPrefix.length).replace(' min', '');",
-        "      sentence = 'The ' + lower + ' is expected to clear in ' + mins2 + ' minutes.';",
-        "    } else if (suffix.indexOf('arriving now') === 0) {",
-        "      sentence = 'The ' + lower + ' is arriving now.';",
-        "    } else if (suffix.indexOf('clearing now') === 0) {",
-        "      sentence = 'The ' + lower + ' is now clearing.';",
-        "    } else {",
-        // Session follow-up: "i want it to read the description directly
-        // from EC when issued like the full description they release" —
-        // a correction on the previous version, which prepended an
-        // invented lead-in ("This is an alert." etc.) before the real
-        // text. data-summary carries EC's own full bulletin verbatim
-        // (weather_alerts_bar.render_alert_bar) — only ever set on a
-        // genuine brand-new-alert toast, which is exactly this branch (a
-        // milestone toast never reaches here: it always has an
-        // arrive/clear suffix instead). Spoken exactly as EC wrote it,
-        // no added framing — EC's own wording already carries whatever
-        // urgency that hazard type warrants. The severity-based wrapper
-        // only survives as a fallback for the rare case summary comes
-        // back empty (a real EC/AQHI failure, not the normal path);
-        // "warning-moderate" is checked before the bare "warning"
-        // substring it would otherwise also match.
-        "      var summary = el.getAttribute('data-summary') || '';",
-        "      if (summary) {",
-        "        sentence = kioskCleanSpokenSummary(summary);",
-        "      } else {",
-        "        var cls = el.className;",
-        "        var wrapper;",
-        "        if (cls.indexOf('extreme') !== -1) {",
-        "          wrapper = 'This is an alert.';",
-        "        } else if (cls.indexOf('warning-moderate') !== -1) {",
-        "          wrapper = 'Weather warning in effect.';",
-        "        } else if (cls.indexOf('warning') !== -1) {",
-        "          wrapper = 'This is an alert.';",
-        "        } else if (cls.indexOf('watch') !== -1) {",
-        "          wrapper = 'Weather watch issued.';",
-        "        } else {",
-        "          wrapper = 'Special weather statement.';",
-        "        }",
-        "        sentence = wrapper + ' A ' + lower + ' has just been issued for your area.';",
-        "      }",
+        "    var summary = el.getAttribute('data-summary') || '';",
+        "    var audioB64 = el.getAttribute('data-audio-b64');",
+        "    if (audioB64) {",
+        "      setTimeout(function () {",
+        "        var audio = new Audio('data:audio/wav;base64,' + audioB64);",
+        "        audio.volume = vol;",
+        "        audio.play().catch(function () {});",
+        "      }, 2150);",
+        "    } else if (summary && window.speechSynthesis) {",
+        "      setTimeout(function () {",
+        "        window.speechSynthesis.cancel();",
+        "        var utter = new SpeechSynthesisUtterance(summary);",
+        "        var voice = kioskFindVoice();",
+        "        if (voice) utter.voice = voice;",
+        "        utter.rate = 0.92;",
+        "        utter.pitch = 0.88;",
+        "        utter.volume = vol;",
+        "        window.speechSynthesis.speak(utter);",
+        "      }, 2150);",
         "    }",
-        "    setTimeout(function () {",
-        "      window.speechSynthesis.cancel();",
-        "      var utter = new SpeechSynthesisUtterance(sentence);",
-        "      var voice = kioskFindVoice();",
-        "      if (voice) utter.voice = voice;",
-        "      utter.rate = 0.92;",
-        "      utter.pitch = 0.88;",
-        "      utter.volume = vol;",
-        "      window.speechSynthesis.speak(utter);",
-        "    }, 2150);",
         "  } catch (e) {}",
         "}",
         // Same follow-up request, for the "leave in" toast: read the
         // real calendar context out loud instead of a canned line, same
-        // as the weather voice above. commute_reminder._alert_label
-        // only ever produces exactly "Work" or "Leave soon: {event
-        // summary}" (see its own docstring) — the latter's summary half
-        // is genuinely dynamic (any calendar event name), so it's
-        // spoken as the subject ("Golf tee time — leave in 15
-        // minutes.") rather than assuming a fixed set of event types; a
-        // plain "Work" shift just speaks the countdown on its own
-        // ("Leave in 15 minutes.") since naming it wouldn't add
-        // anything. Kept on the SAME 2-note gentle chime (kioskPlayChime
-        // (false)) rather than a new tone — this session's ask was
-        // specifically to add the voice, not redesign the ping.
+        // as the weather voice above — now built server-side too
+        // (commute_reminder._leave_spoken_text), rendered to audio via
+        // the same Piper path (kiosk_tts.py). Kept on the SAME 2-note
+        // gentle chime (kioskPlayChime(false)) rather than a new tone —
+        // this session's ask was specifically to add the voice, not
+        // redesign the ping.
         // Session request: "make it so the alert fires at 100% for leave
         // in notifications regardless of time" — bypasses kioskAlertVolume
         // entirely for this one alert type; every other alert (breaking
@@ -946,30 +868,26 @@ components.html(
         "  var vol = 1;",
         "  kioskPlayChime(false, vol);",
         "  try {",
-        "    if (!window.speechSynthesis) return;",
-        "    var labelEl = el.querySelector('.news-breaking-label');",
-        "    var headlineEl = el.querySelector('.news-alert-headline');",
-        "    var label = labelEl ? labelEl.textContent : '';",
-        "    var headline = headlineEl ? headlineEl.textContent : el.textContent;",
-        "    if (headline.slice(-4) === ' min') { headline = headline.slice(0, -4) + ' minutes'; }",
-        "    var sentence;",
-        "    if (label && label !== 'Work') {",
-        "      var idx = label.indexOf(': ');",
-        "      var eventName = idx !== -1 ? label.slice(idx + 2) : label;",
-        "      sentence = eventName + ' — ' + headline.toLowerCase() + '.';",
-        "    } else {",
-        "      sentence = headline + '.';",
+        "    var summary = el.getAttribute('data-summary') || '';",
+        "    var audioB64 = el.getAttribute('data-audio-b64');",
+        "    if (audioB64) {",
+        "      setTimeout(function () {",
+        "        var audio = new Audio('data:audio/wav;base64,' + audioB64);",
+        "        audio.volume = vol;",
+        "        audio.play().catch(function () {});",
+        "      }, 800);",
+        "    } else if (summary && window.speechSynthesis) {",
+        "      setTimeout(function () {",
+        "        window.speechSynthesis.cancel();",
+        "        var utter = new SpeechSynthesisUtterance(summary);",
+        "        var voice = kioskFindVoice();",
+        "        if (voice) utter.voice = voice;",
+        "        utter.rate = 0.95;",
+        "        utter.pitch = 0.9;",
+        "        utter.volume = vol;",
+        "        window.speechSynthesis.speak(utter);",
+        "      }, 800);",
         "    }",
-        "    setTimeout(function () {",
-        "      window.speechSynthesis.cancel();",
-        "      var utter = new SpeechSynthesisUtterance(sentence);",
-        "      var voice = kioskFindVoice();",
-        "      if (voice) utter.voice = voice;",
-        "      utter.rate = 0.95;",
-        "      utter.pitch = 0.9;",
-        "      utter.volume = vol;",
-        "      window.speechSynthesis.speak(utter);",
-        "    }, 800);",
         "  } catch (e) {}",
         "}",
         // Session request: "make it so the kiosk plays a muted sound

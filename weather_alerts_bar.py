@@ -15,6 +15,7 @@ import ec_alerts
 import ec_aqhi
 import ec_storm_timing
 import groq_client
+import kiosk_tts
 import persisted_state
 from config import EXTREME_COLD_THRESHOLD_C, EXTREME_HEAT_THRESHOLD_C, TIMEZONE
 
@@ -298,6 +299,38 @@ def get_new_alerts(now: datetime) -> list[dict]:
     ]
 
 
+_SPOKEN_LABELS = ("What:", "When:", "Where:", "Who:", "Why:", "Additional information:")
+
+
+def _strip_spoken_labels(text: str) -> str:
+    """Drops EC's own plain-text section labels (meant for a reader's
+    eye, not a listener's ear) from bulletin text before it's spoken —
+    moved here from app.py's kioskCleanSpokenSummary now that Piper
+    renders audio server-side: everything about what gets spoken has to
+    be decided before synthesis, not touched up client-side afterward."""
+    for label in _SPOKEN_LABELS:
+        text = text.replace(label, "")
+    while "  " in text:
+        text = text.replace("  ", " ")
+    return text.strip()
+
+
+def _milestone_spoken_text(title: str, approaching: bool, milestone: int) -> str:
+    """Spoken sentence for a storm-proximity milestone toast (get_storm_
+    proximity_alerts) — wording matches, verbatim, what app.py's
+    kioskPlayWeatherAlert used to build client-side by parsing the
+    headline's own " — expected to arrive/clear in about N min" suffix,
+    per the session's own "broadcast anchor" phrasing choice. Moved
+    server-side for the same reason as _strip_spoken_labels: Piper needs
+    the final text before it can render any audio at all."""
+    lower = title.lower()
+    if milestone == 0:
+        return f"The {lower} is arriving now." if approaching else f"The {lower} is now clearing."
+    if approaching:
+        return f"A {lower} is expected to arrive in {milestone} minutes."
+    return f"The {lower} is expected to clear in {milestone} minutes."
+
+
 def _spoken_summary(alert: dict) -> str:
     """The text kioskPlayWeatherAlert (app.py) speaks in full for a
     genuine new alert. Session discovery, live-testing against a real
@@ -329,12 +362,22 @@ def _spoken_summary(alert: dict) -> str:
     Only reached for a genuine EC alert (has its own "id" —
     ec_aqhi.aqhi_alert's own synthesized alert has none): that one's
     "summary" is already a short, plain one-liner with nothing
-    structural to smooth over, so it's returned as-is."""
+    structural to smooth over, so it's returned as-is.
+
+    Session follow-up: moving the kiosk's voice from the browser's own
+    speechSynthesis to server-rendered Piper audio (see kiosk_tts.py —
+    "voices on Dell suck... it sounds different on my dell streamlit
+    kiosk than on my macbook") meant this could no longer ever return ""
+    the way it briefly could on a genuine EC/AQHI fetch failure: the
+    audio has to be rendered from SOME text. A plain generic line
+    covers that one rare case now, instead of leaving app.py's own JS
+    to invent a fallback wrapper — everything about what gets spoken is
+    decided here, once, server-side."""
     if "id" not in alert:
-        return alert.get("summary", "")
+        return alert.get("summary", "") or f"A new {alert['title'].lower()} is now active in your area."
     raw = ec_alerts.fetch_full_description() or alert.get("summary", "")
     if not raw:
-        return ""
+        return f"A new {alert['title'].lower()} has just been issued for your area."
     rewritten = groq_client.generate(
         "Rewrite this Environment Canada weather alert bulletin as a single smooth, natural-sounding "
         "paragraph meant to be read aloud by a text-to-speech voice. Keep every real fact — hazard, "
@@ -344,7 +387,7 @@ def _spoken_summary(alert: dict) -> str:
         temperature=0.3,
         max_output_tokens=400,
     )
-    return rewritten or raw
+    return _strip_spoken_labels(rewritten or raw)
 
 
 def render_alert_bar(alert: dict) -> None:
@@ -358,14 +401,19 @@ def render_alert_bar(alert: dict) -> None:
     bar_class = f"weather-alert-bar weather-alert-bar-{alert.get('severity', 'statement')}"
     label = html.escape(alert.get("label", "Weather Alert"))
     headline = html.escape(alert.get("headline", ""))
-    # data-summary carries EC's full bulletin text for the kiosk's own
-    # client-side voice line (app.py's kioskPlayWeatherAlert) to read in
-    # full on a brand-new alert — empty for a milestone toast, which has
-    # no "summary" key at all (see get_new_alerts/get_storm_proximity_
-    # alerts's own docstrings for why that split is deliberate).
-    summary = html.escape(alert.get("summary", ""))
+    # "summary" is now always the exact final sentence to speak — EC's
+    # full (Groq-smoothed) bulletin for a brand-new alert, or the
+    # milestone phrasing from _milestone_spoken_text — never raw/partial
+    # text needing further client-side parsing (see both functions' own
+    # docstrings). data-summary keeps it around as the speechSynthesis
+    # fallback text; data-audio-b64 is the real Piper-rendered voice
+    # (kiosk_tts.py), only absent if synthesis itself failed.
+    spoken_text = alert.get("summary", "")
+    summary = html.escape(spoken_text)
+    audio_b64 = kiosk_tts.synthesize_base64(spoken_text) if spoken_text else None
+    audio_attr = f' data-audio-b64="{audio_b64}"' if audio_b64 else ""
     st.markdown(
-        f"""<div class="{bar_class}" data-summary="{summary}">
+        f"""<div class="{bar_class}" data-summary="{summary}"{audio_attr}>
             <span class="news-breaking-label">{label}</span>
             <span class="news-alert-headline">{headline}</span>
         </div>""",
@@ -537,5 +585,6 @@ def get_storm_proximity_alerts(now: datetime) -> list[dict]:
             "severity": severity,
             "label": "Environment Canada",
             "headline": headline,
+            "summary": _milestone_spoken_text(alert["title"], approaching, milestone),
         }
     ]

@@ -23,6 +23,7 @@ import streamlit as st
 import calendar_client
 import commute_client
 import commute_history
+import kiosk_tts
 import ntfy_client
 import persisted_state
 from config import COMMUTE_DESTINATION
@@ -103,6 +104,25 @@ def _alert_label(shift: dict) -> str:
     if shift["summary"] == "Work":
         return "Work"
     return f"Leave soon: {shift['summary']}"
+
+
+def _leave_spoken_text(shift: dict, minutes: int) -> str:
+    """The exact sentence app.py's kiosk voice speaks for this leave-in
+    toast, via Piper (kiosk_tts.py) — session follow-up to the server-
+    side-TTS work, moving this out of app.py's own kioskPlayLeaveVoice,
+    which used to pull it back apart from the already-rendered label/
+    headline text (stripping "Leave soon: " back off, lowercasing the
+    headline, etc.) after check() built them. Built directly from the
+    same shift/milestone this module already has on hand instead, same
+    wording: a named event speaks its own name first ("Golf tee time —
+    leave in 15 minutes."), a plain Work shift just speaks the countdown
+    ("Leave in 15 minutes.")."""
+    headline = _leave_text(minutes)
+    if headline.endswith(" min"):
+        headline = headline[: -len(" min")] + " minutes"
+    if shift["summary"] != "Work":
+        return f"{shift['summary']} — {headline.lower()}."
+    return f"{headline}."
 
 
 def _todays_shift_events(now: datetime) -> list[dict]:
@@ -316,7 +336,14 @@ def check(now: datetime) -> dict | None:
         persisted_state.save("commute_milestones", pushed)
         ntfy_client.send(title=label, message=_leave_text(milestone), priority="high", tags="clock3")
 
-    return {"headline": _leave_text(milestone), "category": "Commute", "important": False, "kind": "commute", "label": label}
+    return {
+        "headline": _leave_text(milestone),
+        "category": "Commute",
+        "important": False,
+        "kind": "commute",
+        "label": label,
+        "summary": _leave_spoken_text(shift, milestone),
+    }
 
 
 def _format_clock(remaining_seconds: float) -> str:
@@ -491,8 +518,16 @@ def render_bar(alert: dict) -> None:
     # bug — escaped anyway for the same reason news.render_alert_bar's
     # headline now is, to remove the assumption rather than rely on it.
     headline = html.escape(alert.get("headline", ""))
+    # data-audio-b64 is the Piper-rendered voice line (kiosk_tts.py,
+    # text built by _leave_spoken_text) app.py's kioskPlayLeaveVoice
+    # plays directly; data-summary keeps the same text around as the
+    # speechSynthesis fallback if synthesis itself ever fails.
+    spoken_text = alert.get("summary", "")
+    summary_attr = html.escape(spoken_text)
+    audio_b64 = kiosk_tts.synthesize_base64(spoken_text) if spoken_text else None
+    audio_attr = f' data-audio-b64="{audio_b64}"' if audio_b64 else ""
     st.markdown(
-        f"""<div class="commute-alert-bar">
+        f"""<div class="commute-alert-bar" data-summary="{summary_attr}"{audio_attr}>
             <span class="news-breaking-label">{label}</span>
             <span class="news-alert-headline">{headline}</span>
         </div>""",
