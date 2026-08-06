@@ -1365,6 +1365,12 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         if history_block
         else ""
     )
+    notes_section = (
+        f"Long-term patterns you've built up about him across many past mornings (your own "
+        f"evolving understanding, distinct from the day-by-day record above): {_learned_notes}\n\n"
+        if _learned_notes
+        else ""
+    )
     prompt = (
         f"You are {USER_FIRST_NAME}'s personal AI assistant — genuinely funny, and above all an "
         f"actual partner whose real job is keeping {USER_FIRST_NAME} genuinely informed about his "
@@ -1383,52 +1389,61 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         "(shit, damn, hell, ass, and the like) is explicitly allowed when a line genuinely lands "
         "sharper with one — your call on when, never required, never the default either. Not "
         "corporate, not a stiff butler either direction. Say whatever actually lands.\n\n"
-        "Format is also your call, not a fixed template — a single sharp line some mornings, a "
-        "couple of flowing sentences another, even real structure (a short break between two "
-        "distinct things) on a morning where the facts genuinely call for it. This renders "
-        "directly as HTML, so a plain <br> for a real line break or <strong>/<em> for emphasis is "
-        "available when it actually helps a specific moment land — sparingly, as a tool, not "
-        "decoration on every line. Whatever shape actually serves today, not the same shape every "
-        "single morning.\n\n"
+        "Keep it SHORT: two or three sentences, no more, every single morning, no matter how much is "
+        "going on today — this is a quick read on a kiosk, not a report. That means picking what's "
+        "actually worth saying and leaving the rest out entirely, not a fixed template restating "
+        "every fact in a slightly funnier voice — it should read like a real, specific observation "
+        "about his actual day, never like a list that got translated. This renders directly as "
+        "HTML, so <strong>/<em> for emphasis is available when it genuinely helps a single word or "
+        "phrase land — sparingly, not on every line, and no <br> line breaks needed at this "
+        "length.\n\n"
         f"Background on {USER_FIRST_NAME}, for real specific jokes instead of generic ones — "
         f"reference it only when genuinely relevant to today's facts below, don't force a "
         f"mention in every brief: {USER_PROFILE}\n\n"
+        f"{notes_section}"
         f"{history_section}"
         f"Today is {weekday} — a real, given fact, not a guess. Comment on it, and on how it "
         "relates to the facts below (a work shift landing on a weekend is genuinely worth a real "
         "line; an ordinary weekday usually isn't), only when it's actually relevant — your call, "
         "don't force it in every time. The humor otherwise comes entirely from how things are "
         "delivered, never from anything invented — do not add or invent any fact beyond the "
-        "weekday, the background, and the recent-days record above, and what's given below; "
-        "every other fact must actually appear.\n\n"
+        "weekday, the background, the long-term notes and recent-days record above, and what's "
+        "given below; every other fact must actually appear.\n\n"
         "Always write numbers as actual digits, never spelled out as words — '18 minutes' and "
         "'0.8%' and '10:00 AM', not 'eighteen minutes' or 'zero point eight percent' or 'ten "
         "o'clock'. This is read at a glance on a screen, not literary prose, and digits are "
         "faster to scan.\n\n"
         "Below is everything real that's actually true about today — the full picture, not a "
-        "filtered subset. Actually look for a real connection between two or more facts before "
-        "just listing them in turn — cold enough and wet enough together meaning real ice risk, "
-        "not just two separate numbers; a game tonight that might overlap with incoming rain; "
-        "a road incident sitting on the same route that already has a traffic delay; a stretch of "
-        "early shifts or rough weather from the recent-days record actually continuing today. Not "
-        "every morning has one, and forcing a connection that isn't really there reads worse than "
-        "not mentioning it — but check for a real one before defaulting to a flat list. Still needs to "
-        f"read at a glance on a kiosk display, but genuinely short is fine and genuinely more "
-        "isn't a formatting failure either — your call based on what's actually here today. "
+        "filtered subset, but not everything in it is actually related to everything else. Some "
+        f"facts share real, physical cause and effect — cold enough and wet enough together on "
+        f"{USER_FIRST_NAME}'s own roads meaning genuine ice risk, not just two separate numbers; a "
+        "road incident sitting on the same commute route that already has a delay. Call those out "
+        "directly when they're both there. Others are just separate things that happen to both be "
+        f"true this morning with no real link between them — a team {USER_FIRST_NAME} follows "
+        "playing a game hundreds of kilometers from here has nothing to do with local weather, and "
+        "manufacturing a connection between facts that aren't actually connected (just because they "
+        "showed up the same morning) reads as a mistake, not a joke — don't do it. The genuinely "
+        "interesting connections are usually across days, not within one: see the long-term notes "
+        "and recent-days record above for that — a real pattern actually worth a comment (a stretch "
+        "of early shifts, a tendency you've noticed hold up over many real mornings), not something "
+        "guessed from a single day. "
         f"Address {USER_FIRST_NAME} by name naturally somewhere in it. Start with a capital "
         "letter. Facts: " + facts
     )
     if groq_client.ai_pulls_paused():
         return None
-    # max_output_tokens raised from generate_periodic's own 200-token
-    # default — that was plenty when this was reliably "a couple
-    # sentences," but the prompt above now explicitly invites real
-    # structure and genuinely-longer output on an eventful morning (more
-    # facts feeding in, explicit permission to run longer when it's
-    # earned) — confirmed live that 200 tokens cuts a real response off
-    # mid-word on a day with several real facts to connect.
+    # Session correction: "don't make it over-explain itself... nice,
+    # concise, two or three sentences" — walked back an earlier version
+    # of this same prompt that invited real structure/longer output on
+    # an eventful morning, which needed 450 tokens to avoid a genuine
+    # mid-word truncation. A firm 2-3 sentence cap doesn't need that
+    # much room, but keeps a bit of headroom above generate_periodic's
+    # own 200-token default (more facts feeding in now than when 200
+    # was first set, and a few of today's facts can carry real digits/
+    # long names that eat into it) rather than risk the exact same
+    # truncation bug at the tighter length.
     return gemini_client.generate_periodic(
-        "morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85, max_output_tokens=450
+        "morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85, max_output_tokens=260
     )
 
 
@@ -1477,6 +1492,10 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     picked = all_facts[:MAX_CLAUSES]
     try:
         _record_history(now, all_facts)
+    except Exception:
+        pass
+    try:
+        _update_learned_notes(now, all_facts)
     except Exception:
         pass
     try:
@@ -1581,3 +1600,68 @@ def _recent_history_block(now: datetime) -> str:
         return ""
     lines = [f"{day['date']}: {'; '.join(day['facts'])}" for day in prior]
     return "\n".join(lines)
+
+
+# Session request: "I wanted it to almost, like, learn more and more
+# about me every single time it is a morning brief... make sure that it
+# sees and is learning and is becoming smarter every single day...
+# truly be a digital assistant." HISTORY_MAX_DAYS above is a fixed
+# rolling window — by definition it forgets anything older than 4
+# days, so it can never build real long-term understanding on its own
+# (a pattern noticed 3 weeks ago would already be gone). This is the
+# durable half: a short, evolving note the AI itself rewrites once a
+# day, keeping genuine patterns it's actually confident about and
+# dropping ones a later day disproves — an actual compounding memory,
+# not just a longer window on the same fixed-size log.
+LEARNED_NOTES_MAX_CHARS = 700
+_learned_notes: str = persisted_state.load("morning_brief_learned_notes", "")
+_learned_notes_date: str | None = persisted_state.load("morning_brief_learned_notes_date", None)
+
+
+def _update_learned_notes(now: datetime, facts: list[str]) -> None:
+    """Once per calendar day (own tracker — not reusing _brief_history's
+    or _last_brief_date's, since this can legitimately still need
+    updating on a day the AI narration itself failed; it's about
+    noticing patterns, not phrasing today's specific brief), asks
+    Gemini to rewrite its own standing note about Brayden from scratch:
+    keep/sharpen what's still true, drop what a new day already
+    disproved, add what's newly a real pattern. Same overnight-pause
+    gate as every other AI pull here — nothing about this is time-
+    sensitive enough to ever need to bypass it. Calls gemini_client.
+    generate directly rather than generate_periodic — this already has
+    its own once-a-day gate, so generate_periodic's separate wall-clock
+    cadence would just be a second, redundant throttle on top."""
+    global _learned_notes, _learned_notes_date
+    today = now.date().isoformat()
+    if _learned_notes_date == today:
+        return
+    if groq_client.ai_pulls_paused():
+        return
+    prompt = (
+        "You keep a short, private, evolving note about Brayden for your own future reference only — "
+        "never shown to him directly. It should capture genuine recurring patterns across many real "
+        "mornings of his actual life (a schedule shape, a tendency, something that's actually shown "
+        "up more than once) — not a log of individual days, and not anything guessed from a single "
+        "day alone.\n\n"
+        f"Your note so far: {_learned_notes or '(nothing recorded yet — this is early)'}\n\n"
+        f"Today's real facts: {'; '.join(facts)}\n\n"
+        "Rewrite the note completely, from scratch: keep or sharpen anything still genuinely true, "
+        "drop anything today's facts show is stale or turned out to be a one-off, and add anything "
+        "new that's actually a real pattern now — not every day changes anything, and it's fine to "
+        "return it unchanged. If there isn't real history to support a genuine pattern yet (only a "
+        "handful of days recorded so far, or today's facts are just one day's snapshot with nothing "
+        "repeating), keep the note short or even mostly empty rather than dressing up a single day's "
+        "facts as if they were an established pattern — a confident-sounding pattern built from too "
+        "little data is worse than honestly having nothing yet. Plain prose, no headers or bullet "
+        f"points, nothing invented beyond what you've actually observed. Under {LEARNED_NOTES_MAX_CHARS} characters."
+    )
+    try:
+        updated = gemini_client.generate(prompt, temperature=0.4, max_output_tokens=220)
+    except Exception:
+        updated = None
+    if updated is None:
+        return
+    _learned_notes = updated.strip()[:LEARNED_NOTES_MAX_CHARS]
+    _learned_notes_date = today
+    persisted_state.save("morning_brief_learned_notes", _learned_notes)
+    persisted_state.save("morning_brief_learned_notes_date", _learned_notes_date)
