@@ -797,10 +797,21 @@ components.html(
         // Piper synthesis itself failed, in which case speechSynthesis
         // is still the safety net.
         "function kioskPlayWeatherAlert(el) {",
-        // Severe weather is the one exception to the night-quiet-hours
-        // gate (kioskAlertVolume's own "severe" flag) — never silenced,
-        // just quieter overnight than during the day.
-        "  var vol = kioskAlertVolume(true);",
+        // Session report: "will the AI voice read every single EC
+        // alert? even if its a heat or squall warning?" — yes, and it
+        // turned out EVERY weather alert (not just genuinely severe
+        // ones) was hitting kioskAlertVolume's "severe" branch here,
+        // hardcoded true regardless of the real hazard — a routine
+        // Heat Warning at 2am got the same never-fully-silent floor as
+        // an actual tornado. data-severe (weather_alerts_bar.py's own
+        // _is_severe_hazard — thunderstorm/tornado/hurricane/tropical
+        // storm/tsunami, the same set already used for the Govee-light
+        // storm escalation) now carries the REAL per-alert answer;
+        // only those hazards keep the never-silent exception, anything
+        // else (heat, cold, frost, fog, squall, a plain statement)
+        // follows the normal quiet-at-night curve like any other alert.
+        "  var severe = el.getAttribute('data-severe') === 'true';",
+        "  var vol = kioskAlertVolume(severe);",
         // Session report: "make the original sound a little more
         // noticeable cause i cannot hear it right off the bat" — a lone
         // 220Hz sine is a real bell's fundamental, but real bells are

@@ -55,6 +55,26 @@ _DEFAULT_HAZARD_RANK = 40  # an unrecognized hazard — assume moderate rather t
 _TIER_TIEBREAK = {"warning": 2, "watch": 1, "statement": 0}
 
 
+def _is_severe_hazard(title: str) -> bool:
+    """True for a genuine storm-type hazard (thunderstorm/tornado/
+    hurricane/tropical storm/tsunami) — the exact same criterion
+    already established for storm-proximity escalation (ec_storm_
+    timing.STORM_HAZARD_TERMS, used for the Govee lights/countdown
+    headline) — reused here rather than a second, possibly-drifting
+    definition of "severe."
+
+    Session report: "will the AI voice read every single EC alert?
+    even if its a heat or squall warning?" followed by "yes, fix that"
+    — app.py's kioskPlayWeatherAlert used to hardcode kioskAlertVolume
+    (true) for every weather voice alert regardless of actual hazard,
+    so a routine Heat Warning at 2am got the same never-fully-silent
+    volume floor as a real tornado. This flag, threaded through get_
+    new_alerts/get_storm_proximity_alerts -> render_alert_bar's own
+    data-severe attribute, lets app.py pass the real per-alert value
+    instead."""
+    return any(term in title.lower() for term in ec_storm_timing.STORM_HAZARD_TERMS)
+
+
 def _tier(title: str) -> str:
     t = title.lower()
     if "warning" in t:
@@ -295,6 +315,10 @@ def get_new_alerts(now: datetime) -> list[dict]:
             # "summary" key at all and render_alert_bar's own
             # .get("summary", "") default covers it.
             "summary": _spoken_summary(alert),
+            # See _is_severe_hazard's own docstring — a heat/squall/
+            # statement-tier alert gets the normal quiet-at-night volume
+            # curve, not the never-fully-silent one real storms get.
+            "severe": _is_severe_hazard(alert["title"]),
         }
     ]
 
@@ -412,8 +436,15 @@ def render_alert_bar(alert: dict) -> None:
     summary = html.escape(spoken_text)
     audio_b64 = kiosk_tts.synthesize_base64(spoken_text) if spoken_text else None
     audio_attr = f' data-audio-b64="{audio_b64}"' if audio_b64 else ""
+    # See _is_severe_hazard's own docstring — app.py's kioskPlayWeather
+    # Alert reads this instead of hardcoding the never-fully-silent
+    # volume curve for every weather alert regardless of actual hazard.
+    # Defaults False (the quieter, normal curve) for any caller that
+    # somehow predates this key — safer to under-escalate an unknown
+    # case than blast at night by default.
+    severe_attr = "true" if alert.get("severe", False) else "false"
     st.markdown(
-        f"""<div class="{bar_class}" data-summary="{summary}"{audio_attr}>
+        f"""<div class="{bar_class}" data-summary="{summary}"{audio_attr} data-severe="{severe_attr}">
             <span class="news-breaking-label">{label}</span>
             <span class="news-alert-headline">{headline}</span>
         </div>""",
@@ -586,5 +617,13 @@ def get_storm_proximity_alerts(now: datetime) -> list[dict]:
             "label": "Environment Canada",
             "headline": headline,
             "summary": _milestone_spoken_text(alert["title"], approaching, milestone),
+            # Always True here — storm_phase (above) only ever returns
+            # non-None for a hazard already in STORM_HAZARD_TERMS, the
+            # same set _is_severe_hazard checks, so a milestone toast is
+            # never anything BUT a genuine severe hazard. Set explicitly
+            # rather than relying on render_alert_bar's own default, so
+            # this doesn't silently start reading False if that default
+            # ever changes.
+            "severe": True,
         }
     ]
