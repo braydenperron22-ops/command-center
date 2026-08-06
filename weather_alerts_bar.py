@@ -575,6 +575,66 @@ def render_storm_headline(now: datetime) -> None:
     )
 
 
+# Session request: "make it so all the red headlines within the last 2
+# hours cycle at the top of the screen with a cool animation when it
+# swaps" — normalizes this same storm-phase info (and, separately, the
+# persistent weather-statement banner's own text/severity below) into
+# headline_rotation.py's shared 4-tier scale (see theme.py's own
+# .headline-rotation rules), rather than leaking storm/weather-
+# statement-specific class names into a component meant to look
+# consistent regardless of which source is currently showing.
+_SEVERITY_TO_ROTATION_CLASS = {
+    "extreme": "rotation-critical",
+    "warning": "rotation-warning",
+    "warning-moderate": "rotation-warning",
+    "watch": "rotation-notice",
+    "statement": "rotation-notice",
+}
+
+
+def storm_headline_candidate(now: datetime) -> dict | None:
+    resolved = _current_alert_and_severity()
+    if resolved is None:
+        return None
+    alert, severity = resolved
+    info = ec_storm_timing.storm_phase(now, alert["title"], severity)
+    if info is None:
+        return None
+    target_ms = int(info["target"].timestamp() * 1000)
+    label = "APPROACHING" if info["phase"] == "approaching" else "CLEARING IN"
+    tier = "extreme" if severity == "extreme" else "warning"
+    remaining = max(0.0, info["minutes"] * 60)
+    return {
+        "text": f"{label}: {_format_clock(remaining)}",
+        "css_class": _SEVERITY_TO_ROTATION_CLASS["extreme" if tier == "extreme" else "warning"],
+        "target_ms": target_ms,
+        "template": label + ": {}",
+        "zero_text": None,
+    }
+
+
+def weather_statement_candidate(weather: dict | None) -> dict | None:
+    """Same text/severity selection as render() (a real EC alert, or
+    our own manual heat/cold fallback) but without the st.markdown side
+    effect — None whenever render() itself would return False. Not a
+    countdown (no natural "clears at" instant for a plain statement/
+    fallback the way storm proximity has), so target_ms is always
+    None."""
+    alerts = _combined_alerts()
+    if alerts:
+        alert = max(alerts, key=_selection_score)
+        text = alert["title"]
+        if len(alerts) > 1:
+            text += f" (+{len(alerts) - 1} more alert{'s' if len(alerts) > 2 else ''})"
+        rotation_class = _SEVERITY_TO_ROTATION_CLASS[_severity(alert["title"])]
+    else:
+        text = _fallback_text(weather)
+        if not text:
+            return None
+        rotation_class = "rotation-notice"
+    return {"text": text, "css_class": rotation_class, "target_ms": None, "template": "{}", "zero_text": None}
+
+
 def get_storm_proximity_alerts(now: datetime) -> list[dict]:
     """Milestone toasts while a storm-grade alert is approaching or
     leaving — session request, in two parts: first "toast alerts for

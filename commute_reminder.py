@@ -497,6 +497,39 @@ def _countdown_info(now: datetime) -> tuple[int, str, str] | None:
     return target_ms, tier, text
 
 
+# Session request: "make it so all the red headlines within the last 2
+# hours cycle at the top of the screen with a cool animation when it
+# swaps" — headline_rotation.py's own unified rotation needs this same
+# (target_ms, tier, text) info but in the normalized shape it shares
+# with the other 3 "red headline" sources (storm proximity, the
+# weather-statement banner, breaking news), and mapped onto a single
+# shared color-tier scale rather than leave-headline's own 5-tier one,
+# since the rotation only has 4 shared tiers (see theme.py's own
+# .headline-rotation rules) — a plain public wrapper around
+# _countdown_info rather than exposing that private helper directly.
+_TIER_TO_ROTATION_CLASS = {
+    "calm": "rotation-calm",
+    "aware": "rotation-notice",
+    "urgent": "rotation-warning",
+    "critical": "rotation-critical",
+    "overdue": "rotation-critical",
+}
+
+
+def leave_headline_candidate(now: datetime) -> dict | None:
+    info = _countdown_info(now)
+    if info is None:
+        return None
+    target_ms, tier, text = info
+    return {
+        "text": text,
+        "css_class": _TIER_TO_ROTATION_CLASS[tier],
+        "target_ms": target_ms,
+        "template": "Leave in {}",
+        "zero_text": "Leave now",
+    }
+
+
 def render_ticker_leave_bar(now: datetime) -> None:
     """Compact countdown for the bottom ticker-bar slot (see ticker.py's
     own .ticker-bar) — session report: today's the exact conflict this

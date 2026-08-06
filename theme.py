@@ -2134,6 +2134,83 @@ html, body, [class*="css"] {
 .news-feed-row.agenda-row-past { opacity: 0.5; }
 .news-feed-row.agenda-row-next { border-left-color: #5AC8FA; background: rgba(90,200,250,0.08); }
 
+/* Unified rotating slot for every "red headline" source — the leave-in
+   countdown, storm proximity, the weather-statement banner, and
+   breaking news (headline_rotation.py) — replacing the old arrangement
+   where each of those pinned itself at its own fixed vertical offset
+   (top-alert-bar at 18px, leave-headline at 88px, weather-statement-bar
+   at 194px, storm-headline at 300px), stacking deterministically but
+   taking up to 4 slots of permanent vertical space whenever more than
+   one happened to be active at once. Session request: "make it so all
+   the red headlines within the last 2 hours cycle at the top of the
+   screen with a cool animation when it swaps." One slot now, at the
+   topmost of those old positions — whichever single source is
+   currently its turn, animated in on a swap (see the keyframe below)
+   rather than everything sitting there permanently reserved. Same
+   dark-blur-pill look as .leave-headline/.storm-headline below (the
+   look 3 of the 4 sources already shared) rather than .top-alert-bar's
+   old solid-gradient style, so the shared slot reads as one consistent
+   thing regardless of which source is currently showing. */
+.headline-rotation {
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    transform: translate(-50%, 0);
+    z-index: 502;
+    text-align: center;
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    max-width: min(1100px, calc(100vw - 64px));
+    background: rgba(12,12,16,0.72);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid rgba(255,69,58,0.25);
+    border-radius: 20px;
+    padding: 0.5rem 1.6rem;
+    color: #FF6961;
+}
+/* Same 4-color palette .leave-headline's own intensity-* tiers already
+   use — one shared scale across all 4 sources rather than each
+   keeping its own bespoke severity naming, so the swap between sources
+   reads as one consistent system, not 4 different color languages
+   taking turns. The leave candidate itself never carries one of these
+   (see headline_rotation._render_candidate's own comment) — its color
+   comes from the pre-existing, live-ticking .leave-headline.intensity-*
+   rules below instead. */
+.headline-rotation.rotation-calm { color: #5AC8FA; border-color: rgba(90,200,250,0.2); }
+.headline-rotation.rotation-notice { color: #FF9F0A; border-color: rgba(255,159,10,0.22); }
+.headline-rotation.rotation-warning { color: #FF6961; border-color: rgba(255,105,97,0.25); }
+.headline-rotation.rotation-critical {
+    color: #FF453A;
+    border-color: rgba(255,69,58,0.3);
+    animation: leave-headline-pulse 1.2s ease-in-out infinite;
+}
+/* The one-shot "swap" animation itself — a JS-toggled class
+   (app.py's kiosk-headline-rotation-swap script), not a plain
+   `animation` on the base rule: Streamlit patches this element's
+   content in place on an ordinary rerun rather than replacing the
+   node outright, so a CSS animation declared directly on .headline-
+   rotation would either never re-trigger after its first paint, or
+   (if Streamlit's diffing ever DID replace the node) replay on every
+   5s rerun regardless of whether the headline actually changed —
+   same reflow-then-add-class trick as kiosk-jumbo-fade, just a slide+
+   fade instead of a plain fade. Written as its own combined rule for
+   .rotation-critical specifically (rather than relying on the
+   cascade) since `animation` is a single property — without an
+   explicit combined value here, adding .rotation-swap-in would
+   replace the critical tier's own continuous pulse instead of
+   layering on top of it for the swap's brief duration. */
+.headline-rotation.rotation-swap-in { animation: headline-rotation-swap-in 0.5s cubic-bezier(.2,.8,.2,1); }
+.headline-rotation.rotation-critical.rotation-swap-in {
+    animation: headline-rotation-swap-in 0.5s cubic-bezier(.2,.8,.2,1), leave-headline-pulse 1.2s ease-in-out infinite;
+}
+@keyframes headline-rotation-swap-in {
+    from { opacity: 0; transform: translate(-50%, -16px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+
 /* Standalone headline at the top of the Today page — promoted out of
    the agenda card entirely (see pages_today._render_leave_headline) so
    it's the first thing on screen, not nested inside another tile.

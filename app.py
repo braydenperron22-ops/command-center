@@ -19,6 +19,7 @@ import commute_reminder
 import data_health
 import govee_lighting
 import groq_client
+import headline_rotation
 import market_yf_client
 import morning_briefing
 import news
@@ -370,6 +371,53 @@ components.html(
         "}",
         "kioskApplyFadeInAll();",
         "new MutationObserver(kioskApplyFadeInAll).observe(document.body, {childList: true, subtree: true});",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+    </script>
+    """,
+    height=0,
+)
+
+# Session request: "make it so all the red headlines within the last 2
+# hours cycle at the top of the screen with a cool animation when it
+# swaps" (headline_rotation.py) — same reflow-then-restart-animation
+# trick as kiosk-jumbo-fade just above, toggling a CSS class
+# (.rotation-swap-in, theme.py) instead of directly manipulating
+# opacity, since the swap-in keyframe needs to coexist with the
+# critical tier's own separate continuous pulse animation rather than
+# replace it (see theme.py's own comment on why that rules out setting
+# el.style.animation directly). Only ever one .headline-rotation
+# element on the page at a time, so this tracks a single last-seen
+# value rather than kiosk-jumbo-fade's per-slot map.
+components.html(
+    """
+    <script>
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-headline-rotation-swap')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-headline-rotation-swap';
+      s.textContent = [
+        "window.kioskHeadlineRotationValue = undefined;",
+        "function kioskApplyHeadlineRotationSwap() {",
+        "  var el = document.querySelector('.headline-rotation');",
+        "  if (!el) { window.kioskHeadlineRotationValue = undefined; return; }",
+        "  var value = el.getAttribute('data-rotate-value');",
+        "  var last = window.kioskHeadlineRotationValue;",
+        "  if (last === undefined) {",
+        "    window.kioskHeadlineRotationValue = value;",
+        "    return;",
+        "  }",
+        "  if (last !== value) {",
+        "    window.kioskHeadlineRotationValue = value;",
+        "    el.classList.remove('rotation-swap-in');",
+        "    void el.offsetHeight;",
+        "    el.classList.add('rotation-swap-in');",
+        "  }",
+        "}",
+        "kioskApplyHeadlineRotationSwap();",
+        "new MutationObserver(kioskApplyHeadlineRotationSwap).observe(document.body, {childList: true, subtree: true});",
       ].join('\\n');
       doc.head.appendChild(s);
     })();
@@ -1606,38 +1654,27 @@ try:
 except Exception:
     pass
 
-# Fetched once per rerun and reused below both to update/render the
-# persistent top banner and to feed the bottom rotating alert bar —
-# get_new_alerts() marks headlines as seen as a side effect, so it must
-# only be called once per script run, REGARDLESS of page — skipping it
-# during a takeover would stall the batch classifier and the seen-
-# headline tracking for as long as the game runs. Only the render
-# itself is skipped during game mode — session request: "make it so
-# red headlines dont stick up top when were in game mode" — the pinned
-# banner (see theme.py's .top-alert-bar, now position: fixed) would sit
-# right on top of the jumbotron's own board. Wrapped since a bug in
-# either the top-alert or weather-statement logic shouldn't stop the
-# clock/hero row and every page below it from rendering.
+# Fetched once per rerun and reused below to feed the bottom rotating
+# alert bar — get_new_alerts() marks headlines as seen as a side
+# effect, so it must only be called once per script run, REGARDLESS of
+# page — skipping it during a takeover would stall the batch
+# classifier and the seen-headline tracking for as long as the game
+# runs. update_top_alert's own state-tracking/push-dedup also still
+# needs to run unconditionally for the same reason; only the actual
+# on-screen render is gated on _jumbotron_active, and that now happens
+# once, jointly with the other 3 "red headline" sources, via
+# headline_rotation.render further down (see its own comment) rather
+# than news.render_top_alert_bar directly here. Wrapped since a bug in
+# this tracking shouldn't stop the clock/hero row and every page below
+# it from rendering.
 new_alerts = []
 try:
     new_alerts = news.get_new_alerts()
     news.update_top_alert(new_alerts)
-    if not _jumbotron_active:
-        news.render_top_alert_bar()
 except Exception:
     pass
 
-# Gated on _jumbotron_active same as the top-alert bar right above —
-# now that this banner is position: fixed (theme.py's own comment on
-# .weather-statement-bar), an ungated render would float on top of the
-# jumbotron board instead of being naturally buried under it the way
-# plain in-flow content used to be.
 _weather_alert_shown = False
-try:
-    if not _jumbotron_active:
-        _weather_alert_shown = weather_alerts_bar.render(weather)
-except Exception:
-    pass
 
 def _hex_to_rgb(h: str) -> tuple[int, int, int]:
     h = h.lstrip("#")
@@ -1822,27 +1859,25 @@ if weather:
         <div class="date-sub">Corbeil{hilo_html}</div>{extras_html}
     </div>"""
 
-# Directly above the clock, page-independent — see
-# commute_reminder.render_leave_headline for why (visible regardless of
+# Directly above the clock, page-independent (visible regardless of
 # which of the 6 rotating pages is up, unlike Today's own content).
 # Skipped during a takeover — session request: "make it so red
-# headlines dont stick up top when were in game mode" — same reasoning
-# as the top-alert bar and game-countdown headline just below: now that
-# it's position: fixed (see theme.py), it would pin itself right over
-# the jumbotron's own board instead of just flowing above it.
-if not _jumbotron_active:
-    try:
-        commute_reminder.render_leave_headline(now)
-    except Exception:
-        pass
-    # Session request: "an APPROACHING: and CLEARING: timer using
-    # these values pulled from the environment canadas alerts... for
-    # ultimate transparency" — same page-independent placement as the
-    # leave headline just above, for the same reason.
-    try:
-        weather_alerts_bar.render_storm_headline(now)
-    except Exception:
-        pass
+# headlines dont stick up top when were in game mode" — now that it's
+# position: fixed (see theme.py), it would pin itself right over the
+# jumbotron's own board instead of just flowing above it.
+#
+# Session request: "make it so all the red headlines within the last 2
+# hours cycle at the top of the screen with a cool animation when it
+# swaps, make it hard cached in upstash so refreshes dont reset it." A
+# single call now covers what used to be 4 separate ones stacked at
+# fixed offsets (commute_reminder.render_leave_headline, weather_
+# alerts_bar.render_storm_headline/render, news.render_top_alert_bar) —
+# see headline_rotation.py's own module docstring for the full story.
+try:
+    if not _jumbotron_active:
+        _weather_alert_shown = headline_rotation.render(now, weather)
+except Exception:
+    pass
 
 # Same treatment for the final hour before a Jays/Habs game — session
 # request: "First Pitch In, counting down from an hour, similar to the
@@ -1896,17 +1931,18 @@ if not _jumbotron_active:
 # The jumbotron brings its own marquee (clock, date, weather), so the
 # standard hero row would just be a duplicate stacked above it.
 if not _jumbotron_active:
-    # Reserves the same real vertical space the weather-statement bar
-    # used to occupy back when it was plain in-flow content — session
-    # report: "our heat warning just popped up and its kinda colliding
-    # with the leave in timer." Now that the bar is position: fixed
-    # (theme.py's own comment on .weather-statement-bar has the full
-    # story), it no longer pushes this row down on its own, so without
-    # this spacer the clock/weather row would render right underneath
-    # it instead of below it. Only added on a rerun where the bar
-    # actually rendered (_weather_alert_shown), not a permanent gap on
-    # every ordinary alert-free day.
-    _hero_spacer = '<div style="height: 220px;"></div>' if _weather_alert_shown else ""
+    # Reserves the real vertical space the unified headline-rotation
+    # slot occupies (theme.py's .headline-rotation, fixed at top:18px)
+    # so the clock/weather row renders below it instead of underneath
+    # it — session report, from back when this was 3-4 separately
+    # stacked fixed banners rather than 1: "our heat warning just
+    # popped up and its kinda colliding with the leave in timer."
+    # Shrunk from 220px (tuned for that old worst-case stack of up to 3
+    # elements) to roughly this one element's own actual height, now
+    # that only ever one shows at a time. Only added on a rerun where
+    # it actually rendered (_weather_alert_shown), not a permanent gap
+    # on every ordinary alert-free day.
+    _hero_spacer = '<div style="height: 110px;"></div>' if _weather_alert_shown else ""
     st.markdown(
         f"""{_hero_spacer}<div class="hero-row">
             <div class="hero-time">

@@ -1321,6 +1321,17 @@ PUSHED_HEADLINES_MAX = 200
 # rerun cadence).
 _pushed_headlines: list = list(persisted_state.load("pushed_headlines", []))
 
+# Session report on the ON-SCREEN banner itself (not the push dedup
+# above, which was already disk-persisted): "make it so all the red
+# headlines... cycle at the top of the screen... make it hard cached
+# in upstash so refreshes dont reset it." This used to live in
+# st.session_state, which resets on a reconnect — the exact same class
+# of bug PUSHED_HEADLINES_MAX's own comment already describes for the
+# push-dedup case, just never fixed for the banner's own "is one still
+# active" state. Moved to persisted_state so a reconnect can't
+# silently drop an active breaking-news headline early.
+_top_alert: dict | None = persisted_state.load("news_top_alert", None)
+
 
 def update_top_alert(new_alerts: list[dict]) -> None:
     """Whenever a fresh important (red) headline comes through, it takes
@@ -1343,12 +1354,13 @@ def update_top_alert(new_alerts: list[dict]) -> None:
     problem the way a duplicate phone buzz was. Dedup state lives in
     _pushed_headlines above (loaded once, not re-fetched here every
     call — see its own comment)."""
-    global _pushed_headlines
+    global _pushed_headlines, _top_alert
     pushed_set = set(_pushed_headlines)
     changed = False
     for alert in new_alerts:
         if alert.get("important"):
-            st.session_state["top_alert"] = {**alert, "set_at": time.time()}
+            _top_alert = {**alert, "set_at": time.time()}
+            persisted_state.save("news_top_alert", _top_alert)
             h = _hash(alert["headline"])
             if h in pushed_set:
                 continue
@@ -1367,6 +1379,23 @@ def update_top_alert(new_alerts: list[dict]) -> None:
         persisted_state.save("pushed_headlines", _pushed_headlines)
 
 
+def _current_top_alert() -> dict | None:
+    """The active top_alert dict if still within its hold window
+    (TOP_ALERT_HOLD_SECONDS), clearing (and persisting the clear) if
+    it's expired — shared by render_top_alert_bar and headline_
+    rotation.py's own top_alert_candidate so the two can never
+    disagree about whether one's still active, and expiry only ever
+    gets written once regardless of which caller notices it first."""
+    global _top_alert
+    if not _top_alert:
+        return None
+    if time.time() - _top_alert["set_at"] > TOP_ALERT_HOLD_SECONDS:
+        _top_alert = None
+        persisted_state.save("news_top_alert", None)
+        return None
+    return _top_alert
+
+
 def render_top_alert_bar() -> None:
     """Renders the persistent top banner if a red headline is still
     within its hold window (TOP_ALERT_HOLD_SECONDS) — a plain static bar
@@ -1380,12 +1409,8 @@ def render_top_alert_bar() -> None:
     entries already use) — nothing here changes that mid-hold, so
     there's nothing left to re-validate, and it would mean a real AI
     call every render besides."""
-    top_alert = st.session_state.get("top_alert")
+    top_alert = _current_top_alert()
     if not top_alert:
-        return
-    expired = time.time() - top_alert["set_at"] > TOP_ALERT_HOLD_SECONDS
-    if expired:
-        del st.session_state["top_alert"]
         return
     st.markdown(
         f"""<div class="top-alert-bar">
@@ -1395,3 +1420,19 @@ def render_top_alert_bar() -> None:
         </div>""",
         unsafe_allow_html=True,
     )
+
+
+def top_alert_candidate() -> dict | None:
+    """Same info render_top_alert_bar shows, normalized for headline_
+    rotation.py's own unified rotation — None whenever there's no
+    current breaking-news headline within its hold window."""
+    top_alert = _current_top_alert()
+    if not top_alert:
+        return None
+    return {
+        "text": top_alert["headline"],
+        "css_class": "rotation-warning",
+        "target_ms": None,
+        "template": "{}",
+        "zero_text": None,
+    }
