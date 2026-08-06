@@ -560,7 +560,24 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     tight, still real); the mandate to include everything is gone,
     replaced with explicit, repeated permission to leave things out —
     the same editorial judgment a person recounting their own day
-    already exercises without thinking about it."""
+    already exercises without thinking about it.
+
+    Immediate follow-up, same session: "instead of saying keep it two
+    to three sentences and every fact must appear, let it use its own
+    discretion." Only half of that contradiction had actually been
+    fixed above — the include-everything mandate was gone, but the
+    fixed "two or three sentences, no more" length cap right next to it
+    was left standing, still a rule rather than a call. Replaced with
+    the same kind of discretion already granted for which facts to
+    mention: brevity is still the right default instinct for a kiosk
+    glance-read, but there's no mandated sentence count anymore — a
+    quiet morning can be one line, a genuinely eventful one can run
+    longer, decided the same way everything else here is, by what's
+    actually true today rather than a fixed target. max_output_tokens
+    raised back to 450 (from 260) to match — that number already has a
+    real story behind it (a confirmed live mid-word truncation at 200
+    the first time longer output was permitted), not re-derived from
+    scratch."""
     facts = "; ".join(picked)
     weekday = now.strftime("%A")
     history_block = _recent_history_block(now)
@@ -597,14 +614,18 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         "(shit, damn, hell, ass, and the like) is explicitly allowed when a line genuinely lands "
         "sharper with one — your call on when, never required, never the default either. Not "
         "corporate, not a stiff butler either direction. Say whatever actually lands.\n\n"
-        "Keep it SHORT: two or three sentences, no more, every single morning, no matter how much is "
-        "going on today — this is a quick read on a kiosk, not a report. That means picking what's "
-        "actually worth saying and leaving the rest out entirely, not a fixed template restating "
+        "Length is your own call too, not a fixed target — this is a quick read on a kiosk, not a "
+        "report, so brevity is usually the right instinct, but there's no mandated sentence count. "
+        "A quiet morning might genuinely be one sharp line; a real one (several things actually "
+        "worth saying) can run longer — never padded just to hit a length, and never crammed just "
+        "to stay under one either. Picking what's actually worth saying and leaving the rest out "
+        "entirely still applies regardless of how long you land on — not a fixed template restating "
         "every fact in a slightly funnier voice — it should read like a real, specific observation "
         "about his actual day, never like a list that got translated. This renders directly as "
         "HTML, so <strong>/<em> for emphasis is available when it genuinely helps a single word or "
-        "phrase land — sparingly, not on every line, and no <br> line breaks needed at this "
-        "length.\n\n"
+        "phrase land, and a plain <br> for a real line break if the length you land on actually "
+        "calls for one (a genuinely busy morning, a short break between two distinct things) — "
+        "both sparingly, as tools, not decoration on a short line that doesn't need either.\n\n"
         f"Background on {USER_FIRST_NAME}, for real specific jokes instead of generic ones — "
         f"reference it only when genuinely relevant to today's facts below, don't force a "
         f"mention in every brief: {USER_PROFILE}\n\n"
@@ -647,18 +668,16 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     )
     if groq_client.ai_pulls_paused():
         return None
-    # Session correction: "don't make it over-explain itself... nice,
-    # concise, two or three sentences" — walked back an earlier version
-    # of this same prompt that invited real structure/longer output on
-    # an eventful morning, which needed 450 tokens to avoid a genuine
-    # mid-word truncation. A firm 2-3 sentence cap doesn't need that
-    # much room, but keeps a bit of headroom above generate_periodic's
-    # own 200-token default (more facts feeding in now than when 200
-    # was first set, and a few of today's facts can carry real digits/
-    # long names that eat into it) rather than risk the exact same
-    # truncation bug at the tighter length.
+    # Session request: "instead of saying keep it two to three
+    # sentences and every fact must appear, let it use its own
+    # discretion" — the prompt's own length instruction above went from
+    # a firm 2-3 sentence cap back to genuine discretion, so the token
+    # budget needs the same headroom it had the LAST time real
+    # structure/longer output was permitted (450) — that number wasn't
+    # arbitrary, it came from a confirmed live truncation at 200 on a
+    # genuinely eventful morning. Restored rather than re-guessed.
     return gemini_client.generate_periodic(
-        "morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85, max_output_tokens=260
+        "morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85, max_output_tokens=450
     )
 
 
