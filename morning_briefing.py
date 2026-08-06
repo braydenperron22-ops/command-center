@@ -43,7 +43,6 @@ import ec_alerts
 import fuel_price_client
 import gemini_client
 import groq_client
-import local_news_client
 import market_yf_client
 import ntfy_client
 import payday_schedule
@@ -720,23 +719,6 @@ ALERT_LINES = [
     "a real one today — {title}",
 ]
 
-# Real local incident/road-closure/construction items (local_news_
-# client.py — police beat, OPP, 511 Ontario road events near either end
-# of the commute) — built for the news ticker, never wired into the
-# brief before. Distinct from _commute_clause's own live delay number:
-# that's "how long will it take," this is "here's what's actually
-# causing it or nearby," which the live-traffic number alone can't say.
-LOCAL_INCIDENT_LINES = [
-    "worth knowing: {headline} ({source})",
-    "local heads up — {headline} ({source})",
-    "{source}'s reporting: {headline}",
-    "on the local radar: {headline} ({source})",
-    "worth a mention — {headline}, per {source}",
-    "local note: {headline} ({source})",
-    "{source} flagged this: {headline}",
-    "one for the drive: {headline} ({source})",
-]
-
 MARKET_UP_LINES = [
     "markets are green so far, S&P +{pct}%",
     "S&P's up {pct}% this morning",
@@ -1039,24 +1021,6 @@ def _alert_clause(now: datetime) -> tuple[int, str] | None:
     return 10, text
 
 
-def _local_incident_clause(now: datetime) -> tuple[int, str] | None:
-    """Real police-beat/OPP/511-Ontario road-event items (local_news_
-    client.py, built for the news ticker) — never reached the brief
-    before. Distinct from _commute_clause's own live delay number: that
-    answers "how long will it take," this answers "here's what's
-    actually going on nearby," which a plain minutes-of-delay figure
-    can't say on its own. Same trust-the-upstream-feed's-own-recency
-    convention as _alert_clause above — no extra freshness filtering
-    here either, since these feeds (police beat, 511 Ontario) already
-    rotate their own items out as they go stale."""
-    items = local_news_client.fetch_items()
-    if not items:
-        return None
-    item = items[0]
-    text = _pick(LOCAL_INCIDENT_LINES, now, "local").format(headline=item["headline"], source=item["source"])
-    return 6, text
-
-
 def _markets_clause(now: datetime) -> tuple[int, str] | None:
     status = market_yf_client.market_status(now)
     if status == "weekend":
@@ -1334,7 +1298,7 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
 
     Session request: "make the AI in the morning briefs smarter, more
     personable... connects the dots more often... if theres other data
-    he doesnt have yet give it to him." Three new facts now reach this
+    he doesnt have yet give it to him." Three new facts reached this
     prompt that never did before — _road_ice_clause (built from weather
     data already fetched, just never connected into an explicit ice-risk
     call), _local_incident_clause (real police-beat/511-Ontario road
@@ -1345,6 +1309,22 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     the same theory this file's own profanity fix already proved:
     vague permission alone doesn't move real output, naming the actual
     thing to look for does.
+
+    _local_incident_clause didn't survive contact with reality, though:
+    session report, on the actual first live example it surfaced — a
+    human-remains story straight off the police beat, presented next to
+    the weather and commute like it was equally practical information —
+    "how is that convenient to me in any way, shape, or form?" A raw
+    police blotter has no filter for "is this actually useful to know
+    before work," only "did something happen nearby" — the same feed
+    that occasionally has a real, relevant road closure just as often
+    has something genuinely upsetting and unrelated to getting through
+    the day, with no way to tell the two apart before it's already been
+    read out. Removed outright rather than patched with a content
+    filter — no confidence a keyword or category check would reliably
+    catch every version of the same problem, and the honest fix is not
+    pulling from a source this unfiltered in the first place, not
+    trying to sanitize it after the fact.
 
     Mid-session correction, live: "get rid of the strict jarvis rules,
     let it do its own thing." The J.A.R.V.I.S./Iron Man anchor (and the
@@ -1461,7 +1441,6 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         (_road_ice_clause, (now, weather)),
         (_air_clause, (now, air_quality)),
         (_commute_clause, (now,)),
-        (_local_incident_clause, (now,)),
         (_agenda_clause, (now,)),
         (_household_clause, (now,)),
         (_markets_clause, (now,)),
