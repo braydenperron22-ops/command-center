@@ -43,10 +43,13 @@ import ec_alerts
 import fuel_price_client
 import gemini_client
 import groq_client
+import local_news_client
 import market_yf_client
 import ntfy_client
 import payday_schedule
 import persisted_state
+import road_conditions
+import sports_client
 import waste_schedule
 import wildfire_client
 from config import AQI_SHOW_THRESHOLD, COMMUTE_DESTINATION, TIMEZONE, USER_FIRST_NAME, USER_PROFILE, WEATHER_LAT, WEATHER_LON
@@ -290,6 +293,29 @@ COLD_LINES = [
     "{temp}°C right now — the car's going to protest starting",
     "genuinely frigid out there, {temp}°C, {high}°C by afternoon",
     "{temp}°C this morning, winter's fully committed today",
+]
+
+# Session request: "give it as much data as possible... other data he
+# doesn't have yet, give it to him." road_conditions.ice_risk already
+# exists (built for the commute tile) but was never wired into the
+# brief — it's a real distinct fact from the raw temp/precip numbers
+# _weather_clause/_precip_clause already state (near-freezing AND wet
+# together, not either alone), the exact kind of connection worth
+# calling out explicitly rather than trusting the AI to notice on its
+# own that two separate numbers imply a third thing.
+ICE_RISK_LINES = [
+    "black ice is a real risk this morning — near-freezing and wet enough for it",
+    "watch for ice out there today, temps and precip are lined up for it",
+    "roads could be slick this morning — cold enough and wet enough for real ice risk",
+    "heads up: ice risk is genuine today, not just cold-and-dry",
+    "the temp/precip combo today means actual ice risk, not just a cold morning",
+    "worth being careful on the roads — conditions are right for black ice today",
+    "today's got the classic ice-risk combination: near-freezing and wet",
+    "slick roads are a real possibility this morning, not just cold ones",
+    "ice risk is up today — the cold alone wouldn't do it, but the wet does",
+    "drive carefully this morning, real ice risk in the mix today",
+    "today's not just cold, it's cold-and-wet enough for actual ice",
+    "black ice risk is genuine this morning — worth the extra caution",
 ]
 
 # Radar-based arrival/clearing line lists (RADAR_RAIN_LINES,
@@ -694,6 +720,23 @@ ALERT_LINES = [
     "a real one today — {title}",
 ]
 
+# Real local incident/road-closure/construction items (local_news_
+# client.py — police beat, OPP, 511 Ontario road events near either end
+# of the commute) — built for the news ticker, never wired into the
+# brief before. Distinct from _commute_clause's own live delay number:
+# that's "how long will it take," this is "here's what's actually
+# causing it or nearby," which the live-traffic number alone can't say.
+LOCAL_INCIDENT_LINES = [
+    "worth knowing: {headline} ({source})",
+    "local heads up — {headline} ({source})",
+    "{source}'s reporting: {headline}",
+    "on the local radar: {headline} ({source})",
+    "worth a mention — {headline}, per {source}",
+    "local note: {headline} ({source})",
+    "{source} flagged this: {headline}",
+    "one for the drive: {headline} ({source})",
+]
+
 MARKET_UP_LINES = [
     "markets are green so far, S&P +{pct}%",
     "S&P's up {pct}% this morning",
@@ -761,6 +804,28 @@ MARKET_FLAT_LINES = [
     "a non-event morning for the S&P",
     "markets are stuck in place so far",
     "nothing decisive in the markets this morning",
+]
+
+# Which of the 3 tracked teams (see ticker.py's own TEAM_FETCHERS-shape
+# list) plays today, if any — a real fact the brief never had access to
+# before, and good raw material for an actual connection (a game
+# tonight that overlaps with incoming rain, back-to-back early mornings
+# before a night game) rather than just another isolated line.
+GAME_TODAY_HOME_LINES = [
+    "{team} host {opponent} tonight at {time}",
+    "{team} are home against {opponent} at {time} today",
+    "{team} play {opponent} at home today, {time}",
+    "home game today — {team} vs {opponent}, {time}",
+    "{team} take on {opponent} at home, {time} today",
+    "{team} are at home tonight against {opponent}, {time}",
+]
+GAME_TODAY_AWAY_LINES = [
+    "{team} are on the road against {opponent} tonight, {time}",
+    "{team} play at {opponent} today, {time}",
+    "{team} are away against {opponent}, {time} today",
+    "road game for {team} today — at {opponent}, {time}",
+    "{team} visit {opponent} today, {time}",
+    "{team} are on the road tonight, at {opponent}, {time}",
 ]
 
 # Deliberately the lowest-priority clause of all of them (see its
@@ -849,6 +914,18 @@ def _precip_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
         return 7, _pick(lines, now, "precip").format(chance=chance, time=time_text)
 
     return 1, _pick(CLEAR_SKY_LINES, now, "precip")
+
+
+def _road_ice_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
+    """road_conditions.ice_risk already exists (the commute tile's own
+    black-ice check) but never fed into the brief before — same
+    priority tier as the precip forecast since it's the same underlying
+    weather data, just the one connection (near-freezing + wet =
+    genuine ice risk, not either alone) made explicit rather than left
+    for the AI to maybe notice on its own."""
+    if not road_conditions.ice_risk(weather.get("temp_c"), weather.get("forecast_low_c"), weather):
+        return None
+    return 7, _pick(ICE_RISK_LINES, now, "ice")
 
 
 def _air_clause(now: datetime, air_quality: dict | None) -> tuple[int, str] | None:
@@ -962,6 +1039,24 @@ def _alert_clause(now: datetime) -> tuple[int, str] | None:
     return 10, text
 
 
+def _local_incident_clause(now: datetime) -> tuple[int, str] | None:
+    """Real police-beat/OPP/511-Ontario road-event items (local_news_
+    client.py, built for the news ticker) — never reached the brief
+    before. Distinct from _commute_clause's own live delay number: that
+    answers "how long will it take," this answers "here's what's
+    actually going on nearby," which a plain minutes-of-delay figure
+    can't say on its own. Same trust-the-upstream-feed's-own-recency
+    convention as _alert_clause above — no extra freshness filtering
+    here either, since these feeds (police beat, 511 Ontario) already
+    rotate their own items out as they go stale."""
+    items = local_news_client.fetch_items()
+    if not items:
+        return None
+    item = items[0]
+    text = _pick(LOCAL_INCIDENT_LINES, now, "local").format(headline=item["headline"], source=item["source"])
+    return 6, text
+
+
 def _markets_clause(now: datetime) -> tuple[int, str] | None:
     status = market_yf_client.market_status(now)
     if status == "weekend":
@@ -979,6 +1074,43 @@ def _markets_clause(now: datetime) -> tuple[int, str] | None:
     else:
         lines = MARKET_FLAT_LINES
     return 3, _pick(lines, now, "markets").format(**fmt)
+
+
+# Same 3 tracked teams as ticker.py's own playoff-odds item — reused
+# here rather than re-deciding which teams count, so this brief and the
+# ticker never quietly disagree about who "the" teams are.
+_TRACKED_TEAM_FETCHERS = [
+    ("The Blue Jays", sports_client.fetch_jays),
+    ("The Canadiens", sports_client.fetch_habs),
+    ("The Saints", sports_client.fetch_saints),
+]
+
+
+def _game_today_clause(now: datetime) -> tuple[int, str] | None:
+    """Whether any tracked team plays today — a real fact the brief
+    never had access to before, and good material for an actual
+    connection (a game tonight overlapping with incoming rain, a night
+    game after an early shift) rather than one more isolated line. Only
+    the single earliest game if more than one tracked team happens to
+    play the same day — rare enough that picking one over listing all
+    isn't a real loss, and keeps this the same one-fact shape as every
+    other clause here."""
+    todays_games = []
+    for team, fetch_status in _TRACKED_TEAM_FETCHERS:
+        try:
+            status = fetch_status()
+        except Exception:
+            continue
+        game = (status or {}).get("game")
+        if game and game["start_time"].date() == now.date() and game["state"] != "final":
+            todays_games.append((team, game))
+    if not todays_games:
+        return None
+    team, game = min(todays_games, key=lambda tg: tg[1]["start_time"])
+    lines = GAME_TODAY_HOME_LINES if game["is_home"] else GAME_TODAY_AWAY_LINES
+    time_text = game["start_time"].strftime("%I:%M %p").lstrip("0")
+    text = _pick(lines, now, "game").format(team=team, opponent=game["opponent"], time=time_text)
+    return 4, text
 
 
 @functools.lru_cache(maxsize=8)
@@ -1010,7 +1142,7 @@ def _daylight_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
     return 1, _pick(lines, now, "daylight").format(**fmt)
 
 
-AI_REFRESH_SECONDS = 15 * 60  # widened from the original 5 min — session request: "make everything cheaper by lowering how often theyre pulled"; see groq_client's module docstring for the daily-budget guarantee this contributes to
+AI_REFRESH_SECONDS = 30 * 60  # widened again from 15 min — session request: "make it generate every 30 mins instead of 15... to account for" the richer, smarter prompt below (more facts, more room to actually connect them) costing more per call than the plain version did; see groq_client's module docstring for the daily-budget guarantee this still contributes to
 
 
 def _ai_sentence(picked: list[str], now: datetime) -> str | None:
@@ -1198,7 +1330,29 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     ever read that flag). The plain "Work at 9:00 AM" _agenda_clause
     already surfaces for this same event is what's left — exactly the
     same as any other ordinary shift, which is now an accurate
-    description of what this actually is."""
+    description of what this actually is.
+
+    Session request: "make the AI in the morning briefs smarter, more
+    personable... connects the dots more often... if theres other data
+    he doesnt have yet give it to him." Three new facts now reach this
+    prompt that never did before — _road_ice_clause (built from weather
+    data already fetched, just never connected into an explicit ice-risk
+    call), _local_incident_clause (real police-beat/511-Ontario road
+    events, built for the news ticker, never wired here), and
+    _game_today_clause (whether a tracked team plays today, at all
+    before now) — plus the connect-the-dots instruction itself got
+    concrete named examples instead of just "draw real connections," on
+    the same theory this file's own profanity fix already proved:
+    vague permission alone doesn't move real output, naming the actual
+    thing to look for does.
+
+    Mid-session correction, live: "get rid of the strict jarvis rules,
+    let it do its own thing." The J.A.R.V.I.S./Iron Man anchor (and the
+    "sharp, hyper-competent" adjectives that came with it) is gone —
+    still the same job (informing him, in service of the humor rather
+    than the point of it) and the same tone freedom already established
+    above, just with an explicit instruction to find its own voice
+    rather than perform a specific fictional character's."""
     facts = "; ".join(picked)
     weekday = now.strftime("%A")
     history_block = _recent_history_block(now)
@@ -1212,12 +1366,14 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         else ""
     )
     prompt = (
-        f"You are {USER_FIRST_NAME}'s personal AI assistant, in the spirit of J.A.R.V.I.S. from "
-        "Iron Man — sharp, hyper-competent, genuinely funny, and above all an actual partner whose "
-        f"real job is keeping {USER_FIRST_NAME} genuinely informed about his own day. The humor is "
-        "in service of that, not the point in itself — a morning with nothing funny to say about "
-        "it is still a successful brief if he walks away knowing what's actually going on today. "
-        "You choose the tone each morning, not a fixed formula: genuinely warm or sincere if "
+        f"You are {USER_FIRST_NAME}'s personal AI assistant — genuinely funny, and above all an "
+        f"actual partner whose real job is keeping {USER_FIRST_NAME} genuinely informed about his "
+        "own day. No fixed character to perform and no assigned persona — don't imitate anyone "
+        "else's voice (a butler, a movie AI, anyone); figure out your own personality across these "
+        "and let it come through in how you actually write, rather than announcing what it is. The "
+        "humor is in service of the job, not the point in itself — a morning with nothing funny to "
+        "say about it is still a successful brief if he walks away knowing what's actually going on "
+        "today. You choose the tone each morning, not a fixed formula: genuinely warm or sincere if "
         f"that's actually what today calls for, dry and cutting and willing to roast "
         f"{USER_FIRST_NAME} directly if that's funnier, deadpan, playful, silly, whatever — your "
         "call, and it's fine (good, even) for it to vary morning to morning instead of landing on "
@@ -1250,8 +1406,13 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         "o'clock'. This is read at a glance on a screen, not literary prose, and digits are "
         "faster to scan.\n\n"
         "Below is everything real that's actually true about today — the full picture, not a "
-        "filtered subset, so you can draw real connections across it and decide for yourself "
-        "what's actually worth a comment rather than restating each one in turn. Still needs to "
+        "filtered subset. Actually look for a real connection between two or more facts before "
+        "just listing them in turn — cold enough and wet enough together meaning real ice risk, "
+        "not just two separate numbers; a game tonight that might overlap with incoming rain; "
+        "a road incident sitting on the same route that already has a traffic delay; a stretch of "
+        "early shifts or rough weather from the recent-days record actually continuing today. Not "
+        "every morning has one, and forcing a connection that isn't really there reads worse than "
+        "not mentioning it — but check for a real one before defaulting to a flat list. Still needs to "
         f"read at a glance on a kiosk display, but genuinely short is fine and genuinely more "
         "isn't a formatting failure either — your call based on what's actually here today. "
         f"Address {USER_FIRST_NAME} by name naturally somewhere in it. Start with a capital "
@@ -1259,7 +1420,16 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     )
     if groq_client.ai_pulls_paused():
         return None
-    return gemini_client.generate_periodic("morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85)
+    # max_output_tokens raised from generate_periodic's own 200-token
+    # default — that was plenty when this was reliably "a couple
+    # sentences," but the prompt above now explicitly invites real
+    # structure and genuinely-longer output on an eventful morning (more
+    # facts feeding in, explicit permission to run longer when it's
+    # earned) — confirmed live that 200 tokens cuts a real response off
+    # mid-word on a day with several real facts to connect.
+    return gemini_client.generate_periodic(
+        "morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85, max_output_tokens=450
+    )
 
 
 def render(now: datetime, weather: dict | None, air_quality: dict | None) -> None:
@@ -1273,11 +1443,14 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         (_alert_clause, (now,)),
         (_weather_clause, (now, weather)),
         (_precip_clause, (now, weather)),
+        (_road_ice_clause, (now, weather)),
         (_air_clause, (now, air_quality)),
         (_commute_clause, (now,)),
+        (_local_incident_clause, (now,)),
         (_agenda_clause, (now,)),
         (_household_clause, (now,)),
         (_markets_clause, (now,)),
+        (_game_today_clause, (now,)),
         (_daylight_clause, (now, weather)),
     ):
         try:
