@@ -1052,13 +1052,18 @@ _TRACKED_TEAM_FETCHERS = [
 
 def _game_today_clause(now: datetime) -> tuple[int, str] | None:
     """Whether any tracked team plays today — a real fact the brief
-    never had access to before, and good material for an actual
-    connection (a game tonight overlapping with incoming rain, a night
-    game after an early shift) rather than one more isolated line. Only
-    the single earliest game if more than one tracked team happens to
-    play the same day — rare enough that picking one over listing all
-    isn't a real loss, and keeps this the same one-fact shape as every
-    other clause here."""
+    never had access to before. Session correction: an earlier version
+    of this docstring cited "a game tonight overlapping with incoming
+    rain" as the kind of connection this enables — the exact example
+    the user flagged as nonsensical (the tracked teams play hundreds of
+    km from here, so local rain has nothing to do with it; see _ai_
+    sentence's own prompt for where that got fixed). This is simply a
+    standalone fact now, same as any other — worth mentioning on its
+    own, not something to manufacture a same-day link around. Only the
+    single earliest game if more than one tracked team happens to play
+    the same day — rare enough that picking one over listing all isn't
+    a real loss, and keeps this the same one-fact shape as every other
+    clause here."""
     todays_games = []
     for team, fetch_status in _TRACKED_TEAM_FETCHERS:
         try:
@@ -1473,14 +1478,23 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         _record_history(now, all_facts)
     except Exception:
         pass
-    try:
-        _update_learned_notes(now, all_facts)
-    except Exception:
-        pass
+    # Audit fix: this used to run BEFORE _ai_sentence, which meant on
+    # the very first rerun of a new day, the "long-term notes... distinct
+    # from the day-by-day record" _ai_sentence's own prompt promises
+    # would already have today's facts folded into them by the time it
+    # read _learned_notes — the exact same-day leak _recent_history_
+    # block deliberately guards against for the raw history. Ordered
+    # after _ai_sentence now so today's brief always sees notes as they
+    # stood coming INTO today, and _update_learned_notes only folds
+    # today in afterward, for tomorrow's benefit.
     try:
         sentence = _ai_sentence(all_facts, now)
     except Exception:
         sentence = None
+    try:
+        _update_learned_notes(now, all_facts)
+    except Exception:
+        pass
     if sentence is None:
         # JARVIS opens the line himself when this succeeds (see
         # _ai_sentence's own docstring) — the plain fallback needs its

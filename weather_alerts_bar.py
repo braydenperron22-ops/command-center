@@ -169,71 +169,19 @@ def current_severity() -> str | None:
     return _severity(alert["title"])
 
 
-def render(weather: dict | None) -> bool:
-    """Returns whether a banner was actually rendered — session report:
-    "our heat warning just popped up and its kinda colliding with the
-    leave in timer." The banner is now position: fixed (theme.py's own
-    comment on .weather-statement-bar has the full story), which took
-    it out of document flow entirely — app.py uses this return value to
-    reserve the same real space in flow (a spacer before .hero-row)
-    only on a rerun where there's actually a banner to clear, rather
-    than a permanent gap on every ordinary alert-free day."""
-    alerts = _combined_alerts()
-    if alerts:
-        # Several alerts can technically be active at once (e.g. a Heat
-        # Warning alongside a Severe Thunderstorm Watch) — showing just
-        # the most severe one keeps the bar readable rather than
-        # concatenating everything, and means a genuinely more dangerous
-        # alert is never buried under whatever the feed happened to list
-        # first. A "+N more" suffix at least surfaces that there's more
-        # to know.
-        alert = max(alerts, key=_selection_score)
-        # Used to append " — {summary}" too, but EC's summary field is
-        # just "Issued: <timestamp>" (confirmed live) — roughly doubled
-        # the banner's height for a kiosk that already refreshes
-        # automatically and has no use for a manual staleness check.
-        # Title alone (hazard + region) is the part actually worth
-        # reading from across the room.
-        text = alert["title"]
-        if len(alerts) > 1:
-            text += f" (+{len(alerts) - 1} more alert{'s' if len(alerts) > 2 else ''})"
-        label = "Environment Canada"
-        # A real EC alert earns the bold, high-contrast treatment
-        # (theme.py's weather-statement-{severity} modifiers) — our own
-        # manual heat/cold fallback below deliberately keeps the
-        # original muted styling instead, since it's a self-generated
-        # heuristic, not an official warning, and shouldn't visually
-        # compete with a genuine one.
-        bar_class = f"weather-statement-bar weather-statement-{_severity(alert['title'])}"
-    else:
-        text = _fallback_text(weather)
-        if not text:
-            return False
-        label = "Weather Advisory"
-        bar_class = "weather-statement-bar"
-
-    st.markdown(
-        f"""<div class="{bar_class}">
-            <span class="weather-statement-dot"></span>
-            <span class="weather-statement-label">{label}</span>
-            <span class="weather-statement-text">{text}</span>
-        </div>""",
-        unsafe_allow_html=True,
-    )
-    return True
-
-
 # Session request: "a recent special weather statement just came in but
-# it didnt show as a toast alert, make sure they show up." render()
-# above already surfaces whatever's currently active in the persistent
+# it didnt show as a toast alert, make sure they show up." weather_
+# statement_candidate (headline_rotation.py's own unified rotation)
+# already surfaces whatever's currently active in the persistent
 # banner, but that banner is suppressed during a jumbotron takeover
 # (app.py) — with nothing else picking up the slack, a new alert issued
 # while a game's on screen went completely unseen, which is exactly what
 # happened here. get_new_alerts below mirrors news.get_new_alerts's own
 # shape so app.py's existing toast queue (which DOES still run during a
 # takeover) can carry this too, resolving from the exact same
-# _combined_alerts/_selection_score logic render() uses so the toast and
-# the banner always agree on which alert currently wins.
+# _combined_alerts/_selection_score logic weather_statement_candidate
+# uses so the toast and the banner always agree on which alert currently
+# wins.
 #
 # Persisted (not a plain module-level set) so a redeploy/restart can't
 # re-toast an alert this process already showed — same reasoning as
@@ -462,15 +410,15 @@ def _current_alert_and_severity() -> tuple[dict, str] | None:
 
 def current_storm_phase(now: datetime) -> dict | None:
     """{"phase": "approaching"|"here"|"leaving", "minutes": float,
-    "target": datetime} for whichever alert render() would currently
-    show, or None — for govee_lighting.sync_lights (session request:
-    "red govee flashes for when the storm is approaching... solid red
-    at like 30% for when its here... same thing for when the storm is
-    leaving") and render_storm_headline below. Thin wrapper around
-    ec_storm_timing.storm_phase using the exact same alert selection
-    render()/get_new_alerts() already use, so the light, the toast, the
-    banner, and the headline never disagree about which alert is "the"
-    current one."""
+    "target": datetime} for whichever alert is currently "the" one (see
+    _current_alert_and_severity), or None — for govee_lighting.
+    sync_lights (session request: "red govee flashes for when the storm
+    is approaching... solid red at like 30% for when its here... same
+    thing for when the storm is leaving") and storm_headline_candidate
+    below. Thin wrapper around ec_storm_timing.storm_phase using the
+    exact same alert selection get_new_alerts/weather_statement_
+    candidate already use, so the light, the toast, the banner, and the
+    headline never disagree about which alert is "the" current one."""
     resolved = _current_alert_and_severity()
     if resolved is None:
         return None
@@ -531,50 +479,6 @@ def _format_clock(remaining_seconds: float) -> str:
     return f"{minutes:02d}:{seconds:02d}"
 
 
-def render_storm_headline(now: datetime) -> None:
-    """A standalone bright countdown headline — session request: "can
-    we make an APPROACHING: and CLEARING: timer using these values
-    pulled from the EC alert for ultimate transparency," modeled
-    directly on commute_reminder.render_leave_headline (see
-    .storm-headline in theme.py for why it's colored differently).
-    "CLEARING IN" is the user's own phrase ("make that 'clearing in'
-    timer"), used for both "here" and "leaving" — session correction:
-    "it should say clearing in and then a timer to [event_end_datetime]
-    since thats when the message actually clears," not only once that
-    instant has already passed (the original, narrower "leaving"-only
-    behavior). "APPROACHING" still only ever shows for "approaching".
-    Either way the target is
-    whatever ec_storm_timing.storm_phase's own "target" says for the
-    current phase — "here"'s target IS event_end_datetime itself, so
-    this is always counting down to something real and current, never
-    a stale or made-up value.
-
-    Ticks for real once a second via app.py's global live-countdown
-    ticker, exactly like the leave headline — the text rendered here is
-    only ever the first frame's value; data-target-ms drives everything
-    after that, straight off ec_storm_timing.storm_phase's own
-    "target" datetime (the actual EC-sourced validity_datetime/
-    event_end_datetime instant, not a value re-derived from "minutes"
-    and therefore never out of sync with it)."""
-    resolved = _current_alert_and_severity()
-    if resolved is None:
-        return
-    alert, severity = resolved
-    info = ec_storm_timing.storm_phase(now, alert["title"], severity)
-    if info is None:
-        return
-    target_ms = int(info["target"].timestamp() * 1000)
-    label = "APPROACHING" if info["phase"] == "approaching" else "CLEARING IN"
-    tier = "extreme" if severity == "extreme" else "warning"
-    remaining = max(0.0, info["minutes"] * 60)
-    st.markdown(
-        f'<div class="storm-headline storm-headline-{tier}"><span class="live-countdown" '
-        f'data-target-ms="{target_ms}" data-format="clock" data-template="{label}: {{}}">'
-        f'{label}: {_format_clock(remaining)}</span></div>',
-        unsafe_allow_html=True,
-    )
-
-
 # Session request: "make it so all the red headlines within the last 2
 # hours cycle at the top of the screen with a cool animation when it
 # swaps" — normalizes this same storm-phase info (and, separately, the
@@ -593,6 +497,18 @@ _SEVERITY_TO_ROTATION_CLASS = {
 
 
 def storm_headline_candidate(now: datetime) -> dict | None:
+    """A bright countdown to whatever ec_storm_timing.storm_phase's own
+    "target" currently is — session request: "can we make an
+    APPROACHING: and CLEARING: timer using these values pulled from the
+    EC alert for ultimate transparency." "CLEARING IN" is the user's own
+    phrase, used for both "here" and "leaving" — session correction:
+    "it should say clearing in and then a timer to [event_end_datetime]
+    since thats when the message actually clears," not only once that
+    instant has already passed. "APPROACHING" only ever shows for
+    "approaching". Either way the target is always something real and
+    current, never stale or made up — "here"'s own target IS event_end_
+    datetime itself, not a value re-derived from "minutes" (which would
+    drift out of sync with it)."""
     resolved = _current_alert_and_severity()
     if resolved is None:
         return None
@@ -606,7 +522,7 @@ def storm_headline_candidate(now: datetime) -> dict | None:
     remaining = max(0.0, info["minutes"] * 60)
     return {
         "text": f"{label}: {_format_clock(remaining)}",
-        "css_class": _SEVERITY_TO_ROTATION_CLASS["extreme" if tier == "extreme" else "warning"],
+        "css_class": _SEVERITY_TO_ROTATION_CLASS[tier],
         "target_ms": target_ms,
         "template": label + ": {}",
         "zero_text": None,
@@ -614,10 +530,12 @@ def storm_headline_candidate(now: datetime) -> dict | None:
 
 
 def weather_statement_candidate(weather: dict | None) -> dict | None:
-    """Same text/severity selection as render() (a real EC alert, or
-    our own manual heat/cold fallback) but without the st.markdown side
-    effect — None whenever render() itself would return False. Not a
-    countdown (no natural "clears at" instant for a plain statement/
+    """Whatever the persistent weather-statement banner would show — a
+    real EC alert (any severity, most-severe-first via _selection_score
+    when several are active) or, if none, our own manual heat/cold
+    fallback (_fallback_text) — normalized for headline_rotation.py's
+    unified rotation. None when there's genuinely nothing to show. Not
+    a countdown (no natural "clears at" instant for a plain statement/
     fallback the way storm proximity has), so target_ms is always
     None."""
     alerts = _combined_alerts()

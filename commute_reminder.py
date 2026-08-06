@@ -48,8 +48,9 @@ MILESTONES_MINUTES = [120, 90, 60, 45, 30, 20, 15, 10, 5, 3, 0]
 # window, and "Leave now" 40 minutes after the fact isn't useful.
 LATEST_FIRE_MINUTES = -30
 
-# The persistent headline (render_leave_headline, below) is deliberately
-# narrower than the toast milestones above — hours-out visibility is
+# The persistent headline (leave_headline_candidate, below — shown via
+# headline_rotation.py's unified rotation) is deliberately narrower
+# than the toast milestones above — hours-out visibility is
 # what those toasts are for. The headline is for the one window where
 # you actually want it parked on screen: the final two hours, plus a
 # short grace period after so it doesn't vanish the instant you're
@@ -399,8 +400,8 @@ def _format_clock(remaining_seconds: float) -> str:
 def _remaining_until_leave(now: datetime) -> float | None:
     """Seconds until leave-by time for whichever shift is currently
     tracked (see _current_shift), or None if there's nothing to track
-    today — shared by render_leave_headline and leave_headline_active
-    so the two can never quietly drift apart on what "active" means."""
+    today — shared by _countdown_info and leave_headline_active so the
+    two can never quietly drift apart on what "active" means."""
     leave_by = leave_by_time(now)
     if leave_by is None:
         return None
@@ -438,53 +439,24 @@ def _intensity_tier(remaining_seconds: float) -> str:
 
 
 def leave_headline_active(now: datetime) -> bool:
-    """Whether render_leave_headline would show anything right now —
-    app.py calls this ahead of its own night-dim decision (session
-    request: force the display bright while the leave-in countdown is
-    up and it's still before 7am, rather than sitting dimmed through an
-    early-morning appointment's countdown)."""
+    """Whether the leave-in countdown (rendered via headline_rotation.py's
+    unified rotation now, see leave_headline_candidate below — this
+    used to have its own standalone render_leave_headline, retired once
+    every "red headline" source moved into that shared rotation) would
+    show anything right now — app.py calls this ahead of its own
+    night-dim decision (session request: force the display bright while
+    the leave-in countdown is up and it's still before 7am, rather than
+    sitting dimmed through an early-morning appointment's countdown)."""
     remaining = _remaining_until_leave(now)
     return remaining is not None and -HEADLINE_GRACE_MINUTES * 60 <= remaining <= HEADLINE_WINDOW_MINUTES * 60
 
 
-def render_leave_headline(now: datetime) -> None:
-    """A standalone red headline above the hero clock/weather row —
-    page-independent (renders regardless of which of the 6 rotating
-    pages is currently up, unlike anything living inside a page's own
-    render()), so it's actually visible during the one window that
-    matters: the final HEADLINE_WINDOW_MINUTES before you need to leave,
-    through a HEADLINE_GRACE_MINUTES grace period after. Silent outside that
-    window — hours-out awareness is what the milestone toasts above are
-    for; this is specifically for keeping tabs once it's close.
-
-    Ticks for real once a second via app.py's global live-countdown
-    ticker script (session request, after the jumbotron got the same
-    treatment: "make that logic work for all the timer elements...
-    specifically the big red leave in timer") — the text below is only
-    ever the first frame's value; data-target-ms/data-template/
-    data-zero-text drive everything from here on, independent of
-    Streamlit's own 5s rerun cadence. The intensity tier (see
-    _intensity_tier above) rides the same per-second tick via the
-    data-intensity marker — the ticker script only manages elements
-    that carry it, so the jumbotron/sports countdowns sharing that same
-    global ticker are untouched."""
-    info = _countdown_info(now)
-    if info is None:
-        return
-    target_ms, tier, text = info
-    st.markdown(
-        f'<div class="leave-headline intensity-{tier}"><span class="live-countdown" data-intensity '
-        f'data-target-ms="{target_ms}" data-format="clock" data-template="Leave in {{}}" '
-        f'data-zero-text="Leave now">{text}</span></div>',
-        unsafe_allow_html=True,
-    )
-
-
 def _countdown_info(now: datetime) -> tuple[int, str, str] | None:
     """(target_ms, intensity tier, first-frame text) shared by
-    render_leave_headline and render_ticker_leave_bar below — same
-    window/gating logic, just two different places it ends up on
-    screen."""
+    leave_headline_candidate below and render_ticker_leave_bar further
+    down — same window/gating logic, just two different places it ends
+    up on screen (the unified top-of-screen rotation vs. the jumbotron's
+    own compact ticker slot)."""
     leave_by = leave_by_time(now)
     if leave_by is None:
         return None
@@ -538,8 +510,9 @@ def render_ticker_leave_bar(now: datetime) -> None:
     same space since that space is crucial for the jumbotron... replace
     the bottom scroll bar with a timer... game alerts and breaking news
     is allowed to trump the timer but at least its still there." The
-    big red .leave-headline (render_leave_headline above) already skips
-    itself during a jumbotron takeover entirely — there's no room for it
+    big red .leave-headline (shown via headline_rotation.py's unified
+    rotation now) already skips itself during a jumbotron takeover
+    entirely — there's no room for it
     on that board — which meant an early-shift countdown during game
     time only ever surfaced as a handful of one-off milestone toasts,
     not something continuously visible.

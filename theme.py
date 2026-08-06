@@ -2210,6 +2210,30 @@ html, body, [class*="css"] {
     from { opacity: 0; transform: translate(-50%, -16px); }
     to { opacity: 1; transform: translate(-50%, 0); }
 }
+/* Audit fix — a real bug, not just a precaution: when the leave
+   candidate is showing (headline_rotation._render_candidate carries
+   both .headline-rotation AND .leave-headline on the same div, see
+   its own comment on why), .leave-headline's OWN base rule below sets
+   top/font-size/z-index too, at the exact same specificity as
+   .headline-rotation's base rule — and since .leave-headline is
+   defined LATER in this file, its top:88px/2.6rem/z-index:500 silently
+   won over .headline-rotation's top:18px/2rem/502 for every property
+   both rules happen to set, dropping the leave candidate 70px below
+   the shared slot (and out of size/stacking sync with the other 3
+   sources) every time it took its turn in the rotation — confirmed by
+   direct property comparison, not just suspected. Only the properties
+   that actually differ between the two base rules are reasserted here
+   (a combined selector, 0,2,0, beats either base rule's 0,1,0
+   regardless of source order) — color/border-color/animation
+   deliberately left out so the live intensity-* tier rules (see
+   .leave-headline.intensity-* below, same 0,2,0 specificity as this
+   but no property overlap with it) remain the only source of truth
+   for those. */
+.headline-rotation.leave-headline {
+    top: 18px;
+    font-size: 2rem;
+    z-index: 502;
+}
 
 /* Standalone headline at the top of the Today page — promoted out of
    the agenda card entirely (see pages_today._render_leave_headline) so
@@ -2255,8 +2279,8 @@ html, body, [class*="css"] {
     /* Color/glow/pulse are all set per intensity-* tier below, not
        here — this is just the structural fallback in case JS hasn't
        applied a tier class yet (Python always sets one server-side on
-       first paint, see commute_reminder.render_leave_headline, so this
-       should only ever be visible for a flash). */
+       first paint, see commute_reminder.leave_headline_candidate, so
+       this should only ever be visible for a flash). */
     color: #FF453A;
 }
 
@@ -4617,6 +4641,13 @@ html, body, [class*="css"] {
     .leave-headline { font-size: 1.9rem; }
     .storm-headline { font-size: 1.9rem; }
     .game-countdown-headline { font-size: 1.4rem; }
+    /* .headline-rotation.leave-headline (a real leave candidate showing
+       via the unified rotation) already inherits .leave-headline's own
+       1.9rem above at equal specificity to its base 2rem, and wins on
+       source order — this covers the other 3 candidates (storm/
+       weather-statement/news), which only ever carry .headline-rotation
+       alone and would otherwise stay at the full desktop 2rem here. */
+    .headline-rotation { font-size: 1.9rem; }
 
     /* Session report: "when there's a red headline or the leave in
        badge it covers the clock and weather." These, .top-alert-bar,
@@ -4639,9 +4670,18 @@ html, body, [class*="css"] {
        hardcoded top offsets (88px/184px/194px/300-360px) that used to
        stack these regardless of which combination was showing are now
        meaningless once they're back in normal flow, so they're dropped
-       instead of overridden. */
+       instead of overridden.
+
+       Audit fix — .headline-rotation added to this list too: it never
+       was originally, which meant the 3 candidates that don't also
+       carry .leave-headline (storm/weather-statement/news) stayed
+       position:fixed on mobile and could still cover the clock/weather,
+       reintroducing the exact collision this whole rule exists to
+       prevent — confirmed live (offsetParent was BODY, not null, i.e.
+       genuinely static, for .leave-headline itself via its own listing
+       here, but .headline-rotation alone had no equivalent entry). */
     .top-alert-bar, .weather-statement-bar, .leave-headline,
-    .storm-headline, .game-countdown-headline {
+    .storm-headline, .game-countdown-headline, .headline-rotation {
         position: static;
         top: auto;
         left: auto;

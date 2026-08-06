@@ -21,6 +21,7 @@ reason: a page reload must never reset which headline is showing or
 restart its swap timer.
 """
 
+import html
 import time
 from datetime import datetime
 
@@ -164,6 +165,16 @@ def _render_candidate(key: str, candidate: dict) -> None:
             countdown_attrs += f' data-zero-text="{candidate["zero_text"]}"'
         if key == "leave":
             countdown_attrs += " data-intensity"
+    # Audit fix: the storm/leave text is always internally built (a
+    # clock string), but the weather-statement and news candidates
+    # carry real external text (an EC alert title, an RSS headline) —
+    # unescaped, either could break the data-rotate-value attribute
+    # outright (a literal " in the headline) or, rarer, inject markup
+    # into the page. Escaped once and reused for both the attribute and
+    # the visible span, matching how every other external-text render
+    # site in this app already does it (e.g. weather_alerts_bar.
+    # render_alert_bar's own html.escape calls).
+    text = html.escape(candidate["text"])
     # data-rotate-value (not data-fade-value — a deliberately separate
     # attribute from the existing kiosk-jumbo-fade mechanism, so the
     # two scripts never both try to animate the same element) changes
@@ -173,8 +184,8 @@ def _render_candidate(key: str, candidate: dict) -> None:
     # animation the same way.
     st.markdown(
         f"""<div class="headline-rotation {css_class}"
-             data-rotate-value="{key}:{candidate['text']}">
-            <span class="live-countdown"{countdown_attrs}>{candidate['text']}</span>
+             data-rotate-value="{key}:{text}">
+            <span class="live-countdown"{countdown_attrs}>{text}</span>
         </div>""",
         unsafe_allow_html=True,
     )

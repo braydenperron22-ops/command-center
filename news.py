@@ -1382,10 +1382,10 @@ def update_top_alert(new_alerts: list[dict]) -> None:
 def _current_top_alert() -> dict | None:
     """The active top_alert dict if still within its hold window
     (TOP_ALERT_HOLD_SECONDS), clearing (and persisting the clear) if
-    it's expired — shared by render_top_alert_bar and headline_
-    rotation.py's own top_alert_candidate so the two can never
-    disagree about whether one's still active, and expiry only ever
-    gets written once regardless of which caller notices it first."""
+    it's expired — the one place that logic lives, so expiry only ever
+    gets written once regardless of how many callers check it (today,
+    just top_alert_candidate below, but kept separate from it rather
+    than inlined for exactly that reason)."""
     global _top_alert
     if not _top_alert:
         return None
@@ -1396,36 +1396,19 @@ def _current_top_alert() -> dict | None:
     return _top_alert
 
 
-def render_top_alert_bar() -> None:
-    """Renders the persistent top banner if a red headline is still
-    within its hold window (TOP_ALERT_HOLD_SECONDS) — a plain static bar
-    in normal document flow, not fixed/animated, since it needs to sit
-    there unchanged for up to two hours rather than play an intro.
-
-    Used to also re-check the stored headline against the live filter
-    each render, in case a keyword-list edit mid-session made it no
-    longer qualify. decide()'s AI verdict is trusted as final once made
-    (same "locked in at first sight" philosophy pages_news.py's own
-    entries already use) — nothing here changes that mid-hold, so
-    there's nothing left to re-validate, and it would mean a real AI
-    call every render besides."""
-    top_alert = _current_top_alert()
-    if not top_alert:
-        return
-    st.markdown(
-        f"""<div class="top-alert-bar">
-            <span class="top-alert-dot"></span>
-            <span class="top-alert-label">Breaking</span>
-            <span class="top-alert-headline">{top_alert['headline']}</span>
-        </div>""",
-        unsafe_allow_html=True,
-    )
-
-
 def top_alert_candidate() -> dict | None:
-    """Same info render_top_alert_bar shows, normalized for headline_
-    rotation.py's own unified rotation — None whenever there's no
-    current breaking-news headline within its hold window."""
+    """Breaking-news headline for headline_rotation.py's own unified
+    rotation, if one's still within its hold window (TOP_ALERT_HOLD_
+    SECONDS) — None otherwise. This used to render its own always-on-
+    screen banner directly; retired once every "red headline" source
+    moved into that shared rotation, but the design decision behind it
+    is still exactly as true here: decide()'s AI verdict on a headline
+    is trusted as final once made (same "locked in at first sight"
+    philosophy pages_news.py's own entries already use) — nothing
+    re-checks the stored headline against a live filter on each call,
+    since a keyword-list edit mid-session changing its mind wouldn't
+    un-ring the bell anyway, and re-validating would mean a real AI
+    call on every rerun besides."""
     top_alert = _current_top_alert()
     if not top_alert:
         return None

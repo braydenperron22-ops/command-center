@@ -2143,7 +2143,7 @@ except Exception:
 # EC weather-alert toasts: same queue, same isolation reasoning as the
 # blocks above — session report: "a recent special weather statement
 # just came in but it didnt show as a toast alert." The persistent
-# banner (weather_alerts_bar.render, further down) already covers most
+# banner (headline_rotation.render, further down) already covers most
 # pages, but is skipped entirely during a jumbotron takeover, and this
 # toast queue is the one thing that still runs regardless (see
 # weather_alerts_bar.get_new_alerts's own docstring for the full
