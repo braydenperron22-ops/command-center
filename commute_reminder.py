@@ -125,6 +125,40 @@ def _leave_spoken_text(shift: dict, minutes: int) -> str:
     return f"{headline}."
 
 
+# Session request: "make it so the alert fires at 100% for leave in
+# notifications regardless of time" (a fix for an early-morning jump
+# scare) later walked back once that same flat 100% became its own
+# problem — "I don't want the leave in timer to wake everyone in my
+# family up... but I want it to be louder during the day." Rather than
+# go back to a wall-clock-only curve (which doesn't know an early
+# shift from a late night), this ties the ceiling to the one thing
+# that actually matters: how early THIS shift's real leave-by time is
+# — a 4am leave-by gets a genuinely quiet ceiling, an 8am one gets the
+# normal full one, and everything in between ramps linearly, the same
+# ramp shape already validated for severe weather's own morning ramp
+# (app.py's kioskAlertVolume). LEAVE_VOLUME_FLOOR is a floor, not a
+# mute — still meant to be heard in-room, just not house-wide.
+LEAVE_VOLUME_FLOOR = 0.35
+LEAVE_VOLUME_RAMP_START_HOUR = 5
+LEAVE_VOLUME_RAMP_END_HOUR = 8
+
+
+def _leave_volume_ceiling(leave_by: datetime) -> float:
+    """Max playback volume for every alert tied to this shift's
+    countdown — computed once from leave_by itself (not "now"), so
+    every milestone for the same early shift (the 2-hour-out toast,
+    the 15-minute one, "leave now") agrees on the same quiet ceiling,
+    rather than each one drifting as the countdown ticks closer to a
+    later wall-clock hour."""
+    hour = leave_by.hour + leave_by.minute / 60
+    if hour <= LEAVE_VOLUME_RAMP_START_HOUR:
+        return LEAVE_VOLUME_FLOOR
+    if hour >= LEAVE_VOLUME_RAMP_END_HOUR:
+        return 1.0
+    span = LEAVE_VOLUME_RAMP_END_HOUR - LEAVE_VOLUME_RAMP_START_HOUR
+    return LEAVE_VOLUME_FLOOR + (1.0 - LEAVE_VOLUME_FLOOR) * (hour - LEAVE_VOLUME_RAMP_START_HOUR) / span
+
+
 def _todays_shift_events(now: datetime) -> list[dict]:
     """Every shift-type event today, sorted by start time — plural,
     since a day can have more than one (an appointment earlier, a
@@ -343,6 +377,7 @@ def check(now: datetime) -> dict | None:
         "kind": "commute",
         "label": label,
         "summary": _leave_spoken_text(shift, milestone),
+        "volume": _leave_volume_ceiling(leave_by),
     }
 
 
@@ -526,8 +561,14 @@ def render_bar(alert: dict) -> None:
     summary_attr = html.escape(spoken_text)
     audio_b64 = kiosk_tts.synthesize_base64(spoken_text) if spoken_text else None
     audio_attr = f' data-audio-b64="{audio_b64}"' if audio_b64 else ""
+    # data-volume is the ceiling for THIS shift's leave-by time (see
+    # _leave_volume_ceiling) — app.py's kioskPlayLeaveVoice reads it
+    # instead of always forcing full volume, so an early-morning shift
+    # stays quiet without needing to touch the wall-clock schedule at
+    # all.
+    volume_attr = f' data-volume="{alert.get("volume", 1.0):.3f}"'
     st.markdown(
-        f"""<div class="commute-alert-bar" data-summary="{summary_attr}"{audio_attr}>
+        f"""<div class="commute-alert-bar" data-summary="{summary_attr}"{audio_attr}{volume_attr}>
             <span class="news-breaking-label">{label}</span>
             <span class="news-alert-headline">{headline}</span>
         </div>""",

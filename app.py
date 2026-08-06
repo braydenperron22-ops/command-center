@@ -860,12 +860,21 @@ components.html(
         // this session's ask was specifically to add the voice, not
         // redesign the ping.
         // Session request: "make it so the alert fires at 100% for leave
-        // in notifications regardless of time" — bypasses kioskAlertVolume
-        // entirely for this one alert type; every other alert (breaking
-        // news, moderate weather, severe weather) still follows the
-        // normal day/night curve untouched.
+        // in notifications regardless of time" (bypassed kioskAlertVolume
+        // entirely) — later walked back once flat 100% became its own
+        // 4am-jumpscare problem: "I don't want the leave in timer to
+        // wake everyone in my family up... but I want it to be louder
+        // during the day." commute_reminder._leave_volume_ceiling now
+        // computes that ceiling server-side from the shift's own real
+        // leave-by time (quiet for a 4am leave-by, full by 8am) and
+        // passes it as data-volume — every alert for the same shift's
+        // countdown shares one ceiling instead of drifting per-alert.
+        // Falls back to full volume only if the attribute is somehow
+        // missing (a caller that predates this, same defensive shape
+        // as _alert_label's own fallback).
         "function kioskPlayLeaveVoice(el) {",
-        "  var vol = 1;",
+        "  var vol = parseFloat(el.getAttribute('data-volume'));",
+        "  if (!(vol >= 0 && vol <= 1)) { vol = 1; }",
         "  kioskPlayChime(false, vol);",
         "  try {",
         "    var summary = el.getAttribute('data-summary') || '';",
