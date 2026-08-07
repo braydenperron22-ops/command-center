@@ -30,6 +30,15 @@ from config import RAIN_LOOKAHEAD_HOURS, RAIN_PROBABILITY_THRESHOLD, TIMEZONE
 _PERCENT_CHANCE_RE = re.compile(r"(\d+)\s*percent chance")
 
 GEOMET_URL = "https://api.weather.gc.ca/collections/citypageweather-realtime/items"
+# Same weather.gc.ca/meteo.gc.ca domain-pair EC already publishes the
+# alerts feed on (see ec_alerts.py's own ALERT_URL_FALLBACK) — confirmed
+# live that api.meteo.gc.ca mirrors api.weather.gc.ca byte-for-byte for
+# this same GeoMet collection, a real second path rather than a guess.
+# Session request: "make sure EC can do everything Open-Meteo can... as
+# reliable a failsafe as possible" — this module (plus ec_aqhi.py and
+# ec_storm_timing.py) previously depended on api.weather.gc.ca alone,
+# unlike ec_alerts.py's already-redundant pattern; this closes that gap.
+GEOMET_URL_FALLBACK = "https://api.meteo.gc.ca/collections/citypageweather-realtime/items"
 # EC's own North Bay station (site code s0000765, from their public
 # site_list_en.geojson) — deliberately NOT config.py's WEATHER_LAT/
 # WEATHER_LON. Those now pin the real, precisely-geocoded home address
@@ -83,24 +92,35 @@ def _classify_category(condition_text: str) -> str:
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_properties_raw() -> dict | None:
+def _fetch_properties_raw(url: str) -> dict | None:
     bbox = (
         EC_STATION_LON - BBOX_MARGIN_DEGREES, EC_STATION_LAT - BBOX_MARGIN_DEGREES,
         EC_STATION_LON + BBOX_MARGIN_DEGREES, EC_STATION_LAT + BBOX_MARGIN_DEGREES,
     )
     fetch_throttle.wait_turn()
-    resp = requests.get(GEOMET_URL, params={"bbox": ",".join(str(v) for v in bbox), "f": "json"}, timeout=10)
+    resp = requests.get(url, params={"bbox": ",".join(str(v) for v in bbox), "f": "json"}, timeout=10)
     resp.raise_for_status()
     features = resp.json().get("features", [])
     return features[0]["properties"] if features else None
 
 
 def _fetch_properties() -> dict | None:
+    """Tries GEOMET_URL_FALLBACK (api.meteo.gc.ca) whenever the primary
+    domain itself fails, before ever falling back to a stale cached
+    value — same two-domain-then-cache order as ec_alerts.fetch_alerts.
+    `url` is now an explicit arg to the cached raw fetch (not baked in)
+    so the two domains get their own independent cache entries, the
+    same reason ec_alerts._fetch_alerts_from already takes `url` as an
+    argument — a primary-domain outage can't poison the fallback's own
+    cached result, or vice versa."""
     global _last_good_properties
     try:
-        result = _fetch_properties_raw()
+        result = _fetch_properties_raw(GEOMET_URL)
     except Exception:
-        return _last_good_properties
+        try:
+            result = _fetch_properties_raw(GEOMET_URL_FALLBACK)
+        except Exception:
+            return _last_good_properties
     if result is not None:
         _last_good_properties = result
     return result if result is not None else _last_good_properties

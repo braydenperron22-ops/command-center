@@ -35,6 +35,13 @@ import fetch_throttle
 from config import EC_ALERT_REGION_NAME, TIMEZONE
 
 ALERTS_URL = "https://api.weather.gc.ca/collections/weather-alerts/items"
+# Same weather.gc.ca/meteo.gc.ca domain-pair EC already publishes the
+# alerts feed on (see ec_alerts.py's own ALERT_URL_FALLBACK) — confirmed
+# live api.meteo.gc.ca mirrors api.weather.gc.ca byte-for-byte for this
+# same GeoMet collection. Closes the single-domain gap this module
+# (plus ec_forecast.py and ec_aqhi.py) previously had — see
+# ec_forecast.py's own GEOMET_URL_FALLBACK comment for the full story.
+ALERTS_URL_FALLBACK = "https://api.meteo.gc.ca/collections/weather-alerts/items"
 # Matches ec_alerts.py's own cadence — this feeds the same real-time
 # proximity/light logic, no reason for a different refresh rate.
 CACHE_TTL_SECONDS = 3 * 60
@@ -43,9 +50,9 @@ _last_good_feature: dict | None = None
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_raw() -> dict | None:
+def _fetch_raw(url: str) -> dict | None:
     fetch_throttle.wait_turn()
-    resp = requests.get(ALERTS_URL, params={"f": "json", "feature_name_en": EC_ALERT_REGION_NAME}, timeout=10)
+    resp = requests.get(url, params={"f": "json", "feature_name_en": EC_ALERT_REGION_NAME}, timeout=10)
     resp.raise_for_status()
     features = resp.json().get("features") or []
     return features[0]["properties"] if features else None
@@ -57,12 +64,21 @@ def _fetch() -> dict | None:
     for a transient failure specifically (a genuinely empty result, not
     a fetch error, is trusted as-is: an alert that really just ended
     shouldn't keep the storm-phase treatment stuck on using stale
-    data)."""
+    data). Tries ALERTS_URL_FALLBACK (api.meteo.gc.ca) only on an actual
+    fetch exception, never just because the primary domain genuinely
+    answered "nothing active" — that's a real, trustworthy result, not a
+    failure to retry around. `url` is an explicit arg to the cached raw
+    fetch so the two domains get independent cache entries, the same
+    reason ec_alerts._fetch_alerts_from already takes `url` as an
+    argument."""
     global _last_good_feature
     try:
-        result = _fetch_raw()
+        result = _fetch_raw(ALERTS_URL)
     except Exception:
-        return _last_good_feature
+        try:
+            result = _fetch_raw(ALERTS_URL_FALLBACK)
+        except Exception:
+            return _last_good_feature
     _last_good_feature = result
     return result
 

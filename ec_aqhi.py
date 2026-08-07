@@ -24,6 +24,13 @@ import fetch_throttle
 
 AQHI_STATION_ID = "FCFUU"  # North Bay — confirmed live via the aqhi-stations collection
 AQHI_URL = "https://api.weather.gc.ca/collections/aqhi-observations-realtime/items"
+# Same weather.gc.ca/meteo.gc.ca domain-pair EC already publishes the
+# alerts feed on (see ec_alerts.py's own ALERT_URL_FALLBACK) — confirmed
+# live api.meteo.gc.ca mirrors api.weather.gc.ca byte-for-byte for this
+# same GeoMet collection. Closes the single-domain gap this module
+# (plus ec_forecast.py and ec_storm_timing.py) previously had — see
+# ec_forecast.py's own GEOMET_URL_FALLBACK comment for the full story.
+AQHI_URL_FALLBACK = "https://api.meteo.gc.ca/collections/aqhi-observations-realtime/items"
 CACHE_TTL_SECONDS = 15 * 60
 
 # EC's own official AQHI health-risk categories (1-3 Low, 4-6 Moderate,
@@ -46,10 +53,10 @@ def _risk_category(aqhi: float) -> str:
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_aqhi_raw() -> dict | None:
+def _fetch_aqhi_raw(url: str) -> dict | None:
     fetch_throttle.wait_turn()
     resp = requests.get(
-        AQHI_URL,
+        url,
         params={"f": "json", "location_id": AQHI_STATION_ID, "latest": "true", "limit": 1},
         timeout=10,
     )
@@ -73,12 +80,20 @@ def fetch_aqhi() -> dict | None:
     "observed_at": "7:00 AM EDT Saturday 18 July 2026"} for North Bay's
     own real AQHI station, or the last successfully fetched reading if
     this particular refresh failed (same _last_good_X fallback pattern
-    every other client in this app already uses)."""
+    every other client in this app already uses). Tries AQHI_URL_
+    FALLBACK (api.meteo.gc.ca) on a primary-domain failure before ever
+    falling back to a stale cached value, same order as ec_alerts.
+    fetch_alerts — `url` is an explicit arg to the cached raw fetch so
+    the two domains get independent cache entries, the same reason
+    ec_alerts._fetch_alerts_from already takes `url` as an argument."""
     global _last_good_aqhi
     try:
-        result = _fetch_aqhi_raw()
+        result = _fetch_aqhi_raw(AQHI_URL)
     except Exception:
-        return _last_good_aqhi
+        try:
+            result = _fetch_aqhi_raw(AQHI_URL_FALLBACK)
+        except Exception:
+            return _last_good_aqhi
     if result is not None:
         _last_good_aqhi = result
     return result if result is not None else _last_good_aqhi
