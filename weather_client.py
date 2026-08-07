@@ -72,13 +72,23 @@ _EC_CATEGORY_TO_WMO_CODE = {
 
 def _fallback_from_ec() -> dict | None:
     """Same dict shape fetch_weather() normally returns, built from EC's
-    live station reading instead of Open-Meteo. UV index and the day's
-    forecast high/low aren't in EC's current-conditions reading, so
-    those stay None — every caller already treats them as optional
-    (weather.get(...)), same as a normal reading that simply doesn't
-    have them yet. Sunrise/sunset/twilight come from astral either way
-    (no API call in either path), so those are exactly as accurate as
-    the normal path's."""
+    live station reading instead of Open-Meteo. UV index stays None —
+    a genuine gap, not a parsing one: EC's own UV figure is per forecast
+    -period only (see ec_forecast.daily_forecast's own "day"/"night"
+    detail), never an instantaneous current-conditions reading the way
+    Open-Meteo's is, so there's really nothing to plug in here. Sunrise/
+    sunset/twilight come from astral either way (no API call in either
+    path), so those are exactly as accurate as the normal path's.
+
+    Session request: "make sure EC can do everything Open-Meteo can...
+    I don't want to lose any features during an Open-Meteo outage."
+    forecast_high_c/forecast_low_c used to be hardcoded None here too —
+    a real, fixable gap rather than one of the genuine ones above:
+    ec_forecast.daily_forecast()'s first entry ("Today") already has
+    real high/low fields, and daily_forecast() (this same module, just
+    below) already extracts them from that exact function on its own EC
+    fallback path — this just does the same extraction one call
+    earlier, for the current-conditions dict specifically."""
     cc = ec_forecast.current_conditions()
     if cc is None:
         return None
@@ -87,6 +97,8 @@ def _fallback_from_ec() -> dict | None:
     sunrise, sunset = s["sunrise"].replace(tzinfo=None), s["sunset"].replace(tzinfo=None)
     first_light, last_light = s["dawn"].replace(tzinfo=None), s["dusk"].replace(tzinfo=None)
     precip = ec_forecast.next_precip_at(now_local)
+    today_ec = ec_forecast.daily_forecast()
+    today = today_ec[0] if today_ec else {}
     return {
         "temp_c": cc["temp_c"],
         "feels_like_c": None,
@@ -99,8 +111,8 @@ def _fallback_from_ec() -> dict | None:
         "rain_at": precip[0] if precip else None,
         "precip_kind": precip[1] if precip else None,
         "precip_chance": precip[2] if precip else None,
-        "forecast_high_c": None,
-        "forecast_low_c": None,
+        "forecast_high_c": today.get("high"),
+        "forecast_low_c": today.get("low"),
     }
 
 
