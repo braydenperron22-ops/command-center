@@ -71,23 +71,41 @@ def _candidates(now: datetime, weather: dict | None) -> dict[str, dict]:
 
 
 def _update_first_seen(now_epoch: float, active_keys: set[str]) -> dict[str, float]:
-    """Tracks, per source key, the epoch timestamp it MOST RECENTLY
-    started being active — dropped the instant it stops being active,
-    so if it comes back later it's treated as newly-seen again, not as
-    a continuation of whatever streak it had before. This is what gives
-    "within the last 2 hours" real, literal meaning for every source
-    uniformly, including the two (weather-statement, breaking news)
-    that have no inherent 2-hour bound of their own the way the leave/
-    storm countdowns already do."""
+    """Tracks, per source key, the epoch timestamp it FIRST started
+    being active — the thing that makes "within the last 2 hours" real,
+    literal, and Upstash-persisted for every source uniformly (see this
+    module's own docstring for the full "make it hard cached in upstash
+    so refreshes dont reset it" story), including the two (weather-
+    statement, breaking news) that have no inherent 2-hour bound of
+    their own the way the leave/storm countdowns already do.
+
+    Session report: "I find that they don't show for the full two
+    hours that they should be, which is kind of annoying." Root cause:
+    this used to delete a key from _first_seen the instant it wasn't in
+    active_keys for even a single rerun — meaning any one-rerun gap in
+    a source computing as "active" (a transient fetch hiccup on
+    ec_alerts.fetch_alerts, for instance — nothing rare over a real
+    2-hour window) reset its clock back to zero the moment it reappeared,
+    even though the real underlying event (the storm, the leave-in
+    countdown) never actually stopped. Only ADDS new keys now; never
+    proactively removes one just because a source didn't compute as
+    active this particular rerun — render()'s own eligibility filter
+    already only considers keys present in THIS rerun's real candidates
+    (`for key in candidates`), so a key sitting in _first_seen for a
+    source that's genuinely not active right now is already inert and
+    costs nothing to leave alone. Cleanup instead happens only once an
+    entry is old enough that it could never be eligible again regardless
+    (past its own 2-hour hold), which both prevents this dict from
+    growing forever AND can never fire early."""
     global _first_seen
     changed = False
-    for key in list(_first_seen):
-        if key not in active_keys:
-            del _first_seen[key]
-            changed = True
     for key in active_keys:
         if key not in _first_seen:
             _first_seen[key] = now_epoch
+            changed = True
+    for key in list(_first_seen):
+        if now_epoch - _first_seen[key] > TOP_ALERT_HOLD_SECONDS:
+            del _first_seen[key]
             changed = True
     if changed:
         persisted_state.save("headline_rotation_first_seen", _first_seen)

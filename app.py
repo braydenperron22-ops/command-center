@@ -217,6 +217,18 @@ components.html(
         "}",
         "function kioskFmtClock(totalSeconds) {",
         "  var total = Math.max(0, Math.round(totalSeconds));",
+        // Session report: "four games that are more than a full day
+        // away... the saints game shows like two hundred and twenty
+        // two hours, which is ridiculous... just make it show days and
+        // hours." Mirrors pages_jumbotron._fmt_countdown's own fix —
+        // that function only ever drives the first frame, this drives
+        // every frame after, so both need the same 24h cutover or the
+        // display would flip from correct to wrong one second in.
+        "  if (total >= 86400) {",
+        "    var days = Math.floor(total / 86400);",
+        "    var hrs = Math.floor((total % 86400) / 3600);",
+        "    return days + 'd ' + hrs + 'h';",
+        "  }",
         "  var h = Math.floor(total / 3600);",
         "  var m = Math.floor((total % 3600) / 60);",
         "  var sec = total % 60;",

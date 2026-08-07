@@ -93,12 +93,24 @@ def _fmt_countdown(target: datetime, now: datetime) -> str:
     Streamlit's rerun cadence entirely."""
     target_ms = int(target.replace(tzinfo=ZoneInfo(TIMEZONE)).timestamp() * 1000)
     total = max(0, int((target - now).total_seconds()))
-    hours, rem = divmod(total, 3600)
-    minutes, seconds = divmod(rem, 60)
-    # Session request: drop the leading hour digit under an hour ("43:55",
-    # not "0:43:55") — mirrored in app.py's own kioskFmtClock, which is
-    # what actually drives the display from the second frame on.
-    fallback = f"{hours}:{minutes:02d}:{seconds:02d}" if hours > 0 else f"{minutes}:{seconds:02d}"
+    # Session report: "four games that are more than a full day away
+    # instead of having them count down the number of hours... the
+    # saints game shows like two hundred and twenty two hours, which is
+    # ridiculous... just make it show days and hours, and that's it."
+    # A game a full week+ out was rendering as raw hours ("222:14:33")
+    # since this never capped hours at 24 the way a real clock would —
+    # mirrored in app.py's own kioskFmtClock, which is what actually
+    # drives the display from the second frame on.
+    if total >= 86400:
+        days, rem = divmod(total, 86400)
+        hours = rem // 3600
+        fallback = f"{days}d {hours}h"
+    else:
+        hours, rem = divmod(total, 3600)
+        minutes, seconds = divmod(rem, 60)
+        # Session request: drop the leading hour digit under an hour
+        # ("43:55", not "0:43:55").
+        fallback = f"{hours}:{minutes:02d}:{seconds:02d}" if hours > 0 else f"{minutes}:{seconds:02d}"
     return f'<span class="live-countdown" data-target-ms="{target_ms}">{fallback}</span>'
 
 
