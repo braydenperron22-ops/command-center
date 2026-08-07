@@ -130,34 +130,63 @@ def _leave_spoken_text(shift: dict, minutes: int) -> str:
 # notifications regardless of time" (a fix for an early-morning jump
 # scare) later walked back once that same flat 100% became its own
 # problem — "I don't want the leave in timer to wake everyone in my
-# family up... but I want it to be louder during the day." Rather than
-# go back to a wall-clock-only curve (which doesn't know an early
-# shift from a late night), this ties the ceiling to the one thing
-# that actually matters: how early THIS shift's real leave-by time is
-# — a 4am leave-by gets a genuinely quiet ceiling, an 8am one gets the
-# normal full one, and everything in between ramps linearly, the same
-# ramp shape already validated for severe weather's own morning ramp
-# (app.py's kioskAlertVolume). LEAVE_VOLUME_FLOOR is a floor, not a
-# mute — still meant to be heard in-room, just not house-wide.
+# family up... but I want it to be louder during the day." Originally
+# tied the ceiling to only ONE thing — how early THIS shift's real
+# leave-by time is (a 4am leave-by gets a genuinely quiet ceiling, an
+# 8am one gets the normal full one) — using the same ramp shape
+# already validated for severe weather's own morning ramp (app.py's
+# kioskAlertVolume). LEAVE_VOLUME_FLOOR is a floor, not a mute — still
+# meant to be heard in-room, just not house-wide.
+#
+# Session report: "it was like six thirty and it was jolting me awake"
+# — leave_by-only missed a real case. An ordinary 8am shift gets the
+# full 1.0 ceiling under that scheme, and that ceiling applied to
+# EVERY milestone toast for the shift, including the early ones (the
+# 2-hour-out, 90-minute-out toasts) that fire well before 8am — a
+# 6:30am toast for an 8am shift played at ~68% just from the day ramp
+# alone, on top of whatever the chime/voice layers add, loud enough to
+# read as a jolt. leave_by alone can't see that: it only knows when
+# the shift starts, not when THIS particular alert is actually firing.
 LEAVE_VOLUME_FLOOR = 0.35
 LEAVE_VOLUME_RAMP_START_HOUR = 5
 LEAVE_VOLUME_RAMP_END_HOUR = 8
 
 
-def _leave_volume_ceiling(leave_by: datetime) -> float:
-    """Max playback volume for every alert tied to this shift's
-    countdown — computed once from leave_by itself (not "now"), so
-    every milestone for the same early shift (the 2-hour-out toast,
-    the 15-minute one, "leave now") agrees on the same quiet ceiling,
-    rather than each one drifting as the countdown ticks closer to a
-    later wall-clock hour."""
-    hour = leave_by.hour + leave_by.minute / 60
+def _volume_ramp(hour: float) -> float:
+    """Shared ramp shape: LEAVE_VOLUME_FLOOR at/before RAMP_START_HOUR,
+    full by RAMP_END_HOUR, linear in between. Takes a plain hour
+    (fractional) so it can be applied to either a shift's leave_by or
+    the actual current time — see _leave_volume_ceiling."""
     if hour <= LEAVE_VOLUME_RAMP_START_HOUR:
         return LEAVE_VOLUME_FLOOR
     if hour >= LEAVE_VOLUME_RAMP_END_HOUR:
         return 1.0
     span = LEAVE_VOLUME_RAMP_END_HOUR - LEAVE_VOLUME_RAMP_START_HOUR
     return LEAVE_VOLUME_FLOOR + (1.0 - LEAVE_VOLUME_FLOOR) * (hour - LEAVE_VOLUME_RAMP_START_HOUR) / span
+
+
+def _leave_volume_ceiling(now: datetime, leave_by: datetime) -> float:
+    """Max playback volume for a leave-countdown alert — the LOWER of
+    two independent ceilings, not just leave_by's own:
+
+    - the shift ceiling (how early leave_by itself is) — keeps a 4am
+      shift's alerts quiet even right at "leave now," so a genuinely
+      early shift never gets blasted just because it's the urgent
+      final milestone.
+    - the right-now ceiling (how early it actually is when THIS alert
+      is firing) — the piece that was missing. Without it, an early
+      milestone toast for a normal, later shift inherited that shift's
+      full daytime ceiling even while it was still firing in the quiet
+      early morning.
+
+    Taking the min means an early shift is never louder than its own
+    floor allows, AND an early milestone for a later shift stays quiet
+    too — while the two ceilings converge at leave_by itself, so the
+    actual "leave now" moment still reaches the shift's true ceiling
+    once it's genuinely that time."""
+    shift_ceiling = _volume_ramp(leave_by.hour + leave_by.minute / 60)
+    now_ceiling = _volume_ramp(now.hour + now.minute / 60)
+    return min(shift_ceiling, now_ceiling)
 
 
 def _todays_shift_events(now: datetime) -> list[dict]:
@@ -378,7 +407,7 @@ def check(now: datetime) -> dict | None:
         "kind": "commute",
         "label": label,
         "summary": _leave_spoken_text(shift, milestone),
-        "volume": _leave_volume_ceiling(leave_by),
+        "volume": _leave_volume_ceiling(now_aware, leave_by),
     }
 
 
