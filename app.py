@@ -1597,38 +1597,53 @@ try:
     elif severe_weather_active:
         night_dim = 0.0
 
-    SUNRISE_UNDIM_MINUTES = 120  # "an hour and a half, two hours... i mean slowly" — the longer end of that range
+    MORNING_UNDIM_MINUTES = 120  # "an hour and a half, two hours... i mean slowly" — the longer end of that range, pacing unchanged
 
-    # Morning undim, overriding the fast (FADE_SECONDS = 90s) ramp
-    # above AND (session request came with a real live bug attached —
-    # see below) the quiet_hours floor just above this — session
-    # request: "make the night background change to sunrise... during
-    # actual sunrise, but then slowly... undim the screen so that it
-    # starts undimming at sunrise and then is fully undimmed... an hour
-    # and a half, two hours after." Keyed on real elapsed minutes since
-    # `weather["sunrise"]` directly, deliberately NOT on `phase` —
-    # scenery.phase_for clamps its own "day"/"sunrise" transition to
-    # never start before ~7:40am (earliest_sunrise_hour), regardless of
-    # the real astronomical sunrise, which can be well before 6am in
-    # summer (see that function's own docstring). Checked here, AFTER
-    # quiet_hours rather than before it, for the same reason: quiet_
-    # hours is ALSO gated on `phase == "night"` (plus `now.hour < 12`,
-    # true basically every morning) — on an early-sunrise morning,
-    # `phase` still says "night" for a while past the real sunrise
-    # instant (the same clamp), so quiet_hours would otherwise still be
-    # true and clobber this ramp straight back to full dark the instant
-    # it computed anything less than 1.0. This intentionally does NOT
-    # touch the sky gradient/phase_for's own clamp — only the dim
-    # overlay's pace, which is what was actually asked about. Only
-    # touches anything within the ramp window itself; well after it
-    # (the rest of the day) minutes_since_sunrise is large and this
-    # doesn't fire at all, leaving whatever decided above untouched.
-    # Doesn't touch the evening (sunset→night) dim-IN side at all —
-    # only asked to slow down the morning undim.
-    if weather:
-        minutes_since_sunrise = (now - weather["sunrise"]).total_seconds() / 60
-        if 0 <= minutes_since_sunrise < SUNRISE_UNDIM_MINUTES:
-            night_dim = 1.0 - minutes_since_sunrise / SUNRISE_UNDIM_MINUTES
+    # Morning undim, overriding the fast (FADE_SECONDS = 90s) ramp above
+    # AND the quiet_hours floor just above this. Originally keyed on
+    # real elapsed minutes since `weather["sunrise"]` — session
+    # follow-up, immediately after the plug/quiet_hours fix above went
+    # to a fixed clock schedule: "even though the plug turns on at four
+    # thirty, the display will still be dimmed until seven AM, correct?"
+    # It wasn't quite that — checked live, real sunrise today was
+    # 6:05am, so the ramp wouldn't even START until then and wouldn't
+    # finish until 8:05am, not 7 — but the same seasonal-drift problem
+    # already fixed for the plug/dim-start applied here too (a winter
+    # sunrise past 7:30am would push full brightness to 9:30-10am).
+    # Fixed to a clock schedule now: starts at MORNING_UNDIM_START_HOUR
+    # (5am — 30 min after the plug's own fixed 4:30am power-on, so the
+    # room gets a real "on but still dim" moment rather than jumping
+    # straight to brightening the instant it has power), same 120-
+    # minute pacing as before, landing on a clean, fully-bright-by-7am
+    # every single day regardless of season — matching what the
+    # question itself assumed was already happening.
+    #
+    # This intentionally does NOT touch the sky gradient/phase_for's
+    # own real-sunrise-based clamp — only the dim overlay's own pace,
+    # which is what was actually asked about; the actual background
+    # color scheme stays exactly as real-condition-based as it already
+    # was. Doesn't touch the evening (sunset→night) dim-IN side at all
+    # — only the morning undim was ever in question here.
+    #
+    # Extends its own authority past the ramp itself (clamped to 0,
+    # via max()) through the rest of the day, up to QUIET_HOURS_START_
+    # HOUR — not just the 2-hour ramp window. Caught before ever
+    # shipping: quiet_hours (line ~1514) is True for any hour < 12, a
+    # bound that only worked in the old sunrise-tied version because
+    # phase naturally left "night" well before the ramp finished. Now
+    # that quiet_hours no longer checks phase at all (the plug/dim-
+    # start fix earlier this same session), that safety net is gone —
+    # without this, night_dim would snap back to quiet_hours' 1.0 the
+    # moment the ramp's own window ended at 7am and stay fully dark
+    # until quiet_hours itself lapses at noon. Bounded to before
+    # QUIET_HOURS_START_HOUR (9pm) specifically so this doesn't fight
+    # the evening dim-in — past 9pm this stops applying and control
+    # correctly reverts to quiet_hours' own 1.0.
+    MORNING_UNDIM_START_HOUR = 5
+    undim_start = now.replace(hour=MORNING_UNDIM_START_HOUR, minute=0, second=0, microsecond=0)
+    minutes_since_undim_start = (now - undim_start).total_seconds() / 60
+    if minutes_since_undim_start >= 0 and now.hour < QUIET_HOURS_START_HOUR:
+        night_dim = max(0.0, 1.0 - minutes_since_undim_start / MORNING_UNDIM_MINUTES)
 
     # Session request: "make it so the screen does not dim in game
     # mode" — narrower than (and doesn't reopen) the "any live game"
