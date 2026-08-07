@@ -544,15 +544,21 @@ def sync_plug(
     leave_timer_active: bool = False,
     storm_active: bool = False,
 ) -> None:
-    """Off at last light, on at first light — deliberately real civil-
-    twilight bounds (dawn/dusk, sun 6° below the horizon), not the same
-    `phase` the dashboard's own visuals use, and not the sunrise/sunset
-    disk-crossing times either: those still leave real usable light in
-    the sky for a while after "sunset" and before "sunrise". scenery.
-    phase_for also clamps "day" to never start before ~7:40am so the
-    room doesn't visually brighten too early in midsummer, but that's a
-    room-comfort choice specific to the sky/dimming — the monitor itself
-    should just follow the actual daylight window, no floor.
+    """Off at last_light, on at first_light — despite the names, a
+    fixed daily clock schedule now (4:30am on, 9:30pm off), not real
+    civil-twilight bounds anymore. Session report: "I think we have it
+    tied up to the sunset/sunrise thing right now... instead of having
+    it turn off at a different time every day, make it go into dim
+    night mode at nine PM and have it fully turn off at... nine
+    thirty... and turn the monitor on at four thirty AM." Was real
+    astronomical dawn/dusk before (sun 6° below the horizon), which
+    meant the actual on/off instant drifted earlier/later with the
+    season — the exact thing this fixed it away from. The parameter
+    names/shape are unchanged on purpose (the caller, app.py, just
+    passes fixed clock times where it used to pass real astronomical
+    ones) — every override below still works exactly as it always did,
+    completely untouched by this; only what decides the PLAIN window
+    changed, not what's allowed to override it.
 
     `game_live` (see sports_alerts.plug_should_stay_on) keeps this plug
     — and so the monitor it powers — on regardless of that window while

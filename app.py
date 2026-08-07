@@ -1493,11 +1493,25 @@ except Exception:
 # weather, briefly brightening only around when something NEW actually
 # starts, not for its whole duration. hour < 12 (rather than a second
 # fixed hour) catches every hour from midnight through morning without
-# needing its own boundary — phase == "night" already can't extend
-# into the afternoon, so this only ever matters for the pre-dawn half
-# of the night.
+# needing its own boundary — this only ever matters for the pre-dawn
+# half of the night anyway, since the sunrise-undim block further down
+# always pulls this back down before real midday regardless.
+#
+# Session report: "I think we have it tied up to the sunset/sunrise
+# thing right now... instead of having it turn off at a different time
+# every day, make it go into dim night mode at nine PM." Used to also
+# require `phase == "night"` (real astronomical night, from scenery.
+# phase_for) — on a long summer evening, real night can start well
+# after 9pm, so quiet_hours stayed False (screen still bright) for a
+# while past the intended fixed start. Dropped that condition entirely:
+# this is now a plain fixed clock window, independent of the sky/
+# scenery phase used everywhere else — that phase (and the actual
+# background gradient it paints) is untouched, still fully real-
+# condition-based, exactly as asked ("keeps its whole background color
+# scheme to whatever is going on... just the turn on, turn off
+# structure").
 QUIET_HOURS_START_HOUR = 21
-quiet_hours = phase == "night" and (now.hour >= QUIET_HOURS_START_HOUR or now.hour < 12)
+quiet_hours = now.hour >= QUIET_HOURS_START_HOUR or now.hour < 12
 # How long the brief brightening lasts once triggered — long enough to
 # actually wake up, look, and read the badge, short enough that it
 # can't turn into "bright all night" the way the previous whole-stint
@@ -2477,10 +2491,22 @@ try:
         leave_timer_active = commute_reminder.leave_headline_active(now)
     except Exception:
         leave_timer_active = False
+    # Session report: "I think we have it tied up to the sunset/
+    # sunrise thing right now... instead of having it turn off at a
+    # different time every day, make it go into dim night mode at nine
+    # PM and have it fully turn off at... nine thirty... and turn the
+    # monitor on at four thirty AM." sync_plug's own on/off window used
+    # to be real civil-twilight first_light/last_light (see its own
+    # docstring, now updated) — a fixed daily schedule instead, same
+    # same-day [on, off) window shape that check already expects, so
+    # nothing about the override logic below it (game_live/leave_timer_
+    # active/storm_active/the off-grace buffer) needed to change at all.
+    plug_on_at = now.replace(hour=4, minute=30, second=0, microsecond=0)
+    plug_off_at = now.replace(hour=21, minute=30, second=0, microsecond=0)
     govee_lighting.sync_plug(
         now,
-        weather["first_light"] if weather else None,
-        weather["last_light"] if weather else None,
+        plug_on_at,
+        plug_off_at,
         game_live,
         leave_timer_active,
         storm_phase_name is not None,
