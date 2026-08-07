@@ -1814,22 +1814,20 @@ if weather:
         record_label = "Record" if exceeded else "Near record"
         record_color = "#FF9F0A" if record["kind"] == "high" else "#64D2FF"
         record_bg = _badge_bg(record_color, 0.22)
-        # Session report: "twenty seven degrees in twenty twenty five...
-        # that is not a record high, it is a year ago." The underlying
-        # data was already right — weather_records_client really does
-        # look back RECORD_LOOKBACK_YEARS (10) years, and 2025 genuinely
-        # was the hottest Aug 7 in that real decade, confirmed live
-        # against the archive API — the badge just never said so. "27°
-        # in 2025" alone reads as "last year's number," not "the actual
-        # extreme across a real decade," with nothing in the text
-        # distinguishing the two. Pulled the real lookback span
-        # (RECORD_LOOKBACK_YEARS itself, not a hardcoded "10y") into the
-        # label so the badge states its own basis instead of just the
-        # one year the extreme happened to land on.
+        # Session report, in two parts: first "27 in 2025... that is not
+        # a record high, it is a year ago" (fixed by labeling the real
+        # 10-year basis instead of just the bare year), then "the
+        # hottest August 7th ever recorded... why don't you just say
+        # that?" once that honest "(10y)" label made clear it wasn't
+        # actually an all-time record. weather_records_client now
+        # genuinely looks back to ARCHIVE_START_YEAR (1940 — the real
+        # floor of what the archive API can provide, confirmed live),
+        # so this can finally say "since 1940" and mean it literally,
+        # not round up a decade to "ever."
         extras.append(
             f'<span class="weather-extra" style="color:{record_color}; '
             f'background:{record_bg}; border-color:{record_color};">'
-            f'{record_label} {record["kind"]} ({weather_records_client.RECORD_LOOKBACK_YEARS}y) · '
+            f'{record_label} {record["kind"]} (since {weather_records_client.ARCHIVE_START_YEAR}) · '
             f'{record["record"]:.0f}° in {record["year"]}</span>'
         )
     # Wildfire smoke is a real recurring issue for this region — same

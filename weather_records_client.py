@@ -1,13 +1,32 @@
-"""Compares today's forecast high/low against the historical extreme for
-this exact calendar date, going back RECORD_LOOKBACK_YEARS years — same
-free Open-Meteo historical archive already used elsewhere in this app,
-no new vendor/key. One wide-range request (a full calendar-year-aligned
-span, not RECORD_LOOKBACK_YEARS separate per-year calls — confirmed live
-the archive API has no "same date across many years" batch mode, but
-happily returns a decade of daily data in one ~75KB response) filtered
+"""Compares today's forecast high/low against the TRUE all-time
+historical extreme for this exact calendar date, back to ARCHIVE_START_
+YEAR — same free Open-Meteo historical archive already used elsewhere
+in this app, no new vendor/key. One wide-range request (a full
+calendar-year-aligned span, not one call per year — confirmed live the
+archive API has no "same date across many years" batch mode, but
+happily returns the whole archive's daily data in one request) filtered
 client-side for entries matching today's month/day. Refreshed once a
 day: the underlying history doesn't change more often than that, and a
 year-aligned range naturally still contains any Feb 29s that fall in it.
+
+Session report: "27 degrees in 2025... that is not a record high, it
+is a year ago" — this used to look back only RECORD_LOOKBACK_YEARS (10)
+years and label the result "Near record," which was real but genuinely
+misleading: it's the warmest in a decade, not the warmest ever. Follow-
+up, once that was made honest with a "(10y)" label instead: "the
+hottest August 7th ever recorded... why don't you just say that?"
+Checked live what the archive API can actually support before
+committing to that — it hard-floors at 1940-01-01 (anything earlier is
+a 400), so ARCHIVE_START_YEAR=1940 is the true earliest "ever" this
+data source can honestly claim, not an arbitrary round number. Real
+consequence, confirmed live: the true all-time high for Aug 7 turned
+out to be 31.2°C in 2001, not 27.0°C in 2025 — 2025 wasn't even in the
+top 5 hottest Aug 7s on record. This is a real trade-off the badge now
+carries: it fires far less often (a much bigger true extreme is a
+harder bar to get near) and the underlying fetch is genuinely heavier
+(86 years of daily data, ~14s confirmed live) — both accepted knowingly
+rather than discovered by surprise, since the request size only grows
+with wall-clock time regardless.
 """
 
 from datetime import date
@@ -19,7 +38,11 @@ import fetch_throttle
 from config import WEATHER_LAT, WEATHER_LON
 
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
-RECORD_LOOKBACK_YEARS = 10
+# Open-Meteo's archive hard-floors here — confirmed live, any start_date
+# before this gets a 400 ("out of allowed range from 1940-01-01"). Not a
+# chosen window; this is as far back as "ever recorded" can honestly go
+# with this data source.
+ARCHIVE_START_YEAR = 1940
 # Only worth a badge when today's forecast is genuinely close to (or
 # past) the historical extreme for this date — most days aren't close,
 # and showing "18° vs record 24.8°" every single day would be noise,
@@ -32,7 +55,7 @@ _last_good_records: dict | None = None
 
 @st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
 def _fetch_records_raw(today: date) -> dict | None:
-    start = date(today.year - RECORD_LOOKBACK_YEARS, 1, 1)
+    start = date(ARCHIVE_START_YEAR, 1, 1)
     end = date(today.year - 1, 12, 31)
     fetch_throttle.wait_turn()
     resp = requests.get(
@@ -43,7 +66,10 @@ def _fetch_records_raw(today: date) -> dict | None:
             "daily": "temperature_2m_max,temperature_2m_min",
             "timezone": "America/Toronto",
         },
-        timeout=15,
+        # 86 years of daily data takes genuinely longer than a 10-year
+        # slice did (~14s confirmed live) — the old 15s timeout was
+        # already close to that; bumped for real headroom, not guessed.
+        timeout=30,
     )
     resp.raise_for_status()
     daily = resp.json().get("daily", {})
