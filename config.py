@@ -17,7 +17,10 @@ USER_PROFILE = (
     "parents; has a Golden Retriever (Auggie) and a cat (Wicket). Plays goaltender in hockey, "
     "1st base in co-ed softball and on TD's own corporate team, and golf (scramble format). "
     "Manages the Halifax Huskies in a virtual hockey sim league and follows the UFC. Tracks a "
-    "personal loan payoff target for October 1, 2026."
+    "personal loan payoff target for October 1, 2026. At TD, a shift starting at 8:30 AM is an "
+    "opening shift; a shift starting or ending at an odd time like 6:30 or 8:30 PM is typically "
+    "a closing shift — worth naming as such (not just reading out the raw start time) when it's "
+    "actually one of these."
 )
 
 # Session report: "[radar] data just looks wrong, says there should be
