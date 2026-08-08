@@ -48,6 +48,27 @@ MILESTONES_MINUTES = [120, 90, 60, 45, 30, 20, 15, 10, 5, 3, 0]
 # window, and "Leave now" 40 minutes after the fact isn't useful.
 LATEST_FIRE_MINUTES = -30
 
+# Session report: "picking my friend up... it's pinging me two hours
+# before I have to leave... they woke me up every single time... make
+# it so it's not so loud" — for a genuinely early leave_by (this
+# session's real example: ~5-6am), the wide-notice milestones above 30
+# minutes land at 3-4:30am, hours before the person's actually awake.
+# The user's own workaround (deleting the calendar event entirely to
+# stop the pings) defeats the whole feature, so this isn't just a
+# volume problem — see commute_reminder's own _leave_volume_ceiling for
+# that half; this is the OTHER half, whether a far-out milestone should
+# fire at all at that hour. Milestones at or under
+# QUIET_MILESTONE_MIN_MINUTES always fire regardless of hour (leaving
+# in 30/20/15/10/5/3/0 minutes is genuinely needed to not be late, no
+# matter how early); only the wider "plenty of time left" heads-ups
+# (120/90/60/45) get held back before QUIET_MILESTONE_CUTOFF_HOUR — same
+# hour already used as the "reasonable to be awake" line for the
+# volume ramp and the morning dim-undim ramp, kept as its own constant
+# since this gates something different (whether an alert fires at all,
+# not how loud one that does fire should be).
+QUIET_MILESTONE_CUTOFF_HOUR = 5
+QUIET_MILESTONE_MIN_MINUTES = 30
+
 # The persistent headline (leave_headline_candidate, below — shown via
 # headline_rotation.py's unified rotation) is deliberately narrower
 # than the toast milestones above — hours-out visibility is
@@ -253,12 +274,23 @@ def todays_destination(now: datetime) -> dict:
     return _destination_for_shift(current[0]) or COMMUTE_DESTINATION
 
 
-def _due_milestone(minutes_until_leave: float, shown_for_event: set[int]) -> int | None:
+def _due_milestone(minutes_until_leave: float, shown_for_event: set[int], now_hour: float) -> int | None:
     """The largest not-yet-shown milestone we've now reached — skips
     (marks as shown without firing) any larger ones already blown past,
     so waking up from sleep with 25 minutes left fires "Leave in 30",
-    not a stale "Leave in 60"."""
-    candidates = [m for m in MILESTONES_MINUTES if minutes_until_leave <= m]
+    not a stale "Leave in 60". Before QUIET_MILESTONE_CUTOFF_HOUR, this
+    same skip-forward logic also drops any candidate wider than
+    QUIET_MILESTONE_MIN_MINUTES — a genuinely early leave_by (this
+    session's real example: picking someone up for 6am) would otherwise
+    still fire its 120/90/60/45-minute heads-ups in the 3-4:30am dead of
+    night. The close-in milestones (30 and under) are exempt from this
+    and always fire regardless of hour — those are the ones that
+    actually prevent being late, not just an FYI with time to spare."""
+    candidates = [
+        m for m in MILESTONES_MINUTES
+        if minutes_until_leave <= m
+        and (m <= QUIET_MILESTONE_MIN_MINUTES or now_hour >= QUIET_MILESTONE_CUTOFF_HOUR)
+    ]
     if not candidates:
         return None
     due = min(candidates)
@@ -376,7 +408,7 @@ def check(now: datetime) -> dict | None:
     event_key = f"{shift['summary']}|{shift['start'].isoformat()}"
     shown_for_event = set(_shown_state["events"].get(event_key, []))
 
-    milestone = _due_milestone(minutes_until_leave, shown_for_event)
+    milestone = _due_milestone(minutes_until_leave, shown_for_event, now.hour + now.minute / 60)
     if milestone is None:
         return None
     shown_for_event.add(milestone)
