@@ -64,6 +64,7 @@ import market_yf_client
 import ntfy_client
 import payday_schedule
 import persisted_state
+import portfolio_client
 import road_conditions
 import sports_client
 import waste_schedule
@@ -158,9 +159,32 @@ def _commute_clause(now: datetime) -> tuple[int, str] | None:
 AGENDA_LIST_CAP = 4
 
 
+# Session report: "it's just looking at the granular data to make
+# assumptions when it should be digging deeper — for example, looking
+# at the events in my calendar to see what im doing." The bare "Golf
+# with Mike at 4:00 PM" was already all the AI ever saw for any event —
+# location and description were sitting right there in calendar_client's
+# own event dict (location already parsed; description wasn't parsed
+# at all until this same fix) and never made it into the fact string.
+# Capped rather than dumped verbatim — a calendar description can be an
+# entire pasted email thread, and a single event's notes shouldn't be
+# able to dominate the whole prompt.
+_DESCRIPTION_FACT_CHARS = 150
+
+
 def _format_agenda_list(events: list[dict]) -> str:
     shown = events[:AGENDA_LIST_CAP]
-    parts = [f'{e["summary"]} at {e["start"].strftime("%I:%M %p").lstrip("0")}' for e in shown]
+    parts = []
+    for e in shown:
+        part = f'{e["summary"]} at {e["start"].strftime("%I:%M %p").lstrip("0")}'
+        if e.get("location"):
+            part += f' @ {e["location"]}'
+        if e.get("description"):
+            desc = e["description"].strip()
+            if len(desc) > _DESCRIPTION_FACT_CHARS:
+                desc = desc[:_DESCRIPTION_FACT_CHARS].rstrip() + "…"
+            part += f' ("{desc}")'
+        parts.append(part)
     joined = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + f", and {parts[-1]}"
     remaining = len(events) - len(shown)
     return f"{joined}, plus {remaining} more" if remaining > 0 else joined
@@ -226,6 +250,62 @@ def _markets_clause(now: datetime) -> tuple[int, str] | None:
         return None
     pct = quote["intraday"]
     return 3, f"S&P 500 futures {pct:+.1f}%"
+
+
+# Session request: "give the AI access to everything including my
+# portfolio and transactions." portfolio_client.py (SnapTrade) already
+# existed for pages_portfolio.py/ticker.py — never wired into this
+# prompt before. Only the 1-day change is used here, not the 6m/YTD
+# figures fetch_changes() also returns: checked live against the real
+# account, and those longer windows currently read as -80%+ on a
+# genuinely small/new account — real math, but the kind of statistical
+# noise (a tiny base a while back, since grown) that would read as a
+# portfolio-crash headline to an AI taking the number at face value,
+# not the actual story. 1-day is the same reliable, low-noise window
+# _markets_clause above already trusts for the same reason.
+def _portfolio_clause(now: datetime) -> tuple[int, str] | None:
+    portfolio = portfolio_client.fetch_portfolio()
+    changes = portfolio_client.fetch_changes()
+    if not portfolio or portfolio.get("total_cad") is None:
+        return None
+    text = f"portfolio: ${portfolio['total_cad']:,.0f} CAD total"
+    one_day = (changes or {}).get("1d")
+    if one_day is not None:
+        text += f", {one_day:+.1f}% today"
+    return 3, text
+
+
+# Dividends on this account are routinely a couple of cents — real
+# activity, but not "news" by any reasonable read, so filtered out
+# below the same way a 2-cent price move wouldn't get its own headline
+# elsewhere in this app. Bounded to the last 48h (not just "today") so
+# something that landed late yesterday evening isn't invisible to a
+# brief read the next morning.
+_PORTFOLIO_ACTIVITY_MIN_ABS_AMOUNT = 5.0
+_PORTFOLIO_ACTIVITY_LOOKBACK_HOURS = 48
+
+
+def _portfolio_activity_clause(now: datetime) -> tuple[int, str] | None:
+    activities = portfolio_client.fetch_activities(limit=8)
+    if not activities:
+        return None
+    cutoff = now.replace(tzinfo=ZoneInfo(TIMEZONE)) - timedelta(hours=_PORTFOLIO_ACTIVITY_LOOKBACK_HOURS)
+    recent = []
+    for a in activities:
+        if abs(a["amount"]) < _PORTFOLIO_ACTIVITY_MIN_ABS_AMOUNT:
+            continue
+        try:
+            when = datetime.fromisoformat(a["date"].replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if when < cutoff:
+            continue
+        label = a["type"].capitalize()
+        symbol = f" {a['symbol']}" if a.get("symbol") else ""
+        recent.append(f"{label}{symbol} ${abs(a['amount']):,.0f} ({a['account']})")
+    if not recent:
+        return None
+    return 3, f"recent account activity: {'; '.join(recent[:3])}"
 
 
 # Same 3 tracked teams as ticker.py's own playoff-odds item — reused
@@ -698,6 +778,8 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         (_agenda_clause, (now,)),
         (_household_clause, (now,)),
         (_markets_clause, (now,)),
+        (_portfolio_clause, (now,)),
+        (_portfolio_activity_clause, (now,)),
         (_game_today_clause, (now,)),
         (_daylight_clause, (now, weather)),
     ):

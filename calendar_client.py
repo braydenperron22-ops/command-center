@@ -113,6 +113,14 @@ def _events_from_one(calendar: dict, today: date) -> list[dict]:
             "start": start,
             "end": end,
             "location": str(e.get("LOCATION")) if e.get("LOCATION") else None,
+            # Never parsed before — session request: give the morning
+            # brief AI enough to actually reason about a calendar entry
+            # instead of just its bare title ("Golf with Mike" tells you
+            # nothing about tee time notes, a dentist's actual reason for
+            # visit, etc., if the source calendar has any). Same None-if-
+            # absent shape as location just above, so every existing
+            # caller that ignores this key is unaffected.
+            "description": str(e.get("DESCRIPTION")) if e.get("DESCRIPTION") else None,
             "all_day": all_day,
             "show_end_time": show_end_time,
         })
