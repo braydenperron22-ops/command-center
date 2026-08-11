@@ -22,3 +22,11 @@ def next_payday(today: date) -> dict:
     if candidate < today:
         candidate += timedelta(days=PAY_PERIOD_DAYS)
     return {"date": candidate, "days_until": (candidate - today).days}
+
+
+def is_payday(d: date) -> bool:
+    """Whether `d` itself falls exactly on the biweekly schedule —
+    morning_briefing.py's own portfolio clause uses this (via
+    days_since(d, payday) below) to keep a routine paycheck deposit
+    from reading as a real portfolio "gain" the morning after it lands."""
+    return (d - REFERENCE_PAYDAY).days % PAY_PERIOD_DAYS == 0

@@ -252,60 +252,65 @@ def _markets_clause(now: datetime) -> tuple[int, str] | None:
     return 3, f"S&P 500 futures {pct:+.1f}%"
 
 
-# Session request: "give the AI access to everything including my
-# portfolio and transactions." portfolio_client.py (SnapTrade) already
-# existed for pages_portfolio.py/ticker.py — never wired into this
-# prompt before. Only the 1-day change is used here, not the 6m/YTD
-# figures fetch_changes() also returns: checked live against the real
-# account, and those longer windows currently read as -80%+ on a
-# genuinely small/new account — real math, but the kind of statistical
-# noise (a tiny base a while back, since grown) that would read as a
-# portfolio-crash headline to an AI taking the number at face value,
-# not the actual story. 1-day is the same reliable, low-noise window
-# _markets_clause above already trusts for the same reason.
+# Session follow-up: "don't show everyday activity like basic
+# investments and basic withdrawals... only show or speak of my balance
+# if it's a decent meaningful drop or gain... a big gain should not be
+# reported [the day after payday] because that's when my pay will
+# settle." WealthSimple covers everyday banking AND investing on the
+# SAME balance this app reads — routine spending/deposits move it
+# constantly, none of which is real portfolio news. Both a percent AND
+# a dollar floor must be crossed (not either alone): percent-only would
+# flag routine noise on this still-small account (a $60 grocery run
+# reads as several percent of ~$1,200 total); dollar-only would flag
+# nothing-special swings once the balance grows. Starting values, not
+# measured — expect these need real tuning against how the account
+# actually behaves over the next few weeks.
+_PORTFOLIO_MEANINGFUL_THRESHOLDS = {
+    1: (5.0, 75.0),  # (min abs %, min abs $) — today
+    7: (8.0, 100.0),  # this week
+    30: (12.0, 150.0),  # this month
+}
+_PORTFOLIO_PERIOD_LABEL = {1: "today", 7: "this week", 30: "this month"}
+
+
 def _portfolio_clause(now: datetime) -> tuple[int, str] | None:
+    """Only fires on a genuinely meaningful day/week/month move (see
+    _PORTFOLIO_MEANINGFUL_THRESHOLDS) — no daily "here's your balance"
+    fact otherwise, per the session request above. The "today" window
+    is skipped outright the day after a payday (payday_schedule.
+    is_payday) — a paycheck landing is real money, not portfolio
+    performance, and reporting it as a "gain" here would double up
+    with (and misrepresent) the dedicated payday alert _household_
+    clause already owns. Week/month aren't payday-gated: a single
+    day's deposit is a much smaller share of a 7/30-day window, and
+    excluding it there too would start hiding genuine multi-week
+    trends instead of just the one-day noise spike."""
     portfolio = portfolio_client.fetch_portfolio()
-    changes = portfolio_client.fetch_changes()
     if not portfolio or portfolio.get("total_cad") is None:
         return None
-    text = f"portfolio: ${portfolio['total_cad']:,.0f} CAD total"
-    one_day = (changes or {}).get("1d")
-    if one_day is not None:
-        text += f", {one_day:+.1f}% today"
-    return 3, text
-
-
-# Dividends on this account are routinely a couple of cents — real
-# activity, but not "news" by any reasonable read, so filtered out
-# below the same way a 2-cent price move wouldn't get its own headline
-# elsewhere in this app. Bounded to the last 48h (not just "today") so
-# something that landed late yesterday evening isn't invisible to a
-# brief read the next morning.
-_PORTFOLIO_ACTIVITY_MIN_ABS_AMOUNT = 5.0
-_PORTFOLIO_ACTIVITY_LOOKBACK_HOURS = 48
-
-
-def _portfolio_activity_clause(now: datetime) -> tuple[int, str] | None:
-    activities = portfolio_client.fetch_activities(limit=8)
-    if not activities:
+    skip_today = payday_schedule.is_payday(now.date() - timedelta(days=1))
+    best = None  # (abs_pct, days, pct, amount)
+    for days, (min_pct, min_amount) in _PORTFOLIO_MEANINGFUL_THRESHOLDS.items():
+        if days == 1 and skip_today:
+            continue
+        change = portfolio_client.fetch_period_change(days)
+        if not change:
+            continue
+        pct, amount = change["pct"], change["amount"]
+        if abs(pct) < min_pct or abs(amount) < min_amount:
+            continue
+        if best is None or abs(pct) > best[0]:
+            best = (abs(pct), days, pct, amount)
+    if best is None:
         return None
-    cutoff = now.replace(tzinfo=ZoneInfo(TIMEZONE)) - timedelta(hours=_PORTFOLIO_ACTIVITY_LOOKBACK_HOURS)
-    recent = []
-    for a in activities:
-        if abs(a["amount"]) < _PORTFOLIO_ACTIVITY_MIN_ABS_AMOUNT:
-            continue
-        try:
-            when = datetime.fromisoformat(a["date"].replace("Z", "+00:00"))
-        except ValueError:
-            continue
-        if when < cutoff:
-            continue
-        label = a["type"].capitalize()
-        symbol = f" {a['symbol']}" if a.get("symbol") else ""
-        recent.append(f"{label}{symbol} ${abs(a['amount']):,.0f} ({a['account']})")
-    if not recent:
-        return None
-    return 3, f"recent account activity: {'; '.join(recent[:3])}"
+    _, days, pct, amount = best
+    direction = "up" if amount >= 0 else "down"
+    label = _PORTFOLIO_PERIOD_LABEL[days]
+    return (
+        3,
+        f"portfolio {direction} {abs(pct):.1f}% (${abs(amount):,.0f}) {label} — "
+        f"${portfolio['total_cad']:,.0f} CAD total",
+    )
 
 
 # Same 3 tracked teams as ticker.py's own playoff-odds item — reused
@@ -779,7 +784,6 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         (_household_clause, (now,)),
         (_markets_clause, (now,)),
         (_portfolio_clause, (now,)),
-        (_portfolio_activity_clause, (now,)),
         (_game_today_clause, (now,)),
         (_daylight_clause, (now, weather)),
     ):
@@ -941,6 +945,47 @@ LEARNED_NOTES_MAX_CHARS = 700
 _learned_notes: str = persisted_state.load("morning_brief_learned_notes", "")
 _learned_notes_date: str | None = persisted_state.load("morning_brief_learned_notes_date", None)
 
+# How many recent activity rows to hand the learned-notes AI — enough
+# to actually notice a "withdraws every few days" shape across a real
+# couple of weeks, not so many the prompt balloons. Deliberately not
+# the same _PORTFOLIO_ACTIVITY_MIN_ABS_AMOUNT-style noise filter the
+# (now-removed) daily activity fact used — a pattern of many small
+# withdrawals IS exactly the kind of thing this function exists to
+# notice, so nothing here gets pre-filtered by size.
+_FINANCIAL_TRENDS_ACTIVITY_LIMIT = 15
+
+
+def _financial_trends_block() -> str:
+    """Raw financial context for _update_learned_notes specifically —
+    session request: "feed all of this data to the backend AI whose
+    job is to learn more about me... look at trends... consistent
+    withdrawals... net worth down over a decent chunk of time."
+    Deliberately NOT threshold-gated the way _portfolio_clause (the
+    daily brief's own fact) is — that one only ever shows a single
+    meaningful move, which structurally can't reveal a slow multi-week
+    drift or a recurring small-withdrawal habit. This hands over the
+    real 7/30-day change AND the raw recent activity list, unfiltered,
+    so the pattern-noticing AI has what it actually needs to find a
+    trend a single day's snapshot never could. "" if no portfolio data
+    is available at all (SnapTrade not configured/reachable)."""
+    portfolio = portfolio_client.fetch_portfolio()
+    if not portfolio or portfolio.get("total_cad") is None:
+        return ""
+    lines = [f"Current total: ${portfolio['total_cad']:,.0f} CAD."]
+    for days, label in ((7, "7-day"), (30, "30-day")):
+        change = portfolio_client.fetch_period_change(days)
+        if change:
+            lines.append(f"{label} change: {change['pct']:+.1f}% (${change['amount']:+,.0f}).")
+    activities = portfolio_client.fetch_activities(limit=_FINANCIAL_TRENDS_ACTIVITY_LIMIT) or []
+    if activities:
+        recent = [
+            f"{a['type'].capitalize()}{' ' + a['symbol'] if a.get('symbol') else ''} "
+            f"${abs(a['amount']):,.0f} ({a['account']}, {a['date'][:10]})"
+            for a in activities
+        ]
+        lines.append("Recent activity, newest first: " + "; ".join(recent))
+    return " ".join(lines)
+
 
 def _update_learned_notes(now: datetime, facts: list[str]) -> None:
     """Once per calendar day (own tracker — not reusing _brief_history's
@@ -961,6 +1006,17 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
         return
     if groq_client.ai_pulls_paused():
         return
+    financial_block = _financial_trends_block()
+    financial_section = (
+        f"Financial detail, for noticing genuine multi-day/week/month patterns only (a consistent "
+        f"pace of withdrawals, net worth actually trending down or up over real time) — this is NOT "
+        f"filtered the way the daily brief's own portfolio fact is, so routine day-to-day activity is "
+        f"included on purpose; do not treat any single entry here as noteworthy on its own, only a "
+        f"real pattern across several. Every figure below is exact and directly observed — never "
+        f"round, estimate, or invent a financial number, here or in the note you write: {financial_block}\n\n"
+        if financial_block
+        else ""
+    )
     prompt = (
         "You keep a short, private, evolving note about Brayden for your own future reference only — "
         "never shown to him directly. It should capture genuine recurring patterns across many real "
@@ -968,6 +1024,7 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
         "up more than once) — not a log of individual days, and not anything guessed from a single "
         "day alone.\n\n"
         f"Your note so far: {_learned_notes or '(nothing recorded yet — this is early)'}\n\n"
+        f"{financial_section}"
         f"Today's real facts: {'; '.join(facts)}\n\n"
         "Rewrite the note completely, from scratch: keep or sharpen anything still genuinely true, "
         "drop anything today's facts show is stale or turned out to be a one-off, and add anything "

@@ -256,23 +256,27 @@ def fetch_value_history(days: int = 180) -> list[float] | None:
     return [v for _, v in sorted(totals.items())]
 
 
-def _period_change_pct(
+def _period_change(
     series_by_account: dict[str, list[tuple[str, float]]], lookback_days: int | None, live_total: float | None
-) -> float | None:
-    """% change from lookback_days ago (or, if None, from Jan 1 of the
-    current year — YTD) to now. An account whose own history doesn't
-    reach back that far is excluded from BOTH ends of this specific
-    period's calculation, not just the "then" side — counting a newly-
-    opened/newly-funded account's balance as pure "growth" over a
-    window it didn't exist for would overstate real investment
-    performance with new deposits. live_total (the freshest live read,
-    see fetch_portfolio) replaces the "now" side ONLY when every single
-    account qualified for this period — otherwise it would double-count
-    accounts fetch_portfolio includes that this period's stricter
-    inclusion just excluded, so the latest point each qualifying
-    account's own history has is used instead (at most a day or two
-    stale, which doesn't meaningfully matter over a 6-month/YTD
-    window)."""
+) -> dict | None:
+    """{"pct", "amount"} change from lookback_days ago (or, if None,
+    from Jan 1 of the current year — YTD) to now. An account whose own
+    history doesn't reach back that far is excluded from BOTH ends of
+    this specific period's calculation, not just the "then" side —
+    counting a newly-opened/newly-funded account's balance as pure
+    "growth" over a window it didn't exist for would overstate real
+    investment performance with new deposits. live_total (the freshest
+    live read, see fetch_portfolio) replaces the "now" side ONLY when
+    every single account qualified for this period — otherwise it would
+    double-count accounts fetch_portfolio includes that this period's
+    stricter inclusion just excluded, so the latest point each
+    qualifying account's own history has is used instead (at most a day
+    or two stale, which doesn't meaningfully matter over a 6-month/YTD
+    window). Returns both pct and the raw dollar amount from the SAME
+    start/end totals — morning_briefing.py's meaningful-change gating
+    needs both together (a dollar floor AND a percent floor), not two
+    separately-fetched numbers that could drift out of sync with each
+    other on a fast-moving day."""
     if not series_by_account:
         return None
     today = date.today()
@@ -301,7 +305,33 @@ def _period_change_pct(
         return None
     if live_total is not None and included == len(series_by_account):
         end_total = live_total
-    return (end_total - start_total) / start_total * 100
+    return {"pct": (end_total - start_total) / start_total * 100, "amount": end_total - start_total}
+
+
+def fetch_period_change(days: int) -> dict | None:
+    """{"pct", "amount"} change over the trailing `days` — public,
+    arbitrary-lookback sibling to fetch_changes()'s fixed 1d/6m/ytd
+    windows, for morning_briefing.py's own day/week/month meaningful-
+    change check. Same account-inclusion care as fetch_changes (see
+    _period_change's own docstring), same last-successful-fetch
+    fallback as every other public function here."""
+    global _last_good_period_changes
+    try:
+        series_by_account = _fetch_history_by_account()
+    except Exception:
+        return _last_good_period_changes.get(days) if _last_good_period_changes else None
+    if series_by_account is None:
+        return _last_good_period_changes.get(days) if _last_good_period_changes else None
+    portfolio = fetch_portfolio()
+    live_total = portfolio["total_cad"] if portfolio else None
+    result = _period_change(series_by_account, days, live_total)
+    if result is not None:
+        _last_good_period_changes = _last_good_period_changes or {}
+        _last_good_period_changes[days] = result
+    return result
+
+
+_last_good_period_changes: dict[int, dict] | None = None
 
 
 # Real, human-meaningful events only — get_account_activities also
@@ -399,9 +429,9 @@ def fetch_changes() -> dict | None:
     portfolio = fetch_portfolio()
     live_total = portfolio["total_cad"] if portfolio else None
     result = {
-        "1d": _period_change_pct(series_by_account, 1, live_total),
-        "6m": _period_change_pct(series_by_account, 182, live_total=None),
-        "ytd": _period_change_pct(series_by_account, None, live_total=None),
+        "1d": (_period_change(series_by_account, 1, live_total) or {}).get("pct"),
+        "6m": (_period_change(series_by_account, 182, live_total=None) or {}).get("pct"),
+        "ytd": (_period_change(series_by_account, None, live_total=None) or {}).get("pct"),
     }
     _last_good_changes = result
     return result
