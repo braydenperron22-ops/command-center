@@ -52,6 +52,8 @@ import wildfire_client
 from config import (
     AQI_EXTREME,
     AQI_SHOW_THRESHOLD,
+    EXTREME_COLD_THRESHOLD_C,
+    EXTREME_HEAT_THRESHOLD_C,
     FEELS_LIKE_DIVERGENCE_THRESHOLD_C,
     MAX_BURST_ALERTS,
     PAGE_DURATION_OVERRIDES,
@@ -1459,6 +1461,27 @@ else:
 if air_quality and (air_quality.get("us_aqi") or 0) >= AQI_EXTREME:
     category = "smoke"
 
+# Session request: "add a lot more conditions... proper animations for
+# rain or excessive heat or whatever." Reuses the SAME thresholds
+# weather_alerts_bar._fallback_text already established for its own
+# extreme-heat/cold banner (config.EXTREME_HEAT_THRESHOLD_C/EXTREME_
+# COLD_THRESHOLD_C) rather than inventing new numbers — but against the
+# CURRENT actual reading (feels_like_c, falling back to temp_c), not
+# that banner's own forecast high/low: the scene is meant to reflect
+# what it actually looks/feels like right now, the same "current
+# reading, not today's forecast extreme" distinction weather_records_
+# client's own record badge already draws.
+weather_temp_extreme = None
+if weather:
+    _scene_temp = weather.get("feels_like_c")
+    if _scene_temp is None:
+        _scene_temp = weather.get("temp_c")
+    if _scene_temp is not None:
+        if _scene_temp >= EXTREME_HEAT_THRESHOLD_C:
+            weather_temp_extreme = "heat"
+        elif _scene_temp <= EXTREME_COLD_THRESHOLD_C:
+            weather_temp_extreme = "cold"
+
 # True during EC's own most dangerous hazard tier (tornado/hurricane/
 # tsunami, from its official alert feed) — drives the screen going
 # fully bright (not just dimmed less, see night_dim below) rather than
@@ -1555,11 +1578,11 @@ try:
     # always-dark background it wants for free.
     if not _jumbotron_active:
         st.markdown(
-            sky_style(category, phase, bg_fade_from, bg_blend),
+            sky_style(category, phase, bg_fade_from, bg_blend, weather_temp_extreme),
             unsafe_allow_html=True,
         )
         st.markdown(
-            scene_html(category, phase),
+            scene_html(category, phase, weather["weather_code"] if weather else 2, now, weather_temp_extreme),
             unsafe_allow_html=True,
         )
 
