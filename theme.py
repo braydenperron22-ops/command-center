@@ -61,10 +61,16 @@ html, body, [class*="css"] {
    rather than an alert-style banner: this is routine information, not
    something urgent, so it deliberately doesn't borrow the red/orange
    "pay attention now" language the weather-statement/leave-headline
-   banners use above it. */
+   banners use above it.
+
+   Session redesign: "dense blocks of text kill the at-a-glance utility
+   of a dashboard... split your brief card into a Quick Stats Bar on
+   top and a 1-2 Sentence AI Commentary/Vibe Check below it." The card
+   itself now only owns the glass container (background/blur/border/
+   padding) — the two children below own their own typography, since
+   they're deliberately different registers (mechanical stats vs. a
+   real written line), not one uniform text block anymore. */
 .morning-briefing {
-    font-size: 1.3rem;
-    line-height: 1.5;
     color: #E5E5EA;
     background: rgba(255,255,255,0.05);
     backdrop-filter: blur(24px) saturate(160%);
@@ -73,6 +79,52 @@ html, body, [class*="css"] {
     border-radius: 16px;
     padding: 0.9rem 1.4rem;
     margin-bottom: 0.8rem;
+}
+
+/* Plain, mechanical bullets — deliberately NOT the same expressive
+   register as .morning-commentary below: this is meant to be scanned
+   in three seconds, not read as prose. A small accent dot instead of
+   a default list marker, matching the same "colored dot before a
+   section label" convention this kiosk already uses elsewhere (see
+   e.g. the Conflicts page header) rather than introducing a new one. */
+.morning-stats {
+    list-style: none;
+    margin: 0 0 0.6rem 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+.morning-stats li {
+    font-size: 1.05rem;
+    line-height: 1.35;
+    color: #C7C7CC;
+    padding-left: 1.1rem;
+    position: relative;
+}
+.morning-stats li::before {
+    content: "";
+    position: absolute;
+    left: 0.15rem;
+    top: 0.55rem;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #FF453A;
+}
+
+/* The one AI-written line — a real, separate register from the plain
+   stats above it, with a hairline divider only when the stats bar is
+   actually present above it (it always is in practice, but :not(:first
+   -child) keeps this correct even if that ever changes) so the split
+   itself is visible, not just implied by spacing. */
+.morning-commentary {
+    font-size: 1.3rem;
+    line-height: 1.5;
+}
+.morning-commentary:not(:first-child) {
+    padding-top: 0.6rem;
+    border-top: 1px solid rgba(255,255,255,0.08);
 }
 
 .hero-weather {
@@ -4712,7 +4764,9 @@ html, body, [class*="css"] {
     .news-breaking-label { font-size: 1.15rem; }
     .tile-value { font-size: 2rem; }
     .market-hero-value { font-size: 1.5rem; }
-    .morning-briefing { font-size: 1.05rem; padding: 0.8rem 1.1rem; }
+    .morning-briefing { padding: 0.8rem 1.1rem; }
+    .morning-stats li { font-size: 0.92rem; }
+    .morning-commentary { font-size: 1.05rem; }
     .page-title { font-size: 1.2rem; }
 
     /* Streamlit stacks st.columns() grids into single-column full-width

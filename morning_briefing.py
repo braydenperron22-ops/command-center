@@ -45,6 +45,8 @@ regardless of which of the 10 rotating pages happens to be up.
 """
 
 import functools
+import html
+import random
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -78,6 +80,58 @@ MORNING_WINDOW_END_HOUR = 10
 # alert AND rain closing in AND a packed calendar) can actually say all
 # of it, instead of silently dropping whichever lost the priority sort.
 MAX_CLAUSES = 5
+
+# Session redesign: "Separate the Status from the Commentary... Split
+# your brief card into a Quick Stats Bar on top and a 1-2 Sentence AI
+# Commentary/Vibe Check below it." How many of the top-priority facts
+# render() shows as plain bullets — mechanical, not AI-narrated, so
+# they're always accurate/complete even on a morning the AI call fails
+# entirely. Distinct from MAX_CLAUSES above, which still governs the
+# degraded-mode fallback text specifically.
+STATS_BAR_MAX = 3
+
+# Session redesign: "Give the LLM prompt a randomized 'Personality
+# Mode' parameter... so the tone doesn't feel monotonous or excessively
+# bleak." Session history already established that OPEN tone freedom
+# ("your call, whatever lands") didn't actually produce real variety in
+# practice — it settled into "constant snark," the exact complaint this
+# fixes. A concrete, named mode picked FOR the model (not left to it)
+# is the same fix this file's own profanity/tone corrections already
+# used elsewhere: vague permission alone doesn't move real output,
+# naming the actual thing does. Weights match the session's own ask
+# (mostly useful and direct, humor as the exception, not the default).
+_PERSONALITY_MODES = {
+    "professional": (
+        "Direct, plain, genuinely useful — state what's actually worth knowing about today in a "
+        "clear, no-nonsense voice. No jokes, no snark, no personality flourishes today: just the "
+        "real takeaway, stated plainly and briefly."
+    ),
+    "dry_humor": (
+        "Dry, understated wit — one sharp, deadpan observation woven into the real takeaway, not "
+        "comedy for its own sake. Never mean, never an extended bit — a single dry line, not a "
+        "performance."
+    ),
+    "full_roast": (
+        f"Go all the way — genuinely cutting, willing to roast {USER_FIRST_NAME} directly, real "
+        "profanity fine if a line actually earns it. The one mode where the humor can BE the "
+        "point, not just a garnish on the takeaway."
+    ),
+}
+_PERSONALITY_WEIGHTS = {"professional": 70, "dry_humor": 20, "full_roast": 10}
+
+
+def _personality_mode(now: datetime) -> str:
+    """One of _PERSONALITY_MODES, chosen once per calendar day (seeded
+    from the date itself, not wall-clock random) — otherwise every ~5s
+    rerun would roll a fresh mode even though the actual cached AI
+    response only changes once per AI_REFRESH_SECONDS, and a single
+    morning's brief should read as one consistent voice, not shift
+    tone between a 6am glance and an 8am one. Varies day to day in the
+    weighted proportions above instead."""
+    modes = list(_PERSONALITY_WEIGHTS)
+    weights = [_PERSONALITY_WEIGHTS[m] for m in modes]
+    rng = random.Random(now.date().isoformat())
+    return rng.choices(modes, weights=weights, k=1)[0]
 
 # Duplicated from weather_client rather than imported — same convention
 # as this app's other small per-module geo/time math (see wildfire_
@@ -215,6 +269,21 @@ def _agenda_clause(now: datetime) -> tuple[int, str] | None:
 # for this same event covers it now, same as any other ordinary shift.
 
 
+# {"date", "last_shown_price", "show_today"} — session feedback: "gas
+# updates weekly, so please only have the AI mention it when the price
+# of gas actually changes." eco_mode_status() itself recomputes fresh
+# every rerun and stays True the whole week a price stands (it's a
+# threshold check, not a change check), so a naive "differs from last
+# reported" comparison updated on every call would only show the fact
+# for a single ~5s rerun before immediately matching itself and
+# disappearing for the rest of the day — worthless in practice, nobody
+# would see it. The decision ("is today's price genuinely new") is
+# made ONCE per calendar day instead and cached in show_today, so it
+# stays consistent (shown or not) across every rerun that same day,
+# only re-evaluated once the date actually rolls over.
+_gas_tracker: dict = persisted_state.load("morning_brief_gas_tracker", {"date": None, "last_shown_price": None, "show_today": False})
+
+
 def _household_clause(now: datetime) -> tuple[int, str] | None:
     # Payday today outranks everything else in this clause — genuinely
     # the best household news any of these branches can carry, same
@@ -229,7 +298,18 @@ def _household_clause(now: datetime) -> tuple[int, str] | None:
         return 3, "payday tomorrow"
     gas = fuel_price_client.eco_mode_status()
     if gas and gas["eco_recommended"]:
-        return 2, f"gas price {gas['price']:.1f}¢/L (above average, eco driving recommended)"
+        global _gas_tracker
+        today_str = now.date().isoformat()
+        if _gas_tracker["date"] != today_str:
+            is_new = gas["price"] != _gas_tracker["last_shown_price"]
+            _gas_tracker = {
+                "date": today_str,
+                "last_shown_price": gas["price"] if is_new else _gas_tracker["last_shown_price"],
+                "show_today": is_new,
+            }
+            persisted_state.save("morning_brief_gas_tracker", _gas_tracker)
+        if _gas_tracker["show_today"]:
+            return 2, f"gas price {gas['price']:.1f}¢/L (above average, eco driving recommended)"
     return None
 
 
@@ -662,7 +742,45 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     raised back to 450 (from 260) to match — that number already has a
     real story behind it (a confirmed live mid-word truncation at 200
     the first time longer output was permitted), not re-derived from
-    scratch."""
+    scratch.
+
+    Session redesign, structured feedback this time rather than a live
+    correction: dense prose "kills the at-a-glance utility of a
+    dashboard," raw operational facts buried inside a sarcastic
+    narrative are hard to extract quickly, and "constant snark... gets
+    repetitive fast when you read it every single morning." Three
+    real, related walk-backs from the discretion-above era, each
+    reversing something deliberately opened up earlier in this same
+    file's history:
+
+    1. The AI's own text is no longer the only thing on the card —
+    render() now shows a plain, mechanical, non-AI-narrated bullet list
+    of the top STATS_BAR_MAX facts above it (see that constant and
+    render() itself). This genuinely changes this function's job: it
+    used to have to decide what deserved mention AT ALL; now the stats
+    bar already covers the top facts unconditionally, so this is free
+    to stop narrating raw data entirely and focus only on a real
+    synthesized takeaway — the connection or vibe worth adding on top,
+    not a restatement.
+
+    2. Length discretion is gone — back to a hard cap (30 words), the
+    same kind of "a firm rule reads as crammed" tension from the 2-3-
+    sentence era doesn't apply here the same way, since the job itself
+    got narrower (one takeaway, not "cover what's worth covering") at
+    the same time the cap came back. max_output_tokens dropped from 450
+    to 90 to match — no truncation risk this time, since 30 words is
+    comfortably under budget rather than right at the edge the way the
+    450 number's own history was.
+
+    3. Open tone freedom ("your call, whatever lands, fine for it to
+    vary") is gone too, replaced with _personality_mode: a mode picked
+    FOR the model, once per day, in a fixed weighted proportion (mostly
+    direct/professional, dry humor sometimes, full roast rarely). Same
+    lesson this file's own profanity fix already proved: unconstrained
+    permission doesn't reliably produce variety in practice — it
+    settled into one note (constant snark) despite being told variety
+    was "fine, good even." A concrete, externally-decided mode per day
+    is the fix, not another adjective added to the freedom."""
     facts = "; ".join(picked)
     weekday = now.strftime("%A")
     history_block = _recent_history_block(now)
@@ -681,88 +799,55 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         if _learned_notes
         else ""
     )
+    mode = _personality_mode(now)
+    mode_instruction = _PERSONALITY_MODES[mode]
     prompt = (
-        f"You are {USER_FIRST_NAME}'s personal AI assistant — genuinely funny, and above all an "
-        f"actual partner whose real job is keeping {USER_FIRST_NAME} genuinely informed about his "
-        "own day. No fixed character to perform and no assigned persona — don't imitate anyone "
-        "else's voice (a butler, a movie AI, anyone); figure out your own personality across these "
-        "and let it come through in how you actually write, rather than announcing what it is. The "
-        "humor is in service of the job, not the point in itself — a morning with nothing funny to "
-        "say about it is still a successful brief if he walks away knowing what's actually going on "
-        "today. You choose the tone each morning, not a fixed formula: genuinely warm or sincere if "
-        f"that's actually what today calls for, dry and cutting and willing to roast "
-        f"{USER_FIRST_NAME} directly if that's funnier, deadpan, playful, silly, whatever — your "
-        "call, and it's fine (good, even) for it to vary morning to morning instead of landing on "
-        "the same note every time. When you do go for the edge, go all the way: don't hedge a "
-        "hard line by softening it right after, and a line that actually stings is a win, not "
-        "something to walk back — he doesn't need protecting from the joke. Actual profanity "
-        "(shit, damn, hell, ass, and the like) is explicitly allowed when a line genuinely lands "
-        "sharper with one — your call on when, never required, never the default either. Not "
-        "corporate, not a stiff butler either direction. Say whatever actually lands.\n\n"
-        "Length is your own call too, not a fixed target — this is a quick read on a kiosk, not a "
-        "report, so brevity is usually the right instinct, but there's no mandated sentence count. "
-        "A quiet morning might genuinely be one sharp line; a real one (several things actually "
-        "worth saying) can run longer — never padded just to hit a length, and never crammed just "
-        "to stay under one either. Picking what's actually worth saying and leaving the rest out "
-        "entirely still applies regardless of how long you land on — not a fixed template restating "
-        "every fact in a slightly funnier voice — it should read like a real, specific observation "
-        "about his actual day, never like a list that got translated. This renders directly as "
-        "HTML, so <strong>/<em> for emphasis is available when it genuinely helps a single word or "
-        "phrase land, and a plain <br> for a real line break if the length you land on actually "
-        "calls for one (a genuinely busy morning, a short break between two distinct things) — "
-        "both sparingly, as tools, not decoration on a short line that doesn't need either.\n\n"
-        f"Background on {USER_FIRST_NAME}, for real specific jokes instead of generic ones — "
-        f"reference it only when genuinely relevant to today's facts below, don't force a "
-        f"mention in every brief: {USER_PROFILE}\n\n"
+        f"You are {USER_FIRST_NAME}'s personal AI assistant — above all an actual partner whose "
+        f"real job is keeping {USER_FIRST_NAME} genuinely informed about his own day, not a "
+        "comedian who happens to have facts attached. No fixed character to perform and no "
+        "assigned persona — don't imitate anyone else's voice (a butler, a movie AI, anyone).\n\n"
+        f"Today's tone, already decided for you rather than your own call (it rotates day to day "
+        f"on its own fixed schedule, so the voice doesn't settle into one repeated note): "
+        f"{mode_instruction}\n\n"
+        "Maximum 30 words. This is the ONLY text you write on the card — the actual facts (today's "
+        "agenda, weather, commute, gas, portfolio, whatever else fired) are already shown "
+        "separately, above this, as plain bulleted stats. Do not narrate or restate any of that raw "
+        "data in prose — it's already on screen. Write ONLY the synthesized takeaway: the one thing "
+        "actually worth adding once you've looked at everything together — a real connection "
+        "between facts if one genuinely exists, or the honest vibe of the day in one line if it "
+        "doesn't. Never a list that got translated into a sentence. A single <strong> for one word "
+        "or phrase is available if it genuinely helps something land, used sparingly — no other "
+        "HTML, no line breaks, this is one short line.\n\n"
+        f"Background on {USER_FIRST_NAME}, for something real and specific instead of generic — "
+        f"reference it only when genuinely relevant, don't force a mention every time: {USER_PROFILE}\n\n"
         f"{notes_section}"
         f"{history_section}"
-        f"Today is {weekday} — a real, given fact, not a guess. Comment on it, and on how it "
-        "relates to the facts below (a work shift landing on a weekend is genuinely worth a real "
-        "line; an ordinary weekday usually isn't), only when it's actually relevant — your call, "
-        "don't force it in every time. The humor otherwise comes entirely from how things are "
-        "delivered, never from anything invented — do not add or invent any fact beyond the "
-        "weekday, the background, and the long-term notes/recent-days record above, and the raw "
-        "data given below.\n\n"
-        "You do NOT have to mention every single fact below — pick whatever's actually worth "
-        "saying and leave the rest out entirely, the same instruction as the length rule above, "
-        "restated because it matters: a real person deciding what to tell someone about their day "
-        "does not recite every data point they have, they choose. Some mornings that's one fact, "
-        "some mornings it's four — never a rule, always a real call based on what's actually "
-        "here today.\n\n"
-        "Always write numbers as actual digits, never spelled out as words — '18 minutes' and "
-        "'0.8%' and '10:00 AM', not 'eighteen minutes' or 'zero point eight percent' or 'ten "
-        "o'clock'. This is read at a glance on a screen, not literary prose, and digits are "
-        "faster to scan.\n\n"
-        "Below is the raw, real data for today — plain facts, not anyone else's already-chosen "
-        "words. Nobody has written any of this into a sentence yet; that's entirely your job, in "
-        "your own voice, from these numbers. Not everything in it is actually related to "
-        "everything else, either. Some facts share real, physical cause and effect — cold enough "
-        f"and wet enough together on {USER_FIRST_NAME}'s own roads meaning genuine ice risk, not "
-        "just two separate numbers; a road incident sitting on the same commute route that already "
-        "has a delay. Call those out directly when they're both there. Others are just separate "
-        f"things that happen to both be true this morning with no real link between them — a team "
-        f"{USER_FIRST_NAME} follows playing a game hundreds of kilometers from here has nothing to "
-        "do with local weather, and manufacturing a connection between facts that aren't actually "
-        "connected (just because they showed up the same morning) reads as a mistake, not a joke — "
+        f"Today is {weekday} — a real, given fact, not a guess. Only worth a mention if it actually "
+        "connects to something below (a work shift landing on a weekend, say) — don't force it in.\n\n"
+        "Never add or invent a fact beyond the weekday, the background, the long-term notes/recent-"
+        "days record above, and the raw data below. Always write numbers as actual digits, never "
+        "spelled out as words — '18 minutes' and '0.8%', not 'eighteen minutes' or 'zero point "
+        "eight percent'.\n\n"
+        "All of today's raw data, for context — most of it is already visible above in the stats "
+        "bar, but there may be more here than the stats bar's own small cap shows, and a real "
+        "connection can still come from something not in the bar. Some facts share real physical "
+        f"cause and effect worth naming directly — cold enough and wet enough together on "
+        f"{USER_FIRST_NAME}'s own roads meaning genuine ice risk, not just two separate numbers. "
+        "Others are just separate things that happen to both be true the same morning with no real "
+        "link, and manufacturing a connection that isn't there reads as a mistake, not a joke — "
         "don't do it. The genuinely interesting connections are usually across days, not within "
-        "one: see the long-term notes and recent-days record above for that — a real pattern "
-        "actually worth a comment (a stretch of early shifts, a tendency you've noticed hold up "
-        "over many real mornings), not something guessed from a single day. "
-        f"Address {USER_FIRST_NAME} by name naturally somewhere in it. Start with a capital "
-        "letter. Raw data: " + facts
+        "one: see the long-term notes/recent-days record above for that. "
+        f"Address {USER_FIRST_NAME} by name naturally. Start with a capital letter. Raw data: " + facts
     )
     if groq_client.ai_pulls_paused():
         return None
-    # Session request: "instead of saying keep it two to three
-    # sentences and every fact must appear, let it use its own
-    # discretion" — the prompt's own length instruction above went from
-    # a firm 2-3 sentence cap back to genuine discretion, so the token
-    # budget needs the same headroom it had the LAST time real
-    # structure/longer output was permitted (450) — that number wasn't
-    # arbitrary, it came from a confirmed live truncation at 200 on a
-    # genuinely eventful morning. Restored rather than re-guessed.
+    # Session redesign: 30-word cap (see this function's own docstring)
+    # needs nowhere near the 450-token budget the prior discretion-based
+    # length needed — 90 is comfortable headroom over what 30 words
+    # actually costs in tokens, not a number chased right up against a
+    # truncation risk the way 450's own history was.
     return gemini_client.generate_periodic(
-        "morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85, max_output_tokens=450
+        "morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85, max_output_tokens=90
     )
 
 
@@ -843,7 +928,25 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         sentence = f"Morning update — {plain[0].upper() + plain[1:]}."
 
     _notify_new_brief(sentence, now)
-    st.markdown(f'<div class="morning-briefing">{sentence}</div>', unsafe_allow_html=True)
+    # Session redesign: "Separate the Status from the Commentary...
+    # Split your brief card into a Quick Stats Bar on top and a 1-2
+    # Sentence AI Commentary/Vibe Check below it." The bar is plain,
+    # mechanical bullets — not AI-narrated, so it's exactly as accurate
+    # on a morning the AI call fails as on a normal one — pulled from
+    # the same all_facts every other consumer here already uses,
+    # capped at STATS_BAR_MAX rather than the AI's own MAX_CLAUSES.
+    # HTML-escaped: some facts (the calendar one, since this session's
+    # earlier location/description addition) carry real external text,
+    # not a hand-authored string, same reasoning as headline_rotation.
+    # py's own escape call for the identical class of risk.
+    stats_html = "".join(
+        f"<li>{html.escape(fact[0].upper() + fact[1:])}</li>" for fact in all_facts[:STATS_BAR_MAX]
+    )
+    st.markdown(
+        f'<div class="morning-briefing"><ul class="morning-stats">{stats_html}</ul>'
+        f'<div class="morning-commentary">{sentence}</div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 # Loaded once at import, not re-fetched from persisted_state on every
