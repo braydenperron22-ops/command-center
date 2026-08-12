@@ -780,7 +780,29 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     permission doesn't reliably produce variety in practice — it
     settled into one note (constant snark) despite being told variety
     was "fine, good even." A concrete, externally-decided mode per day
-    is the fix, not another adjective added to the freedom."""
+    is the fix, not another adjective added to the freedom.
+
+    Session report, first real morning with the stats-bar/commentary
+    split live: "this morning brief one liner below the important
+    facts is terrible" — a real example referenced "noon" and "start
+    times" that weren't any of the 3 facts shown above it, plus a
+    Wicket-the-cat aside with nothing underneath it. Root cause of the
+    first half: render() was still passing this function the FULL
+    all_facts list (everything computed today), a choice that predates
+    the stats bar and made sense when the AI's own text was the only
+    thing on the card — now that a separate, visible stats bar exists,
+    letting the commentary draw on facts the reader can't see is
+    actively confusing, not a feature. render() now passes only the
+    same STATS_BAR_MAX facts the bar itself shows (see its own call
+    site), and the "raw data" framing below was corrected to match —
+    it used to explicitly tell the model there might be MORE than the
+    bar shows, which was true then and actively wrong now. Root cause
+    of the second half (Wicket) was the background-reference
+    instruction being vague ("only when genuinely relevant") without a
+    concrete failure case — same fix this file's profanity and
+    personality-mode corrections already used: name the actual bad
+    example instead of trusting a vaguer instruction to prevent it on
+    its own."""
     facts = "; ".join(picked)
     weekday = now.strftime("%A")
     history_block = _recent_history_block(now)
@@ -819,7 +841,12 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         "or phrase is available if it genuinely helps something land, used sparingly — no other "
         "HTML, no line breaks, this is one short line.\n\n"
         f"Background on {USER_FIRST_NAME}, for something real and specific instead of generic — "
-        f"reference it only when genuinely relevant, don't force a mention every time: {USER_PROFILE}\n\n"
+        f"reference it only when it genuinely connects to today's actual facts below, never as a "
+        "standalone bit with nothing underneath it. A real bad example, live: 'at least until "
+        "Wicket wakes up and demands a real schedule' — the cat has nothing to do with anything in "
+        "today's facts, so that reads as random filler reaching for personality, not an actual "
+        f"observation about his day. Most mornings won't have a genuine opening for this: "
+        f"{USER_PROFILE}\n\n"
         f"{notes_section}"
         f"{history_section}"
         f"Today is {weekday} — a real, given fact, not a guess. Only worth a mention if it actually "
@@ -828,9 +855,9 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         "days record above, and the raw data below. Always write numbers as actual digits, never "
         "spelled out as words — '18 minutes' and '0.8%', not 'eighteen minutes' or 'zero point "
         "eight percent'.\n\n"
-        "All of today's raw data, for context — most of it is already visible above in the stats "
-        "bar, but there may be more here than the stats bar's own small cap shows, and a real "
-        "connection can still come from something not in the bar. Some facts share real physical "
+        "All of today's raw data — this is the exact same set already shown above in the stats "
+        "bar, nothing hidden and nothing extra, so anything you say connects to something the "
+        "reader can already see. Some facts share real physical "
         f"cause and effect worth naming directly — cold enough and wet enough together on "
         f"{USER_FIRST_NAME}'s own roads meaning genuine ice risk, not just two separate numbers. "
         "Others are just separate things that happen to both be true the same morning with no real "
@@ -907,8 +934,23 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     # after _ai_sentence now so today's brief always sees notes as they
     # stood coming INTO today, and _update_learned_notes only folds
     # today in afterward, for tomorrow's benefit.
+    # Session report: a real live example ("noon puts an end to the
+    # guessing game on start times... Wicket wakes up and demands a
+    # real schedule") referenced a fact that wasn't one of the 3 shown
+    # in the stats bar above it — confusing on its own terms (no way to
+    # know what "noon"/"start times" meant without seeing the fact that
+    # prompted it), on top of a background reference that wasn't
+    # grounded in anything real. Root cause: this passed the FULL
+    # all_facts list (everything computed today, not just what's
+    # visible) as the AI's own raw data — a deliberate choice from
+    # earlier in this file's history, before the stats bar existed, but
+    # actively wrong now: the whole point of the split layout is that
+    # the commentary reacts to what the reader can already see above
+    # it, not to something invisible. Restricted to the same
+    # STATS_BAR_MAX facts the bar itself shows, so anything the
+    # commentary references is guaranteed visible.
     try:
-        sentence = _ai_sentence(all_facts, now)
+        sentence = _ai_sentence(all_facts[:STATS_BAR_MAX], now)
     except Exception:
         sentence = None
     try:
