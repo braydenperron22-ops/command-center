@@ -47,7 +47,7 @@ regardless of which of the 10 rotating pages happens to be up.
 import functools
 import html
 import random
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import streamlit as st
@@ -1039,7 +1039,17 @@ def _notify_new_brief(sentence: str, now: datetime) -> None:
 # above is, so a redeploy doesn't wipe the very thing this exists to
 # remember. Loaded once at import, not re-fetched every rerun — same
 # per-rerun-cost reasoning as _last_brief_date's own comment.
-HISTORY_MAX_DAYS = 4
+#
+# Session report, after weeks of this running: "this is all it's
+# uncovered about me... make it better at finding patterns." Was 4 —
+# structurally incapable of ever noticing anything with a weekly shape
+# (an early shift every Tuesday, say), since a pattern needs to recur
+# at least a couple of times inside the window to be real evidence, not
+# a coincidence, and 4 days can never contain two of the same weekday.
+# Widened to 14 (two full weeks) — enough for a real weekly-cadence
+# pattern to actually show up twice, still small enough that the prompt
+# built from it stays a reasonable size.
+HISTORY_MAX_DAYS = 14
 _brief_history: list[dict] = persisted_state.load("morning_brief_history", [])
 
 
@@ -1066,12 +1076,20 @@ def _recent_history_block(now: datetime) -> str:
     _record_history already ran earlier this same process — this block
     is specifically the BEFORE-today record for spotting a pattern
     leading up to today, not a copy of what's already in today's own
-    facts."""
+    facts. Each line is stamped with its own weekday name (not just the
+    ISO date) — session report: "make it better at finding patterns" —
+    a weekly-cadence pattern (an early shift every Tuesday) is much
+    easier for the model to actually notice when the weekday is handed
+    over directly instead of something it has to compute from a date
+    string first."""
     today = now.date().isoformat()
     prior = [day for day in _brief_history if day["date"] != today]
     if not prior:
         return ""
-    lines = [f"{day['date']}: {'; '.join(day['facts'])}" for day in prior]
+    lines = [
+        f"{day['date']} ({date.fromisoformat(day['date']).strftime('%A')}): {'; '.join(day['facts'])}"
+        for day in prior
+    ]
     return "\n".join(lines)
 
 
@@ -1079,14 +1097,23 @@ def _recent_history_block(now: datetime) -> str:
 # about me every single time it is a morning brief... make sure that it
 # sees and is learning and is becoming smarter every single day...
 # truly be a digital assistant." HISTORY_MAX_DAYS above is a fixed
-# rolling window — by definition it forgets anything older than 4
-# days, so it can never build real long-term understanding on its own
-# (a pattern noticed 3 weeks ago would already be gone). This is the
-# durable half: a short, evolving note the AI itself rewrites once a
-# day, keeping genuine patterns it's actually confident about and
-# dropping ones a later day disproves — an actual compounding memory,
-# not just a longer window on the same fixed-size log.
-LEARNED_NOTES_MAX_CHARS = 700
+# rolling window — by definition it forgets anything older than
+# HISTORY_MAX_DAYS days, so it can never build real long-term
+# understanding on its own (a pattern noticed 2 months ago would
+# already be gone). This is the durable half: a short, evolving note
+# the AI itself rewrites once a day, keeping genuine patterns it's
+# actually confident about and dropping ones a later day disproves —
+# an actual compounding memory, not just a longer window on the same
+# fixed-size log.
+#
+# Session report: "make it better at finding patterns and cross
+# referencing sources" — real live output once that was fixed (see
+# _update_learned_notes' own docstring) came back genuinely richer
+# (weekday shift patterns, commute-vs-gas-price cross-check, a
+# recurring homestand, financial activity) and got hard-truncated
+# mid-sentence at the old 700-char limit. Raised to 1200 — real room
+# for what's now actually being asked of it, not a re-guess.
+LEARNED_NOTES_MAX_CHARS = 1200
 _learned_notes: str = persisted_state.load("morning_brief_learned_notes", "")
 _learned_notes_date: str | None = persisted_state.load("morning_brief_learned_notes_date", None)
 
@@ -1144,7 +1171,47 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
     sensitive enough to ever need to bypass it. Calls gemini_client.
     generate directly rather than generate_periodic — this already has
     its own once-a-day gate, so generate_periodic's separate wall-clock
-    cadence would just be a second, redundant throttle on top."""
+    cadence would just be a second, redundant throttle on top.
+
+    Session report, after weeks of this actually running: "this is all
+    it's uncovered about me... make it better at finding patterns and
+    reading between the lines and cross referencing sources." The real
+    note by then was thin — commute is short, start times vary, nothing
+    else "assumed." Two real, compounding causes, both fixed here:
+
+    1. This function never actually received _recent_history_block —
+    the real multi-day fact log _ai_sentence's own prompt already used.
+    Pattern-finding was running through this function's OWN prior note
+    alone (a lossy, already-compressed single string) plus one new day
+    at a time, with no way to ever look directly at the raw record
+    itself. It now gets the same history block _ai_sentence does (see
+    history_section below), so it can cross-reference the actual
+    multi-day data directly instead of only trusting its own memory of
+    its own memory.
+
+    2. HISTORY_MAX_DAYS itself was only 4 (see that constant's own
+    comment) — structurally too short to ever contain the same weekday
+    twice, so a real weekly-shaped pattern (an early shift every
+    Tuesday) could never have enough evidence inside the window to
+    notice at all. Widened to 14.
+
+    3. The instructions themselves only ever asked to notice patterns,
+    never told it HOW — same lesson this file's other corrections keep
+    proving (vague instruction doesn't reliably produce the specific
+    behavior wanted). Now explicitly asks it to cross-reference
+    different kinds of facts against EACH OTHER and against day-of-week
+    (not just track each fact type in isolation), and explicitly
+    permits naming a real, specific, currently-EMERGING pattern as
+    tentative rather than requiring full certainty before saying
+    anything — the old "keep the note short or even mostly empty"
+    instruction was a reasonable anti-hallucination guardrail in
+    isolation, but combined with a genuinely short history window, it
+    likely produced exactly this outcome: correctly refusing to
+    overstate confidence, but with nothing weaker than "confirmed
+    pattern" available to say instead, so it said nothing. The
+    guardrail itself (never invent a fact/number) stays exactly as
+    strict — only the "silence is the only safe option below full
+    confidence" framing changes."""
     global _learned_notes, _learned_notes_date
     today = now.date().isoformat()
     if _learned_notes_date == today:
@@ -1162,27 +1229,45 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
         if financial_block
         else ""
     )
+    history_block = _recent_history_block(now)
+    history_section = (
+        f"The actual raw record to cross-reference directly, oldest first, each stamped with its "
+        f"own real weekday (not today, not your own prior note's memory of past days — the real "
+        f"data itself):\n{history_block}\n\n"
+        if history_block
+        else ""
+    )
     prompt = (
         "You keep a short, private, evolving note about Brayden for your own future reference only — "
-        "never shown to him directly. It should capture genuine recurring patterns across many real "
-        "mornings of his actual life (a schedule shape, a tendency, something that's actually shown "
-        "up more than once) — not a log of individual days, and not anything guessed from a single "
-        "day alone.\n\n"
+        "never shown to him directly. Your job is genuine pattern-finding, not a daily log: actively "
+        "cross-reference different kinds of facts against EACH OTHER and against the day of the week "
+        "to find real structure, not just track each fact type in isolation — does an early or late "
+        "start time cluster on particular weekdays? does a commute delay, a weather condition, or "
+        "financial activity tend to coincide with anything else? A pattern doesn't have to be fully "
+        "certain to be worth naming — flag a real, specific, currently-emerging trend as tentative "
+        "('the last two Tuesdays have both been late starts, worth watching') rather than staying "
+        "silent until it's airtight; say plainly whether something is emerging or genuinely "
+        "established so a later day can honestly upgrade or drop it. Never invent a fact, a number, "
+        "or a connection that isn't actually there in what's given below — a real, specific, "
+        "tentative observation beats both an over-confident guess and empty silence. Any weekday "
+        "you name (Tuesday, Wednesday, whatever) has to match the weekday actually stamped on that "
+        "date below — read it directly, never compute or guess it from the date number.\n\n"
         f"Your note so far: {_learned_notes or '(nothing recorded yet — this is early)'}\n\n"
         f"{financial_section}"
+        f"{history_section}"
         f"Today's real facts: {'; '.join(facts)}\n\n"
-        "Rewrite the note completely, from scratch: keep or sharpen anything still genuinely true, "
-        "drop anything today's facts show is stale or turned out to be a one-off, and add anything "
-        "new that's actually a real pattern now — not every day changes anything, and it's fine to "
-        "return it unchanged. If there isn't real history to support a genuine pattern yet (only a "
-        "handful of days recorded so far, or today's facts are just one day's snapshot with nothing "
-        "repeating), keep the note short or even mostly empty rather than dressing up a single day's "
-        "facts as if they were an established pattern — a confident-sounding pattern built from too "
-        "little data is worse than honestly having nothing yet. Plain prose, no headers or bullet "
-        f"points, nothing invented beyond what you've actually observed. Under {LEARNED_NOTES_MAX_CHARS} characters."
+        "Rewrite the note completely, from scratch, folding today into the same cross-referencing "
+        "process (does today fit, break, or start a pattern against the record above?): keep or "
+        "sharpen anything still genuinely true, promote something tentative to established once it's "
+        "actually shown up enough times, drop anything a new day disproves, and add anything newly "
+        "emerging. Not every day changes anything, and it's fine to return it unchanged. If there "
+        "truly isn't enough real history yet for even a tentative pattern (only a handful of days "
+        "recorded so far), keep the note short rather than inventing one — but don't default to "
+        "silence just because a pattern isn't 100% certain when it's genuinely emerging. Plain prose, "
+        f"no headers or bullet points. Under {LEARNED_NOTES_MAX_CHARS} characters."
     )
     try:
-        updated = gemini_client.generate(prompt, temperature=0.4, max_output_tokens=220)
+        updated = gemini_client.generate(prompt, temperature=0.4, max_output_tokens=380)
     except Exception:
         updated = None
     if updated is None:
