@@ -150,10 +150,19 @@ def _real_price_floor(readings: list[dict]) -> float | None:
     return real_prices[len(real_prices) // 2]
 
 
+# Session request: "add another condition for it reaching the AI —
+# if it goes up a lot in one day or down a lot, probably ten cents." A
+# swing this size is real news on its own regardless of where today's
+# price sits relative to the 10-year median (eco_recommended could be
+# False even after a real 10c overnight jump, or True even after a real
+# 10c drop) — see morning_briefing._household_clause's own use of this.
+GAS_SWING_ALERT_CENTS = 10.0
+
+
 def eco_mode_status() -> dict | None:
-    """{"price", "baseline", "eco_recommended", "as_of", "next_update"}
-    — eco mode is recommended when today's price, in real terms, is
-    above the median real North Bay price over the last
+    """{"price", "baseline", "eco_recommended", "as_of", "next_update",
+    "change"} — eco mode is recommended when today's price, in real
+    terms, is above the median real North Bay price over the last
     FLOOR_LOOKBACK_YEARS (see _real_price_floor) — a fixed, inflation-
     adjusted reference rather than a trailing-weeks average that just
     tracks whatever prices happened to do recently. The floor itself
@@ -164,8 +173,12 @@ def eco_mode_status() -> dict | None:
     reachable, session request: "I want it to actually update day after
     day." `next_update` follows whichever price won: a day out for the
     daily source, or the CSV's own weekly cadence (latest reading's date
-    plus 7 days) when falling back to it. None if there isn't enough
-    price history or CPI data to judge a real floor from."""
+    plus 7 days) when falling back to it. `change` is today's price
+    minus yesterday's (cents/litre, real day-over-day — see
+    daily_gas_price.today_price), or None when only the weekly CSV is
+    available, since two different weekly readings a week apart isn't a
+    day-over-day change. None if there isn't enough price history or
+    CPI data to judge a real floor from."""
     readings = fetch_readings()
     if not readings:
         return None
@@ -175,13 +188,16 @@ def eco_mode_status() -> dict | None:
     daily = daily_gas_price.today_price()
     if daily is not None:
         price, as_of, next_update = daily["price_cents_per_litre"], daily["date"], daily["date"] + timedelta(days=1)
+        change = daily["change"]
     else:
         latest = readings[-1]
         price, as_of, next_update = latest["price_cents_per_litre"], latest["date"], latest["date"] + timedelta(days=7)
+        change = None
     return {
         "price": price,
         "baseline": floor,
         "eco_recommended": price > floor,
         "as_of": as_of,
         "next_update": next_update,
+        "change": change,
     }

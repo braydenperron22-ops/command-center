@@ -16,10 +16,17 @@ fresher "today's price" input — fuel_price_client.eco_mode_status()
 prefers this over the CSV's own latest row when it's reachable, falling
 back to the CSV otherwise, same "never let one source's failure blank
 the feature" pattern as weather_records_client/cpp_payment_dates.
+
+Every date block on the page is kept (not just today's) — the site
+already carries yesterday's real price on the same fetch, no second
+request needed, which is what makes a genuine day-over-day change
+(session request: "add a little arrow that shows how much higher or
+lower it is from the day prior") a real reading instead of something
+this app would have to start tracking on its own from scratch.
 """
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import requests
 import streamlit as st
@@ -35,7 +42,7 @@ FUEL_LABEL = "Regular"
 # site the way a static government CSV can be polled more casually.
 CACHE_TTL_SECONDS = 60 * 60
 
-_last_good_reading: dict | None = None
+_last_good_prices: dict[date, float] | None = None
 
 
 def _parse_heading_date(text: str) -> date:
@@ -45,23 +52,23 @@ def _parse_heading_date(text: str) -> date:
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_raw() -> dict | None:
+def _fetch_raw() -> dict[date, float]:
+    """{date: price_cents_per_litre} for every date block the page
+    currently shows (real Yesterday/Today/Tomorrow, whatever dates
+    those actually resolve to) — matched by each heading's own parsed
+    calendar date rather than DOM position, so it can't be silently
+    mislabeled if the site ever reorders its own blocks."""
     fetch_throttle.wait_turn()
     resp = requests.get(SOURCE_URL, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
     resp.raise_for_status()
     soup = BeautifulSoup(resp.content, "html.parser")
 
-    # Matched by the actual calendar date rather than DOM position
-    # (Tomorrow/Today/Yesterday order) — the heading text itself never
-    # says "Today", only a date, and trusting position would silently
-    # mislabel a reading if the site ever reorders its own blocks.
+    prices: dict[date, float] = {}
     for h in soup.find_all("h3", string=re.compile(r"Gas Prices for", re.I)):
         date_text = h.get_text(strip=True).replace("Gas Prices for ", "").strip()
         try:
             heading_date = _parse_heading_date(date_text)
         except ValueError:
-            continue
-        if heading_date != date.today():
             continue
         price_grid = h.find_parent().find("div", class_=re.compile(r"grid-cols-3"))
         if price_grid is None:
@@ -74,24 +81,35 @@ def _fetch_raw() -> dict | None:
             if value_span is None:
                 continue
             try:
-                price = float(value_span.get_text(strip=True))
+                prices[heading_date] = float(value_span.get_text(strip=True))
             except ValueError:
                 continue
-            return {"price_cents_per_litre": price, "date": heading_date}
-    return None
+    return prices
 
 
 def today_price() -> dict | None:
-    """{"price_cents_per_litre", "date"} for today's real North Bay
-    Regular price, the last good reading if the page's briefly
-    unreachable or today's block isn't found yet, or None if there's
-    never been a good reading — matches fuel_price_client.fetch_readings'
-    own last-good-copy convention."""
-    global _last_good_reading
+    """{"price_cents_per_litre", "date", "change"} for today's real
+    North Bay Regular price — "change" is today's price minus
+    yesterday's, in cents/litre, or None if the page didn't have
+    yesterday's block for some reason (never invented, same "no number
+    beats a guessed one" rule as this app's other real-data sources).
+    Falls back to the last successfully-fetched set of prices if the
+    page's briefly unreachable or hasn't shown today's block yet,
+    matching fuel_price_client.fetch_readings' own last-good-copy
+    convention; None if there's never been a good reading."""
+    global _last_good_prices
     try:
-        result = _fetch_raw()
+        prices = _fetch_raw()
     except Exception:
-        return _last_good_reading
-    if result:
-        _last_good_reading = result
-    return result or _last_good_reading
+        prices = None
+    if prices:
+        _last_good_prices = prices
+    prices = prices or _last_good_prices
+    if not prices:
+        return None
+    today = date.today()
+    if today not in prices:
+        return None
+    yesterday_price = prices.get(today - timedelta(days=1))
+    change = (prices[today] - yesterday_price) if yesterday_price is not None else None
+    return {"price_cents_per_litre": prices[today], "date": today, "change": change}

@@ -343,19 +343,36 @@ def _household_clause(now: datetime) -> tuple[int, str] | None:
     if payday["days_until"] == 1:
         return 3, "payday tomorrow"
     gas = fuel_price_client.eco_mode_status()
-    if gas and gas["eco_recommended"]:
-        global _gas_tracker
-        today_str = now.date().isoformat()
-        if _gas_tracker["date"] != today_str:
-            is_new = gas["price"] != _gas_tracker["last_shown_price"]
-            _gas_tracker = {
-                "date": today_str,
-                "last_shown_price": gas["price"] if is_new else _gas_tracker["last_shown_price"],
-                "show_today": is_new,
-            }
-            persisted_state.save("morning_brief_gas_tracker", _gas_tracker)
-        if _gas_tracker["show_today"]:
-            return 2, f"gas price {gas['price']:.1f}¢/L (above average, eco driving recommended)"
+    if gas:
+        # Session request: "add another condition for it reaching the
+        # AI — if it goes up a lot in one day or down a lot, probably
+        # ten cents." A swing this size is worth surfacing on its own,
+        # independent of eco_recommended — a real 10c overnight jump
+        # can happen while today's price is still below the 10-year
+        # median (eco_recommended False), and a real 10c drop is
+        # equally worth knowing about even while still above it.
+        change = gas.get("change")
+        big_swing = change is not None and abs(change) >= fuel_price_client.GAS_SWING_ALERT_CENTS
+        if gas["eco_recommended"] or big_swing:
+            global _gas_tracker
+            today_str = now.date().isoformat()
+            if _gas_tracker["date"] != today_str:
+                is_new = gas["price"] != _gas_tracker["last_shown_price"]
+                _gas_tracker = {
+                    "date": today_str,
+                    "last_shown_price": gas["price"] if is_new else _gas_tracker["last_shown_price"],
+                    "show_today": is_new,
+                }
+                persisted_state.save("morning_brief_gas_tracker", _gas_tracker)
+            if _gas_tracker["show_today"]:
+                # Swing takes the wording, not just the gate: "above
+                # average, eco driving recommended" would be a real
+                # false claim on a day a big swing fires this branch
+                # without eco_recommended actually being true.
+                if big_swing:
+                    direction = "jumped" if change > 0 else "dropped"
+                    return 2, f"gas price {direction} {abs(change):.1f}¢ to {gas['price']:.1f}¢/L overnight"
+                return 2, f"gas price {gas['price']:.1f}¢/L (above average, eco driving recommended)"
     return None
 
 

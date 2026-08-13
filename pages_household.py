@@ -45,11 +45,35 @@ def _render_fuel_price(now: datetime) -> None:
     update_text = "updates today" if days_until_update <= 0 else f"next update in {days_until_update}d"
     history = [r["price_cents_per_litre"] for r in fuel_price_client.fetch_readings()[-SPARKLINE_WEEKS:]]
     sparkline = tiles.sparkline_svg(history, tone)
+    # Session request: "add a little arrow that shows how much higher or
+    # lower it is from the day prior" — same bold-triangle pattern
+    # pages_internals.py's Fear & Greed tile already uses, but colored
+    # on this tile's own already-established meaning (badge-bad/-good
+    # above: pricier is bad, cheaper is good), not the directional
+    # green-for-up convention that tile uses for a score. Omitted
+    # entirely when there's no real prior-day reading to compare
+    # against (see daily_gas_price.today_price's own "change" field),
+    # same as that tile omits its own arrow when the week-ago reading
+    # isn't available.
+    change = status.get("change")
+    if change is not None:
+        if change > 0:
+            change_arrow, change_color = "▲", "#FF6961"
+        elif change < 0:
+            change_arrow, change_color = "▼", "#32D74B"
+        else:
+            change_arrow, change_color = "●", "#ECECF1"
+        change_html = (
+            f'<span style="color:{change_color};font-size:0.85em;margin-left:0.35em;">'
+            f"{change_arrow} {abs(change):.1f}¢</span>"
+        )
+    else:
+        change_html = ""
     st.markdown(
         f"""<div class="tile compact">
             <div class="tile-label compact">NORTH BAY GAS</div>
             <div class="tile-value-row">
-                <div class="tile-value">{status['price']:.1f}¢/L</div>{sparkline}
+                <div class="tile-value">{status['price']:.1f}¢/L{change_html}</div>{sparkline}
             </div>
             <div class="tile-prev">vs {status['baseline']:.1f}¢ 10yr real median · as of {as_of} · {update_text}</div>
             <div class="badge {badge_class}">{badge_text}</div>
