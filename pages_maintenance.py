@@ -152,6 +152,23 @@ def _toast_health_rows() -> str:
     )
 
 
+def _govee_health_rows() -> str:
+    """Session report: "the smart plug didn't turn on automatically this
+    morning like it was supposed to." Same shape as _toast_health_rows
+    above, for the same reason — govee_client.py now records a control
+    failure (device offline, an expired key, a bad response from Govee
+    itself) instead of just returning False and vanishing, so the next
+    time this happens, this tile shows what actually broke instead of
+    it being a silent mystery again."""
+    err = persisted_state.load("govee_control_error", None)
+    if not err:
+        return _row("Last control failure", "None recorded", "good")
+    return (
+        _row(f"{err['device']} {err['capability']}", "Failed", "low", _relative_time(err["at"]))
+        + f'<div class="maint-row-meta">{err["error"]}</div>'
+    )
+
+
 def _system_rows() -> str:
     rows = [_row("Process uptime", meta=_format_duration(time.time() - _STARTED_AT))]
     try:
@@ -214,3 +231,5 @@ def render() -> None:
     row3 = st.columns(3)
     with row3[0]:
         st.markdown(_tile("Toast Alerts", _toast_health_rows()), unsafe_allow_html=True)
+    with row3[1]:
+        st.markdown(_tile("Govee", _govee_health_rows()), unsafe_allow_html=True)
