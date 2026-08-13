@@ -39,3 +39,25 @@ def next_payment_date(today: date) -> dict | None:
         return None
     candidate = upcoming[0]
     return {"date": candidate, "days_until": (candidate - today).days}
+
+
+# Session follow-up: "is there a way to automatically update the cpp/
+# oas schedule" — checked live: no real government API for this exists
+# (only statistical CSVs, not the payment-date schedule itself), and
+# the one real HTML calendar page (canada.ca/en/services/benefits/
+# calendar.html) returned a 403 on a real fetch attempt, meaning a
+# scraper here would be genuinely fragile. User's own call: manual
+# annual update instead of a scraper that could silently break. This
+# is the other half of that choice — a real signal on the Maintenance
+# page (pages_maintenance.py) so the once-a-year update doesn't get
+# silently forgotten once _KNOWN_DATES actually runs out, rather than
+# relying on someone noticing the hero badge quietly stopped appearing.
+COVERAGE_WARNING_DAYS = 60
+
+
+def coverage_status(today: date) -> dict:
+    """{"last_date", "days_remaining"} — days_remaining goes negative
+    once today is already past the last known date (next_payment_date
+    would already be returning None by then)."""
+    last_date = _KNOWN_DATES[-1]
+    return {"last_date": last_date, "days_remaining": (last_date - today).days}

@@ -23,9 +23,11 @@ here too, not just to the things it was first said about.
 import resource
 import sys
 import time
+from datetime import date
 
 import streamlit as st
 
+import cpp_payment_dates
 import data_health
 import gemini_client
 import groq_client
@@ -170,6 +172,26 @@ def _system_rows() -> str:
         rows.append(_row("AI outage", "Notified" if episode["notified"] else "In progress", "low", _relative_time(episode["since"])))
     else:
         rows.append(_row("AI outage", "None", "good"))
+    # Session follow-up: "is there a way to automatically update the
+    # cpp/oas schedule" — real answer was no (see cpp_payment_dates.py's
+    # own docstring: no usable government API, and a real fetch to the
+    # one HTML calendar page came back 403). User's own call was a
+    # manual annual update instead of a fragile scraper — this is the
+    # other half of that choice: a real, visible warning here once the
+    # hardcoded list is actually running low, so the update doesn't
+    # depend on someone noticing the hero badge quietly stopped
+    # appearing on its own.
+    coverage = cpp_payment_dates.coverage_status(date.today())
+    if coverage["days_remaining"] < cpp_payment_dates.COVERAGE_WARNING_DAYS:
+        rows.append(_row(
+            "CPP/OAS schedule", "Needs update", "low",
+            f'covers through {coverage["last_date"].strftime("%b %Y")}',
+        ))
+    else:
+        rows.append(_row(
+            "CPP/OAS schedule", "Current", "good",
+            f'covers through {coverage["last_date"].strftime("%b %Y")}',
+        ))
     return "".join(rows)
 
 
