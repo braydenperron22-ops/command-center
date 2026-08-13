@@ -229,21 +229,35 @@ _DESCRIPTION_FACT_CHARS = 150
 
 # Session request: "for the morning brief and work hours just add 8
 # hours to my start time so the ai actually knows when i start and
-# when i finish without needing to document everything." Calendar
-# events for a real shift (show_end_time == False) carry a genuinely
-# fake end time — bulk-imported with a placeholder 1-hour duration on
-# every entry, not the real shift length (see calendar_client.py's own
-# comment, and this session's own memory on the same gap) — so this
-# was never something to just read off the event; it was never even
-# computed at all before this. A flat 8-hour shift is the real,
-# reliable assumption here, not a guess: TD's actual standard shift
-# length, so this only ever needs a start time, exactly as asked. Only
-# applies to real shift events (the same show_end_time signal commute_
-# reminder._todays_shift_events already uses to identify one) — an
-# ordinary calendar event's own end time isn't known to be unreliable
-# the same way, so it's left alone rather than overwritten with a
-# guess it doesn't need.
+# when i finish without needing to document everything... does that
+# for both work and ceac-sales events." The shift calendar's own end
+# time carries a genuinely fake value (bulk-imported with a placeholder
+# 1-hour duration on every entry, not the real shift length — see
+# calendar_client.py's own comment, and this session's earlier memory
+# on the same gap), so this was never computed at all before. A flat
+# 8-hour shift is the real, reliable assumption here, not a guess: TD's
+# actual standard shift length.
+#
+# First attempt at this gated on show_end_time alone (the same signal
+# commute_reminder._todays_shift_events uses) — wrong, caught live
+# scanning the real calendar: that flag is set per CALENDAR SOURCE, not
+# per event, and the same source that carries "Work" also carries
+# purely personal entries (Golf, Gym, Hockey, Brunch with Chloe, a
+# haircut) that would have gotten an invented "+8 hours" end time too.
+# CEAC-Sales doesn't need its own separate check: calendar_client.
+# _normalize_summary already collapses anything containing "customer
+# experience associate" or "sales" down to the literal summary "Work"
+# (see _WORK_KEYWORDS there) before this function ever sees it, so
+# "CEAC" and plain "Work" are already indistinguishable by the time
+# they get here — matching on "Work" covers both. "Working at 3110"
+# (a real, separately-titled shift on the same calendar, confirmed
+# live) doesn't get caught by that normalization since it contains
+# neither keyword, so it needs its own explicit check.
 SHIFT_LENGTH_HOURS = 8
+
+
+def _is_shift_summary(summary: str) -> bool:
+    return summary == "Work" or summary.lower().startswith("working")
 
 
 def _format_agenda_list(events: list[dict]) -> str:
@@ -251,7 +265,7 @@ def _format_agenda_list(events: list[dict]) -> str:
     parts = []
     for e in shown:
         start_text = e["start"].strftime("%I:%M %p").lstrip("0")
-        if not e.get("show_end_time", True):
+        if _is_shift_summary(e["summary"]):
             end = e["start"] + timedelta(hours=SHIFT_LENGTH_HOURS)
             part = f'{e["summary"]} at {start_text} – {end.strftime("%I:%M %p").lstrip("0")}'
         else:
