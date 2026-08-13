@@ -14,6 +14,7 @@ from datetime import date, timedelta
 import requests
 import streamlit as st
 
+import daily_gas_price
 import fetch_throttle
 import statcan_client
 
@@ -155,23 +156,32 @@ def eco_mode_status() -> dict | None:
     above the median real North Bay price over the last
     FLOOR_LOOKBACK_YEARS (see _real_price_floor) — a fixed, inflation-
     adjusted reference rather than a trailing-weeks average that just
-    tracks whatever prices happened to do recently. `next_update` is
-    the latest reading's own date plus 7 days — derived from the actual
-    weekly cadence observed in the data rather than assumed to always
-    land on a specific weekday, so it self-corrects if the survey's
-    publish day ever shifts. None if there isn't enough price history
-    or CPI data to judge a real floor from."""
+    tracks whatever prices happened to do recently. The floor itself
+    always comes from this module's own weekly CSV history — that's the
+    only source with the 10-year depth _real_price_floor needs — but the
+    *current* price prefers daily_gas_price's real day-to-day reading
+    over the CSV's own latest (up to a week stale) row when it's
+    reachable, session request: "I want it to actually update day after
+    day." `next_update` follows whichever price won: a day out for the
+    daily source, or the CSV's own weekly cadence (latest reading's date
+    plus 7 days) when falling back to it. None if there isn't enough
+    price history or CPI data to judge a real floor from."""
     readings = fetch_readings()
     if not readings:
         return None
-    latest = readings[-1]
     floor = _real_price_floor(readings)
     if floor is None:
         return None
+    daily = daily_gas_price.today_price()
+    if daily is not None:
+        price, as_of, next_update = daily["price_cents_per_litre"], daily["date"], daily["date"] + timedelta(days=1)
+    else:
+        latest = readings[-1]
+        price, as_of, next_update = latest["price_cents_per_litre"], latest["date"], latest["date"] + timedelta(days=7)
     return {
-        "price": latest["price_cents_per_litre"],
+        "price": price,
         "baseline": floor,
-        "eco_recommended": latest["price_cents_per_litre"] > floor,
-        "as_of": latest["date"],
-        "next_update": latest["date"] + timedelta(days=7),
+        "eco_recommended": price > floor,
+        "as_of": as_of,
+        "next_update": next_update,
     }

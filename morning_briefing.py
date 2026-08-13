@@ -308,18 +308,25 @@ def _agenda_clause(now: datetime) -> tuple[int, str] | None:
 # for this same event covers it now, same as any other ordinary shift.
 
 
-# {"date", "last_shown_price", "show_today"} — session feedback: "gas
-# updates weekly, so please only have the AI mention it when the price
-# of gas actually changes." eco_mode_status() itself recomputes fresh
-# every rerun and stays True the whole week a price stands (it's a
-# threshold check, not a change check), so a naive "differs from last
-# reported" comparison updated on every call would only show the fact
-# for a single ~5s rerun before immediately matching itself and
-# disappearing for the rest of the day — worthless in practice, nobody
-# would see it. The decision ("is today's price genuinely new") is
-# made ONCE per calendar day instead and cached in show_today, so it
-# stays consistent (shown or not) across every rerun that same day,
-# only re-evaluated once the date actually rolls over.
+# {"date", "last_shown_price", "show_today"} — session feedback: "please
+# only have the AI mention it when the price of gas actually changes."
+# eco_mode_status() itself recomputes fresh every rerun and stays True
+# the whole time a price stands above the real floor (it's a threshold
+# check, not a change check), so a naive "differs from last reported"
+# comparison updated on every call would only show the fact for a
+# single ~5s rerun before immediately matching itself and disappearing
+# for the rest of the day — worthless in practice, nobody would see it.
+# The decision ("is today's price genuinely new") is made ONCE per
+# calendar day instead and cached in show_today, so it stays consistent
+# (shown or not) across every rerun that same day, only re-evaluated
+# once the date actually rolls over. Originally written when
+# fuel_price_client's only price source was a weekly government CSV;
+# eco_mode_status() now prefers daily_gas_price's real day-to-day
+# reading when reachable (session request: "update day after day"), so
+# a genuine change can now legitimately show up daily instead of
+# roughly weekly — this same once-per-day gate still applies either
+# way, since it was never really about the source's cadence, only about
+# not repeating an unchanged fact.
 _gas_tracker: dict = persisted_state.load("morning_brief_gas_tracker", {"date": None, "last_shown_price": None, "show_today": False})
 
 
