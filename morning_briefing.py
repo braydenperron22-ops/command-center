@@ -62,6 +62,7 @@ import ec_alerts
 import fuel_price_client
 import gemini_client
 import groq_client
+import holidays_client
 import market_yf_client
 import ntfy_client
 import payday_schedule
@@ -898,6 +899,7 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         (_portfolio_clause, (now,)),
         (_game_today_clause, (now,)),
         (_daylight_clause, (now, weather)),
+        (holidays_client.holiday_clause, (now,)),
     ):
         try:
             result = fn(*args)

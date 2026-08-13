@@ -42,6 +42,7 @@ import payday_schedule
 import persisted_state
 import prediction_markets_client
 import sports_alerts
+import td_quarter_schedule
 import theme
 import toast_queue
 import ufc_client
@@ -1925,6 +1926,22 @@ if weather:
             f'<span class="weather-extra" style="color:#32D74B; '
             f'background:{_badge_bg("#32D74B", 0.22)}; border-color:#32D74B;">'
             f'Payday {payday_when}</span>'
+        )
+    # Session request: "let me know when we hit a new quarter which
+    # means my sales reset" — TD's own fiscal quarters (confirmed live:
+    # Nov/Feb/May/Aug, one calendar quarter ahead of the regular year),
+    # not the calendar ones. Same today/evening-tomorrow gating as the
+    # garbage/payday badges just above, for the same reason: this is
+    # rare enough (4x/year) that it's worth flagging the evening before
+    # too, not just the instant it happens. Violet — every other color
+    # already used nearby (brown/green/orange/blue) is claimed.
+    quarter = td_quarter_schedule.next_quarter_start(now.date())
+    if quarter["days_until"] == 0 or (quarter["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR):
+        quarter_when = "today" if quarter["days_until"] == 0 else "tomorrow"
+        extras.append(
+            f'<span class="weather-extra" style="color:#BF5AF2; '
+            f'background:{_badge_bg("#BF5AF2", 0.22)}; border-color:#BF5AF2;">'
+            f'New TD quarter {quarter_when}</span>'
         )
     extras_html = f'<div class="weather-extras">{"".join(extras)}</div>' if extras else ""
 
