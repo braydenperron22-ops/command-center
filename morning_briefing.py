@@ -71,6 +71,7 @@ import portfolio_client
 import road_conditions
 import sports_client
 import waste_schedule
+import weather_records_client
 import wildfire_client
 from config import AQI_SHOW_THRESHOLD, COMMUTE_DESTINATION, TIMEZONE, USER_FIRST_NAME, USER_PROFILE, WEATHER_LAT, WEATHER_LON
 
@@ -1238,6 +1239,65 @@ def _financial_trends_block() -> str:
     return " ".join(lines)
 
 
+# Session request: "it should also learn things about my environment...
+# is the weather warming up, or is the weather cooling off... what kind
+# of run is the market on... how does that impact my portfolio... are
+# gas prices running hot or slowing down." Same shape/reasoning as
+# _financial_trends_block above: real recent readings, unfiltered, not
+# a single day's snapshot and not a pre-computed verdict, so a genuine
+# multi-day trend (or its absence) is something the notes AI can
+# actually see instead of trying to infer one from scattered daily
+# bullets already buried in history_block — _weather_clause/_markets_
+# clause both already put a same-day snapshot in there, but neither is
+# framed as a trend to track in its own right, and _household_clause's
+# own gas fact is threshold-gated (only an eco-mode call or a >=10c
+# swing), so a slow gas drift that never crosses either bar would
+# otherwise be invisible here entirely — the exact gap
+# _financial_trends_block already exists to close for portfolio.
+_GAS_TREND_LOOKBACK_READINGS = 8  # ~2 months of the weekly government CSV
+_MARKET_TREND_LOOKBACK_DAYS = 10  # trading days of day-over-day change
+
+
+def _environment_trends_block() -> str:
+    lines = []
+
+    highs = weather_records_client.recent_daily_highs()
+    if highs:
+        highs_text = "; ".join(f"{h['date'][5:]}: {h['high_c']:.0f}°C" for h in highs)
+        lines.append(f"Real daily highs, most recent {len(highs)} days, oldest first: {highs_text}.")
+
+    try:
+        market_status = market_yf_client.market_status(datetime.now(ZoneInfo(TIMEZONE)))
+        quote = market_yf_client.quote_for(market_yf_client.primary_symbol(market_status))
+    except Exception:
+        quote = None
+    closes = (quote or {}).get("history") or []
+    # Day-over-day % change, not the raw closes themselves — a genuine
+    # up/down run (or the lack of one) reads directly off a run of
+    # signs, where raw price levels (spanning a full year of history)
+    # would bury it.
+    recent_closes = closes[-(_MARKET_TREND_LOOKBACK_DAYS + 1):]
+    if len(recent_closes) >= 2:
+        changes = [
+            f"{((recent_closes[i] - recent_closes[i - 1]) / recent_closes[i - 1] * 100):+.1f}%"
+            for i in range(1, len(recent_closes))
+        ]
+        lines.append(
+            f"S&P 500 day-over-day % change, most recent {len(changes)} trading days, oldest first: "
+            + ", ".join(changes) + "."
+        )
+
+    readings = fuel_price_client.fetch_readings()[-_GAS_TREND_LOOKBACK_READINGS:]
+    if readings:
+        gas_text = "; ".join(f"{r['date'].strftime('%b %d')}: {r['price_cents_per_litre']:.1f}¢" for r in readings)
+        lines.append(f"North Bay gas price, most recent {len(readings)} weekly readings, oldest first: {gas_text}.")
+    gas_now = fuel_price_client.eco_mode_status()
+    if gas_now:
+        lines.append(f"Today's actual gas price: {gas_now['price']:.1f}¢/L, as of {gas_now['as_of'].strftime('%b %d')}.")
+
+    return " ".join(lines)
+
+
 def _update_learned_notes(now: datetime, facts: list[str]) -> None:
     """Once per calendar day (own tracker — not reusing _brief_history's
     or _last_brief_date's, since this can legitimately still need
@@ -1323,6 +1383,21 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
     # commentary prompt already gets, not something guessed from the
     # bare fact list alone.
     holidays_section = f"Upcoming Canadian statutory holidays, for context: {holidays_client.upcoming_holidays_block(now)}\n\n"
+    # Session request: "it should also learn things about my
+    # environment... what kind of streak are we in... is the weather
+    # warming up or cooling off... what kind of run is the market on...
+    # how does that impact my portfolio... are gas prices running hot
+    # or slowing down." Same NOT-filtered reasoning as financial_section
+    # — real recent readings, not a single day's snapshot.
+    environment_block = _environment_trends_block()
+    environment_section = (
+        f"Environmental trend data, for noticing genuine multi-day streaks only (a real warming/"
+        f"cooling run, a market win/loss streak, gas prices actually rising or easing over time) — "
+        f"every figure below is exact and directly observed, never round, estimate, or invent one, "
+        f"here or in the note you write: {environment_block}\n\n"
+        if environment_block
+        else ""
+    )
     prompt = (
         "You keep a short, private, evolving note about Brayden for your own future reference only — "
         "never shown to him directly. Your job is genuine pattern-finding, not a daily log: actively "
@@ -1338,8 +1413,15 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
         "tentative observation beats both an over-confident guess and empty silence. Any weekday "
         "you name (Tuesday, Wednesday, whatever) has to match the weekday actually stamped on that "
         "date below — read it directly, never compute or guess it from the date number.\n\n"
+        "Track his environment as its own subject too, not just as something to correlate against his "
+        "schedule: is the weather on a genuine warming or cooling run lately, or just normal day-to-day "
+        "noise? Is the market on a real winning or losing streak, and does his own portfolio's recent "
+        "move actually track that broader market run or diverge from it? Are gas prices actually "
+        "rising, easing, or flat over the recent stretch below? Only worth naming when the real numbers "
+        "show a genuine multi-day direction, not from a single reading.\n\n"
         f"Your note so far: {_learned_notes or '(nothing recorded yet — this is early)'}\n\n"
         f"{financial_section}"
+        f"{environment_section}"
         f"{history_section}"
         f"{holidays_section}"
         f"Today's real facts: {'; '.join(facts)}\n\n"

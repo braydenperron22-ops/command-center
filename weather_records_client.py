@@ -29,7 +29,7 @@ rather than discovered by surprise, since the request size only grows
 with wall-clock time regardless.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 import requests
 import streamlit as st
@@ -127,3 +127,63 @@ def record_context(current_temp_c: float | None) -> dict | None:
             "record": records["record_low_c"], "year": records["record_low_year"],
         }
     return None
+
+
+# Session request: "it should also learn things about my environment...
+# is the weather warming up, or is the weather cooling off." The daily
+# brief's own weather fact (morning_briefing._weather_clause) only ever
+# carries TODAY's live reading — a genuine multi-day trend needs real
+# day-by-day history, from the same Open-Meteo archive endpoint
+# _fetch_records_raw above already proves reachable, just a short
+# recent window instead of the full 86-year span (a handful of days,
+# not tens of thousands — genuinely fast, nothing like that fetch's own
+# confirmed ~14s).
+RECENT_HIGHS_LOOKBACK_DAYS = 10
+
+_last_good_recent_highs: list[dict] | None = None
+
+
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
+def _fetch_recent_highs_raw(today: date) -> list[dict]:
+    # end_date is yesterday, not today — the archive only has FINALIZED
+    # days; today's own reading belongs to the live weather fetch
+    # instead (_weather_clause), not this historical source, so the two
+    # never double up on the same day.
+    end = today - timedelta(days=1)
+    start = end - timedelta(days=RECENT_HIGHS_LOOKBACK_DAYS - 1)
+    fetch_throttle.wait_turn()
+    resp = requests.get(
+        ARCHIVE_URL,
+        params={
+            "latitude": WEATHER_LAT, "longitude": WEATHER_LON,
+            "start_date": start.isoformat(), "end_date": end.isoformat(),
+            "daily": "temperature_2m_max",
+            "timezone": "America/Toronto",
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+    daily = resp.json().get("daily", {})
+    return [
+        {"date": t, "high_c": hi}
+        for t, hi in zip(daily.get("time", []), daily.get("temperature_2m_max", []))
+        if hi is not None
+    ]
+
+
+def recent_daily_highs() -> list[dict]:
+    """Last RECENT_HIGHS_LOOKBACK_DAYS real daily highs, oldest first —
+    {"date" (ISO string), "high_c"} — ending yesterday. For
+    morning_briefing._environment_trends_block's own genuine weather-
+    trend tracking, not this module's own record-badge use above. []
+    if the archive fetch fails with no prior good copy yet, same last-
+    good-copy convention as record_context."""
+    global _last_good_recent_highs
+    today = date.today()
+    try:
+        result = _fetch_recent_highs_raw(today)
+    except Exception:
+        result = None
+    if result:
+        _last_good_recent_highs = result
+    return result if result is not None else (_last_good_recent_highs or [])
