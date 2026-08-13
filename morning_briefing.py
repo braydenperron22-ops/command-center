@@ -227,11 +227,35 @@ AGENDA_LIST_CAP = 4
 _DESCRIPTION_FACT_CHARS = 150
 
 
+# Session request: "for the morning brief and work hours just add 8
+# hours to my start time so the ai actually knows when i start and
+# when i finish without needing to document everything." Calendar
+# events for a real shift (show_end_time == False) carry a genuinely
+# fake end time — bulk-imported with a placeholder 1-hour duration on
+# every entry, not the real shift length (see calendar_client.py's own
+# comment, and this session's own memory on the same gap) — so this
+# was never something to just read off the event; it was never even
+# computed at all before this. A flat 8-hour shift is the real,
+# reliable assumption here, not a guess: TD's actual standard shift
+# length, so this only ever needs a start time, exactly as asked. Only
+# applies to real shift events (the same show_end_time signal commute_
+# reminder._todays_shift_events already uses to identify one) — an
+# ordinary calendar event's own end time isn't known to be unreliable
+# the same way, so it's left alone rather than overwritten with a
+# guess it doesn't need.
+SHIFT_LENGTH_HOURS = 8
+
+
 def _format_agenda_list(events: list[dict]) -> str:
     shown = events[:AGENDA_LIST_CAP]
     parts = []
     for e in shown:
-        part = f'{e["summary"]} at {e["start"].strftime("%I:%M %p").lstrip("0")}'
+        start_text = e["start"].strftime("%I:%M %p").lstrip("0")
+        if not e.get("show_end_time", True):
+            end = e["start"] + timedelta(hours=SHIFT_LENGTH_HOURS)
+            part = f'{e["summary"]} at {start_text} – {end.strftime("%I:%M %p").lstrip("0")}'
+        else:
+            part = f'{e["summary"]} at {start_text}'
         if e.get("location"):
             part += f' @ {e["location"]}'
         if e.get("description"):
