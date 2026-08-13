@@ -16,6 +16,7 @@ from streamlit_autorefresh import st_autorefresh
 
 import air_quality_client
 import commute_reminder
+import cpp_payment_dates
 import data_health
 import govee_lighting
 import groq_client
@@ -1942,6 +1943,22 @@ if weather:
             f'<span class="weather-extra" style="color:#BF5AF2; '
             f'background:{_badge_bg("#BF5AF2", 0.22)}; border-color:#BF5AF2;">'
             f'New TD quarter {quarter_when}</span>'
+        )
+    # Session request: "flag pension days so i know when the branch
+    # will be a zoo" — CPP/OAS payment days, a real, well-known
+    # branch-traffic spike (see cpp_payment_dates.py's own docstring
+    # for why these are the real published Service Canada dates, not a
+    # computed rule). Same today/evening-tomorrow gating as every other
+    # badge here. Rose/red — reads as "brace yourself" rather than the
+    # neutral-good tone of payday's green, deliberately different even
+    # though both are "money moved" events.
+    cpp = cpp_payment_dates.next_payment_date(now.date())
+    if cpp and (cpp["days_until"] == 0 or (cpp["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR)):
+        cpp_when = "today" if cpp["days_until"] == 0 else "tomorrow"
+        extras.append(
+            f'<span class="weather-extra" style="color:#FF375F; '
+            f'background:{_badge_bg("#FF375F", 0.22)}; border-color:#FF375F;">'
+            f'CPP day {cpp_when}</span>'
         )
     extras_html = f'<div class="weather-extras">{"".join(extras)}</div>' if extras else ""
 
