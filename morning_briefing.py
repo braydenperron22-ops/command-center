@@ -822,6 +822,20 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         if _learned_notes
         else ""
     )
+    # Session follow-up: "feed all that info to the morning brief LLM"
+    # — holidays_client.holiday_clause (in render()'s own clause list)
+    # only ever reaches this prompt when it wins a spot in the top-3
+    # stats bar, which could silently starve the model of holiday
+    # awareness on a busy day. This is a separate, always-given feed —
+    # same "background context, not a stats-bar-gated fact" spirit as
+    # the weekday/USER_PROFILE context just below, which already
+    # reaches the model unconditionally regardless of what's visible
+    # in the bar.
+    holidays_section = (
+        f"Upcoming Canadian statutory holidays, for context (not something that needs its own "
+        f"mention unless it's actually relevant to something below — a long weekend genuinely "
+        f"worth a line, most days not): {holidays_client.upcoming_holidays_block(now)}\n\n"
+    )
     mode = _personality_mode(now)
     mode_instruction = _PERSONALITY_MODES[mode]
     prompt = (
@@ -850,12 +864,13 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         f"{USER_PROFILE}\n\n"
         f"{notes_section}"
         f"{history_section}"
+        f"{holidays_section}"
         f"Today is {weekday} — a real, given fact, not a guess. Only worth a mention if it actually "
         "connects to something below (a work shift landing on a weekend, say) — don't force it in.\n\n"
         "Never add or invent a fact beyond the weekday, the background, the long-term notes/recent-"
-        "days record above, and the raw data below. Always write numbers as actual digits, never "
-        "spelled out as words — '18 minutes' and '0.8%', not 'eighteen minutes' or 'zero point "
-        "eight percent'.\n\n"
+        "days record, the upcoming holidays above, and the raw data below. Always write numbers as "
+        "actual digits, never spelled out as words — '18 minutes' and '0.8%', not 'eighteen minutes' "
+        "or 'zero point eight percent'.\n\n"
         "All of today's raw data — this is the exact same set already shown above in the stats "
         "bar, nothing hidden and nothing extra, so anything you say connects to something the "
         "reader can already see. Some facts share real physical "
@@ -1239,6 +1254,13 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
         if history_block
         else ""
     )
+    # Session follow-up: "feed all that info to the morning brief LLM"
+    # — genuine pattern-finding across a holiday (does he tend to work
+    # extra around Christmas, take a specific stretch off around
+    # Thanksgiving) needs this same background awareness the daily
+    # commentary prompt already gets, not something guessed from the
+    # bare fact list alone.
+    holidays_section = f"Upcoming Canadian statutory holidays, for context: {holidays_client.upcoming_holidays_block(now)}\n\n"
     prompt = (
         "You keep a short, private, evolving note about Brayden for your own future reference only — "
         "never shown to him directly. Your job is genuine pattern-finding, not a daily log: actively "
@@ -1257,6 +1279,7 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
         f"Your note so far: {_learned_notes or '(nothing recorded yet — this is early)'}\n\n"
         f"{financial_section}"
         f"{history_section}"
+        f"{holidays_section}"
         f"Today's real facts: {'; '.join(facts)}\n\n"
         "Rewrite the note completely, from scratch, folding today into the same cross-referencing "
         "process (does today fit, break, or start a pattern against the record above?): keep or "

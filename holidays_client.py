@@ -44,3 +44,43 @@ def holiday_clause(now) -> tuple[int, str] | None:
             day_word = "day" if offset == 1 else "days"
             return 3, f"{_CA_ON_HOLIDAYS[d]} is in {offset} {day_word} ({d.strftime('%A')})"
     return None
+
+
+# Session follow-up: "feed all that info to the morning brief LLM" —
+# holiday_clause above only ever reaches the AI when it wins a spot in
+# render()'s top-3 stats bar (a real, correctly narrow window for what
+# actually gets a bullet on screen), which could silently starve the
+# model of holiday awareness entirely on a busy day. This is a
+# separate, wider feed specifically for _ai_sentence's own prompt
+# context — not gated by stats-bar priority at all, same spirit as the
+# weekday/USER_PROFILE context that's already unconditionally given
+# regardless of what's visible in the bar.
+UPCOMING_HOLIDAYS_COUNT = 4
+
+
+def upcoming_holidays_block(now) -> str:
+    """Next UPCOMING_HOLIDAYS_COUNT statutory holidays on/after today,
+    oldest first, as a compact "Name: Weekday, Month Day" list — "" is
+    never actually returned (Canada always has more holidays coming),
+    but kept Optional-shaped for consistency with this file's other
+    block-builder."""
+    today = now.date()
+    found = []
+    d = today
+    # Bounded scan, not an unbounded while-True — 800 days comfortably
+    # covers UPCOMING_HOLIDAYS_COUNT even across the sparsest real gap
+    # in the Canadian calendar (Boxing Day to New Year's Day aside, the
+    # actual widest gap is Thanksgiving to Christmas, ~2.5 months), so
+    # this always terminates even if the count were ever raised well
+    # past what a single year could satisfy.
+    for _ in range(800):
+        if d in _CA_ON_HOLIDAYS:
+            # d.day as a plain int, not %d/%-d — the same "avoid a non-
+            # portable strftime flag" convention pages_household.py's
+            # own as_of formatting already uses, rather than %-d (a
+            # GNU/BSD-only extension Windows strftime doesn't support).
+            found.append(f"{_CA_ON_HOLIDAYS[d]}: {d.strftime('%A, %B')} {d.day}")
+            if len(found) >= UPCOMING_HOLIDAYS_COUNT:
+                break
+        d += timedelta(days=1)
+    return "; ".join(found)
