@@ -899,6 +899,29 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         f"mention unless it's actually relevant to something below — a long weekend genuinely "
         f"worth a line, most days not): {holidays_client.upcoming_holidays_block(now)}\n\n"
     )
+    # Session request: "show off some of these new patterns in the
+    # morning brief a little bit... if it's appropriate, it should be
+    # shown... the gas price is dropping off within the last ten days
+    # by a little bit, I know it's not within our ten cent pattern."
+    # _environment_trends_block was built for _update_learned_notes'
+    # own private note (see that function's own docstring) — same real
+    # data, now also offered here as optional background, same "worth
+    # a line, most days not, never forced" spirit as holidays_section
+    # just above. Deliberately NOT gated by GAS_SWING_ALERT_CENTS (the
+    # stats-bar gas fact's own hard threshold, see _household_clause) —
+    # that threshold decides whether gas earns its OWN bulleted stat; a
+    # gentler real trend (a few cents drifting over a week, say) can
+    # still be worth the one synthesized line here even when it never
+    # clears that bar, as long as it's a genuine direction in the real
+    # numbers below, not invented.
+    environment_block = _environment_trends_block()
+    environment_section = (
+        f"Recent environmental trend data, for context (not something that needs its own mention "
+        f"unless a real multi-day direction is actually worth the one line — most days not): "
+        f"{environment_block}\n\n"
+        if environment_block
+        else ""
+    )
     mode = _personality_mode(now)
     mode_instruction = _PERSONALITY_MODES[mode]
     prompt = (
@@ -928,12 +951,13 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         f"{notes_section}"
         f"{history_section}"
         f"{holidays_section}"
+        f"{environment_section}"
         f"Today is {weekday} — a real, given fact, not a guess. Only worth a mention if it actually "
         "connects to something below (a work shift landing on a weekend, say) — don't force it in.\n\n"
         "Never add or invent a fact beyond the weekday, the background, the long-term notes/recent-"
-        "days record, the upcoming holidays above, and the raw data below. Always write numbers as "
-        "actual digits, never spelled out as words — '18 minutes' and '0.8%', not 'eighteen minutes' "
-        "or 'zero point eight percent'.\n\n"
+        "days record, the upcoming holidays, the environmental trend data above, and the raw data "
+        "below. Always write numbers as actual digits, never spelled out as words — '18 minutes' "
+        "and '0.8%', not 'eighteen minutes' or 'zero point eight percent'.\n\n"
         "All of today's raw data — this is the exact same set already shown above in the stats "
         "bar, nothing hidden and nothing extra, so anything you say connects to something the "
         "reader can already see. Some facts share real physical "
