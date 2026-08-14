@@ -24,12 +24,15 @@ import data_health
 
 # Wealthsimple's own account names, simplified for the kiosk — session
 # request. PERSONAL specifically renamed to what it's actually used
-# for. Only these four are ever shown by name (account breakdown rows
-# + activity feed) — MSB is a cash/spending sub-account, not an
-# investment one, and TOTAL VALUE's own total still includes it (that
-# number is real net worth, not just "these 4 accounts"), it's just not
-# one of the four tracked/renamed accounts, per explicit session
-# request to only show the top 4.
+# for. Only these four ever get their own balance row in fetch_
+# portfolio's account breakdown, per explicit session request to only
+# show the top 4 there — MSB (a cash/spending sub-account, not an
+# investment one) stays out of that specific breakdown, though TOTAL
+# VALUE's own total still includes it (that number is real net worth,
+# not just "these 4 accounts"). The activity feed is a separate list
+# with its own separate account-name map (see _ACTIVITY_DISPLAY_NAMES
+# below) — MSB does earn a spot there, since day-to-day banking
+# activity is exactly the kind of thing an activity feed is for.
 ACCOUNT_DISPLAY_NAMES = {
     "Wealthsimple Trade FHSA": "FHSA",
     "Wealthsimple Trade TFSA": "TFSA",
@@ -343,6 +346,21 @@ _last_good_period_changes: dict[int, dict] | None = None
 _ACTIVITY_TYPES = {"CONTRIBUTION", "WITHDRAWAL", "BUY", "SELL", "DIVIDEND", "INTEREST"}
 _ACTIVITY_LIMIT_PER_ACCOUNT = 20
 
+# Session request: "if SnapTrade gives you access to my day to day
+# banking, make sure that... you put that in the transaction log."
+# Checked live: MSB's own activity data is real — WITHDRAWAL/
+# CONTRIBUTION/INTEREST, real amounts and dates — but SnapTrade never
+# hands back a merchant/payee name for it (the API's own "description"
+# field is literally just "Withdrawal of $17.00," nothing more
+# specific), so this can show THAT money moved and how much, never WHO
+# it went to or came from — no "Rogers" in here, just the number.
+# Deliberately its own dict, not an addition to ACCOUNT_DISPLAY_NAMES —
+# that one also drives fetch_portfolio's own 4-tile balance breakdown
+# (session request: "only show the top 4 accounts"), which this isn't
+# touching; MSB earns a spot in the activity feed specifically, not a
+# 5th balance tile nobody asked for.
+_ACTIVITY_DISPLAY_NAMES = {**ACCOUNT_DISPLAY_NAMES, "Wealthsimple Trade MSB": "Daily Banking"}
+
 _last_good_activities: list[dict] | None = None
 
 
@@ -357,10 +375,10 @@ def _fetch_activities_raw() -> list[dict] | None:
     accounts = client.account_information.list_user_accounts(user_id=user_id, user_secret=user_secret).body
     activities = []
     for acct in accounts:
-        # Same four tracked accounts as fetch_portfolio's own breakdown
-        # (see ACCOUNT_DISPLAY_NAMES) — MSB's own activity is real but
-        # isn't one of "my top 4 accounts," per explicit session request.
-        display_name = ACCOUNT_DISPLAY_NAMES.get(acct.get("name"))
+        # The four tracked investment accounts plus MSB/"Daily Banking"
+        # (see _ACTIVITY_DISPLAY_NAMES above) — everything else (a
+        # closed shell sub-account, CRYPTO, CORPORATE) stays excluded.
+        display_name = _ACTIVITY_DISPLAY_NAMES.get(acct.get("name"))
         if display_name is None:
             continue
         try:
