@@ -1254,8 +1254,17 @@ def _financial_trends_block() -> str:
             lines.append(f"{label} change: {change['pct']:+.1f}% (${change['amount']:+,.0f}).")
     activities = portfolio_client.fetch_activities(limit=_FINANCIAL_TRENDS_ACTIVITY_LIMIT) or []
     if activities:
+        # Session request: "any withdrawals from that account that are
+        # not being deposited into an investment account is me
+        # spending" — "Transfer" here instead of the raw Withdrawal/
+        # Contribution label (see portfolio_client._mark_internal_
+        # transfers) is what actually lets the AI tell real spending/
+        # income apart from Brayden's own money moving between his own
+        # tracked accounts (Spending/Bills/Gas/investment); without it,
+        # a transfer reads as one fake spend plus one fake deposit.
         recent = [
-            f"{a['type'].capitalize()}{' ' + a['symbol'] if a.get('symbol') else ''} "
+            f"{'Transfer' if a.get('is_transfer') else a['type'].capitalize()}"
+            f"{' ' + a['symbol'] if a.get('symbol') else ''} "
             f"${abs(a['amount']):,.0f} ({a['account']}, {a['date'][:10]})"
             for a in activities
         ]
@@ -1387,8 +1396,14 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
         f"pace of withdrawals, net worth actually trending down or up over real time) — this is NOT "
         f"filtered the way the daily brief's own portfolio fact is, so routine day-to-day activity is "
         f"included on purpose; do not treat any single entry here as noteworthy on its own, only a "
-        f"real pattern across several. Every figure below is exact and directly observed — never "
-        f"round, estimate, or invent a financial number, here or in the note you write: {financial_block}\n\n"
+        f"real pattern across several. Account names below tell you what kind of money it is: "
+        f"\"Spending\" is his real day-to-day discretionary spending account, \"Bills\" is recurring "
+        f"obligations, \"Gas\" is fuel purchases specifically — a real WITHDRAWAL from any of those "
+        f"three genuinely left his pocket. \"Transfer\" entries are the opposite — confirmed money "
+        f"moving between his own tracked accounts (Spending/Bills/Gas/an investment account), not "
+        f"real spending or income, so never count a Transfer toward a spending pattern. Every figure "
+        f"below is exact and directly observed — never round, estimate, or invent a financial "
+        f"number, here or in the note you write: {financial_block}\n\n"
         if financial_block
         else ""
     )

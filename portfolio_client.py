@@ -361,7 +361,68 @@ _ACTIVITY_LIMIT_PER_ACCOUNT = 20
 # 5th balance tile nobody asked for.
 _ACTIVITY_DISPLAY_NAMES = {**ACCOUNT_DISPLAY_NAMES, "Wealthsimple Trade MSB": "Daily Banking"}
 
+# Follow-up session request: "identify what accounts these are... mark
+# them appropriately so the AI knows what's being spent." All three
+# real MSB accounts share the exact same SnapTrade account NAME
+# ("Wealthsimple Trade MSB"), so the plain name-keyed dict above can't
+# tell them apart — this keys off the actual account ID instead, which
+# doesn't change even as each account's own balance moves day to day.
+# User-supplied ground truth, matched live against each account's
+# CURRENT real balance at the time this was set up: $209.85 =
+# spending, $100.97 = bills, $137.43 = gas. Takes priority over the
+# generic "Daily Banking" label above for these three specific
+# accounts; any OTHER/future MSB account not in this map still falls
+# back to that generic label rather than being silently dropped.
+_MSB_ACCOUNT_LABELS = {
+    "8f0ff7ea-d972-4719-b900-f7b452ba9984": "Spending",
+    "97ae16f7-c4a4-4acc-9ef6-6eaf4deb1ceb": "Bills",
+    "e8611574-696b-44c3-94c4-4bf85f21b078": "Gas",
+}
+
 _last_good_activities: list[dict] | None = None
+
+
+def _mark_internal_transfers(activities: list[dict]) -> None:
+    """Mutates `activities` in place, setting is_transfer=True on any
+    WITHDRAWAL/CONTRIBUTION pair that's really money moving between two
+    of Brayden's own tracked accounts, not genuine spending or income.
+    Session request: "any withdrawals from that account that are not
+    being deposited into an investment account is me spending" — the
+    real risk this guards against: a transfer from Spending into, say,
+    the Gas account would otherwise look exactly like a real $130
+    spend followed by $130 of unexplained income, double-counting one
+    real dollar as two fake events.
+
+    Matched on an EXACT trade_date timestamp (down to the millisecond,
+    as SnapTrade returns it) plus an exactly equal |amount|, between
+    two DIFFERENT accounts — confirmed live against real data that a
+    genuine internal transfer's two ledger legs share the identical
+    instant, not just the same day (e.g. a real $129.52 Spending
+    withdrawal and a $129.52 Gas contribution both stamped
+    2026-08-13T10:35:32.765000Z, to the microsecond). A same-day-only
+    match would be looser than what the real data actually supports
+    and risks a false match between two genuinely unrelated same-day
+    transactions; this doesn't take that risk.
+
+    One-to-one pairing (each contribution can satisfy at most one
+    withdrawal) via a plain used-set, not a many-to-many match — three
+    unrelated transactions that happen to share both a timestamp and
+    an amount would be exceptionally unlikely in practice, and even
+    then this just pairs the first two, leaving the third correctly
+    unmatched rather than over-matching."""
+    contributions = [a for a in activities if a["type"] == "CONTRIBUTION"]
+    used_ids = set()
+    for w in activities:
+        if w["type"] != "WITHDRAWAL":
+            continue
+        for c in contributions:
+            if id(c) in used_ids or c["account"] == w["account"]:
+                continue
+            if c["date"] == w["date"] and abs(c["amount"]) == abs(w["amount"]):
+                used_ids.add(id(c))
+                w["is_transfer"] = True
+                c["is_transfer"] = True
+                break
 
 
 @st.cache_data(ttl=15 * 60, show_spinner=False)
@@ -375,10 +436,15 @@ def _fetch_activities_raw() -> list[dict] | None:
     accounts = client.account_information.list_user_accounts(user_id=user_id, user_secret=user_secret).body
     activities = []
     for acct in accounts:
-        # The four tracked investment accounts plus MSB/"Daily Banking"
-        # (see _ACTIVITY_DISPLAY_NAMES above) — everything else (a
-        # closed shell sub-account, CRYPTO, CORPORATE) stays excluded.
-        display_name = _ACTIVITY_DISPLAY_NAMES.get(acct.get("name"))
+        # The four tracked investment accounts plus MSB — labeled by
+        # its own specific purpose when known (_MSB_ACCOUNT_LABELS),
+        # generic "Daily Banking" otherwise (_ACTIVITY_DISPLAY_NAMES).
+        # Everything else (a closed shell sub-account, CRYPTO,
+        # CORPORATE) stays excluded.
+        if acct.get("name") == "Wealthsimple Trade MSB":
+            display_name = _MSB_ACCOUNT_LABELS.get(acct.get("id"), "Daily Banking")
+        else:
+            display_name = _ACTIVITY_DISPLAY_NAMES.get(acct.get("name"))
         if display_name is None:
             continue
         try:
@@ -410,15 +476,22 @@ def _fetch_activities_raw() -> list[dict] | None:
                     "symbol": symbol,
                     "amount": amount,
                     "date": trade_date,
+                    "is_transfer": False,
                 }
             )
+    _mark_internal_transfers(activities)
     return activities
 
 
 def fetch_activities(limit: int = 8) -> list[dict] | None:
     """Most recent human-meaningful activity across every account,
     newest first — falls back to the last successful fetch the same
-    way fetch_portfolio/fetch_changes do."""
+    way fetch_portfolio/fetch_changes do. Each entry's "is_transfer"
+    (see _mark_internal_transfers) tells a real external spend/income
+    apart from money just moving between Brayden's own tracked
+    accounts — callers that care about genuine spending specifically
+    (vs. a raw activity log) should check it rather than treating
+    every WITHDRAWAL as money actually leaving."""
     global _last_good_activities
     try:
         activities = _fetch_activities_raw()

@@ -42,6 +42,16 @@ _ACTIVITY_TAGS = {
     "BUY": ("BUY", "#5AC8FA"),
     "SELL": ("SELL", "#64D2FF"),
 }
+# Session request: "any withdrawals from that account that are not
+# being deposited into an investment account is me spending" — a
+# WITHDRAWAL/CONTRIBUTION pair that portfolio_client.py has confirmed
+# is really Brayden moving money between his own tracked accounts (see
+# its own _mark_internal_transfers) would otherwise show up here as
+# "WITHDRAWAL" or "INVESTED" — reading exactly like real spending or
+# income when it's neither. Its own neutral tag/color instead, distinct
+# from both, so the log itself is honest about which entries are real
+# money leaving/arriving versus his own money just changing pockets.
+_TRANSFER_TAG = ("TRANSFER", "#ABB2C4")
 
 
 def _period_metric(label: str, pct: float | None) -> str:
@@ -62,14 +72,19 @@ def _activity_row(activity: dict, today_local) -> str:
     activity_date = datetime.fromisoformat(activity["date"].replace("Z", "+00:00"))
     activity_date_local = activity_date.astimezone(ZoneInfo(TIMEZONE))
     date_label = f"{activity_date_local.strftime('%b')} {activity_date_local.day}"
-    # Already a short display name (FHSA/TFSA/RRSP/EMERGENCY FUND — see
-    # portfolio_client.ACCOUNT_DISPLAY_NAMES), nothing left to trim here.
+    # Already a short display name (FHSA/TFSA/RRSP/EMERGENCY FUND, or
+    # Spending/Bills/Gas for the tracked MSB accounts — see
+    # portfolio_client.ACCOUNT_DISPLAY_NAMES/_MSB_ACCOUNT_LABELS),
+    # nothing left to trim here.
     account = html.escape(activity["account"])
     amount = activity["amount"]
     direction_class = "market-up" if amount >= 0 else "market-down"
     sign = "+" if amount >= 0 else "-"
 
-    tag_label, tag_color = _ACTIVITY_TAGS.get(activity["type"], (activity["type"], "#ABB2C4"))
+    if activity.get("is_transfer"):
+        tag_label, tag_color = _TRANSFER_TAG
+    else:
+        tag_label, tag_color = _ACTIVITY_TAGS.get(activity["type"], (activity["type"], "#ABB2C4"))
     tag_html = f'<span class="activity-tag" style="color:{tag_color}; border-color:{tag_color};">{tag_label}</span>'
     # Session request: a pulsing red dot on anything dated today — the
     # automated-investing accounts do their own thing all day with no
