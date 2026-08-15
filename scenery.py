@@ -211,12 +211,30 @@ def _particles(category: str, code: int) -> str:
         # lighter drizzle under thunder.
         intensity = 1.0 if category == "storm" else _rain_intensity(code)
         count = round(16 + 20 * intensity)
-        return "".join(
+        # Session request: "I want rain to be animated... super premium
+        # and authentic." Two depth layers, same "small, subtle,
+        # tileable" shape already proven stable, not a new mechanism —
+        # cc-drop-far is smaller/dimmer/slower and blurred, reading as
+        # farther back, the same near/far depth cue real rain actually
+        # has. Both now fall at a consistent wind angle (rotated in
+        # their own CSS, not just drifting diagonally) rather than
+        # falling perfectly straight — real rain is almost never
+        # perfectly vertical, and a fixed lean reads as wind-blown
+        # rather than a rendering quirk the way a random one would.
+        near = "".join(
             f'<div class="cc-drop" style="left:{(i * 13) % 100}%;'
             f'animation-duration:{(1.0 - 0.5 * intensity) + (i % 5) * 0.12:.2f}s;'
             f'animation-delay:-{(i % 10) * 0.1}s;"></div>'
             for i in range(count)
         )
+        far_count = round(count * 0.7)
+        far = "".join(
+            f'<div class="cc-drop-far" style="left:{(i * 19 + 7) % 100}%;'
+            f'animation-duration:{(1.6 - 0.5 * intensity) + (i % 5) * 0.16:.2f}s;'
+            f'animation-delay:-{(i % 10) * 0.15}s;"></div>'
+            for i in range(far_count)
+        )
+        return far + near  # far layer painted first, near layer drawn on top
     if category == "snow":
         intensity = _snow_intensity(code)
         count = round(14 + 18 * intensity)
@@ -482,12 +500,33 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
         position: absolute; width: 2px; height: 2px; border-radius: 50%;
         background: white;
     }}
+    /* Rain: a fixed wind-lean (rotate), held constant throughout the
+       fall animation's own diagonal drift rather than just a straight
+       vertical drop — see _particles' own comment on why this reads as
+       wind rather than a rendering quirk. The rotation lives INSIDE
+       cc-fall's own keyframes (an element's animation fully owns its
+       transform property while running, so a separate static rotate:
+       here would just be silently overridden the instant the infinite
+       animation starts) rather than as each class's own base style.
+       cc-drop is the near layer (crisper, faster); cc-drop-far is the
+       same shape smaller/dimmer/blurred/slower for real depth, same
+       proven "small tileable element" technique as everything else
+       here, just a second copy of it. */
     .cc-drop {{
-        position: absolute; top: -5%; width: 1.5px; height: 16px;
-        background: rgba(180, 205, 230, 0.45);
+        position: absolute; top: -5%; width: 1.5px; height: 18px;
+        background: rgba(190, 213, 235, 0.5);
         animation: cc-fall linear infinite;
     }}
-    @keyframes cc-fall {{ from {{ transform: translateY(0); }} to {{ transform: translateY(110vh); }} }}
+    .cc-drop-far {{
+        position: absolute; top: -5%; width: 1px; height: 13px;
+        background: rgba(190, 213, 235, 0.28);
+        filter: blur(0.5px);
+        animation: cc-fall linear infinite;
+    }}
+    @keyframes cc-fall {{
+        from {{ transform: rotate(10deg) translate(0, 0); }}
+        to {{ transform: rotate(10deg) translate(28px, 115vh); }}
+    }}
     .cc-flake {{
         position: absolute; top: -5%; width: 4px; height: 4px; border-radius: 50%;
         background: rgba(255,255,255,0.75);
