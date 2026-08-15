@@ -4442,20 +4442,31 @@ html, body, [class*="css"] {
     margin: 14px 0 4px;
 }
 .jumbo-otc-league:first-child { margin-top: 0; }
+/* Session request: "make the scores a little bigger so you can see
+   them from a glance," alongside the pagination fix above (pages_
+   jumbotron._between_play_overlay_html) that caps this to one
+   league's page at a time (_AROUND_PAGE_SIZE rows) instead of every
+   league's every game at once. overflow-y:auto removed — it's what
+   was silently hiding games past whatever fit on a kiosk nobody can
+   scroll; real pagination replaces it, so there's nothing left to
+   overflow. Two columns instead of three, now that a page is capped
+   to 6 rows instead of unbounded — real width per card to actually
+   grow the score digits into (24->30px abbr, 34->46px score, 36->44px
+   logos), not just bigger numbers squeezed into the same cramped
+   column. */
 .jumbo-otc-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px 26px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 32px;
     width: 100%;
     min-height: 0;
-    overflow-y: auto;
 }
-.jumbo-otc-grid .jumbo-mini { padding: 10px 16px; border-radius: 8px; }
-.jumbo-otc-grid .jumbo-mini-abbr { font-size: 24px; }
-.jumbo-otc-grid .jumbo-mini-score { font-size: 34px; }
-.jumbo-otc-grid .jumbo-mini-team img { width: 36px; height: 36px; }
-.jumbo-otc-grid .jumbo-mini-status { font-size: 15px; }
-.jumbo-otc-grid .jumbo-mini-leader { font-size: 14px; }
+.jumbo-otc-grid .jumbo-mini { padding: 14px 20px; border-radius: 8px; }
+.jumbo-otc-grid .jumbo-mini-abbr { font-size: 30px; }
+.jumbo-otc-grid .jumbo-mini-score { font-size: 46px; }
+.jumbo-otc-grid .jumbo-mini-team img { width: 44px; height: 44px; }
+.jumbo-otc-grid .jumbo-mini-status { font-size: 17px; }
+.jumbo-otc-grid .jumbo-mini-leader { font-size: 15px; }
 
 /* Full-screen play-result announcement — session request: "add an
    animation that takes up the screen after every play. Single,

@@ -1086,6 +1086,36 @@ def _overlay_delay_elapsed(game_id: int, marker: str, now_ts: float) -> bool:
     return now_ts - tracked["started_at"] >= OVERLAY_DELAY_SECONDS
 
 
+def _around_leagues_pages(now_ts: float) -> list[tuple[str, int, int, list[dict]]]:
+    """Every game for every active league (_AROUND_LEAGUES), split into
+    fixed-size pages (_AROUND_PAGE_SIZE) as (league_key, page_index,
+    page_total, chunk) tuples — nothing capped or dropped, just paged.
+    One page is meant to be shown at a time, picked by index
+    (int(now_ts // _AROUND_ROTATE_SECONDS) % len(pages)) at each of
+    this list's two call sites: _around_html's own sidebar rail, and
+    _between_play_overlay_html's full-screen version. Shared here so
+    both build the identical page set from the identical data on the
+    identical clock, rather than risking two independent copies of
+    this same pagination logic quietly drifting apart."""
+    pages: list[tuple[str, int, int, list[dict]]] = []
+    order = {"in": 0, "pre": 1, "post": 2}
+    for key in _AROUND_LEAGUES:
+        try:
+            games = scores_client.fetch_games(key)
+        except Exception:
+            continue
+        if not games:
+            continue
+        # Live first, then upcoming, then finals — the same ordering
+        # priority the board itself uses.
+        games = sorted(games, key=lambda g: order.get(g["state"], 3))
+        chunks = [games[i : i + _AROUND_PAGE_SIZE] for i in range(0, len(games), _AROUND_PAGE_SIZE)]
+        total = len(chunks)
+        for i, chunk in enumerate(chunks):
+            pages.append((key, i, total, chunk))
+    return pages
+
+
 def _between_play_overlay_html(state: dict, now: datetime) -> str:
     """Full-screen "out of town scoreboard" during a natural break in
     the featured game — session request: "between innings / periods
@@ -1163,25 +1193,48 @@ def _between_play_overlay_html(state: dict, now: datetime) -> str:
     else:
         return ""
 
-    rows = []
-    for key in _AROUND_LEAGUES:
-        try:
-            games = scores_client.fetch_games(key)
-        except Exception:
-            continue
-        if not games:
-            continue
-        rows.append(f'<div class="jumbo-otc-league">{html.escape(key.upper())}</div>')
-        rows.extend(_mini_row_html(g) for g in games)
-    if not rows:
+    # Session request: "don't be afraid to make them switch pages
+    # because right now you have MLB and NHL or NFL on one [page],
+    # which is starting to look a little cramped." Real bug, not just
+    # a look: every league's every game used to get dumped into one
+    # unbounded .jumbo-otc-grid with overflow-y:auto — on a kiosk
+    # nobody can scroll (see this app's own established "never rely on
+    # overflow-y:auto to hide list content" rule), so on a real multi-
+    # league night, games past whatever silently fit were permanently
+    # invisible, not just visually tight. Same paginate-and-rotate-on-
+    # a-wall-clock-timer pattern _around_html's own sidebar rail
+    # already uses (_around_leagues_pages) — one league's one page at
+    # a time instead, cycling through everything rather than cramming
+    # it all in at once.
+    pages = _around_leagues_pages(now_ts)
+    if not pages:
         return ""
+    index = int(now_ts // _AROUND_ROTATE_SECONDS) % len(pages)
+    league_key, page_num, page_total, chunk = pages[index]
+    page_label = league_key.upper() + (f" · {page_num + 1}/{page_total}" if page_total > 1 else "")
+    rows_html = "".join(_mini_row_html(g) for g in chunk)
+
+    # Same page-change crossfade _around_html's own sidebar rail uses
+    # (see its own comment on why two alternating classes, not one) —
+    # its own dedicated session_state keys, not shared with that rail,
+    # since the two rotate independently even though both read off the
+    # same underlying page list/clock.
+    identity = f"{league_key}:{page_num}"
+    changed = identity != st.session_state.get("jumbotron_otc_identity")
+    st.session_state["jumbotron_otc_identity"] = identity
+    fade_class = ""
+    if changed:
+        tick = st.session_state.get("jumbotron_otc_fade_tick", 0) + 1
+        st.session_state["jumbotron_otc_fade_tick"] = tick
+        fade_class = " jumbo-around-fade-a" if tick % 2 == 0 else " jumbo-around-fade-b"
 
     return (
         '<div class="jumbo-otc-overlay"><div class="jumbo-otc-inner">'
         '<div class="jumbo-otc-title">Out Of Town Scoreboard</div>'
         f'<div class="jumbo-otc-sub">{html.escape(headline)}</div>'
         f'<div class="jumbo-otc-timer-block">{timer_span}<div class="jumbo-otc-timer-label">{html.escape(timer_label)}</div></div>'
-        f'<div class="jumbo-otc-grid">{"".join(rows)}</div>'
+        f'<div class="jumbo-otc-league">{html.escape(page_label)}</div>'
+        f'<div class="jumbo-otc-grid{fade_class}">{rows_html}</div>'
         "</div></div>"
     )
 
@@ -1798,24 +1851,11 @@ def _around_html(now_ts: float) -> str:
     just gets its one page shown continuously — nothing to rotate to
     changes that. The current page's own league + "X/Y" page count is
     the header (e.g. "MLB · 2/3"), so it's always clear there's more
-    coming around rather than looking like a static, capped list."""
-    pages: list[tuple[str, int, int, list[dict]]] = []
-    order = {"in": 0, "pre": 1, "post": 2}
-    for key in _AROUND_LEAGUES:
-        try:
-            games = scores_client.fetch_games(key)
-        except Exception:
-            continue
-        if not games:
-            continue
-        # Live first, then upcoming, then finals — the same ordering
-        # priority the board itself uses.
-        games = sorted(games, key=lambda g: order.get(g["state"], 3))
-        chunks = [games[i : i + _AROUND_PAGE_SIZE] for i in range(0, len(games), _AROUND_PAGE_SIZE)]
-        total = len(chunks)
-        for i, chunk in enumerate(chunks):
-            pages.append((key, i, total, chunk))
-
+    coming around rather than looking like a static, capped list.
+    Page-building itself lives in _around_leagues_pages, shared with
+    _between_play_overlay_html's own full-screen version of this same
+    rotation."""
+    pages = _around_leagues_pages(now_ts)
     if not pages:
         return ""
 
