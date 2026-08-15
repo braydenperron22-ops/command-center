@@ -1,4 +1,4 @@
-"""Today's scoreboard across MLB, NBA, NHL, and NFL — ESPN's free public
+"""Today's scoreboard across MLB, NHL, and NFL — ESPN's free public
 scoreboard endpoint (site.api.espn.com), no key, no rate-limit tier.
 Unlike sports_client.py (which tracks the Jays/Habs specifically via
 each league's own official API), this is deliberately league-wide and
@@ -6,9 +6,17 @@ team-agnostic: every game on the slate for today, not one team's
 schedule. Both stay on their own data sources rather than merging, since
 they answer different questions.
 
-One shared response shape across all four leagues (ESPN's own schema is
+One shared response shape across all three leagues (ESPN's own schema is
 already consistent across sports), so the scores page can render any of
 them through the same template.
+
+NBA deliberately excluded — session request: "I don't really fuck with
+the NBA, and I don't really want it on my dashboard." Was a fourth
+league here (see git history); LEAGUES below is now the one place
+removing it needed to happen, since pages_scores.py's own rotation and
+pages_jumbotron.py's own Around The Leagues rail/Out Of Town Scoreboard
+both iterate off registries built from this list (see pages_jumbotron.
+_AROUND_LEAGUES, kept in sync by hand alongside this one).
 """
 
 from datetime import datetime
@@ -24,7 +32,6 @@ from config import TIMEZONE
 SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
 LEAGUES = [
     {"key": "mlb", "label": "MLB", "sport": "baseball", "league": "mlb"},
-    {"key": "nba", "label": "NBA", "sport": "basketball", "league": "nba"},
     {"key": "nhl", "label": "NHL", "sport": "hockey", "league": "nhl"},
     {"key": "nfl", "label": "NFL", "sport": "football", "league": "nfl"},
 ]

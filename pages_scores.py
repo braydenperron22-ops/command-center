@@ -1,10 +1,11 @@
-"""Scores page: today's full slate across MLB, NBA, NHL, and NFL (see
-scores_client.py) — every game on the board, not just the Blue Jays/
-Canadiens pages_sports.py already tracks. Rotates through whichever
-leagues actually have a game today, skipping any that don't (same
-"hide when there's nothing to show" reasoning as pages_sports.py's own
-out-of-season team sections) — a summer day with only MLB playing
-doesn't waste rotation time on three empty NBA/NHL/NFL slots.
+"""Scores page: today's full slate across MLB, NHL, and NFL (see
+scores_client.py — NBA deliberately excluded, session request) — every
+game on the board, not just the Blue Jays/Canadiens pages_sports.py
+already tracks. Rotates through whichever leagues actually have a game
+today, skipping any that don't (same "hide when there's nothing to
+show" reasoning as pages_sports.py's own out-of-season team sections)
+— a summer day with only MLB playing doesn't waste rotation time on
+two empty NHL/NFL slots.
 
 Same shared-epoch pattern pages_home.py uses for its own US/Canada
 rotation — passed in from app.py rather than computed fresh here, to
@@ -92,7 +93,7 @@ def render(rotation_epoch: float | None = None) -> None:
     active = _active_leagues()
     if not active:
         st.markdown(
-            '<div class="tile"><div class="tile-prev">No games across MLB, NBA, NHL, or NFL right now.</div></div>',
+            '<div class="tile"><div class="tile-prev">No games across MLB, NHL, or NFL right now.</div></div>',
             unsafe_allow_html=True,
         )
         return

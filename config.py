@@ -89,8 +89,8 @@ TOP_ALERT_HOLD_SECONDS = 2 * 60 * 60
 MAX_BURST_ALERTS = 6
 
 ROTATION_SECONDS = 5 * 60
-# How often the Scores page flips to the next active league (MLB/NBA/
-# NHL/NFL) — deliberately much shorter than PAGE_ROTATION_SECONDS
+# How often the Scores page flips to the next active league (MLB/NHL/
+# NFL) — deliberately much shorter than PAGE_ROTATION_SECONDS
 # (5 min): the Scores page itself is only ever on screen for one
 # PAGE_ROTATION_SECONDS window before the kiosk rotates away entirely,
 # so cycling leagues on that same 5-minute cadence would mean a given

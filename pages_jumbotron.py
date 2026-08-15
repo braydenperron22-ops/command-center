@@ -55,7 +55,12 @@ _RAIL = [
 # per session request: "when more than one league is active have it
 # cycle them... if there's too many games... make a second page for
 # that league it can flip to."
-_AROUND_LEAGUES = ["mlb", "nhl", "nba", "nfl"]
+# NBA deliberately excluded — session request: "I don't really fuck
+# with the NBA, and I don't really want it on my dashboard." Kept in
+# sync by hand with scores_client.LEAGUES (see that module's own
+# comment on the same removal) — this list is just keys, not the full
+# registry, so it doesn't cascade automatically from that one.
+_AROUND_LEAGUES = ["mlb", "nhl", "nfl"]
 # Was 7 (8 clipped) — session feedback: "the around the league card is
 # a little crowded," right after theme.py's own distance-readability
 # pass made every row noticeably bigger (bigger logos, bigger type,
