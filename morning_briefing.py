@@ -70,6 +70,7 @@ import payday_schedule
 import persisted_state
 import portfolio_client
 import road_conditions
+import seasons_client
 import sports_client
 import waste_schedule
 import weather_records_client
@@ -907,6 +908,16 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         f"mention unless it's actually relevant to something below — a long weekend genuinely "
         f"worth a line, most days not): {holidays_client.upcoming_holidays_block(now)}\n\n"
     )
+    # Session request: "include the first day of each season as a hero
+    # badge/fact the AI can use" — same "always-given background, not
+    # stats-bar-gated" reasoning as holidays_section just above (see
+    # seasons_client.season_clause's own comment for why it's the same
+    # shape as holiday_clause).
+    seasons_section = (
+        f"Upcoming season change, for context (not something that needs its own mention unless "
+        f"it's actually relevant — the actual season change day itself is worth a line, most "
+        f"other days not): {seasons_client.upcoming_seasons_block(now)}\n\n"
+    )
     # Session request: "show off some of these new patterns in the
     # morning brief a little bit... if it's appropriate, it should be
     # shown... the gas price is dropping off within the last ten days
@@ -959,13 +970,14 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         f"{notes_section}"
         f"{history_section}"
         f"{holidays_section}"
+        f"{seasons_section}"
         f"{environment_section}"
         f"Today is {weekday} — a real, given fact, not a guess. Only worth a mention if it actually "
         "connects to something below (a work shift landing on a weekend, say) — don't force it in.\n\n"
         "Never add or invent a fact beyond the weekday, the background, the long-term notes/recent-"
-        "days record, the upcoming holidays, the environmental trend data above, and the raw data "
-        "below. Always write numbers as actual digits, never spelled out as words — '18 minutes' "
-        "and '0.8%', not 'eighteen minutes' or 'zero point eight percent'.\n\n"
+        "days record, the upcoming holidays, the upcoming season change, the environmental trend "
+        "data above, and the raw data below. Always write numbers as actual digits, never spelled "
+        "out as words — '18 minutes' and '0.8%', not 'eighteen minutes' or 'zero point eight percent'.\n\n"
         "All of today's raw data — this is the exact same set already shown above in the stats "
         "bar, nothing hidden and nothing extra, so anything you say connects to something the "
         "reader can already see. Some facts share real physical "
@@ -1105,6 +1117,7 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         ("game_today", _game_today_clause, (now,)),
         ("daylight", _daylight_clause, (now, weather)),
         ("holiday", holidays_client.holiday_clause, (now,)),
+        ("season", seasons_client.season_clause, (now,)),
     ):
         try:
             result = fn(*args)
@@ -1572,6 +1585,10 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
     # commentary prompt already gets, not something guessed from the
     # bare fact list alone.
     holidays_section = f"Upcoming Canadian statutory holidays, for context: {holidays_client.upcoming_holidays_block(now)}\n\n"
+    # Session request: "include the first day of each season as a hero
+    # badge/fact the AI can use" — same always-given background as
+    # holidays_section just above.
+    seasons_section = f"Upcoming season change, for context: {seasons_client.upcoming_seasons_block(now)}\n\n"
     # Session request: "it should also learn things about my
     # environment... what kind of streak are we in... is the weather
     # warming up or cooling off... what kind of run is the market on...
@@ -1613,6 +1630,7 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
         f"{environment_section}"
         f"{history_section}"
         f"{holidays_section}"
+        f"{seasons_section}"
         f"Today's real facts: {'; '.join(facts)}\n\n"
         "Rewrite the note completely, from scratch, folding today into the same cross-referencing "
         "process (does today fit, break, or start a pattern against the record above?): keep or "

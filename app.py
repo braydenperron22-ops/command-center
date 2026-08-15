@@ -42,6 +42,7 @@ import pages_weather
 import payday_schedule
 import persisted_state
 import prediction_markets_client
+import seasons_client
 import sports_alerts
 import td_quarter_schedule
 import theme
@@ -1959,6 +1960,21 @@ if weather:
             f'<span class="weather-extra" style="color:#FF375F; '
             f'background:{_badge_bg("#FF375F", 0.22)}; border-color:#FF375F;">'
             f'CPP day {cpp_when}</span>'
+        )
+    # Session request: "can you include the first day of each season as
+    # a hero badge/fact the AI can use" — real astronomical equinox/
+    # solstice dates (see seasons_client.py's own docstring), same
+    # today/evening-tomorrow gating as every other badge here. Golden
+    # yellow — every other color already used nearby (green/violet/
+    # rose-red) is claimed, and it reads as sun/season-change rather
+    # than any of this row's existing "money moved" associations.
+    season = seasons_client.next_season_start(now.date())
+    if season and (season["days_until"] == 0 or (season["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR)):
+        season_when = "today" if season["days_until"] == 0 else "tomorrow"
+        extras.append(
+            f'<span class="weather-extra" style="color:#FFD60A; '
+            f'background:{_badge_bg("#FFD60A", 0.22)}; border-color:#FFD60A;">'
+            f'{season["label"]} starts {season_when}</span>'
         )
     extras_html = f'<div class="weather-extras">{"".join(extras)}</div>' if extras else ""
 
