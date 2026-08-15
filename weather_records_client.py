@@ -34,6 +34,7 @@ from datetime import date, timedelta
 import requests
 import streamlit as st
 
+import data_health
 import fetch_throttle
 from config import WEATHER_LAT, WEATHER_LON
 
@@ -186,4 +187,5 @@ def recent_daily_highs() -> list[dict]:
         result = None
     if result:
         _last_good_recent_highs = result
+        data_health.record_success("weather_trends")
     return result if result is not None else (_last_good_recent_highs or [])

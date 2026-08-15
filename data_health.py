@@ -58,6 +58,37 @@ THRESHOLDS_SECONDS = {
     # weather above: generous enough not to false-alarm on a normal
     # blip, still catches a real outage same-day.
     "markets": 3 * 60 * 60,
+    # Session request: close the watchdog gap left by today's new gas/
+    # banking/weather-trend sources — none of the three had any
+    # data_health coverage at all until now. Real, unfiltered feature-
+    # level success (see fuel_price_client.eco_mode_status's own
+    # record_success call) — it stays "fresh" through a legitimate
+    # daily-source-down-but-weekly-CSV-still-working fallback (that
+    # degradation is what the graceful-fallback architecture is FOR,
+    # same as "weather" here not distinguishing EC-forecast-down-but-
+    # hourly-up from fully healthy), only going stale if BOTH the daily
+    # scraper and the weekly government CSV are genuinely down at once.
+    # 8 days: generous enough to never false-alarm during that one
+    # legitimate fallback window, still catches a real full outage.
+    "gas_price": 8 * 24 * 60 * 60,
+    # weather_records_client.recent_daily_highs — a separate live fetch
+    # (Open-Meteo's archive endpoint) from weather_client.py's own
+    # current-conditions pipeline (already covered by "weather" above);
+    # a break here wouldn't touch the main weather tile at all, so
+    # folding it into that key would silently hide a real, distinct
+    # failure. Only feeds the AI's own environment-trends context, not
+    # anything mission-critical to the kiosk's main display — 72h
+    # (3 days) is generous relative to its own 24h cache, without being
+    # so long a real multi-day break goes unnoticed for a week.
+    "weather_trends": 3 * 24 * 60 * 60,
+    # portfolio_client.fetch_activities — a separate SnapTrade endpoint
+    # from fetch_portfolio's own balance call (already covered by
+    # "portfolio" above); a break here would silently blank the
+    # transaction log and the AI's spending context while the balance
+    # tile itself kept working fine, so it needs its own key rather
+    # than riding on "portfolio"'s. Same ~once/day real sync cadence
+    # underneath, so the same 36h threshold.
+    "portfolio_activity": 36 * 60 * 60,
 }
 
 LABELS = {
@@ -69,6 +100,9 @@ LABELS = {
     "shiller_cape": "Shiller CAPE",
     "scoreboard": "Scoreboard",
     "markets": "Markets (yfinance)",
+    "gas_price": "Gas price",
+    "weather_trends": "Weather trends",
+    "portfolio_activity": "Portfolio activity",
 }
 
 

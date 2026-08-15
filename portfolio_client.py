@@ -501,6 +501,12 @@ def fetch_activities(limit: int = 8) -> list[dict] | None:
         return _last_good_activities
     activities.sort(key=lambda a: a["date"], reverse=True)
     _last_good_activities = activities
+    # A separate SnapTrade endpoint from fetch_portfolio's own balance
+    # call (see data_health.THRESHOLDS_SECONDS's own "portfolio_
+    # activity" comment) — recorded here, not there, so a break
+    # specific to this one doesn't hide behind "portfolio" still
+    # looking healthy off the balance call alone.
+    data_health.record_success("portfolio_activity")
     return activities[:limit]
 
 

@@ -15,6 +15,7 @@ import requests
 import streamlit as st
 
 import daily_gas_price
+import data_health
 import fetch_throttle
 import statcan_client
 
@@ -193,6 +194,11 @@ def eco_mode_status() -> dict | None:
         latest = readings[-1]
         price, as_of, next_update = latest["price_cents_per_litre"], latest["date"], latest["date"] + timedelta(days=7)
         change = None
+    # Feature-level success — records whether SOME real price came
+    # through at all, daily source or weekly-CSV fallback either way
+    # (see data_health.THRESHOLDS_SECONDS's own "gas_price" comment on
+    # why that's the right granularity here, not per-source).
+    data_health.record_success("gas_price")
     return {
         "price": price,
         "baseline": floor,
