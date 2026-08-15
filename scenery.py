@@ -4,14 +4,27 @@ horizon), a faint fixed grain texture, rain/snow particles, a sky-tinted
 vignette for depth, and — at night — pure flat black with stars scattered
 across it, no gradient.
 
-No sun or cloud shapes: they were tried both as DOM elements and as
-background-image layers baked into the sky gradient, and both still
-visibly flashed/popped every second (this app reruns its whole script
-every second for the clock tick, which makes anything riding on the
-constantly-recomputed background fragile). Dropped entirely in favor of
-just the gradient, which has been stable throughout. Rain/snow/star
-twinkle remain as actual elements with animation, since those read fine
-even when restarted each second (small, subtle, tileable).
+Sun/cloud shapes were tried once as actual raster assets (both as DOM
+elements and as background-image layers) and visibly flashed/popped
+every second (this app reruns its whole script every second for the
+clock tick, which makes anything riding on the constantly-recomputed
+background fragile if it has an image to load/decode). Session
+follow-up request confirmed this app's whole background-layering setup
+is genuinely airtight against foreground interference — checked live:
+`.cc-scene` has zero ancestor elements with a transform/filter/
+perspective/will-change/contain property (the only things that would
+trap position:fixed into a nested stacking context), so it always
+escapes to the true viewport-root stacking context at z-index -1,
+firmly behind everything, with pointer-events:none so nothing it
+contains can ever intercept a click/tap either. A plain CSS gradient —
+no image asset, nothing to load or decode — sidesteps the original
+flashing problem entirely, which is why the sun glow and cloud shapes
+added since were both built as pure CSS (see sky_style's own sun-glow
+comment and _cloud_shapes' own comment).
+
+Rain/snow/star twinkle remain as actual elements with animation, since
+those read fine even when restarted each second (small, subtle,
+tileable).
 
 The sky color is computed as a server-side interpolation between the
 previous phase's colors and the current one, blended by elapsed real
@@ -22,9 +35,21 @@ the phase flips rather than an animated fade (the same class of bug fixed
 earlier for the country-rotation crossfade and the breaking-news bar).
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
+
+from astral import LocationInfo
+from astral.sun import azimuth, elevation
+
+from config import TIMEZONE, WEATHER_LAT, WEATHER_LON
 
 FADE_SECONDS = 90  # quick, not an abrupt cut, but no lingering brightness
+
+# Duplicated from weather_client/morning_briefing rather than shared —
+# same convention this app's other small per-module geo/time math
+# already follows (see morning_briefing.py's own _LOCATION comment):
+# this only needs a real sun azimuth/elevation, not a full weather
+# fetch, so it's cheaper and more self-contained to compute it locally.
+_LOCATION = LocationInfo(latitude=WEATHER_LAT, longitude=WEATHER_LON, timezone=TIMEZONE)
 
 
 def condition_category(code: int) -> str:
@@ -244,7 +269,47 @@ def _stars(phase: str) -> str:
     )
 
 
-def sky_style(category: str, phase: str, from_phase: str, blend: float, temp_extreme: str | None = None) -> str:
+# Real sun azimuth/elevation at this app's own configured location
+# (same astral machinery weather_client.py's own sunrise/sunset already
+# uses) mapped onto the stylized 2D sky gradient — session request:
+# "I want the sun to move throughout the day as it progresses... into a
+# sunset and then into a sunrise." A fixed compass/elevation window,
+# not per-day dynamic bounds computed from today's own real sunrise/
+# sunset azimuth — simpler, and a 45°-315° azimuth / 0°-65° elevation
+# window comfortably contains the real range at this app's latitude
+# (~46°N) across every season (checked live: real azimuth swept
+# 65.7°->286.4° and elevation peaked at 56.7° across a single real
+# August day), so the sun's on-screen position is always a genuine,
+# physically real read of where it actually is, not a guessed range.
+_SUN_AZIMUTH_MIN = 45.0
+_SUN_AZIMUTH_MAX = 315.0
+_SUN_ELEVATION_MAX = 65.0
+_SUN_Y_TOP_PCT = 10.0  # at max elevation, near the top of frame
+# Horizon Y lines up with the sky gradient's own real "horizon glow"
+# stop (_SKY_STOPS' own 88% stop, see that dict's own comment) rather
+# than a separately chosen number — the sun sitting low genuinely
+# belongs right where that gradient band already glows brightest.
+_SUN_Y_HORIZON_PCT = 88.0
+
+
+def _sun_glow_position(now) -> tuple[float, float] | None:
+    """(x_pct, y_pct) for the sun glow's own `circle at X% Y%` position,
+    or None while the sun is genuinely below the horizon (real negative
+    elevation — the correct physical condition for "should a sun glow
+    show at all," not a categorical phase check, so this naturally
+    covers the tail ends of sunrise/sunset too without needing its own
+    special-casing there)."""
+    now_aware = now if now.tzinfo else now.replace(tzinfo=_LOCATION.tzinfo)
+    el = elevation(_LOCATION.observer, now_aware)
+    if el <= 0:
+        return None
+    az = azimuth(_LOCATION.observer, now_aware)
+    x = (max(_SUN_AZIMUTH_MIN, min(_SUN_AZIMUTH_MAX, az)) - _SUN_AZIMUTH_MIN) / (_SUN_AZIMUTH_MAX - _SUN_AZIMUTH_MIN)
+    y = min(el, _SUN_ELEVATION_MAX) / _SUN_ELEVATION_MAX
+    return x * 100, _SUN_Y_HORIZON_PCT - y * (_SUN_Y_HORIZON_PCT - _SUN_Y_TOP_PCT)
+
+
+def sky_style(category: str, phase: str, from_phase: str, blend: float, now: datetime, temp_extreme: str | None = None) -> str:
     """The sky background — a plain color gradient plus a vignette, both
     as layers on the same persistent background property. No sun/cloud
     shapes: those were tried as separate DOM elements (flashed on every
@@ -292,22 +357,27 @@ def sky_style(category: str, phase: str, from_phase: str, blend: float, temp_ext
     elif temp_extreme == "cold":
         layers.insert(1, "radial-gradient(ellipse 90% 45% at 50% 100%, rgba(140,200,255,0.12), transparent 65%)")
     # Session request: "remake the backgrounds for each weather
-    # condition... just like Apple Weather" — a soft sun glow for a
-    # clear day, in the same spirit as Apple Weather's own warm-lit
-    # clear-sky backgrounds. This module's own top docstring already
-    # explains why an actual sun SHAPE was tried and dropped (a DOM
-    # element/separate background-image layer both visibly popped on
-    # this app's forced every-second rerun) — but the vignette and the
-    # temp_extreme overlays just above prove a plain CSS radial-
-    # gradient, with no image asset to load/decode, IS stable as one
-    # more layer in this same already-proven background-image property.
-    # This reuses exactly that: no new element, no image, just another
-    # comma-separated gradient — verified live across several real
-    # reruns before counting this as safe (see commit message).
-    if category == "clear" and phase == "day":
+    # condition... just like Apple Weather," then: "I want the sun to
+    # move throughout the day as it progresses... into a sunset and
+    # then into a sunrise." A soft sun glow, positioned by this app's
+    # own real astronomical sun position (see _sun_glow_position above)
+    # rather than a fixed spot — the SAME already-proven-safe mechanism
+    # as the vignette/temp_extreme layers just above (one more plain
+    # CSS radial-gradient, no image asset, in this same persistent
+    # background-image property — see this module's own top docstring
+    # on why that's what actually kept the original sun/cloud attempt
+    # from flashing, not the shape itself). Gated on real elevation > 0
+    # (inside _sun_glow_position, not a phase check) rather than
+    # `phase == "day"` — the sun is still genuinely up for the low-
+    # elevation tail ends of sunrise/sunset too, and at those moments
+    # this naturally lands low near the horizon on its own, right where
+    # the sky gradient's own horizon-glow band already sits, rather
+    # than needing separate handling for each phase.
+    if category == "clear" and (glow_pos := _sun_glow_position(now)):
+        gx, gy = glow_pos
         layers.insert(
             1,
-            "radial-gradient(circle at 78% 14%, rgba(255,248,222,0.38), "
+            f"radial-gradient(circle at {gx:.1f}% {gy:.1f}%, rgba(255,248,222,0.38), "
             "rgba(255,224,150,0.14) 22%, transparent 52%)",
         )
     return f"""<style>

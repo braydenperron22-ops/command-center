@@ -1581,7 +1581,7 @@ try:
     # always-dark background it wants for free.
     if not _jumbotron_active:
         st.markdown(
-            sky_style(category, phase, bg_fade_from, bg_blend, weather_temp_extreme),
+            sky_style(category, phase, bg_fade_from, bg_blend, now, weather_temp_extreme),
             unsafe_allow_html=True,
         )
         st.markdown(
