@@ -455,7 +455,12 @@ INDIVIDUAL_REFRESH_SECONDS = 90
 # this one headline just drains one-per-minute over however many ticks
 # it takes — nothing dropped, only spread out further.
 INDIVIDUAL_MAX_PER_TICK = 1
-INDIVIDUAL_MAX_OUTPUT_TOKENS = 150
+# Raised 150 -> 250 alongside the Aug 2026 llama-3.3-70b-versatile ->
+# gpt-oss-120b swap (see groq_client.GROQ_MODEL's own comment) — real
+# headroom above the highest completion cost actually observed live
+# testing this exact prompt at reasoning_effort="low" (187 tokens for
+# a genuinely complex real headline), not a re-guess.
+INDIVIDUAL_MAX_OUTPUT_TOKENS = 250
 
 # Session request: "have the individual dashboard... whenever something
 # new comes up, automatically toast it... regardless of if it was shown
@@ -929,8 +934,23 @@ def _classify_individually(items: list[dict]) -> None:
         # consistent, not creative prose (see groq_client.generate's own
         # docstring: confirmed live that the default 0.7 made the exact
         # same headline flip between two different verdicts across
-        # repeat calls).
-        result = groq_client.generate(prompt, temperature=0.1, max_output_tokens=INDIVIDUAL_MAX_OUTPUT_TOKENS)
+        # repeat calls). account="primary"/reasoning_effort="low": see
+        # groq_client.GROQ_MODEL's own comment on the real Aug 2026
+        # llama-3.3-70b-versatile decommission — this account now runs
+        # gpt-oss-120b too (same model as pages_conflicts.py's "chatgpt"
+        # account), so it needs its own explicit account to avoid
+        # colliding with that one's default; "low" reasoning effort
+        # confirmed live to keep this simple keep/reject judgment's real
+        # completion cost to 26-187 tokens instead of gpt-oss's own
+        # default effort eating far more of the budget on hidden
+        # reasoning for no real gain on a task this simple.
+        result = groq_client.generate(
+            prompt,
+            temperature=0.1,
+            max_output_tokens=INDIVIDUAL_MAX_OUTPUT_TOKENS,
+            account="primary",
+            reasoning_effort="low",
+        )
         if result is None:
             continue  # this one headline stays pending, retried next tick
         try:
@@ -950,7 +970,15 @@ def _classify_batch(items: list[dict]) -> None:
     partial credit for a response that came back malformed."""
     enriched = [{**item, "article_excerpt": _fetch_article_excerpt(item.get("link", ""))} for item in items]
     prompt = _build_batch_prompt(enriched)
-    result = groq_client.generate(prompt, temperature=0.1, max_output_tokens=BATCH_MAX_OUTPUT_TOKENS)
+    # account/reasoning_effort — same reasoning as _classify_individually's
+    # own call above. Checked live against this exact real batch prompt
+    # shape (8 real headlines) before shipping: "low" effort's real
+    # completion cost (544 tokens for all 8) already fits comfortably
+    # inside the existing BATCH_MAX_OUTPUT_TOKENS budget below, no
+    # change needed there unlike the individual path's own cap.
+    result = groq_client.generate(
+        prompt, temperature=0.1, max_output_tokens=BATCH_MAX_OUTPUT_TOKENS, account="primary", reasoning_effort="low"
+    )
     if result is None:
         return  # whole batch stays pending, retried next tick
     try:

@@ -350,6 +350,14 @@ def _spoken_summary(alert: dict) -> str:
     raw = ec_alerts.fetch_full_description() or alert.get("summary", "")
     if not raw:
         return f"A new {alert['title'].lower()} has just been issued for your area."
+    # account="primary"/reasoning_effort="low": see groq_client.
+    # GROQ_MODEL's own comment on the real Aug 2026 llama-3.3-70b-
+    # versatile decommission — this account now runs gpt-oss-120b too
+    # (same model as pages_conflicts.py's "chatgpt" account), so it
+    # needs its own explicit account. Real cost checked live against
+    # this exact prompt: only 7 reasoning tokens, comfortably inside
+    # the existing 400-token budget below — a plain rewrite task like
+    # this one needs far less reasoning than a judgment call.
     rewritten = groq_client.generate(
         "Rewrite this Environment Canada weather alert bulletin as a single smooth, natural-sounding "
         "paragraph meant to be read aloud by a text-to-speech voice. Keep every real fact — hazard, "
@@ -358,6 +366,8 @@ def _spoken_summary(alert: dict) -> str:
         "original text, and don't editorialize.\n\n" + raw,
         temperature=0.3,
         max_output_tokens=400,
+        account="primary",
+        reasoning_effort="low",
     )
     return _strip_spoken_labels(rewritten or raw)
 

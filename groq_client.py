@@ -7,14 +7,38 @@ own releases, not Groq's own) on custom inference hardware built for
 speed, with a free tier that's dramatically more generous than Gemini's
 free tier was turning out to be for this app's real usage pattern.
 
-Pinned to "llama-3.3-70b-versatile" rather than a floating "latest"
-alias the way gemini_client.py used — Groq's own model catalog (see
+Pinned to a specific model rather than a floating "latest" alias the
+way gemini_client.py used — Groq's own model catalog (see
 https://api.groq.com/openai/v1/models, queried live) doesn't offer a
 rolling alias the way Gemini's "gemini-flash-lite-latest" did, so this
-needs a manual bump if Groq ever retires this specific model. Chosen
-after a live side-by-side test against this app's own real prompts
-(structured JSON classification, JARVIS-voiced creative prose) — both
-came back clean and comparable in quality to what Gemini was producing.
+needs a manual bump whenever Groq actually retires the pinned model.
+
+Session report: a real deprecation email from Groq — "the llama-3.3-
+70b-versatile model will be decommissioned on August 16th 2026...
+transition your workloads to a recommended replacement model, GPT OSS
+120b or Qwen 3.6 27b." That was this constant's own original pin (see
+git history) — checked live against both real suggested replacements
+using this app's own actual prompts (news.py's real classification
+prompt, not a synthetic one) before picking either: qwen/qwen3.6-27b
+is a genuine reasoning model whose hidden <think> block lands directly
+IN the response content unless reasoning_format=hidden is explicitly
+requested, and even then its real observed completion cost ran
+500-800+ tokens per single-headline call, sometimes not even finishing
+within a generous 800-token cap. openai/gpt-oss-120b was already
+proven live in this exact app (see pages_conflicts.py) and, at
+reasoning_effort="low" (see GPT_OSS_MODEL's own comment on why that
+parameter exists), came back with clean, directly-parseable JSON at a
+real 26-187 completion tokens per call — comparable to, not a multiple
+of, the outgoing model's own cost, since the fixed classification-
+criteria prompt text (~1,550 tokens) dominates the total either way.
+GPT_OSS_MODEL below is that same real model — this constant now points
+at the identical string, so the "which model" question this constant's
+own name asks is answered the same way for both dedicated accounts.
+See _MODEL_ACCOUNT and generate()'s own `account` parameter for how
+two accounts running the identical model string stay correctly
+distinguished; see ACCOUNT_DISPLAY_NAMES/_model_status for the same
+account-vs-model distinction on the Maintenance page's own status
+badges.
 
 Same public interface as gemini_client.py on purpose (generate/
 generate_periodic, same signatures) — every caller in this app already
@@ -90,7 +114,6 @@ import persisted_state
 import sports_alerts
 from config import TIMEZONE, WEATHER_LAT, WEATHER_LON
 
-GROQ_MODEL = "llama-3.3-70b-versatile"
 # OpenAI's open-weight model, hosted on Groq — pages_conflicts.py's own
 # reasoning model (see its docstring for why). Defined here, not there,
 # now that it has its own dedicated account (see _MODEL_ACCOUNT below):
@@ -98,6 +121,13 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 # the right account, so pages_conflicts.py imports this one instead of
 # keeping its own separate copy.
 GPT_OSS_MODEL = "openai/gpt-oss-120b"
+# news.py's/weather_alerts_bar.py's own default model (see this
+# module's own docstring for the real Aug 2026 llama-3.3-70b-versatile
+# decommission this replaced) — the identical string as GPT_OSS_MODEL
+# above, kept as its own separately-named constant purely so each
+# call site's own model= default reads as "this feature's own model"
+# rather than an unexplained cross-reference to pages_conflicts.py's.
+GROQ_MODEL = GPT_OSS_MODEL
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 REQUEST_TIMEOUT_SECONDS = 20  # generous enough for a long structured response (see max_output_tokens); short calls finish well under this anyway
 # Groq's free tier is far less tight than Gemini's turned out to be in
@@ -154,20 +184,25 @@ def _first_last_light(day: datetime.date) -> tuple[datetime.datetime, datetime.d
 # Two genuinely separate Groq accounts — no longer a redundant pair
 # (see this module's own docstring for how that changed). Each has its
 # own real 100k/day quota, so each gets its own independent rolling
-# ledger below, and each is DEDICATED to exactly one model: "primary"
-# only ever runs GROQ_MODEL (Llama), "chatgpt" only ever runs
-# GPT_OSS_MODEL. The secret name for the second account is unchanged
-# (still the same real key/account this app has always had — session
-# confirmed live it still exists, it just isn't Llama's backup anymore)
-# even though its role/label is.
+# ledger below, and each is DEDICATED to exactly one purpose: "primary"
+# runs news.py's classifier and weather_alerts_bar.py's alert rewrite,
+# "chatgpt" runs pages_conflicts.py's overview. The secret name for the
+# second account is unchanged (still the same real key/account this app
+# has always had — session confirmed live it still exists, it just
+# isn't Llama's backup anymore) even though its role/label is.
 GROQ_ACCOUNTS = ("primary", "chatgpt")
 _GROQ_SECRET_NAMES = {"primary": "GROQ_API_KEY", "chatgpt": "GROQ_API_KEY_FAILSAFE"}
-# model -> the one Groq account dedicated to it — generate() looks this
-# up and only ever tries that single account before falling to Gemini,
-# never the other one. A model with no entry here (there isn't one
-# currently) skips the Groq attempt entirely and goes straight to
-# Gemini.
-_MODEL_ACCOUNT = {GROQ_MODEL: "primary", GPT_OSS_MODEL: "chatgpt"}
+# model -> the DEFAULT Groq account for that model, used only when a
+# caller doesn't pass its own `account` explicitly. Used to be a clean
+# 1:1 mapping back when GROQ_MODEL and GPT_OSS_MODEL were two different
+# strings; now that both accounts run the identical gpt-oss-120b model
+# (see GROQ_MODEL's own comment on the real Aug 2026 llama-3.3-70b-
+# versatile decommission that caused this), a plain model-keyed dict
+# can no longer tell the two accounts apart on its own — it resolves to
+# "chatgpt" here (pages_conflicts.py's own existing, unmodified call
+# site), which is why news.py/weather_alerts_bar.py now pass their own
+# explicit account="primary" instead of relying on this default.
+_MODEL_ACCOUNT = {GPT_OSS_MODEL: "chatgpt"}
 # account -> list of mutable [timestamp, tokens] pairs for that
 # account's own real calls — a list, not a tuple, so _reconcile_budget
 # can update a call's token count in place once the real usage is
@@ -267,27 +302,33 @@ def _reconcile_budget(entry: list, actual_tokens: int | None) -> None:
 # other statuses it may have."
 _last_served_by = "not_attempted"
 
-# model -> {"ok": bool, "via": "primary"|"chatgpt"|None} for the last
-# real attempt on that specific model, across every caller — session
-# request, now that this app routes different features to genuinely
-# different models (news.py's default llama-3.3-70b-versatile,
-# pages_conflicts.py's openai/gpt-oss-120b): "since we have a bunch of
-# different models now... show what models are active and what ones
-# are not responding." The old single _last_served_by above only ever
-# reflected whichever call happened most recently, system-wide — a
-# gpt-oss success (once/day, see pages_conflicts' REFRESH_SECONDS)
-# could read "Active" while llama was actually failing every call that
-# hour, or vice versa. See ai_status_by_model below.
+# account -> {"ok": bool, "via": "primary"|"chatgpt"|None} for the last
+# real attempt on that account, across every caller — session request,
+# back when this app routed different features to genuinely different
+# models: "since we have a bunch of different models now... show what
+# models are active and what ones are not responding." The old single
+# _last_served_by above only ever reflected whichever call happened
+# most recently, system-wide — a gpt-oss success (once/day, see pages_
+# conflicts' REFRESH_SECONDS) could read "Active" while the other
+# account was actually failing every call that hour, or vice versa.
+# Keyed by ACCOUNT, not model, since the real Aug 2026 llama-3.3-70b-
+# versatile decommission (see GROQ_MODEL's own comment) means both
+# accounts now run the identical gpt-oss-120b model — a model-keyed
+# dict couldn't tell the two apart anymore, which is the whole reason
+# this needs to distinguish them by account, its own genuinely unique
+# key, instead. See ai_status_by_model below.
 _model_status: dict[str, dict] = {}
 
 # Display names + fixed slot order for the badge (ai_status_by_model).
 # Fixed rather than "whatever's been attempted so far this process" so
 # the badge doesn't grow/shrink or reorder itself as different
-# features' own cadences happen to fire — GPT-OSS in particular only
-# runs once a day, so "only show what's been attempted" would leave it
-# missing from the badge most of the time.
-MODEL_DISPLAY_NAMES = {GROQ_MODEL: "Llama", GPT_OSS_MODEL: "GPT-OSS"}
-_MODEL_SLOTS = [GROQ_MODEL, GPT_OSS_MODEL]
+# features' own cadences happen to fire — the "chatgpt" account in
+# particular only runs once a day, so "only show what's been attempted"
+# would leave it missing from the badge most of the time. Keyed by
+# GROQ_ACCOUNTS ("primary"/"chatgpt"), not by model — see _model_status's
+# own comment on why a model-keyed version broke once both accounts
+# started running the identical gpt-oss-120b model.
+ACCOUNT_DISPLAY_NAMES = {"primary": "GPT-OSS (News)", "chatgpt": "GPT-OSS (Conflicts)"}
 
 
 def ai_status() -> dict:
@@ -314,10 +355,10 @@ def ai_status() -> dict:
       nothing's been attempted yet this process) — a heads-up that
       Rate Limited may be coming.
     - "Active" (good): the most recent real attempt succeeded on its
-      own dedicated Groq account — "primary" (Llama) or "chatgpt"
-      (GPT-OSS) both count; neither is a fallback for the other
-      anymore (see this module's own docstring), so there's no
-      degraded-but-working state to call out separately between them
+      own dedicated Groq account — "primary" or "chatgpt" both count;
+      neither is a fallback for the other anymore (see this module's
+      own docstring), so there's no degraded-but-working state to call
+      out separately between them
       the way "On Failsafe" used to."""
     now = _local_now()
     if _in_pause_window(now):
@@ -340,48 +381,45 @@ def ai_status() -> dict:
 
 
 def ai_status_by_model() -> list[dict]:
-    """{"label", "status", "tone", "at"} for each model this app
-    actually uses — Llama and GPT-OSS on Groq (see _MODEL_SLOTS), plus
-    Gemini — so the badge shows each one's own real status instead of
-    one line for whichever happened to run most recently (see
-    _model_status's own comment for why that was misleading with more
-    than one model in play). notify_if_outage/ai_status above are
-    untouched and still drive the actual outage push — this is purely
-    for the on-screen glance. `at` is the epoch-seconds timestamp of
-    that model's last real attempt (None for Asleep/Idle, where there
-    wasn't one) — session request: the maintenance page ("D" hotkey/
-    mobile tab) showing "when their last answer was" per model.
+    """{"label", "status", "tone", "at"} for each Groq account this app
+    actually uses (see GROQ_ACCOUNTS), plus Gemini — so the badge shows
+    each one's own real status instead of one line for whichever
+    happened to run most recently (see _model_status's own comment for
+    why that was misleading with more than one account in play).
+    notify_if_outage/ai_status above are untouched and still drive the
+    actual outage push — this is purely for the on-screen glance. `at`
+    is the epoch-seconds timestamp of that account's last real attempt
+    (None for Asleep/Idle, where there wasn't one) — session request:
+    the maintenance page ("D" hotkey/mobile tab) showing "when their
+    last answer was" per model.
 
     Per slot, in priority order:
     - "Asleep" (neutral): the overnight pause window, same as
-      ai_status() — nothing's being attempted for ANY model right now.
+      ai_status() — nothing's being attempted for ANY account right now.
     - "Game Time" (neutral): a tracked game's pregame/live/postgame
       window, same as ai_status() — also nothing being attempted for
-      ANY model (Gemini included), except game_blurb's own postgame
+      ANY account (Gemini included), except game_blurb's own postgame
       recap which bypasses this pause entirely rather than showing up
       here as an exception.
-    - "Idle" (neutral): this model hasn't had a real attempt yet this
-      process — a fresh redeploy, or, for GPT-OSS specifically given
-      its once-a-day cadence, simply hasn't been that model's turn yet
-      today. Not a failure, just nothing observed.
-    - "Rate Limited" (low): this model's own dedicated Groq account
-      (see _MODEL_ACCOUNT) failed on its last real attempt. Used to
-      also fire this whenever a shared second account covered for
-      primary — session request: "make it so when llama fails it just
-      shows rate limited instead of fail safe," since a split-out
+    - "Idle" (neutral): this account hasn't had a real attempt yet this
+      process — a fresh redeploy, or, for "chatgpt" specifically given
+      its once-a-day cadence, simply hasn't run yet today. Not a
+      failure, just nothing observed.
+    - "Rate Limited" (low): this account's last real attempt failed.
+      Used to also fire this whenever a shared second account covered
+      for primary — session request: "make it so when llama fails it
+      just shows rate limited instead of fail safe," since a split-out
       "Failsafe" status read as healthier than what was actually
-      happening. That distinction is moot now anyway: each model has
-      exactly one dedicated Groq account (no shared backup between
-      them to speak of), so "not ok" here plainly means that one
-      account failed, full stop.
-    - "Active" (good): last real attempt succeeded on this model's own
-      dedicated account."""
+      happening. That distinction is moot now anyway: each account is
+      its own dedicated, non-backup Groq account, so "not ok" here
+      plainly means that one account failed, full stop.
+    - "Active" (good): last real attempt on this account succeeded."""
     asleep = _in_pause_window(_local_now())
     game_paused = sports_alerts.game_time_active()
     entries = []
-    for model in _MODEL_SLOTS:
-        label = MODEL_DISPLAY_NAMES.get(model, model)
-        info = _model_status.get(model)
+    for account in GROQ_ACCOUNTS:
+        label = ACCOUNT_DISPLAY_NAMES.get(account, account)
+        info = _model_status.get(account)
         at = info["at"] if info else None
         if asleep:
             entries.append({"label": label, "status": "Asleep", "tone": "neutral", "at": at})
@@ -589,6 +627,7 @@ def generate(
     max_output_tokens: int = 200,
     model: str = GROQ_MODEL,
     reasoning_effort: str | None = None,
+    account: str | None = None,
 ) -> str | None:
     """One short piece of AI-written text for `prompt`, or None if the
     key's missing, the request fails, or the free tier's rate-limited
@@ -600,13 +639,23 @@ def generate(
     window.
 
     `model` defaults to GROQ_MODEL — only pass something else if a
-    feature specifically needs a different model's characteristics
-    (see pages_conflicts.py's use of "openai/gpt-oss-120b" for real
-    reasoning depth on a low-frequency call; session request: "Meta is
-    losing the AI race... is there a better... option through Grok").
+    feature specifically needs a different model's characteristics.
     Only ever applies to the two Groq accounts — if both fail and this
     falls through to gemini_client, that's always Gemini's own model,
     since Gemini doesn't host Groq's catalog.
+
+    `account` — explicit override for which of the two dedicated Groq
+    accounts (see GROQ_ACCOUNTS) actually serves this call, taking
+    priority over _MODEL_ACCOUNT's own model-keyed default. Needed
+    now that GROQ_MODEL and GPT_OSS_MODEL are the identical string
+    (both accounts run gpt-oss-120b — see GROQ_MODEL's own comment on
+    why): a plain model-keyed lookup can no longer tell two callers of
+    the same model apart on its own, so news.py/weather_alerts_bar.py
+    pass account="primary" explicitly rather than silently landing on
+    whatever _MODEL_ACCOUNT's single remaining entry happens to
+    resolve to. Leave None to keep using the model-keyed default —
+    every caller that hasn't been touched by this still behaves
+    exactly as before.
 
     Build prompts from already-rounded/bucketed values (this
     dashboard's other templated text already does this — see morning_
@@ -643,29 +692,31 @@ def generate(
     into a forced rest during game time"). This function has no
     exception for game_blurb.py's own postgame recap since that call
     goes through gemini_client.generate directly, not this one — see
-    that function's own allow_during_game parameter. Otherwise looks up
-    the ONE Groq
-    account dedicated to `model` (see _MODEL_ACCOUNT — "primary" for
-    Llama, "chatgpt" for gpt-oss; NOT tried against each other, these
-    are two separate accounts for two separate purposes now), and
-    falls back to gemini_client if that account fails or if `model`
-    isn't a Groq model this app has dedicated an account to. Records
-    which tier actually served this call (or that none did) in
-    _last_served_by for ai_status() — left untouched during the pause
-    itself, since that's a separate status, not a failure to record."""
+    that function's own allow_during_game parameter. Otherwise resolves
+    the ONE Groq account for this call — the explicit `account` param
+    if given, else _MODEL_ACCOUNT's own model-keyed default (NOT tried
+    against each other, these are two separate accounts for two
+    separate purposes) — and falls back to gemini_client if that
+    account fails or if neither an explicit account nor a default could
+    be resolved. Records which tier actually served this call (or that
+    none did) in _last_served_by for ai_status(), and per-ACCOUNT (not
+    per-model — see ACCOUNT_DISPLAY_NAMES/_model_status's own comment) in
+    _model_status for ai_status_by_model() — left untouched during the
+    pause itself, since that's a separate status, not a failure to
+    record."""
     global _last_served_by
     if _in_pause_window(_local_now()) or sports_alerts.game_time_active():
         return None
-    account = _MODEL_ACCOUNT.get(model)
-    if account is not None:
+    resolved_account = account or _MODEL_ACCOUNT.get(model)
+    if resolved_account is not None:
         try:
-            result = _generate_or_raise(account, prompt, temperature, max_output_tokens, model, reasoning_effort)
-            _last_served_by = account
-            _model_status[model] = {"ok": True, "via": account, "at": time.time()}
+            result = _generate_or_raise(resolved_account, prompt, temperature, max_output_tokens, model, reasoning_effort)
+            _last_served_by = resolved_account
+            _model_status[resolved_account] = {"ok": True, "via": resolved_account, "at": time.time()}
             return result
         except Exception:
-            pass
-    _model_status[model] = {"ok": False, "via": None, "at": time.time()}
+            if resolved_account is not None:
+                _model_status[resolved_account] = {"ok": False, "via": None, "at": time.time()}
     result = gemini_client.generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens)
     _last_served_by = "gemini" if result is not None else "none"
     return result
@@ -729,6 +780,7 @@ def generate_periodic(
     model: str = GROQ_MODEL,
     validate=None,
     reasoning_effort: str | None = None,
+    account: str | None = None,
 ) -> str | None:
     """Same as generate(), but throttled by a caller-chosen cadence
     instead of by exact-prompt-text matching — see gemini_client.
@@ -770,8 +822,8 @@ def generate_periodic(
     tries again rather than getting stuck on the bad one for a full
     cycle).
 
-    `reasoning_effort` — passed straight through to generate(); see its
-    own comment and _generate_or_raise's."""
+    `reasoning_effort`/`account` — passed straight through to
+    generate(); see its own comments and _generate_or_raise's."""
     now = time.time()
     cached = _periodic_cache.get(feature_key)
     if cached is None:
@@ -785,7 +837,12 @@ def generate_periodic(
     if cached_ok and now - cached[0] < refresh_seconds:
         return cached[1]
     text = generate(
-        prompt, temperature=temperature, max_output_tokens=max_output_tokens, model=model, reasoning_effort=reasoning_effort
+        prompt,
+        temperature=temperature,
+        max_output_tokens=max_output_tokens,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        account=account,
     )
     if text is not None and (validate is None or validate(text)):
         _periodic_cache[feature_key] = (now, text)
