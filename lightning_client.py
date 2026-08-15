@@ -153,7 +153,12 @@ def get_new_alerts(now: datetime) -> list[dict]:
             "severity": "warning",
             "label": "Lightning",
             "headline": headline,
-            "summary": f"Lightning strike detected {distance_km:.1f} kilometers{where}.",
-            "severe": True,
+            # Session request: "make it so it doesn't speak... not
+            # audible" — no "summary" (nothing to synthesize/read aloud)
+            # and "silent": True (weather_alerts_bar.render_alert_bar's
+            # own data-silent attribute) so app.py's kioskCheckToastChime
+            # skips the chime bell too, not just the voice. The toast
+            # still slides in and shows visually exactly like any other.
+            "silent": True,
         }
     ]

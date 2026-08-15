@@ -401,8 +401,19 @@ def render_alert_bar(alert: dict) -> None:
     # somehow predates this key — safer to under-escalate an unknown
     # case than blast at night by default.
     severe_attr = "true" if alert.get("severe", False) else "false"
+    # Session request (lightning_client's own toast): "make it so it
+    # doesn't speak... not audible." Every weather-kind toast up to now
+    # has always made SOME sound (app.py's kioskCheckToastChime always
+    # calls kioskPlayWeatherAlert for one matching this bar's own CSS
+    # class, which plays a chime bell regardless of whether there's a
+    # spoken summary at all) — there was no existing "silent toast"
+    # path to reuse. Opt-in and defaults False so every real EC alert
+    # keeps its exact existing chime+voice behavior; only a caller that
+    # explicitly asks for quiet (lightning, at least for now) skips it,
+    # while still getting the same visible slide-in toast.
+    silent_attr = ' data-silent="true"' if alert.get("silent", False) else ""
     st.markdown(
-        f"""<div class="{bar_class}" data-summary="{summary}"{audio_attr} data-severe="{severe_attr}">
+        f"""<div class="{bar_class}" data-summary="{summary}"{audio_attr} data-severe="{severe_attr}"{silent_attr}>
             <span class="news-breaking-label">{label}</span>
             <span class="news-alert-headline">{headline}</span>
         </div>""",

@@ -1087,7 +1087,13 @@ components.html(
         "  if (key === kioskLastChimeKey) return;",
         "  kioskLastChimeKey = key;",
         "  if (weatherEl) {",
-        "    kioskPlayWeatherAlert(weatherEl);",
+        // data-silent (weather_alerts_bar.py's own render_alert_bar) —
+        // session request, for the lightning toast specifically: "make
+        // it so it doesn't speak... not audible." Every other weather
+        // alert never sets this, so this only ever skips the chime for
+        // a caller that explicitly opted into quiet; the toast itself
+        // still slides in below exactly like any other.
+        "    if (weatherEl.getAttribute('data-silent') !== 'true') { kioskPlayWeatherAlert(weatherEl); }",
         "  } else if (leaveEl) {",
         "    kioskPlayLeaveVoice(leaveEl);",
         "  } else {",
