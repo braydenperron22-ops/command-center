@@ -258,17 +258,22 @@ html, body, [class*="css"] {
 }
 
 /* Markets page runs 7 tiles in one row (see pages_markets.render) —
-   the narrowest lineup any tile grid in this app uses. Unlike the
-   shared .tile-label (deliberately multi-line-capable elsewhere, e.g.
-   "NORTH BAY GAS"), a ticker name here is one word ("BITCOIN") with no
-   space to wrap on, so at this width it was breaking mid-word into a
-   garbled two-line mess instead of overflowing or truncating cleanly.
-   Scoped rather than touching .tile-label everywhere, same reasoning
-   as .prediction-side-tile's own override above. */
+   the narrowest lineup any tile grid in this app uses, and its labels
+   range from a single unbreakable word ("BITCOIN") to a genuinely
+   multi-word one ("S&P 500 (SPY forecast)") where the "(forecast)"
+   part matters — it's the only on-tile cue this hero number is a
+   Polymarket-implied projection, not an observed live move (see
+   pages_markets._weekend_forecast_quote). A flat nowrap+ellipsis first
+   pass fixed BITCOIN's mid-word garbling under width pressure but
+   silently truncated that forecast qualifier off the long labels
+   instead — same overflow-hidden height as the shared .tile-label
+   (multi-line-capable elsewhere, e.g. "NORTH BAY GAS"), just with
+   break-word so a single long word breaks instead of overflowing the
+   tile, while multi-word labels still wrap at their spaces same as
+   before. Scoped rather than touching .tile-label everywhere, same
+   reasoning as .prediction-side-tile's own override above. */
 .market-tile .tile-label {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: break-word;
 }
 /* The hero % is the one number on this page that must never visually
    clip — .tile-value's fixed 2.6rem assumes room a 7-column row at
