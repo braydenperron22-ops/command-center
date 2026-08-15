@@ -1063,6 +1063,34 @@ def _mlb_between_innings_target(game_id: int, detail: dict, now_ts: float) -> fl
     return tracked["started_at"] + MLB_BREAK_SECONDS
 
 
+# Session correction: "an NFL halftime lasts thirteen minutes. So from
+# the time that halftime first updates, just make a ten minute timer."
+# Deliberately shorter than the real ~13-minute halftime — same "end
+# the timer a bit ahead of the real break, never wait for play to
+# actually resume" buffer already established for MLB above (session
+# request there: "make the out of town scoreboard end the second the
+# timer is over").
+NFL_HALFTIME_SECONDS = 10 * 60
+
+
+def _nfl_halftime_target(game_id, detail: dict, now_ts: float) -> float | None:
+    """The real epoch-seconds timestamp this halftime countdown should
+    end at, or None if it isn't currently halftime. Keyed by game_id
+    alone, not a marker like MLB's own version above needs — a single
+    game only ever has one halftime, so there's no second occurrence
+    within the same game that could accidentally inherit a stale
+    target the way a fresh half-inning break could."""
+    key = f"jumbotron_nfl_halftime_{game_id}"
+    if not detail.get("is_halftime"):
+        st.session_state.pop(key, None)
+        return None
+    tracked = st.session_state.get(key)
+    if not tracked:
+        tracked = {"started_at": now_ts}
+        st.session_state[key] = tracked
+    return tracked["started_at"] + NFL_HALFTIME_SECONDS
+
+
 # Session request: "delay the out of town scoreboard by like 15
 # seconds so i can actually see the last play of the inning" — the
 # overlay used to take the whole screen the instant a break started,
@@ -1132,18 +1160,18 @@ def _between_play_overlay_html(state: dict, now: datetime) -> str:
     Unlike the fixed-duration new-pitcher overlay, this isn't a timed
     toast — it's re-evaluated fresh every rerun and stays up for
     exactly as long as the break condition itself stays true, gone the
-    instant play resumes. MLB and NHL get a real countdown, driven by
-    the same live-countdown ticker the pregame/leave-headline countdowns
-    already use: NHL's own intermission clock carries one directly
-    (intermission_seconds_remaining, the same number the broadcast's
-    own countdown uses); MLB's live feed doesn't hand one back, but the
-    pitch-clock rule fixes every half-inning break at MLB_BREAK_SECONDS,
-    so _mlb_between_innings_target counts down against that instead.
-    NFL gets no countdown at all — ESPN's scoreboard doesn't hand back
-    a time-remaining figure for halftime, and the real length isn't
-    fixed the way MLB's pitch clock is (a nationally-televised game
-    routinely runs a longer halftime for the broadcast), so this shows
-    the HALFTIME label alone rather than a fabricated number.
+    instant play resumes. All three sports get a real countdown, driven
+    by the same live-countdown ticker the pregame/leave-headline
+    countdowns already use: NHL's own intermission clock carries one
+    directly (intermission_seconds_remaining, the same number the
+    broadcast's own countdown uses); MLB's and NFL's live feeds don't
+    hand one back, but each has its own fixed reference to count down
+    against instead — MLB's real pitch-clock rule (MLB_BREAK_SECONDS),
+    and NFL_HALFTIME_SECONDS (session correction: "an NFL halftime
+    lasts thirteen minutes... just make a ten minute timer" — a
+    deliberate buffer under the real length, same "end on the timer
+    itself, never wait for play to actually resume" reasoning
+    MLB_BREAK_SECONDS's own use already established).
 
     Shows every game around the leagues (scores_client.fetch_games,
     same source the sidebar's own Around The Leagues panel reads —
@@ -1200,21 +1228,24 @@ def _between_play_overlay_html(state: dict, now: datetime) -> str:
         timer_label = "UNTIL PUCK DROP"
     elif sport == "nfl":
         detail = sports_client.fetch_nfl_live_detail(game_id)
-        if not detail or not detail.get("is_halftime"):
+        if not detail:
+            return ""
+        target_ts = _nfl_halftime_target(game_id, detail, now_ts)
+        if target_ts is None:
+            return ""
+        # Same reasoning as the MLB branch above — NFL_HALFTIME_SECONDS
+        # is a deliberate buffer, not the real ~13-minute length, so
+        # this ends on the timer itself rather than waiting for
+        # is_halftime to actually flip back to False.
+        if target_ts - now_ts <= 0:
             return ""
         marker = "halftime"
         if not _overlay_delay_elapsed(game_id, marker, now_ts):
             return ""
         headline = "HALFTIME"
-        # No real countdown here, unlike MLB/NHL above — ESPN's
-        # scoreboard doesn't hand back a time-remaining figure for
-        # NFL halftime, and the real length itself isn't fixed the way
-        # MLB's pitch clock is (nationally-televised games routinely
-        # run a longer halftime for the broadcast) — inventing a
-        # number would be a guess dressed up as a countdown, so this
-        # just shows the label with no timer instead of a fake one.
-        timer_span = ""
-        timer_label = ""
+        target_ms = int(target_ts * 1000)
+        timer_span = f'<div class="jumbo-otc-timer live-countdown" data-target-ms="{target_ms}" data-format="clock">{html.escape(_fmt_break_clock(target_ts - now_ts))}</div>'
+        timer_label = "SECOND HALF IN"
     else:
         return ""
 
@@ -1253,19 +1284,11 @@ def _between_play_overlay_html(state: dict, now: datetime) -> str:
         st.session_state["jumbotron_otc_fade_tick"] = tick
         fade_class = " jumbo-around-fade-a" if tick % 2 == 0 else " jumbo-around-fade-b"
 
-    # NFL's own branch above leaves timer_span/timer_label both "" (no
-    # real countdown source) — the whole timer block is skipped rather
-    # than rendering an empty countdown box under the HALFTIME label.
-    timer_block_html = (
-        f'<div class="jumbo-otc-timer-block">{timer_span}<div class="jumbo-otc-timer-label">{html.escape(timer_label)}</div></div>'
-        if timer_span
-        else ""
-    )
     return (
         '<div class="jumbo-otc-overlay"><div class="jumbo-otc-inner">'
         '<div class="jumbo-otc-title">Out Of Town Scoreboard</div>'
         f'<div class="jumbo-otc-sub">{html.escape(headline)}</div>'
-        f'{timer_block_html}'
+        f'<div class="jumbo-otc-timer-block">{timer_span}<div class="jumbo-otc-timer-label">{html.escape(timer_label)}</div></div>'
         f'<div class="jumbo-otc-league">{html.escape(page_label)}</div>'
         f'<div class="jumbo-otc-grid{fade_class}">{rows_html}</div>'
         "</div></div>"
