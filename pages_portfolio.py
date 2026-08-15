@@ -54,7 +54,7 @@ _ACTIVITY_TAGS = {
 _TRANSFER_TAG = ("TRANSFER", "#ABB2C4")
 
 
-def _period_metric(label: str, pct: float | None) -> str:
+def _period_metric(label: str, pct: float | None, amount: float | None = None) -> str:
     if pct is None:
         return (
             f'<div class="market-metric"><span class="market-metric-label" style="{_METRIC_LABEL_STYLE}">{label}</span>'
@@ -62,9 +62,20 @@ def _period_metric(label: str, pct: float | None) -> str:
         )
     direction_class = "market-up" if pct >= 0 else "market-down"
     sign = "+" if pct >= 0 else ""
+    # Session request: "the change percent for the day and the dollar
+    # value of that change as well" — only "1 Day" passes a real
+    # amount (see portfolio_client.daily_change) since that's the one
+    # this was actually asked about; 6-month/YTD keep calling this
+    # without one, same as before, since fetch_changes doesn't carry a
+    # dollar figure for those two at all.
+    amount_html = (
+        f' <span class="market-metric-sub" style="opacity:0.7;">({sign}${abs(amount):,.2f})</span>'
+        if amount is not None
+        else ""
+    )
     return (
         f'<div class="market-metric"><span class="market-metric-label" style="{_METRIC_LABEL_STYLE}">{label}</span>'
-        f'<span class="market-metric-value {direction_class}" style="{_METRIC_VALUE_STYLE}">{sign}{pct:.2f}%</span></div>'
+        f'<span class="market-metric-value {direction_class}" style="{_METRIC_VALUE_STYLE}">{sign}{pct:.2f}%{amount_html}</span></div>'
     )
 
 
@@ -140,12 +151,24 @@ def render() -> None:
     subtitle = "Wealthsimple" + (f" · {other_text}" if other_text else "")
 
     changes = portfolio_client.fetch_changes() or {}
-    day_change_pct = changes.get("1d")
+    # Session request: "outsource it by caching yesterday's result and
+    # comparing to today's result" — see portfolio_client.daily_change's
+    # own docstring for why: SnapTrade's own per-account balance-history
+    # endpoint already corrupted a period change once for real (a stale
+    # sub-account's history bleeding in), confirmed live doing it again
+    # right now for 6-month/YTD. Today's own change no longer depends on
+    # that fragile mechanism at all — just this app's own live total
+    # against a value it recorded itself yesterday.
+    day_change = portfolio_client.daily_change()
     change_html = ""
-    if day_change_pct is not None:
+    if day_change is not None:
+        day_change_pct, day_change_amount = day_change["pct"], day_change["amount"]
         direction_class = "market-up" if day_change_pct >= 0 else "market-down"
         sign = "+" if day_change_pct >= 0 else ""
-        change_html = f'<span class="tile-value {direction_class}" style="font-size:1.4rem; margin-left:0.6rem;">{sign}{day_change_pct:.2f}%</span>'
+        change_html = (
+            f'<span class="tile-value {direction_class}" style="font-size:1.4rem; margin-left:0.6rem;">'
+            f'{sign}{day_change_pct:.2f}% ({sign}${abs(day_change_amount):,.2f})</span>'
+        )
 
     # Already just the 4 tracked/renamed accounts, sorted descending by
     # balance (see portfolio_client.ACCOUNT_DISPLAY_NAMES).
@@ -206,7 +229,7 @@ def render() -> None:
         st.markdown(
             f'<div class="tile">'
             f'<div class="tile-label">PERFORMANCE</div>'
-            f'{_period_metric("1 Day", changes.get("1d"))}'
+            f'{_period_metric("1 Day", day_change["pct"] if day_change else None, day_change["amount"] if day_change else None)}'
             f'{_period_metric("6 Month", changes.get("6m"))}'
             f'{_period_metric("YTD", changes.get("ytd"))}'
             f'</div>',

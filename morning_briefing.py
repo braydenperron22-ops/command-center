@@ -438,7 +438,14 @@ def _portfolio_clause(now: datetime) -> tuple[int, str] | None:
     for days, (min_pct, min_amount) in _PORTFOLIO_MEANINGFUL_THRESHOLDS.items():
         if days == 1 and skip_today:
             continue
-        change = portfolio_client.fetch_period_change(days)
+        # "today" uses the same self-recorded day-over-day comparison
+        # pages_portfolio.py's own tile does now (see portfolio_client.
+        # daily_change's own docstring) instead of fetch_period_change's
+        # SnapTrade-account-history mechanism — session request: "can
+        # we instead outsource it by caching yesterday's result." Week/
+        # month keep using fetch_period_change; a same-day cache has no
+        # way to answer those.
+        change = portfolio_client.daily_change() if days == 1 else portfolio_client.fetch_period_change(days)
         if not change:
             continue
         pct, amount = change["pct"], change["amount"]

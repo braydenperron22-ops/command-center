@@ -21,6 +21,7 @@ import streamlit as st
 from snaptrade_client import SnapTrade
 
 import data_health
+import persisted_state
 
 # Wealthsimple's own account names, simplified for the kiosk — session
 # request. PERSONAL specifically renamed to what it's actually used
@@ -336,6 +337,75 @@ def fetch_period_change(days: int) -> dict | None:
 
 _last_good_period_changes: dict[int, dict] | None = None
 
+# Session request: "for the portfolio page, can you make it a better
+# system so that there's no issues? ... right now we're just sourcing
+# the change percent from SnapTrade, aren't we? So can we instead
+# outsource it by caching yesterday's result and then comparing
+# yesterday's result to today's result." A real, live-confirmed reason
+# behind the ask: _fetch_history_by_account's own per-account balance
+# history from SnapTrade already had ONE documented incident of a
+# stale/restructured sub-account's history bleeding into a period
+# change (see that function's own docstring, "a fake ~-66% '6-month
+# change'"), and checked live right now, the SAME class of thing is
+# happening again — 6-month reads -77% and YTD reads -80%, neither
+# remotely real for an account that's moved a few hundred dollars this
+# whole session. daily_change() below sidesteps that entire fragile
+# per-account-history/first-transaction-date reconciliation for the
+# ONE window this was specifically asked about (today's change) by not
+# depending on SnapTrade's own historical balance endpoint at all —
+# just fetch_portfolio's own live total, which has been reliable all
+# session, compared against a value THIS APP recorded itself yesterday.
+# 6-month/YTD still use the old mechanism (a much longer real history
+# than a same-day cache could ever provide) — out of scope for what
+# was actually asked, and a real known limitation worth living with
+# rather than silently also "fixing" with something equally fragile.
+_PORTFOLIO_SNAPSHOT_HISTORY_DAYS = 14  # bounded rolling window — only "yesterday" is used today, but this leaves real headroom for a future week-over-week feature built the same reliable way, at near-zero storage cost
+_portfolio_snapshots: dict[str, float] = persisted_state.load("portfolio_daily_snapshots", {})
+
+
+def _record_daily_snapshot(total_cad: float, today: date) -> None:
+    """Idempotent — only the FIRST successful fetch_portfolio() of each
+    calendar day actually writes anything (checked by date key, not a
+    separate "have we run today" flag), so every later call the same
+    day is a no-op regardless of how many different callers invoke
+    daily_change() below. That first-of-the-day value becomes
+    TOMORROW's "yesterday" baseline."""
+    global _portfolio_snapshots
+    today_str = today.isoformat()
+    if today_str in _portfolio_snapshots:
+        return
+    _portfolio_snapshots[today_str] = total_cad
+    if len(_portfolio_snapshots) > _PORTFOLIO_SNAPSHOT_HISTORY_DAYS:
+        del _portfolio_snapshots[min(_portfolio_snapshots)]
+    persisted_state.save("portfolio_daily_snapshots", _portfolio_snapshots)
+
+
+def daily_change() -> dict | None:
+    """{"pct", "amount", "baseline_date"} — today's real live total
+    (fetch_portfolio, unaffected by any SnapTrade account-history
+    fragility) against OUR OWN recorded snapshot from yesterday (see
+    _record_daily_snapshot). None if today's own live total isn't
+    available, or there's no real snapshot from yesterday specifically
+    to compare against — e.g. the very first day this ran at all, or a
+    genuine full day with zero app renders (this kiosk reruns every 5s,
+    so that would itself mean something else was already badly wrong) —
+    never a guessed or partial number standing in for a real one."""
+    portfolio = fetch_portfolio()
+    if not portfolio or portfolio.get("total_cad") is None:
+        return None
+    live_total = portfolio["total_cad"]
+    today = date.today()
+    _record_daily_snapshot(live_total, today)
+    baseline_date = today - timedelta(days=1)
+    baseline = _portfolio_snapshots.get(baseline_date.isoformat())
+    if not baseline:
+        return None
+    return {
+        "pct": (live_total - baseline) / baseline * 100,
+        "amount": live_total - baseline,
+        "baseline_date": baseline_date.isoformat(),
+    }
+
 
 # Real, human-meaningful events only — get_account_activities also
 # returns PORTFOLIO_INVESTMENT/WRITE_OFF/FEE rows from Automated
@@ -512,21 +582,28 @@ def fetch_activities(limit: int = 8) -> list[dict] | None:
 
 def fetch_changes() -> dict | None:
     """{"1d", "6m", "ytd"} % change, each None if that specific window
-    can't be computed yet (no qualifying account history). Our own
-    metric end to end — SnapTrade doesn't compute period returns
-    itself (its own return-rates endpoint returned 403 for this
-    account, confirmed live)."""
+    can't be computed yet. "1d" is computed independently via
+    daily_change() — see that function's own docstring on why (a real
+    SnapTrade per-account-history bug already corrupted 6m/ytd once,
+    confirmed live doing it again right now) — so a 6m/ytd fetch
+    failure can't take "1d" down with it, or vice versa; each has its
+    own separate fallback. "6m"/"ytd" are still our own metric end to
+    end from SnapTrade's own per-account balance history — SnapTrade
+    doesn't compute period returns itself (its own return-rates
+    endpoint returned 403 for this account, confirmed live) — a
+    same-day cache can't stand in for genuine multi-month depth the
+    way it can for "1d"."""
     global _last_good_changes
+    one_day = (daily_change() or {}).get("pct")
     try:
         series_by_account = _fetch_history_by_account()
     except Exception:
-        return _last_good_changes
+        series_by_account = None
+    cached = _last_good_changes or {}
     if series_by_account is None:
-        return _last_good_changes
-    portfolio = fetch_portfolio()
-    live_total = portfolio["total_cad"] if portfolio else None
+        return {"1d": one_day if one_day is not None else cached.get("1d"), "6m": cached.get("6m"), "ytd": cached.get("ytd")}
     result = {
-        "1d": (_period_change(series_by_account, 1, live_total) or {}).get("pct"),
+        "1d": one_day,
         "6m": (_period_change(series_by_account, 182, live_total=None) or {}).get("pct"),
         "ytd": (_period_change(series_by_account, None, live_total=None) or {}).get("pct"),
     }
