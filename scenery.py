@@ -291,6 +291,25 @@ def sky_style(category: str, phase: str, from_phase: str, blend: float, temp_ext
         layers.insert(1, "radial-gradient(ellipse 90% 45% at 50% 100%, rgba(255,140,60,0.12), transparent 65%)")
     elif temp_extreme == "cold":
         layers.insert(1, "radial-gradient(ellipse 90% 45% at 50% 100%, rgba(140,200,255,0.12), transparent 65%)")
+    # Session request: "remake the backgrounds for each weather
+    # condition... just like Apple Weather" — a soft sun glow for a
+    # clear day, in the same spirit as Apple Weather's own warm-lit
+    # clear-sky backgrounds. This module's own top docstring already
+    # explains why an actual sun SHAPE was tried and dropped (a DOM
+    # element/separate background-image layer both visibly popped on
+    # this app's forced every-second rerun) — but the vignette and the
+    # temp_extreme overlays just above prove a plain CSS radial-
+    # gradient, with no image asset to load/decode, IS stable as one
+    # more layer in this same already-proven background-image property.
+    # This reuses exactly that: no new element, no image, just another
+    # comma-separated gradient — verified live across several real
+    # reruns before counting this as safe (see commit message).
+    if category == "clear" and phase == "day":
+        layers.insert(
+            1,
+            "radial-gradient(circle at 78% 14%, rgba(255,248,222,0.38), "
+            "rgba(255,224,150,0.14) 22%, transparent 52%)",
+        )
     return f"""<style>
     [data-testid="stAppViewContainer"] {{
         background-image: {", ".join(layers)};
@@ -334,9 +353,29 @@ def _fog_haze() -> str:
     return '<div class="cc-fog"></div>'
 
 
+# Session request: "remake the backgrounds for each weather
+# condition... just like Apple Weather" — soft, layered cloud shapes
+# for an overcast sky, the same proven technique _fog_haze already
+# uses (blurred radial-gradient blobs, one shared drifting element, no
+# raster image) rather than the sun/cloud SHAPES this module's own top
+# docstring says were already tried as separate DOM elements/baked
+# background-image layers and visibly popped on this app's forced
+# every-second rerun. The real difference: those were actual shaped
+# assets; this, like fog, is pure CSS gradients on one persistent
+# element — nothing to (re)load or (re)mount, just a style computed
+# fresh each rerun, the same "safe to remount" property fog/rain/snow
+# already have. Three blobs at different sizes/positions/opacities for
+# a sense of depth rather than one flat shape, day only — this app's
+# own night sky is deliberately flat black with stars, no gradient (see
+# this module's own top docstring), and visible cloud shapes would
+# fight that on purpose-built look rather than complement it.
+def _cloud_shapes() -> str:
+    return '<div class="cc-clouds"></div>'
+
+
 def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | None = None) -> str:
     """Static CSS rules + decorative scene HTML: stars, rain/snow/fog/
-    heat/cold/lightning (sun/cloud shapes and the vignette live in
+    clouds/heat/cold/lightning (the sun glow and the vignette live in
     `sky_style` instead). Everything here depends only on category/
     phase/code/temp_extreme, not on anything that changes between
     reruns except the storm flash's own time-synced delay (see
@@ -349,6 +388,7 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
     particles = _particles(category, code)
     stars = _stars(phase)
     fog = _fog_haze() if category == "fog" else ""
+    clouds = _cloud_shapes() if category == "cloudy" and phase in ("day", "sunrise", "sunset") else ""
     lightning = _storm_flash(now) if category == "storm" else ""
     heat = _heat_shimmer() if temp_extreme == "heat" else ""
     frost = _cold_sparkle() if temp_extreme == "cold" else ""
@@ -404,6 +444,27 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
         50% {{ transform: translateX(3%); }}
     }}
 
+    /* Cloudy: soft layered cloud shapes, same blurred-radial-gradient-
+       blob technique as fog just above — see _cloud_shapes' own
+       comment on why this is safe against this app's every-second
+       rerun where an actual cloud SHAPE (a raster asset) wasn't. Three
+       blobs at different sizes/positions/opacities for a sense of
+       depth, drifting slower than fog (clouds read as higher up and
+       further away, so slower apparent motion is the realistic cue). */
+    .cc-clouds {{
+        position: absolute; inset: -15% -25%; top: -5%; height: 60%;
+        background:
+            radial-gradient(ellipse 32% 45% at 18% 40%, rgba(255,255,255,0.42), transparent 70%),
+            radial-gradient(ellipse 40% 55% at 55% 25%, rgba(255,255,255,0.32), transparent 70%),
+            radial-gradient(ellipse 28% 40% at 85% 45%, rgba(255,255,255,0.26), transparent 70%);
+        filter: blur(4px);
+        animation: cc-cloud-drift 150s ease-in-out infinite;
+    }}
+    @keyframes cc-cloud-drift {{
+        0%, 100% {{ transform: translateX(-3%); }}
+        50% {{ transform: translateX(3%); }}
+    }}
+
     /* Storm: a rare, brief double-flash — see _storm_flash's own
        comment on the time-synced delay that keeps a rerun from ever
        causing a visible restart glitch here specifically. */
@@ -449,5 +510,5 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
         50% {{ opacity: 0.65; }}
     }}
     </style>
-    <div class="cc-scene">{stars}{particles}{fog}{lightning}{heat}{frost}<div class="cc-grain"></div></div>
+    <div class="cc-scene">{stars}{particles}{fog}{clouds}{lightning}{heat}{frost}<div class="cc-grain"></div></div>
     """
