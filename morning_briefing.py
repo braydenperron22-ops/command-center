@@ -1217,7 +1217,17 @@ def _recent_history_block(now: datetime) -> str:
 # recurring homestand, financial activity) and got hard-truncated
 # mid-sentence at the old 700-char limit. Raised to 1200 — real room
 # for what's now actually being asked of it, not a re-guess.
-LEARNED_NOTES_MAX_CHARS = 1200
+#
+# Raised again once the environment-trends block and the Spending/
+# Bills/Gas/Transfer categorization both landed on the same day —
+# checked live (generous headroom, no char slice) what the model's own
+# natural complete output actually runs, now juggling schedule
+# patterns, financial activity, AND environmental trends together: a
+# real, coherent, non-truncated response came back at 1437 characters.
+# 1800 gives genuine room above that observed length rather than
+# sitting right at the edge of truncating again the next time any one
+# of these sections has a bit more to say.
+LEARNED_NOTES_MAX_CHARS = 1800
 _learned_notes: str = persisted_state.load("morning_brief_learned_notes", "")
 _learned_notes_date: str | None = persisted_state.load("morning_brief_learned_notes_date", None)
 
@@ -1475,7 +1485,11 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
         f"no headers or bullet points. Under {LEARNED_NOTES_MAX_CHARS} characters."
     )
     try:
-        updated = gemini_client.generate(prompt, temperature=0.4, max_output_tokens=380)
+        # 600, up from 380 alongside LEARNED_NOTES_MAX_CHARS's own
+        # bump above — real headroom over the 1800-char cap so the
+        # TOKEN budget itself never becomes the thing silently cutting
+        # this off before the character slice even gets a say.
+        updated = gemini_client.generate(prompt, temperature=0.4, max_output_tokens=600)
     except Exception:
         updated = None
     if updated is None:
