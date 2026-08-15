@@ -1573,6 +1573,15 @@ html, body, [class*="css"] {
     background: #FF375F;
     box-shadow: 0 0 8px 1px rgba(255,55,95,0.5);
 }
+/* Reinstated page (see pages_radar.py) — needs its own color distinct
+   from every page already using one, Hourly (#FF375F) included, which
+   inherited this exact slot when it replaced the old Radar page; the
+   whole point of a page beacon is telling pages apart at a glance,
+   which breaks the moment two share a color. */
+.page-title-radar::before {
+    background: #32ADE6;
+    box-shadow: 0 0 8px 1px rgba(50,173,230,0.5);
+}
 .page-title-scores::before {
     background: #30D5C8;
     box-shadow: 0 0 8px 1px rgba(48,213,200,0.5);
@@ -2038,6 +2047,105 @@ html, body, [class*="css"] {
     margin-left: auto;
     font-size: 0.9rem;
     color: #ABB2C4;
+}
+
+/* Radar page (pages_radar.py, radar_client.py) — reinstated at the
+   user's own later request ("reinstate the radar page... make the
+   radar nice and big so it's scannable from a distance") once
+   RainViewer gave a source they actually like the animation/look of.
+   RainViewer's own tile is a fixed square (unlike the old EC WMS
+   fetch, which could ask for any custom aspect ratio) — a plain
+   square frame here, not the old 2.5:1 wide one, since the image
+   itself is square this time. */
+.weather-radar-tile-large {
+    align-items: center;
+    text-align: center;
+    padding-top: 1rem;
+    padding-bottom: 0.9rem;
+}
+.weather-radar-frame {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #0a1420;
+}
+/* Sizing technique (constrain *width* via min() against a vh budget,
+   let aspect-ratio derive a matching height) is the old radar page's
+   own hard-won fix, reused verbatim — see git history around 100fddd^
+   for the full story: fighting max-height directly stretched the
+   image instead of shrinking it proportionally, and any single fixed
+   vh value was found live to still overflow a real 768px-tall kiosk
+   screen once the leave-headline/an active alert banner grew the
+   content stack above this tile, while a taller 1024px+ screen had
+   plenty of room to go bigger. Height-tiered for the same reason.
+   Deliberately AFTER the plain .weather-radar-frame rule above (both
+   classes land on the same element with equal specificity, so source
+   order is what decides the winner here) — confirmed live this same
+   ordering mistake (this block sitting BEFORE .weather-radar-frame)
+   let that rule's own width:100% silently win instead, rendering the
+   frame at the tile's full ~1230px content width regardless of
+   viewport height and pushing the page title/credit line off screen
+   above and below it. */
+.weather-radar-frame-large {
+    width: min(100%, 70vh);
+    max-width: 100%;
+    margin: 0 auto;
+}
+@media (min-height: 850px) {
+    .weather-radar-frame-large {
+        width: min(100%, 105vh);
+    }
+}
+/* Every frame is stacked full-bleed on top of the others (see pages_
+   radar.py) — app.py's own kioskRadarAnim script (persistent, same
+   inject-into-the-parent-document pattern as every other kiosk-*
+   script there) cycles which one is opacity:1 on a timer, so animating
+   is just a client-side toggle between already-loaded real <img> tags,
+   never a re-fetch. First frame visible by default (before that script
+   has run its first tick yet) so there's a real image on screen
+   immediately rather than a blank frame for one animation interval. */
+.weather-radar-frame-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+}
+.weather-radar-frame-img:first-child { opacity: 1; }
+/* Blue dot for "this is you," fixed at the frame's own dead center —
+   RainViewer's lat/lon tile endpoint always centers the requested
+   point exactly, so (unlike a raw x/y/z slippy tile) this never needs
+   per-frame pixel math, same "symmetric request = always 50%/50%"
+   principle the old EC radar page's own bbox already established.
+   Sized up and given a real white ring (was a plain 10px dot with no
+   border) — "nice and big... scannable from a distance" applies to
+   the marker too, not just the map itself, and a bare dot the same
+   size as before would get lost against RainViewer's own busier,
+   more colorful default palette. */
+.weather-radar-marker {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px;
+    border-radius: 50%;
+    background: #64D2FF;
+    border: 2px solid rgba(255,255,255,0.9);
+    box-shadow: 0 0 12px 3px rgba(100,210,255,0.75);
+    z-index: 2;
+}
+/* RainViewer's own free-tier terms require visible attribution —
+   small and quiet on purpose (this is a credit, not content), same
+   weight/treatment as .prediction-source-note elsewhere. */
+.weather-radar-credit {
+    font-size: 0.75rem;
+    color: #8E8E93;
+    margin-top: 0.6rem;
 }
 
 /* Hourly Forecast page (see pages_hourly.py) — replaces the live radar
@@ -2758,7 +2866,7 @@ html, body, [class*="css"] {
 .mobile-nav-item-today { color: #FF9F0A !important; }
 .mobile-nav-item-household { color: #A2845E !important; }
 .mobile-nav-item-weather { color: #64D2FF !important; }
-.mobile-nav-item-radar { color: #FF375F !important; }
+.mobile-nav-item-radar { color: #32ADE6 !important; }
 .mobile-nav-item-sports { color: #5E5CE6 !important; }
 .mobile-nav-item-scores { color: #30D5C8 !important; }
 .mobile-nav-item-portfolio { color: #A78BFA !important; }

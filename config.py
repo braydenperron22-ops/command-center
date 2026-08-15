@@ -156,11 +156,14 @@ YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 # same way US/CA already does: a time.time()-based index, no Streamlit
 # multipage chrome, no scrolling.
 #
-# "radar" replaced with "hourly" — session request: "get rid of radar
-# and replace it with hourly weather data." See pages_hourly.py.
+# "radar" was replaced with "hourly" ("get rid of radar and replace it
+# with hourly weather data" — see pages_hourly.py) and later reinstated
+# alongside it once RainViewer gave a genuinely better-animated source
+# to build it from (see radar_client.py) — this time an addition, not
+# another swap.
 PAGES = [
     "home", "conflicts", "news", "markets", "internals", "today", "household",
-    "weather", "hourly", "sports", "scores", "portfolio", "predictions",
+    "weather", "hourly", "radar", "sports", "scores", "portfolio", "predictions",
 ]
 PAGE_ROTATION_SECONDS = 5 * 60
 

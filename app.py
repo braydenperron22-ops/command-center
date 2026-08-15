@@ -36,6 +36,7 @@ import pages_markets
 import pages_news
 import pages_portfolio
 import pages_predictions
+import pages_radar
 import pages_scores
 import pages_sports
 import pages_today
@@ -270,6 +271,58 @@ components.html(
         "    el.textContent = template.replace('{}', token);",
         "  });",
         "}, 1000);",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+    </script>
+    """,
+    height=0,
+)
+
+# Radar page frame animation (pages_radar.py/radar_client.py) — session
+# request: "make the radar nice and big... reinstate the radar page."
+# Every real radar frame is a genuine, already-loaded <img> stacked
+# full-bleed on the others (see .weather-radar-frame-img, theme.py);
+# this just toggles which one is opacity:1 on a timer, so "animating"
+# never re-fetches anything or touches Streamlit's own rerun cycle at
+# all. Same inject-into-the-parent-document/duplicate-guard shape as
+# every other kiosk-* script here — survives Streamlit tearing this
+# components.html iframe down and rebuilding it every 5s rerun, and
+# simply does nothing on any other page (no .weather-radar-frame-img
+# elements to find there).
+components.html(
+    """
+    <script>
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-radar-anim')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-radar-anim';
+      s.textContent = [
+        "var kioskRadarIndex = 0;",
+        "var kioskRadarHoldTicks = 0;",
+        // Real radar cadence is 10 minutes for FRAME_COUNT frames
+        // (radar_client.py) — this is purely the on-screen playback
+        // speed, unrelated to that. HOLD_TICKS pauses a beat on the
+        // most recent frame before looping, so "now" actually reads
+        // as the current moment instead of blending straight back
+        // into the oldest frame.
+        "var KIOSK_RADAR_FRAME_MS = 500;",
+        "var KIOSK_RADAR_HOLD_TICKS = 3;",
+        "setInterval(function () {",
+        "  var frames = document.querySelectorAll('.weather-radar-frame-img');",
+        "  if (!frames.length) { kioskRadarIndex = 0; kioskRadarHoldTicks = 0; return; }",
+        "  if (kioskRadarIndex >= frames.length) kioskRadarIndex = 0;",
+        "  for (var i = 0; i < frames.length; i++) {",
+        "    frames[i].style.opacity = (i === kioskRadarIndex) ? '1' : '0';",
+        "  }",
+        "  if (kioskRadarIndex === frames.length - 1 && kioskRadarHoldTicks < KIOSK_RADAR_HOLD_TICKS) {",
+        "    kioskRadarHoldTicks++;",
+        "    return;",
+        "  }",
+        "  kioskRadarHoldTicks = 0;",
+        "  kioskRadarIndex = (kioskRadarIndex + 1) % frames.length;",
+        "}, KIOSK_RADAR_FRAME_MS);",
       ].join('\\n');
       doc.head.appendChild(s);
     })();
@@ -1313,7 +1366,7 @@ except Exception:
 _PAGE_LABELS = {
     "home": "Home", "conflicts": "Conflicts", "news": "News", "markets": "Markets",
     "internals": "Internals", "today": "Today", "household": "Household",
-    "weather": "Weather", "hourly": "Hourly", "sports": "Sports", "scores": "Scores",
+    "weather": "Weather", "hourly": "Hourly", "radar": "Radar", "sports": "Sports", "scores": "Scores",
     "portfolio": "Portfolio", "predictions": "Predictions",
 }
 
@@ -2213,6 +2266,8 @@ with st.container(key="page_body"):
         _safe_render(pages_weather.render)
     elif page == "hourly":
         _safe_render(pages_hourly.render)
+    elif page == "radar":
+        _safe_render(pages_radar.render)
     elif page == "jumbotron":
         _safe_render(pages_jumbotron.render, now, _takeover, weather, _ufc_takeover)
     elif page == "sports":
