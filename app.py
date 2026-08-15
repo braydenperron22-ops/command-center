@@ -21,6 +21,7 @@ import data_health
 import govee_lighting
 import groq_client
 import headline_rotation
+import lightning_client
 import market_yf_client
 import morning_briefing
 import news
@@ -2287,6 +2288,17 @@ except Exception:
 # reasoning as every other block here.
 try:
     new_alerts.extend(weather_alerts_bar.get_storm_proximity_alerts(now))
+except Exception:
+    pass
+
+# Nearby lightning-strike toasts — session request: "a breaking news
+# alert when there's lightning within... ten kilometers on my
+# location." Own module (Xweather, not Environment Canada — see
+# lightning_client's own docstring on why), same isolation reasoning
+# and "kind": "weather" dispatch as the two blocks above, so a strike
+# rides the exact same top-priority toast lane a real EC warning does.
+try:
+    new_alerts.extend(lightning_client.get_new_alerts(now))
 except Exception:
     pass
 
