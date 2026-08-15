@@ -46,6 +46,7 @@ regardless of which of the 10 rotating pages happens to be up.
 
 import functools
 import html
+import json
 import random
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -981,6 +982,101 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     )
 
 
+def _strip_code_fence(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else text
+        text = text.rsplit("```", 1)[0]
+    return text.strip()
+
+
+# Any clause at or above this priority breaks through the daily lock
+# below regardless of what got selected at lock-in time — matches
+# _alert_clause's own priority tier exactly (the single highest one in
+# this file, reserved for an active weather alert), the one thing here
+# that can genuinely emerge mid-morning and needs to be seen the moment
+# it does. Same "safety-relevant info always breaks through" principle
+# already applied elsewhere in this app (storm lights bypassing night-
+# dim, etc.), not something a same-day lock should get to suppress for
+# hours just because it wasn't there yet when the lock was made.
+_URGENT_OVERRIDE_PRIORITY = 10
+
+_featured_facts_date: str | None = persisted_state.load("morning_brief_featured_date", None)
+_featured_facts: list[str] = persisted_state.load("morning_brief_featured_names", [])
+
+
+def _select_featured_facts(clauses: list[tuple[str, int, str]], now: datetime) -> list[str]:
+    """[name, ...] — which of today's clause names (see render()'s own
+    name/fn/args list) actually get featured in the stats bar and fed
+    to _ai_sentence, for the WHOLE rest of the calendar day once
+    decided. Session request: "the wording and the facts... refresh
+    and rerun every thirty minutes... it changes the entire flow...
+    filter right away what facts are important, and then just have the
+    morning brief stay within that context window... let the AI choose
+    the three bullets... unless there's more in which it's up to him."
+
+    A real AI judgment call, not just top-N by the clauses' own
+    priority numbers — those numbers already encode a reasonable
+    rough ordering, but not "is today itself genuinely eventful enough
+    to feature more than the usual few." Minimum STATS_BAR_MAX, up to
+    MAX_CLAUSES — most mornings should land on the minimum; the prompt
+    below explicitly warns against padding the count just because more
+    facts happen to be available.
+
+    Decided ONCE per calendar day (own persisted date/name-list pair,
+    same shape as _learned_notes_date above) — every later call this
+    same day returns the identical stored list without a new AI call,
+    which is the whole point: a stable, once-decided cast of TOPICS for
+    the day, not a fresh cut each time this runs. render() re-reads
+    each selected name's own CURRENT text every rerun regardless, so
+    each featured fact's real value still stays live — only WHICH
+    topics are featured is what's locked here, not their content.
+
+    Falls back to the previous mechanical behavior (top STATS_BAR_MAX
+    by priority) on any AI failure, an unparseable response, or a
+    response naming too few real clause names to be usable — never
+    lets a bad AI call leave the stats bar empty or stuck without a
+    real selection for the rest of the day."""
+    global _featured_facts_date, _featured_facts
+    today = now.date().isoformat()
+    if _featured_facts_date == today and _featured_facts:
+        return _featured_facts
+    fallback = [name for name, _, _ in clauses[:STATS_BAR_MAX]]  # clauses already priority-sorted by render()
+    valid_names = {name for name, _, _ in clauses}
+    chosen = fallback
+    if not groq_client.ai_pulls_paused():
+        facts_block = "\n".join(f'{i + 1}. name="{name}" (priority {priority}): {text}' for i, (name, priority, text) in enumerate(clauses))
+        prompt = (
+            f"Below are every real fact computed for {USER_FIRST_NAME}'s morning brief today, each "
+            "with its own name tag and the priority number this app assigns it (higher generally "
+            "means more important, but use your own real judgment, not just the number).\n\n"
+            f"{facts_block}\n\n"
+            f"Select which facts genuinely deserve to be featured as today's headline stats — at "
+            f"least {STATS_BAR_MAX}, up to {MAX_CLAUSES}. Most mornings, {STATS_BAR_MAX} is enough; "
+            "only include more if today specifically has a real reason to (an active alert, a packed "
+            "calendar, a notable financial move, several genuinely competing for attention the same "
+            "morning) — don't pad the count just because more facts happen to be available. This "
+            "selection stays fixed for the rest of the morning, so favor what will still genuinely "
+            "matter in a few hours over anything already stale or about to resolve on its own.\n\n"
+            'Respond with ONLY a JSON array of the exact name tags, most important first, no other '
+            'text and no markdown code fence — e.g. ["alert", "commute", "agenda"].'
+        )
+        try:
+            raw = gemini_client.generate(prompt, temperature=0.2, max_output_tokens=120)
+            selected = json.loads(_strip_code_fence(raw)) if raw else None
+        except Exception:
+            selected = None
+        if isinstance(selected, list):
+            candidate = [n for n in selected if isinstance(n, str) and n in valid_names][:MAX_CLAUSES]
+            if len(candidate) >= STATS_BAR_MAX:
+                chosen = candidate
+    _featured_facts = chosen
+    _featured_facts_date = today
+    persisted_state.save("morning_brief_featured_names", chosen)
+    persisted_state.save("morning_brief_featured_date", today)
+    return chosen
+
+
 def render(now: datetime, weather: dict | None, air_quality: dict | None) -> None:
     if not (MORNING_WINDOW_START_HOUR <= now.hour < MORNING_WINDOW_END_HOUR):
         return
@@ -988,31 +1084,32 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         return
 
     clauses = []
-    for fn, args in (
-        (_alert_clause, (now,)),
-        (_weather_clause, (now, weather)),
-        (_precip_clause, (now, weather)),
-        (_road_ice_clause, (now, weather)),
-        (_air_clause, (now, air_quality)),
-        (_commute_clause, (now,)),
-        (_agenda_clause, (now,)),
-        (_household_clause, (now,)),
-        (_markets_clause, (now,)),
-        (_portfolio_clause, (now,)),
-        (_game_today_clause, (now,)),
-        (_daylight_clause, (now, weather)),
-        (holidays_client.holiday_clause, (now,)),
+    for name, fn, args in (
+        ("alert", _alert_clause, (now,)),
+        ("weather", _weather_clause, (now, weather)),
+        ("precip", _precip_clause, (now, weather)),
+        ("road_ice", _road_ice_clause, (now, weather)),
+        ("air", _air_clause, (now, air_quality)),
+        ("commute", _commute_clause, (now,)),
+        ("agenda", _agenda_clause, (now,)),
+        ("household", _household_clause, (now,)),
+        ("markets", _markets_clause, (now,)),
+        ("portfolio", _portfolio_clause, (now,)),
+        ("game_today", _game_today_clause, (now,)),
+        ("daylight", _daylight_clause, (now, weather)),
+        ("holiday", holidays_client.holiday_clause, (now,)),
     ):
         try:
             result = fn(*args)
         except Exception:
             result = None
         if result is not None:
-            clauses.append(result)
+            priority, text = result
+            clauses.append((name, priority, text))
 
     if not clauses:
         return
-    clauses.sort(key=lambda c: c[0], reverse=True)
+    clauses.sort(key=lambda c: c[1], reverse=True)
     # Session request: "give it as much data as possible so it could
     # make as many informed comments as possible." The AI now gets
     # EVERY fact computed today, not just the top MAX_CLAUSES=5 by
@@ -1023,12 +1120,49 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     # weather, real traffic, a full calendar, all at once) used to
     # silently lose 3 of them before the AI ever got a look, with no
     # way to notice a connection between something it was never told.
-    all_facts = [text for _, text in clauses]
+    all_facts = [text for _, _, text in clauses]
     picked = all_facts[:MAX_CLAUSES]
     try:
         _record_history(now, all_facts)
     except Exception:
         pass
+    # Session request: "the wording and the facts... refresh and rerun
+    # every thirty minutes... it changes the entire flow... what the
+    # morning brief might have been at 8am is not necessarily what the
+    # morning brief is at 8:30am... filter right away what facts are
+    # important, and then just have the morning brief stay within that
+    # context window." Root cause: the stats bar/AI-sentence input
+    # below used to be a fresh priority-sort of `clauses` EVERY rerun —
+    # not just the AI wording refreshing on its own 30-min cadence, but
+    # WHICH facts even qualified as "top 3" could quietly reshuffle
+    # underneath it as clause priorities shifted through the morning
+    # (a delay clearing, an agenda item passing), so the same 30-min
+    # window's own two edges could genuinely be reacting to two
+    # different sets of facts. _select_featured_facts below locks WHICH
+    # topics are featured once per day (an actual AI judgment call, not
+    # just top-N by priority — session request: "let the AI choose the
+    # three bullets... unless there's more in which it's up to him"),
+    # then every rerun re-reads each locked topic's own CURRENT text
+    # here — so the story stays the same shape all morning while each
+    # fact's own live value (today's real temp, the real commute delay
+    # right now) keeps updating, not frozen at whatever it read at
+    # lock-in time.
+    try:
+        featured_names = _select_featured_facts(clauses, now)
+    except Exception:
+        featured_names = [name for name, _, _ in clauses[:STATS_BAR_MAX]]
+    # Safety override, not subject to the lock above: an active weather
+    # alert (_alert_clause's own priority tier, the single highest in
+    # this file) can genuinely emerge mid-morning after the day's
+    # selection already locked in — same "safety-relevant info always
+    # breaks through" principle this app already applies elsewhere
+    # (storm lights bypassing night-dim, etc.), not something a
+    # same-day lock should be able to suppress for the rest of the
+    # morning just because it wasn't there yet at 5am.
+    urgent_names = [name for name, priority, _ in clauses if priority >= _URGENT_OVERRIDE_PRIORITY]
+    ordered_names = urgent_names + [n for n in featured_names if n not in urgent_names]
+    by_name = {name: text for name, _, text in clauses}
+    featured_facts = [by_name[n] for n in ordered_names if n in by_name]
     # Audit fix: this used to run BEFORE _ai_sentence, which meant on
     # the very first rerun of a new day, the "long-term notes... distinct
     # from the day-by-day record" _ai_sentence's own prompt promises
@@ -1051,10 +1185,10 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     # actively wrong now: the whole point of the split layout is that
     # the commentary reacts to what the reader can already see above
     # it, not to something invisible. Restricted to the same
-    # STATS_BAR_MAX facts the bar itself shows, so anything the
+    # featured_facts the bar itself shows below, so anything the
     # commentary references is guaranteed visible.
     try:
-        sentence = _ai_sentence(all_facts[:STATS_BAR_MAX], now)
+        sentence = _ai_sentence(featured_facts, now)
     except Exception:
         sentence = None
     try:
@@ -1078,16 +1212,15 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     # Split your brief card into a Quick Stats Bar on top and a 1-2
     # Sentence AI Commentary/Vibe Check below it." The bar is plain,
     # mechanical bullets — not AI-narrated, so it's exactly as accurate
-    # on a morning the AI call fails as on a normal one — pulled from
-    # the same all_facts every other consumer here already uses,
-    # capped at STATS_BAR_MAX rather than the AI's own MAX_CLAUSES.
-    # HTML-escaped: some facts (the calendar one, since this session's
-    # earlier location/description addition) carry real external text,
-    # not a hand-authored string, same reasoning as headline_rotation.
-    # py's own escape call for the identical class of risk.
-    stats_html = "".join(
-        f"<li>{html.escape(fact[0].upper() + fact[1:])}</li>" for fact in all_facts[:STATS_BAR_MAX]
-    )
+    # on a morning the AI call fails as on a normal one — now pulled
+    # from featured_facts (see _select_featured_facts above), the same
+    # day-long-locked selection the AI commentary itself reacts to, not
+    # a fresh priority-sort of all_facts every rerun. HTML-escaped: some
+    # facts (the calendar one, since this session's earlier location/
+    # description addition) carry real external text, not a hand-
+    # authored string, same reasoning as headline_rotation.py's own
+    # escape call for the identical class of risk.
+    stats_html = "".join(f"<li>{html.escape(fact[0].upper() + fact[1:])}</li>" for fact in featured_facts)
     st.markdown(
         f'<div class="morning-briefing"><ul class="morning-stats">{stats_html}</ul>'
         f'<div class="morning-commentary">{sentence}</div></div>',
