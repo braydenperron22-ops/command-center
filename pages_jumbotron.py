@@ -1149,6 +1149,82 @@ def _around_leagues_pages(now_ts: float) -> list[tuple[str, int, int, list[dict]
     return pages
 
 
+# Session request: "if there's a game going on with another one of my
+# teams... I want [the out-of-town scoreboard] to have a permanent game
+# on there for the team that's playing... that can't be trumped by
+# anything." ESPN's own abbreviation for each tracked team, so a live
+# game can be picked straight out of scores_client.fetch_games(sport)'s
+# own already-fetched, already-_mini_row_html-shaped list rather than
+# re-fetching or reshaping anything from sports_client's differently-
+# shaped Jays/Habs/Saints feeds.
+_PINNED_TEAM_ABBR = {
+    "mlb": sports_client.MLB_TEAM_ABBR,
+    "nhl": sports_client.NHL_TEAM_ABBR,
+    "nfl": sports_client.NFL_TEAM_ABBR,
+}
+
+
+def _pinned_team_games(exclude_sport: str) -> list[dict]:
+    """The live game (if any) for every tracked team other than
+    exclude_sport — the team already featured on the main board, whose
+    own break is the entire reason this overlay is up right now, so
+    pinning it again here would just be redundant. "Live" only (state
+    == "in"): "if there's a game going ON," not one that's upcoming or
+    already final."""
+    out = []
+    for sport, abbr in _PINNED_TEAM_ABBR.items():
+        if sport == exclude_sport:
+            continue
+        try:
+            games = scores_client.fetch_games(sport)
+        except Exception:
+            continue
+        game = next((g for g in games if g["state"] == "in" and abbr in (g["home"]["abbr"], g["away"]["abbr"])), None)
+        if game:
+            out.append(game)
+    return out
+
+
+def _pinned_ufc_bout(now: datetime) -> tuple[dict, dict] | None:
+    """(event, bout) for a live UFC card right now, or None — same
+    "going on" bar as _pinned_team_games, and the same coverage window
+    (Saturday nights) ufc_client.takeover_state itself already uses for
+    the main board, so this only ever fires exactly when a real UFC
+    night is actually live. Independent of app.py's own _ufc_takeover
+    (which app.py deliberately nulls out when a live Habs/Jays game
+    already owns the main screen — see its own comment) since a pinned
+    slot here is exactly the case that suppression exists for: UFC
+    still going on in the background while a team game is featured."""
+    ufc_state = ufc_client.takeover_state(now)
+    if not ufc_state or ufc_state["phase"] != "live":
+        return None
+    bout = ufc_client.current_bout(ufc_state["event"])
+    if not bout:
+        return None
+    return ufc_state["event"], bout
+
+
+def _ufc_pinned_row_html(bout: dict) -> str:
+    """A .jumbo-mini-shaped row for the pinned live UFC bout — fighters
+    instead of teams, round/clock instead of a score, so this is its
+    own small renderer rather than coercing fight data into _mini_row_
+    html's team-game shape (see ufc_client's own docstring on why a
+    bout needed a genuinely different shape in the first place). Reuses
+    the exact same CSS classes so it still sits flush in the same grid
+    as the team rows around it."""
+
+    def fighter_row(f: dict) -> str:
+        record = f'<span class="jumbo-mini-record">{html.escape(f["record"])}</span>' if f.get("record") else ""
+        return f'<div class="jumbo-mini-team"><span class="jumbo-mini-abbr">{html.escape(f["short_name"])}</span>{record}</div>'
+
+    status_text = f'Rd {bout["round"]} · {bout["clock"]}'.strip(" ·") if bout.get("round") else "Live"
+    return (
+        '<div class="jumbo-mini jumbo-mini-live"><div class="jumbo-mini-teams">'
+        f'{fighter_row(bout["fighter_a"])}{fighter_row(bout["fighter_b"])}</div>'
+        f'<div class="jumbo-mini-status">{html.escape(status_text)}</div></div>'
+    )
+
+
 def _between_play_overlay_html(state: dict, now: datetime) -> str:
     """Full-screen "out of town scoreboard" during a natural break in
     the featured game — session request: "between innings / periods
@@ -1273,13 +1349,37 @@ def _between_play_overlay_html(state: dict, now: datetime) -> str:
     index = int(now_ts // _AROUND_ROTATE_SECONDS) % len(pages)
     league_key, page_num, page_total, chunk = pages[index]
     page_label = league_key.upper() + (f" · {page_num + 1}/{page_total}" if page_total > 1 else "")
+
+    # Pinned rows (see _pinned_team_games/_pinned_ufc_bout's own
+    # docstrings) — dropped from the rotating chunk first so a pinned
+    # team's own game never shows twice just because the rotation
+    # happened to land on its league's page too, then the chunk is
+    # trimmed to leave room: this overlay's whole reason for switching
+    # to fixed-size pages in the first place (see the comment above)
+    # was a kiosk that can't scroll silently losing rows past whatever
+    # fit, and unconditionally adding pinned rows on top of an already-
+    # tuned-to-fit page would reintroduce exactly that.
+    pinned_games = _pinned_team_games(exclude_sport=sport)
+    pinned_keys = {(g["home"]["abbr"], g["away"]["abbr"]) for g in pinned_games}
+    chunk = [g for g in chunk if (g["home"]["abbr"], g["away"]["abbr"]) not in pinned_keys]
+    pinned_bout = _pinned_ufc_bout(now)
+    pinned_total = len(pinned_games) + (1 if pinned_bout else 0)
+    chunk = chunk[: max(1, _AROUND_PAGE_SIZE - pinned_total)]
     rows_html = "".join(_mini_row_html(g) for g in chunk)
+
+    pinned_html = ""
+    if pinned_games or pinned_bout:
+        pinned_rows = "".join(_mini_row_html(g) for g in pinned_games)
+        if pinned_bout:
+            pinned_rows += _ufc_pinned_row_html(pinned_bout[1])
+        pinned_html = f'<div class="jumbo-otc-league">Pinned</div><div class="jumbo-otc-grid">{pinned_rows}</div>'
 
     # Same page-change crossfade _around_html's own sidebar rail uses
     # (see its own comment on why two alternating classes, not one) —
     # its own dedicated session_state keys, not shared with that rail,
     # since the two rotate independently even though both read off the
-    # same underlying page list/clock.
+    # same underlying page list/clock. Pinned rows above are deliberately
+    # outside this — they don't "change pages," so they never fade.
     identity = f"{league_key}:{page_num}"
     changed = identity != st.session_state.get("jumbotron_otc_identity")
     st.session_state["jumbotron_otc_identity"] = identity
@@ -1294,6 +1394,7 @@ def _between_play_overlay_html(state: dict, now: datetime) -> str:
         '<div class="jumbo-otc-title">Out Of Town Scoreboard</div>'
         f'<div class="jumbo-otc-sub">{html.escape(headline)}</div>'
         f'<div class="jumbo-otc-timer-block">{timer_span}<div class="jumbo-otc-timer-label">{html.escape(timer_label)}</div></div>'
+        f'{pinned_html}'
         f'<div class="jumbo-otc-league">{html.escape(page_label)}</div>'
         f'<div class="jumbo-otc-grid{fade_class}">{rows_html}</div>'
         "</div></div>"

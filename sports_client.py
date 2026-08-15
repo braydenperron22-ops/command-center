@@ -29,6 +29,11 @@ MLB_TEAM_ID = 141  # Toronto Blue Jays
 # names match this exactly, which is what scores_client.
 # find_espn_competition actually matches on.
 MLB_TEAM_NAME = "Toronto Blue Jays"
+# ESPN's own abbreviation for this team — unlike MLB_TEAM_NAME above,
+# this is for cross-referencing ESPN's own scoreboard against itself
+# (pages_jumbotron's out-of-town-scoreboard pinning), not MLB Stats API
+# against ESPN, so there's no "MLB Stats API has none" problem here.
+MLB_TEAM_ABBR = "TOR"
 MLB_DIVISION_ID = 201  # AL East
 MLB_DIVISION_NAME = "AL East"
 # Session request: "can we also include preseason games?" — "S" (spring
