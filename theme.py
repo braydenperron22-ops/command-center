@@ -257,6 +257,28 @@ html, body, [class*="css"] {
     color: #F5F5F7;
 }
 
+/* Markets page runs 7 tiles in one row (see pages_markets.render) —
+   the narrowest lineup any tile grid in this app uses. Unlike the
+   shared .tile-label (deliberately multi-line-capable elsewhere, e.g.
+   "NORTH BAY GAS"), a ticker name here is one word ("BITCOIN") with no
+   space to wrap on, so at this width it was breaking mid-word into a
+   garbled two-line mess instead of overflowing or truncating cleanly.
+   Scoped rather than touching .tile-label everywhere, same reasoning
+   as .prediction-side-tile's own override above. */
+.market-tile .tile-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* The hero % is the one number on this page that must never visually
+   clip — .tile-value's fixed 2.6rem assumes room a 7-column row at
+   this width doesn't have. clamp() keeps it full-size wherever there's
+   space and only shrinks it as far as the tile actually needs, rather
+   than a single fixed size that's right for zero tile widths. */
+.market-tile .tile-value {
+    font-size: clamp(1.5rem, 5.5vw, 2.6rem);
+}
+
 /* Portfolio page's Recent Activity rows — a colored category tag
    (session feedback: plain text alone didn't make a dividend read any
    differently from a withdrawal at a glance) grouped with the label so

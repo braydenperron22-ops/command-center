@@ -112,7 +112,7 @@ def render():
         with cols[i]:
             if not quote or quote["intraday"] is None:
                 st.markdown(
-                    f"""<div class="tile">
+                    f"""<div class="tile market-tile">
                         <div class="tile-label">{label}</div>
                         <div class="tile-prev">data unavailable</div>
                     </div>""",
@@ -129,7 +129,7 @@ def render():
             caption = "Market-implied forecast" if forecast_slot else "Intraday change"
 
             st.markdown(
-                f"""<div class="tile {accent_class}">
+                f"""<div class="tile market-tile {accent_class}">
                     <div class="tile-label">{label}</div>
                     <div class="tile-value market-hero-value {direction_class}">{sign}{intraday:.2f}%</div>
                     <div class="tile-prev">{caption}</div>
