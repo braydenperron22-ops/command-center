@@ -1032,6 +1032,68 @@ def fetch_saints() -> dict | None:
     }
 
 
+NFL_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+# Session request: "the out of town scoreboard [should also show for]
+# NFL half times." fetch_saints's own "game_id" is already a raw ESPN
+# event id (see _normalize_nfl_game: "game_id": e["id"]) — NFL has no
+# separate native stats API the way MLB/NHL do (see this file's own
+# comment above NFL_TEAM_SCHEDULE_URL), it's ESPN data end to end, so
+# this polls the exact same scoreboard endpoint _fetch_nfl_games_raw's
+# own schedule call already reads status from, just on its own much
+# shorter cache. GAME_CACHE_TTL_SECONDS (5 min) is fine for a schedule
+# but far too slow here: a real NFL halftime is itself only ~12-15
+# minutes, so a 5-minute-stale read could miss detecting it starting
+# OR ending until a meaningful chunk of the whole break has already
+# passed. Same 5s cadence fetch_mlb_live_detail's own LIVE_DETAIL_
+# CACHE_TTL_SECONDS already uses for exactly this reason.
+NFL_LIVE_DETAIL_CACHE_TTL_SECONDS = 5
+
+
+@st.cache_data(ttl=NFL_LIVE_DETAIL_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_nfl_scoreboard_raw() -> list[dict]:
+    fetch_throttle.wait_turn()
+    resp = requests.get(NFL_SCOREBOARD_URL, timeout=10)
+    resp.raise_for_status()
+    return resp.json().get("events", [])
+
+
+def fetch_nfl_live_detail(game_id) -> dict | None:
+    """{"period", "clock", "is_halftime"} for the given ESPN NFL event
+    id. None on a fetch failure or if this game_id genuinely isn't in
+    today's scoreboard (no last-good fallback — same "stale live state
+    is actively misleading, not just old" reasoning fetch_mlb_live_
+    detail's own docstring already gives).
+
+    is_halftime reads ESPN's own STATUS_HALFTIME status-type name — the
+    same well-established convention ESPN uses for this exact state
+    across every sport its API covers (STATUS_IN_PROGRESS/STATUS_FINAL/
+    STATUS_SCHEDULED are all confirmed live elsewhere in this file
+    against real games). Flagged honestly: this specific value hasn't
+    itself been checked against a real live halftime moment yet — none
+    of the real live preseason games running when this was built
+    happened to actually BE at halftime at the time. Read defensively
+    either way (a wrong/renamed field just means is_halftime stays
+    False, never a crash), same posture _nfl_situation_html's own
+    docstring already takes for NFL's generally-less-verified fields —
+    worth confirming against a real halftime the first real chance."""
+    try:
+        events = _fetch_nfl_scoreboard_raw()
+    except Exception:
+        return None
+    for e in events:
+        if e.get("id") != str(game_id):
+            continue
+        comp = (e.get("competitions") or [{}])[0]
+        status = comp.get("status") or {}
+        status_type = status.get("type") or {}
+        return {
+            "period": status.get("period"),
+            "clock": status.get("displayClock"),
+            "is_halftime": status_type.get("name") == "STATUS_HALFTIME",
+        }
+    return None
+
+
 def fetch_nfl_next_game() -> dict | None:
     """{"start_time", "opponent", "level"} for the Saints' very next
     scheduled game (see fetch_mlb_next_game's own docstring for why
