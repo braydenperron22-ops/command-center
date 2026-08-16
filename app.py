@@ -43,6 +43,7 @@ import pages_today
 import pages_weather
 import payday_schedule
 import persisted_state
+import precip_nowcast_client
 import prediction_markets_client
 import seasons_client
 import sports_alerts
@@ -323,6 +324,65 @@ components.html(
         "  kioskRadarHoldTicks = 0;",
         "  kioskRadarIndex = (kioskRadarIndex + 1) % frames.length;",
         "}, KIOSK_RADAR_FRAME_MS);",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+    </script>
+    """,
+    height=0,
+)
+
+# Radar frame dynamic sizing — session request: "makes the radar much,
+# much, much bigger... you should be able to see it all." A static CSS
+# vh budget (theme.py's own .weather-radar-frame-large, several rounds
+# of live-tested history on that class's own comment) kept running into
+# the same wall no matter how it was tuned: the header above this tile
+# isn't a fixed height — it grows and shrinks with the morning-briefing
+# sentence's real length, an active weather alert, how many hero badges
+# are flagged right now — so any single static value is either too
+# small on the header's short days or overlapping the fixed bottom
+# ticker on its long ones. Confirmed live across several real reruns:
+# the SAME 60vh value measured comfortably clear of the header in one
+# check and 75px into the ticker in another, just from the header's own
+# content changing between them, nothing to do with viewport size.
+#
+# Measuring the real remaining space at runtime instead, the same way
+# this app already does for the live-countdown ticker/toast dedup
+# above — the one thing a static injected stylesheet genuinely can't
+# do (this file has said as much in theme.py's own comments for a
+# while) but a persistent script can. RADAR_OVERHEAD_PX is the tile's
+# own non-frame chrome (padding + credit line + the gap under the
+# frame) — near-constant regardless of the frame's own current size,
+# so it only needs measuring once per tick, not solved for.
+components.html(
+    """
+    <script>
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-radar-size')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-radar-size';
+      s.textContent = [
+        "var KIOSK_RADAR_MIN_PX = 150;",
+        "var KIOSK_RADAR_SAFETY_PX = 20;",
+        "function kioskSizeRadar() {",
+        "  var tile = document.querySelector('.weather-radar-tile-large');",
+        "  var frame = document.querySelector('.weather-radar-frame-large');",
+        "  if (!tile || !frame) return;",
+        "  var tickerTop = window.innerHeight;",
+        "  var tickers = document.querySelectorAll('.ticker-bar');",
+        "  for (var i = 0; i < tickers.length; i++) {",
+        "    var tb = tickers[i].getBoundingClientRect();",
+        "    if (tb.height > 0 && tb.top < tickerTop) tickerTop = tb.top;",
+        "  }",
+        "  var tileTop = tile.getBoundingClientRect().top;",
+        "  var overhead = tile.offsetHeight - frame.offsetHeight;",
+        "  var available = tickerTop - tileTop - overhead - KIOSK_RADAR_SAFETY_PX;",
+        "  var maxWidth = window.innerWidth * 0.9;",
+        "  var size = Math.max(KIOSK_RADAR_MIN_PX, Math.min(available, maxWidth));",
+        "  frame.style.width = size + 'px';",
+        "}",
+        "setInterval(kioskSizeRadar, 1000);",
       ].join('\\n');
       doc.head.appendChild(s);
     })();
@@ -2036,6 +2096,40 @@ if weather:
             f'background:{_badge_bg("#FFD60A", 0.22)}; border-color:#FFD60A;">'
             f'{season["label"]} starts {season_when}</span>'
         )
+    # Session request: "move the rain forecasting into... a hero badge
+    # if it's flagged" — the minute-cast (precip_nowcast_client.py)
+    # used to sit as its own tile on the Radar page; pulled out
+    # entirely so that page could go back to being just the map,
+    # "much much much bigger" (see pages_radar.py). Same badge-row
+    # shape as everything else here, but its own much shorter fuse —
+    # a minute-cast only ever covers the next 60 minutes in the first
+    # place, so "flagged" means rain is actually about to start or
+    # stop somewhere in that window, not a days-out heads-up the way
+    # the badges above this one work. "Continuing"/"no rain" (see
+    # precip_nowcast_client's own rain_starting_in_minutes/rain_ending_
+    # in_minutes docstrings) aren't flagged at all — neither one is a
+    # new, actionable moment the way an approaching or clearing edge
+    # is. Blue — unclaimed among this row's own palette, and already
+    # this app's own color for weather/rain elsewhere (the Weather
+    # page's beacon, the radar "you are here" marker).
+    try:
+        nowcast = precip_nowcast_client.minutely_forecast()
+    except Exception:
+        nowcast = None
+    if nowcast:
+        starting = precip_nowcast_client.rain_starting_in_minutes(nowcast)
+        ending = precip_nowcast_client.rain_ending_in_minutes(nowcast)
+        nowcast_text = None
+        if starting is not None:
+            nowcast_text = "Rain starting now" if starting == 0 else f"Rain in {starting} min"
+        elif ending is not None:
+            nowcast_text = "Rain easing now" if ending == 0 else f"Rain easing in {ending} min"
+        if nowcast_text:
+            extras.append(
+                f'<span class="weather-extra" style="color:#64D2FF; '
+                f'background:{_badge_bg("#64D2FF", 0.22)}; border-color:#64D2FF;">'
+                f'{nowcast_text}</span>'
+            )
     extras_html = f'<div class="weather-extras">{"".join(extras)}</div>' if extras else ""
 
     weather_block = f"""<div class="hero-weather">

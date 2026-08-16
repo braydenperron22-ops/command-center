@@ -2059,24 +2059,18 @@ html, body, [class*="css"] {
    itself is square this time. */
 /* Session report: "it's just a little box inside of a bigger box...
    the box is also huge, so I can't see the clock, and I can't see the
-   weather." Two real, separate problems, both from the same root
-   cause: this tile used to be a plain flex child, which stretches to
-   its parent COLUMN's full width by default (Streamlit's own layout,
-   not this app's choice) — with the frame itself capped narrower than
-   that by the vh budget below, the dark .tile background (border,
-   radius, the works) ends up visibly bigger than the actual radar
-   square floating centered inside it, reading as exactly the "box
-   inside a box" described. width: fit-content makes the tile itself
-   shrink-wrap to whatever size the frame actually resolves to, so the
-   visible dark card IS the radar, edge to edge, not a bigger frame
-   around a smaller one. (display: flex, not the default inline-flex a
-   bare width: fit-content would fall back to, so align-items/text-
-   align keep behaving exactly as they did before. No margin: auto —
-   this tile is a flex CHILD of .weather-radar-row below, which
-   centers both tiles itself via justify-content; an auto margin here
-   too would fight that, not reinforce it — auto margins on a flex
-   item override the container's own justify-content for that one
-   item specifically.) */
+   weather." this tile used to be a plain flex child, which stretches
+   to its parent COLUMN's full width by default (Streamlit's own
+   layout, not this app's choice) — with the frame itself capped
+   narrower than that by the vh budget below, the dark .tile background
+   (border, radius, the works) ended up visibly bigger than the actual
+   radar square floating centered inside it. width: fit-content makes
+   the tile itself shrink-wrap to whatever size the frame actually
+   resolves to, so the visible dark card IS the radar, edge to edge,
+   not a bigger frame around a smaller one. (display: flex, not the
+   default inline-flex a bare width: fit-content would fall back to,
+   so align-items/text-align keep behaving as expected; margin: 0 auto
+   keeps the now-narrower tile centered in its column.) */
 .weather-radar-tile-large {
     display: flex;
     flex-direction: column;
@@ -2084,6 +2078,7 @@ html, body, [class*="css"] {
     text-align: center;
     width: fit-content;
     max-width: 100%;
+    margin: 0 auto;
     padding: 0.7rem 0.8rem 0.6rem;
 }
 .weather-radar-frame {
@@ -2101,56 +2096,31 @@ html, body, [class*="css"] {
    shrinking it proportionally, and a single fixed vh value doesn't
    survive every real screen (a shorter kiosk vs. a taller one, an
    active alert banner growing the header above this tile on a given
-   day and not another).
-   NOT reused verbatim, though: those 70vh/105vh numbers were tuned
-   for that page's own 2.5:1 WIDE frame (aspect-ratio: 2.5/1), where a
-   generous *width* budget only ever produces height = width / 2.5 —
-   the real thing that had to fit under the header. Copying the same
-   two numbers onto THIS square (1:1) frame, where height = width
-   directly, was the actual bug behind "the box is huge, I can't see
-   the clock" — it was consuming roughly 2.5x the vertical footprint
-   the old page's own live-tested budget ever actually used. Divided
-   through by that same 2.5 (70/2.5=28, 105/2.5=42) instead, so a
-   square frame gets the identical real HEIGHT budget already proven
-   live not to crowd out the header/ticker on both a short and a tall
-   kiosk screen, just expressed directly as width now that width and
-   height are the same number. min(90vw, ...) replaces the old
-   min(100%, ...) — 100% no longer means anything stable now that the
-   tile it would be relative to is itself sized to fit-content (a
-   circular reference, not just a wrong number), so this measures
-   against the viewport directly instead; 90vw is just a safety
-   ceiling; the vh term is what actually decides the size almost
-   everywhere. Deliberately AFTER the plain .weather-radar-frame rule
-   above — same-specificity classes on one element, so source order
-   decides the winner, and this needs to win.
+   day and not another). min(90vw, ...) — 90vw is just a safety
+   ceiling for a genuinely narrow/portrait screen; the vh term is what
+   actually decides the size almost everywhere real. Deliberately
+   AFTER the plain .weather-radar-frame rule above — same-specificity
+   classes on one element, so source order decides the winner, and
+   this needs to win.
 
-   23vh short-tier, close to the original 28vh (not the heavily
-   trimmed-down value this went through mid-session) now that the
-   minute-cast tile sits in .weather-radar-row BESIDE this one instead
-   of stacked underneath it (see that class's own comment for why):
-   several rounds of live testing trimmed this frame down as far as
-   14vh trying to leave the STACKED nowcast tile enough headroom before
-   the fixed .ticker-bar, and it was still finding new ways to overlap,
-   because both tiles were competing for the one scarce dimension a
-   kiosk screen has — height, under a header whose own real size isn't
-   fixed either (it grows and shrinks with the morning-briefing
-   sentence's actual length day to day). Once the two tiles stopped
-   competing for it, re-testing at 28vh still turned up a real overlap
-   (~15px, then ~3px after one trim) on a genuine 768px-tall screen —
-   the SAME overlap the radar tile alone would already have had at
-   28vh, unrelated to the nowcast tile at all (it doesn't affect this
-   tile's own height anymore, sitting beside it rather than under it) —
-   just never caught before because the exact header-content length
-   that triggers it hadn't come up in this specific tier's own earlier
-   live tests. Landed on 23vh after two further small trims — short-
-   tier only, not a matching cut to the tall tier, which had genuine
-   margin to spare (42vh). */
+   58vh short-tier / 88vh tall-tier — session request: "makes the
+   radar much, much, much bigger... you should be able to see it all
+   on the radar page." A minute-by-minute rain nowcast briefly lived
+   on this page too, as its own tile beside the map (see git history)
+   — pulled back out to a hero badge (app.py) at the same request,
+   specifically freeing this page to spend its whole budget on the map
+   alone rather than sharing it with anything else. RainViewer's own
+   tile tops out at 512 real pixels regardless of how large this
+   renders it (see radar_client.TILE_SIZE) — a ~1.5-1.7x upscale at
+   these sizes on a real kiosk screen, soft but not unreasonably so at
+   actual kiosk viewing distance, and the honest ceiling of what their
+   free tier can provide at any size. */
 .weather-radar-frame-large {
-    width: min(90vw, 23vh);
+    width: min(90vw, 40vh);
 }
 @media (min-height: 850px) {
     .weather-radar-frame-large {
-        width: min(90vw, 42vh);
+        width: min(90vw, 60vh);
     }
 }
 /* Every frame is stacked full-bleed on top of the others (see pages_
@@ -2201,66 +2171,6 @@ html, body, [class*="css"] {
     font-size: 0.75rem;
     color: #8E8E93;
     margin-top: 0.6rem;
-}
-
-/* Wraps both the radar tile and the minute-cast tile (pages_radar.py's
-   own render() builds both into one HTML string so this can actually
-   be their real shared parent — display:flex has no effect across two
-   unrelated sibling divs). Row, not column — see pages_radar.py's own
-   module docstring for why stacking them was the actual bug, not
-   anything about either tile's own sizing: two tiles stacked vertically
-   were competing for the one dimension a kiosk screen is genuinely
-   short on (a fixed header above, a fixed ticker below, and the header's
-   own height isn't even constant — it grows with the morning-briefing
-   sentence's real length day to day), while a kiosk screen's actual
-   spare dimension is width. flex-wrap as a fallback, not the plan —
-   on any real landscape kiosk both tiles' own widths comfortably clear
-   90vw combined, so this should never actually wrap in practice, but a
-   hard on/off (a media query swapping row for column at some breakpoint)
-   would need its own separate live-tested vertical budget for the
-   stacked case, the exact problem this layout exists to avoid. */
-.weather-radar-row {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: 1.2rem;
-    width: 100%;
-}
-
-/* Minute-by-minute rain nowcast (pages_radar.py/precip_nowcast_
-   client.py) — session follow-up after the radar page itself: "does
-   RainViewer have a future forecast... xweather, but make sure not to
-   go over the rate limit." A fixed, comfortable width rather than
-   matching the radar frame's own vh-driven size — the two are laid out
-   side by side now (see .weather-radar-row above), not stacked, so
-   there's no longer a reason for this tile's width to depend on the
-   radar's at all; it just needs to be wide enough that its own summary
-   sentence never wraps ("Rain easing in 45 min." is roughly the widest
-   real one) and narrow enough to read as a compact companion next to
-   the radar square, not a competing second hero. */
-.precip-nowcast-tile {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    width: 240px;
-    max-width: 100%;
-    padding: 0.9rem 1rem;
-}
-.precip-nowcast-summary {
-    font-size: 1rem;
-    font-weight: 600;
-    color: #F5F5F7;
-}
-.precip-nowcast-bars {
-    width: 100%;
-    height: 32px;
-    margin-top: 0.6rem;
-}
-.precip-nowcast-bars rect {
-    fill: #64D2FF;
 }
 
 /* Hourly Forecast page (see pages_hourly.py) — replaces the live radar
