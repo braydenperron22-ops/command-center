@@ -1368,19 +1368,21 @@ def _recent_history_block(now: datetime) -> str:
 # _update_learned_notes' own docstring) came back genuinely richer
 # (weekday shift patterns, commute-vs-gas-price cross-check, a
 # recurring homestand, financial activity) and got hard-truncated
-# mid-sentence at the old 700-char limit. Raised to 1200 — real room
-# for what's now actually being asked of it, not a re-guess.
+# mid-sentence at the old 700-char limit. Raised to 1200, then 1800
+# once the environment-trends block and the Spending/Bills/Gas/
+# Transfer categorization both landed on the same day and a real,
+# complete response measured 1437 characters — 1800 gave headroom
+# above that, but was still a cap the note could eventually grow into
+# and hit again the next time a new cross-referenced section made a
+# genuinely longer note worth writing.
 #
-# Raised again once the environment-trends block and the Spending/
-# Bills/Gas/Transfer categorization both landed on the same day —
-# checked live (generous headroom, no char slice) what the model's own
-# natural complete output actually runs, now juggling schedule
-# patterns, financial activity, AND environmental trends together: a
-# real, coherent, non-truncated response came back at 1437 characters.
-# 1800 gives genuine room above that observed length rather than
-# sitting right at the edge of truncating again the next time any one
-# of these sections has a bit more to say.
-LEARNED_NOTES_MAX_CHARS = 1800
+# Session request: "just make it unlimited" — removed entirely rather
+# than raised again. No LEARNED_NOTES_MAX_CHARS, no slice on the
+# result (see _update_learned_notes' own final assignment), and the
+# prompt itself no longer tells the model to stay under any character
+# count. The real ceiling now is gemini_client's own max_output_tokens
+# on that call (see _update_learned_notes) — this app's own artificial
+# limit is gone, not the model's.
 _learned_notes: str = persisted_state.load("morning_brief_learned_notes", "")
 _learned_notes_date: str | None = persisted_state.load("morning_brief_learned_notes_date", None)
 
@@ -1640,19 +1642,23 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
         "truly isn't enough real history yet for even a tentative pattern (only a handful of days "
         "recorded so far), keep the note short rather than inventing one — but don't default to "
         "silence just because a pattern isn't 100% certain when it's genuinely emerging. Plain prose, "
-        f"no headers or bullet points. Under {LEARNED_NOTES_MAX_CHARS} characters."
+        "no headers or bullet points."
     )
     try:
-        # 600, up from 380 alongside LEARNED_NOTES_MAX_CHARS's own
-        # bump above — real headroom over the 1800-char cap so the
-        # TOKEN budget itself never becomes the thing silently cutting
-        # this off before the character slice even gets a say.
-        updated = gemini_client.generate(prompt, temperature=0.4, max_output_tokens=600)
+        # Session request: "just make it unlimited" — raised from 600
+        # (itself already headroom over the old 1800-char cap, back
+        # when one existed) to gemini-flash-lite-latest's own real
+        # output ceiling (65,536 tokens, per Google's own current
+        # model docs), rather than picking another number this app
+        # would just have to raise again later. This is now the actual
+        # limit on how long the note can get — not a number chosen
+        # here.
+        updated = gemini_client.generate(prompt, temperature=0.4, max_output_tokens=65536)
     except Exception:
         updated = None
     if updated is None:
         return
-    _learned_notes = updated.strip()[:LEARNED_NOTES_MAX_CHARS]
+    _learned_notes = updated.strip()
     _learned_notes_date = today
     persisted_state.save("morning_brief_learned_notes", _learned_notes)
     persisted_state.save("morning_brief_learned_notes_date", _learned_notes_date)
