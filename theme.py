@@ -4627,6 +4627,25 @@ html, body, [class*="css"] {
 .jumbo-otc-grid .jumbo-mini-team img { width: 44px; height: 44px; }
 .jumbo-otc-grid .jumbo-mini-status { font-size: 17px; }
 .jumbo-otc-grid .jumbo-mini-leader { font-size: 15px; }
+/* Session report: "scores that are complete and final are... super
+   grayed out... I can't see what the score is or anything about
+   them... make sure that they're still visible and white. Just get
+   rid of the red, live tag." .jumbo-mini-final's own 0.42 opacity
+   (fine for the small sidebar rail this class is shared with) reads
+   as genuinely unreadable blown up to this overlay's own much bigger
+   text — a final score is exactly the thing this full-screen overlay
+   exists to let someone read at a glance, not fade out. Back to full
+   opacity here, and the live-game status text's own red/bold color
+   (.jumbo-mini-live .jumbo-mini-status, the "red live tag" — no
+   actual separate badge element, just that text turning red+800
+   weight) reset to the same plain color every other row's status
+   text already uses, so live and final rows read the same plain
+   white/gray here — scoped to this overlay specifically, not the
+   shared classes themselves, so the sidebar rail's own smaller live
+   game view (still small enough that dim-final/red-live read fine
+   there) is untouched. */
+.jumbo-otc-grid .jumbo-mini-final { opacity: 1; }
+.jumbo-otc-grid .jumbo-mini-live .jumbo-mini-status { color: var(--mut-2); font-weight: 400; }
 
 /* Full-screen play-result announcement — session request: "add an
    animation that takes up the screen after every play. Single,
