@@ -198,7 +198,15 @@ def _leader_line(competition: dict) -> str | None:
     return f"{leader['name']}: {leader['stat_line']}" if leader else None
 
 
-def _gather_context(sport_key: str, away_name: str, home_name: str, postgame: bool, stakes: str | None = None) -> str | None:
+def _gather_context(
+    sport_key: str,
+    away_name: str,
+    home_name: str,
+    postgame: bool,
+    stakes: str | None = None,
+    stakes_label: str = "Season stakes",
+    match: dict | None = None,
+) -> str | None:
     """A short, plain-text bullet list of real ESPN facts for this
     matchup — None if ESPN simply doesn't carry this game
     (find_espn_competition's own "skip this feature" case) or if
@@ -209,16 +217,31 @@ def _gather_context(sport_key: str, away_name: str, home_name: str, postgame: bo
 
     `stakes` (see _stakes_line) is listed first, ahead of the plain
     matchup facts — it's the one line that answers "why does tonight
-    matter," so the AI sees it before anything else."""
-    match = scores_client.find_espn_competition(sport_key, away_name, home_name)
+    matter," so the AI sees it before anything else.
+
+    `match` — pass a pre-resolved {"event_id","competition","sport",
+    "league"} dict (scores_client.fetch_playoff_round_games already
+    hands one back per game) to skip the name-matching lookup below
+    entirely. get_pregame_blurb/get_postgame_blurb's own tracked-team
+    callers don't have one of these lying around cheaply, so they still
+    look it up by name here same as always; get_neutral_pregame_blurb/
+    get_neutral_postgame_blurb do, and skipping the lookup for them
+    isn't just an optimization — away_name/home_name for a neutral game
+    are scores_client's own shortDisplayName ("Blue Jays"), not the
+    full displayName find_espn_competition matches on ("Toronto Blue
+    Jays"), so relying on that lookup for a neutral game risks silently
+    finding nothing even though the competition data was already in
+    hand."""
     if match is None:
-        return None
+        match = scores_client.find_espn_competition(sport_key, away_name, home_name)
+        if match is None:
+            return None
     summary = scores_client.fetch_summary(match)
     competition = match["competition"]
 
     lines = []
     if stakes:
-        lines.append(f"Season stakes: {stakes}")
+        lines.append(f"{stakes_label}: {stakes}")
     for label, value in (
         ("Records", _records_line(competition)),
         ("Venue/broadcast", _venue_broadcast_line(competition)),
@@ -318,6 +341,103 @@ def get_postgame_blurb(
     # fires.
     text = gemini_client.generate(
         _postgame_prompt(team_label, opponent, context), max_output_tokens=MAX_OUTPUT_TOKENS, allow_during_game=True
+    )
+    if text is not None:
+        _remember(_postgame_cache, "game_blurb_postgame_cache", key, text)
+    return text
+
+
+# Session request: "during the semis and the finals... regardless of
+# if my team is out or not, I wanna watch every game of those series...
+# as the featured game" (same rich board as the tracked-team games, not
+# a stripped-down one — the follow-up confirming that, once asked).
+# get_pregame_blurb/get_postgame_blurb above are written from OUR
+# team's perspective start to finish (team_label vs. opponent, stakes
+# tied to our own playoff race) — neither concept exists for two teams
+# we have no stake in, so this is a real parallel pair, not a thin
+# wrapper: evenhanded "away at home" framing, and "why tonight matters"
+# is the series itself (round + real series score, see
+# _series_stakes_line) rather than a division/wild-card race.
+
+
+def _series_stakes_line(round_text: str | None, series_summary: str | None) -> str | None:
+    """The neutral-blurb equivalent of _stakes_line above — round name
+    plus the real series score once it's started (e.g. "West Final —
+    EDM leads series 2-1"), both straight from ESPN (see scores_client.
+    fetch_playoff_round_games's own docstring on where these come
+    from). None only when round_text itself is None (shouldn't happen
+    given the call site — sports_alerts._neutral_playoff_candidates
+    already filtered to real semis-or-later games — but no crash
+    either way)."""
+    if not round_text:
+        return None
+    label = round_text.split(" - Game")[0].strip()
+    return f"{label} — {series_summary}" if series_summary else label
+
+
+def _neutral_pregame_prompt(away_name: str, home_name: str, context: str) -> str:
+    return (
+        f"Write a short, exciting pregame preview (2-3 sentences, no more) for {away_name} at "
+        f"{home_name}, for a fan who follows the league but isn't rooting for either team tonight. "
+        f"If a 'Series stakes' fact is listed below, lead with THAT — the round and series score it "
+        f"describes — as the real reason tonight matters, rather than just narrating who's playing "
+        f"and where to watch. Use ONLY the facts below — never invent a stat, injury, standing, or "
+        f"storyline that isn't listed. Natural broadcast-preview voice, evenhanded between both "
+        f"teams, not a dry list of the facts themselves.\n\n{context}"
+    )
+
+
+def _neutral_postgame_prompt(away_name: str, home_name: str, context: str) -> str:
+    return (
+        f"Write a short postgame recap (2-3 sentences, no more) for {away_name} at {home_name}, for "
+        f"a fan who follows the league but wasn't rooting for either team. If a 'Series stakes' fact "
+        f"is listed below, weave in what this result means for the series — a step closer to "
+        f"elimination, a series tied up, a sweep completed, whatever the facts support — rather than "
+        f"just restating the final score and the box-score highlight. Use ONLY the facts below — "
+        f"never invent a play, stat, or standing that isn't listed. Natural broadcast-recap voice, "
+        f"evenhanded between both teams, not a dry list of the facts themselves.\n\n{context}"
+    )
+
+
+def get_neutral_pregame_blurb(
+    sport_key: str, game_id, away_name: str, home_name: str, match: dict, round_text: str | None, series_summary: str | None
+) -> str | None:
+    """Neutral equivalent of get_pregame_blurb above — same one-shot-
+    per-game_id cache (shared dict/key space: a real game_id is never
+    both a tracked-team game and a neutral one, so there's no collision
+    risk in sharing it)."""
+    key = f"{sport_key}_{game_id}"
+    if key in _pregame_cache:
+        return _pregame_cache[key]
+    context = _gather_context(
+        sport_key, away_name, home_name, postgame=False,
+        stakes=_series_stakes_line(round_text, series_summary), stakes_label="Series stakes", match=match,
+    )
+    if context is None:
+        return None
+    text = gemini_client.generate(_neutral_pregame_prompt(away_name, home_name, context), max_output_tokens=MAX_OUTPUT_TOKENS)
+    if text is not None:
+        _remember(_pregame_cache, "game_blurb_pregame_cache", key, text)
+    return text
+
+
+def get_neutral_postgame_blurb(
+    sport_key: str, game_id, away_name: str, home_name: str, match: dict, round_text: str | None, series_summary: str | None
+) -> str | None:
+    """Neutral equivalent of get_postgame_blurb above — see its own
+    docstring for the game-time-pause exception, which applies here
+    too."""
+    key = f"{sport_key}_{game_id}"
+    if key in _postgame_cache:
+        return _postgame_cache[key]
+    context = _gather_context(
+        sport_key, away_name, home_name, postgame=True,
+        stakes=_series_stakes_line(round_text, series_summary), stakes_label="Series stakes", match=match,
+    )
+    if context is None:
+        return None
+    text = gemini_client.generate(
+        _neutral_postgame_prompt(away_name, home_name, context), max_output_tokens=MAX_OUTPUT_TOKENS, allow_during_game=True
     )
     if text is not None:
         _remember(_postgame_cache, "game_blurb_postgame_cache", key, text)

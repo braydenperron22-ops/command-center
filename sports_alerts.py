@@ -203,6 +203,78 @@ _LEAGUES = [
     },
 ]
 
+# Session request: "during the semis and the finals... regardless of
+# if my team is out or not, I wanna watch every game of those series...
+# as the featured game." Below the tracked Jays/Habs/Saints games
+# above, this is a SECOND, independent source of takeover_state()
+# candidates: any live/upcoming/recently-final game leaguewide (not
+# just our own team's) that's genuinely in the semis or later. Never
+# fires for a game our own tracked team is actually playing in — that
+# one already comes through the candidates above, with the real "our
+# team" framing pages_jumbotron.py's board is built around (see
+# pages_jumbotron._board_html's own "neutral" branch for what's
+# different when THIS is the source instead).
+_NEUTRAL_TEAM_ABBR = {"mlb": sports_client.MLB_TEAM_ABBR, "nhl": sports_client.NHL_TEAM_ABBR, "nfl": sports_client.NFL_TEAM_ABBR}
+# scores_client._normalize_game's state strings ("pre"/"in"/"post") vs.
+# the "upcoming"/"live"/"final" vocabulary every fetch_jays/fetch_habs/
+# fetch_saints dict (and everything below in this module) already uses.
+_ESPN_STATE_TO_TAKEOVER = {"pre": "upcoming", "in": "live", "post": "final"}
+
+
+def _is_playoff_semis_or_final(sport: str, round_text: str | None) -> bool:
+    """True for a real conference-final-or-later round — confirmed live
+    (see scores_client.fetch_playoff_round_games's own docstring) that
+    each league's ESPN round headline cleanly identifies this: NHL's
+    "East Final"/"West Final"/"Stanley Cup Final" all contain "Final"
+    while "1st Round"/"2nd Round" never do; NFL's "AFC Championship"/
+    "NFC Championship"/"Super Bowl LIX" vs. "Wild Card Playoffs"/
+    "Divisional Playoffs"; MLB's "ALCS"/"NLCS"/"World Series" vs.
+    "ALWC"/"NLWC"/"ALDS"/"NLDS" (only the championship-series codes
+    contain "LCS" — the wild card and division series codes don't).
+    False for an earlier round or a non-playoff game (round_text is
+    None for both)."""
+    if not round_text:
+        return False
+    text = round_text.lower()
+    if sport == "nhl":
+        return "final" in text
+    if sport == "nfl":
+        return "championship" in text or "super bowl" in text
+    if sport == "mlb":
+        return "lcs" in text or "world series" in text
+    return False
+
+
+def _neutral_playoff_candidates() -> list[tuple[dict, None, dict]]:
+    """Extra (league, status, game) candidates — same shape the loop in
+    takeover_state() below already builds from _LEAGUES — for every
+    live/upcoming/recently-final semis-or-later game across all three
+    leagues that ISN'T one of our own tracked teams' games. `status` is
+    always None here (nothing downstream needs a fetch_jays()-shaped
+    dict for a neutral game — see pages_jumbotron._board_html's own
+    "neutral" branch, which reads everything it needs straight off
+    `game` instead)."""
+    out: list[tuple[dict, None, dict]] = []
+    for sport in ("mlb", "nhl", "nfl"):
+        our_abbr = _NEUTRAL_TEAM_ABBR[sport]
+        try:
+            games = scores_client.fetch_playoff_round_games(sport)
+        except Exception:
+            continue
+        for game in games:
+            if our_abbr in (game["home"]["abbr"], game["away"]["abbr"]):
+                continue
+            if not _is_playoff_semis_or_final(sport, game.get("round_text")):
+                continue
+            state = _ESPN_STATE_TO_TAKEOVER.get(game["state"])
+            if state is None:
+                continue
+            neutral_game = dict(game, game_id=game["event_id"], state=state, level="playoff")
+            round_label = (game.get("round_text") or "PLAYOFFS").split(" - Game")[0].strip().upper()
+            league = {"sport": sport, "label": round_label, "neutral": True}
+            out.append((league, None, neutral_game))
+    return out
+
 
 @st.cache_data(ttl=LIVE_FEED_CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_mlb_live_feed_raw(game_id: int) -> dict:
@@ -735,6 +807,7 @@ def takeover_state(now: datetime) -> dict | None:
         game = status["game"] if status else None
         if game:
             candidates.append((league, status, game))
+    candidates.extend(_neutral_playoff_candidates())
     if not candidates:
         return None
 

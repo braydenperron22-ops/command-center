@@ -101,6 +101,13 @@ def _normalize_game(event: dict) -> dict | None:
         "home": {
             "abbr": home["team"].get("abbreviation", ""),
             "name": home["team"].get("shortDisplayName", home["team"].get("displayName", "")),
+            # Full name ("Edmonton Oilers"), not the short one above
+            # ("Oilers") — team_color() matches on ESPN's own full
+            # displayName, so pages_jumbotron._sides_neutral needs this
+            # specifically for that lookup (see its own docstring: the
+            # short name silently misses every match there, always
+            # falling back to gray).
+            "full_name": home["team"].get("displayName", ""),
             "logo": home["team"].get("logo"),
             "score": home.get("score") if state != "pre" else None,
             "record": team_record(home),
@@ -108,6 +115,7 @@ def _normalize_game(event: dict) -> dict | None:
         "away": {
             "abbr": away["team"].get("abbreviation", ""),
             "name": away["team"].get("shortDisplayName", away["team"].get("displayName", "")),
+            "full_name": away["team"].get("displayName", ""),
             "logo": away["team"].get("logo"),
             "score": away.get("score") if state != "pre" else None,
             "record": team_record(away),
@@ -139,6 +147,56 @@ def fetch_games(league_key: str, today: datetime | None = None) -> list[dict]:
     games.sort(key=lambda g: g["start_time"] or datetime.max)
     _last_good_games[league_key] = games
     return games
+
+
+# Session request: "during the semis and the finals... regardless of if
+# my team is out or not, I wanna watch every game of those series...
+# as the featured game." sports_alerts._neutral_playoff_candidates
+# needs to know which round a game is in (not just "playoff" — see
+# sports_client.py's own MLB_GAME_LEVEL/NHL_GAME_LEVEL/NFL_GAME_LEVEL,
+# which already collapse every postseason round into one bucket) and
+# which team's ESPN event this actually is, so it can pull the real
+# competition object directly instead of re-deriving it through
+# find_espn_competition's own name-matching.
+#
+# ESPN's per-competition "notes" field carries the real round name —
+# confirmed live against actual 2025 postseason dates for all three
+# leagues: NHL "East 1st Round - Game 2" / "West 2nd Round - Game 3" /
+# "East Final - Game 3" / "Stanley Cup Final - Game 4"; NFL "AFC Wild
+# Card Playoffs" / "AFC Divisional Playoffs" / "AFC Championship" /
+# "Super Bowl LIX"; MLB "ALWC - Game 2" / "ALDS - Game 3" / "ALCS -
+# Game 7" / "World Series - Game 2". None for a regular-season game,
+# which carries no such field at all. "series" carries the real
+# series score once it's started (e.g. "EDM leads series 2-1") — also
+# confirmed live, same dates.
+def fetch_playoff_round_games(league_key: str, today: datetime | None = None) -> list[dict]:
+    """Same games/shape as fetch_games(), each with three extra keys —
+    "event_id", "round_text", "series_summary" — pulled from the exact
+    same already-cached raw scoreboard fetch_games() itself uses (same
+    cache key, so this never costs an extra request beyond what the
+    Around The Leagues rail/out-of-town scoreboard already make)."""
+    league = next((entry for entry in LEAGUES if entry["key"] == league_key), None)
+    if league is None:
+        return []
+    today = today or datetime.now(ZoneInfo(TIMEZONE))
+    date_str = today.strftime("%Y%m%d")
+    try:
+        raw = _fetch_scoreboard_raw(league["sport"], league["league"], date_str)
+    except Exception:
+        return []
+    out = []
+    for event in raw:
+        game = _normalize_game(event)
+        if game is None:
+            continue
+        competition = (event.get("competitions") or [{}])[0]
+        notes = competition.get("notes") or []
+        game["event_id"] = event.get("id")
+        game["round_text"] = notes[0].get("headline") if notes else None
+        game["series_summary"] = (competition.get("series") or {}).get("summary")
+        game["match"] = {"event_id": event.get("id"), "competition": competition, "sport": league["sport"], "league": league["league"]}
+        out.append(game)
+    return out
 
 
 # Session request (jumbotron Featured board): win probability and a

@@ -157,6 +157,34 @@ def _sides(status: dict, game: dict, team_label: str) -> tuple[dict, dict]:
     return (them, us) if game["is_home"] else (us, them)
 
 
+def _sides_neutral(game: dict) -> tuple[dict, dict]:
+    """_sides()'s equivalent for a semis/finals game between two teams
+    we have no stake in (sports_alerts._neutral_playoff_candidates) —
+    both "is_us": False, which is also what already makes _side_color/
+    the digit-flash logic below fall through to each team's own REAL
+    ESPN color and the same neutral flash treatment with no other code
+    downstream needing to know this game is any different. `game`
+    here is scores_client.fetch_playoff_round_games's own shape (
+    "home"/"away", each already {"abbr","name","full_name","logo",
+    "score","record"}), not the fetch_jays()/fetch_habs()/
+    fetch_saints() shape _sides() above reads.
+
+    Uses "full_name" ("Edmonton Oilers"), not the short "name"
+    ("Oilers") _mini_row_html's compact rows use — this same value
+    doubles as both the on-screen label and _side_color's lookup key
+    into scores_client.team_color, which matches on ESPN's own full
+    displayName (confirmed live: the short name silently misses there,
+    always falling back to gray). Reads fine on-screen too — a fully-
+    spelled-out matchup is more useful than an abbreviated one for two
+    teams the board can't assume we already recognize the way we'd
+    recognize our own team's short club name."""
+
+    def side(s: dict) -> dict:
+        return {"name": s.get("full_name") or s["name"], "logo": s["logo"], "record": s.get("record") or "", "is_us": False}
+
+    return side(game["away"]), side(game["home"])
+
+
 def _side_html(side: dict, dim: bool) -> str:
     classes = "jumbo-side" + (" jumbo-side-dim" if dim else "")
     return (
@@ -286,6 +314,25 @@ def _nhl_situation_html(game_id: int) -> str:
     if detail.get("clock"):
         parts.append(f'<span class="jumbo-clockbig">{html.escape(detail["clock"])}</span>')
     return f'<div class="jumbo-situ">{"".join(parts)}</div>' if parts else ""
+
+
+def _neutral_situation_html(status_text: str | None) -> str:
+    """The live-situation strip's fallback for a neutral MLB/NHL game
+    (sports_alerts._neutral_playoff_candidates) — _mlb_situation_html's
+    bases/count/outs diamond and _nhl_situation_html's period/clock
+    both poll the OFFICIAL league API (MLB Stats API/NHL API) by THAT
+    league's own game id, a different id space than the ESPN event id
+    a neutral game's game_id actually is (see _board_html's own
+    comment on why sport == "mlb" alone isn't enough to call those
+    safely). ESPN's own status text (scores_client._normalize_game's
+    "status_text" — e.g. "2nd - 10:21", "Top 5th") is the one live-
+    situation source that DOES come from the same ESPN event this
+    game's score/records/win-probability already do — thinner than the
+    real diamond/clock widgets, but real and current rather than
+    invented or silently blank."""
+    if not status_text:
+        return ""
+    return f'<div class="jumbo-situ"><span class="jumbo-situ-hot">{html.escape(status_text.upper())}</span></div>'
 
 
 _NFL_ORDINALS = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
@@ -1259,7 +1306,19 @@ def _between_play_overlay_html(state: dict, now: datetime) -> str:
     including the featured game itself, still sitting mid-list; not
     worth the extra matching logic to filter out one row), full-screen
     since there's real room and a real reason to look elsewhere for a
-    minute. "" outside a break, or if there's nothing to show."""
+    minute. "" outside a break, or if there's nothing to show.
+
+    Never triggers for a neutral MLB/NHL game (sports_alerts._neutral_
+    playoff_candidates): fetch_mlb_live_detail/fetch_nhl_live_detail
+    below poll the official league API by ITS OWN game id, which a
+    neutral game's ESPN-sourced game_id isn't (see _board_html's own
+    comment on this same id-space mismatch) — `if not detail: return
+    ""` a few lines down means this degrades to simply never detecting
+    a break rather than crashing, so a neutral game just never gets
+    this particular overlay. A real gap, not worth chasing down for a
+    between-innings/intermission nicety when everything that actually
+    carries the game (score, situation, blurb, win probability) stays
+    correct either way."""
     if state.get("phase") != "live" or not state.get("game"):
         return ""
     sport = state["league"]["sport"]
@@ -1543,15 +1602,46 @@ def _blurb_html(sport: str, game: dict, team_label: str, postgame: bool, status:
     return f'<div class="jumbo-blurb"><div class="jumbo-sl">{html.escape(label)}</div><div class="jumbo-blurb-text">{html.escape(text)}</div></div>'
 
 
+def _blurb_html_neutral(sport: str, game: dict, postgame: bool) -> str:
+    """_blurb_html()'s equivalent for a semis/finals game between two
+    teams we have no stake in — see game_blurb.get_neutral_pregame_
+    blurb/get_neutral_postgame_blurb's own docstrings for why this
+    can't just call the same functions with our_name blanked out."""
+    away_name = game["away"].get("full_name") or game["away"]["name"]
+    home_name = game["home"].get("full_name") or game["home"]["name"]
+    fn = game_blurb.get_neutral_postgame_blurb if postgame else game_blurb.get_neutral_pregame_blurb
+    text = fn(sport, game["game_id"], away_name, home_name, game["match"], game.get("round_text"), game.get("series_summary"))
+    if not text:
+        return ""
+    label = "AI Recap" if postgame else "AI Preview"
+    return f'<div class="jumbo-blurb"><div class="jumbo-sl">{html.escape(label)}</div><div class="jumbo-blurb-text">{html.escape(text)}</div></div>'
+
+
 def _board_html(state: dict, now: datetime) -> str:
     league, status, game = state["league"], state["status"], state["game"]
     sport, phase = league["sport"], state["phase"]
-    away, home = _sides(status, game, league["label"])
-    match = _espn_match_for(sport, game)
-    if phase == "live" and sport == "mlb":
+    neutral = league.get("neutral", False)
+    if neutral:
+        away, home = _sides_neutral(game)
+        match = game["match"]
+    else:
+        away, home = _sides(status, game, league["label"])
+        match = _espn_match_for(sport, game)
+    # sport == "mlb" alone isn't enough below — _current_matchup_html/
+    # _last_play_html/fetch_mlb_top_performers all poll MLB Stats API
+    # by ITS OWN gamePk, which is what game["game_id"] holds for a
+    # tracked Jays game (sports_client.fetch_jays's own id space) but
+    # NOT for a neutral one (game["game_id"] there is ESPN's own event
+    # id — see sports_alerts._neutral_playoff_candidates). Feeding an
+    # ESPN id into an MLB Stats API lookup doesn't crash (every one of
+    # these already tolerates "not found") but silently produces
+    # nothing, which is worse than just falling through to the
+    # ESPN/match-based rotation below like a neutral NHL/NFL game
+    # already does.
+    if phase == "live" and sport == "mlb" and not neutral:
         leaders_html = _current_matchup_html(game["game_id"])
         last_play_html = _last_play_html(game["game_id"], away, home)
-    elif phase == "postgame" and sport == "mlb":
+    elif phase == "postgame" and sport == "mlb" and not neutral:
         # Session request: "fix post game so it shows the 3 best
         # players of the game." Real MLB Game Score ranking (see
         # sports_client.fetch_mlb_top_performers's own docstring) rather
@@ -1603,8 +1693,18 @@ def _board_html(state: dict, now: datetime) -> str:
         start_text = game["start_time"].strftime("%-I:%M %p")
         start_label = _PREGAME_SITUATION_LABEL.get(sport, "START")
         situation = f'<div class="jumbo-situ"><span class="jumbo-situ-hot">{html.escape(start_label)} {html.escape(start_text)}</span></div>'
-        situation += _pregame_extra_html(sport, game["game_id"])
-        blurb_html = _blurb_html(sport, game, league["label"].title(), postgame=False, status=status)
+        # _pregame_extra_html is MLB Stats API/NHL API game_id-keyed too
+        # (see the "leaders_html"/"last_play_html" comment above on why
+        # that's the wrong id space for a neutral game) — no ESPN-based
+        # equivalent exists, so this is one genuine gap for a neutral
+        # pregame board rather than something worth faking.
+        if not neutral:
+            situation += _pregame_extra_html(sport, game["game_id"])
+        blurb_html = (
+            _blurb_html_neutral(sport, game, postgame=False)
+            if neutral
+            else _blurb_html(sport, game, league["label"].title(), postgame=False, status=status)
+        )
         # Session request: "can we use money line to get approximate
         # win odds" — ESPN's own live win-probability model is always
         # None pregame (_win_probability_html falls back to the
@@ -1613,8 +1713,12 @@ def _board_html(state: dict, now: datetime) -> str:
         wp_html = _win_probability_html(sport, match, away, home)
         dim_away = dim_home = False
     else:
-        away_score = game["opp_score"] if game["is_home"] else game["team_score"]
-        home_score = game["team_score"] if game["is_home"] else game["opp_score"]
+        if neutral:
+            away_score = int(game["away"]["score"]) if game["away"].get("score") not in (None, "") else None
+            home_score = int(game["home"]["score"]) if game["home"].get("score") not in (None, "") else None
+        else:
+            away_score = game["opp_score"] if game["is_home"] else game["team_score"]
+            home_score = game["team_score"] if game["is_home"] else game["opp_score"]
 
         # Session report: "the big score takes forever to update" —
         # game["team_score"]/["opp_score"] come from the schedule
@@ -1628,8 +1732,14 @@ def _board_html(state: dict, now: datetime) -> str:
         # first. No equivalent live-detail endpoint exists for the
         # Saints (see sports_client.py's own comment on why) — NFL just
         # keeps the schedule-level score, a 5-minute-stale worst case
-        # rather than the sub-5s one MLB/NHL get.
-        if phase == "live" and sport in ("mlb", "nhl"):
+        # rather than the sub-5s one MLB/NHL get. Skipped for a neutral
+        # game too — same "wrong id space" reason as
+        # _mlb_situation_html/_nhl_situation_html below (confirmed live:
+        # this silently called the real NHL API with an ESPN event id
+        # before this guard existed) — the schedule-level score from
+        # `game` above is neutral games' own worst case, same as NFL's
+        # always is.
+        if phase == "live" and sport in ("mlb", "nhl") and not neutral:
             live_detail = (
                 sports_client.fetch_mlb_live_detail(game["game_id"])
                 if sport == "mlb"
@@ -1671,7 +1781,9 @@ def _board_html(state: dict, now: datetime) -> str:
             f"</div>{final_badge}</div>"
         )
         if phase == "live":
-            if sport == "mlb":
+            if neutral and sport in ("mlb", "nhl"):
+                situation = _neutral_situation_html(game.get("status_text"))
+            elif sport == "mlb":
                 situation = _mlb_situation_html(game["game_id"])
             elif sport == "nhl":
                 situation = _nhl_situation_html(game["game_id"])
@@ -1679,7 +1791,13 @@ def _board_html(state: dict, now: datetime) -> str:
                 situation = _nfl_situation_html(match)
         else:
             situation = ""
-        blurb_html = _blurb_html(sport, game, league["label"].title(), postgame=True, status=status) if phase == "postgame" else ""
+        blurb_html = ""
+        if phase == "postgame":
+            blurb_html = (
+                _blurb_html_neutral(sport, game, postgame=True)
+                if neutral
+                else _blurb_html(sport, game, league["label"].title(), postgame=True, status=status)
+            )
         wp_html = _win_probability_html(sport, match, away, home) if phase == "live" else ""
         # Only a finished game has a settled winner to dim the loser
         # against — during a live game the trailing side is still very
@@ -1692,8 +1810,11 @@ def _board_html(state: dict, now: datetime) -> str:
     # One-time win celebration — session-guarded per game_id so it
     # plays exactly once, the moment a win is first observed, rather
     # than replaying every rerun for the whole ~15min postgame hold.
+    # No "our side" to celebrate for in a neutral game — see
+    # _sides_neutral's own docstring — so this stays "" unconditionally
+    # rather than picking one side by convention.
     win_burst = ""
-    if phase == "postgame" and away_score is not None and home_score is not None:
+    if not neutral and phase == "postgame" and away_score is not None and home_score is not None:
         our_score = away_score if away["is_us"] else home_score
         their_score = home_score if away["is_us"] else away_score
         win_key = f"jumbotron_win_shown_{game['game_id']}"
@@ -1707,21 +1828,6 @@ def _board_html(state: dict, now: datetime) -> str:
         "postgame": "FINAL",
     }[phase]
     live_class = " jumbo-board-live" if phase == "live" else ""
-    # Session request: "how can we improve the experience watching the
-    # game... feel good and seamless and like its all orchestrated in a
-    # sophisticated manner." The live pulse used to glow a fixed generic
-    # red (--live) regardless of which team was actually playing — this
-    # ties it to OUR team's own real accent color instead (the same
-    # _TEAM_COLOR_RGB the board gradient/win-probability bar already
-    # use for "our" side), so the whole board's own identity feels
-    # specific to whichever sport/team is actually up, not a stock
-    # "something's live" indicator. A plain CSS variable rather than a
-    # new class per sport — theme.py's .jumbo-board-live reads it with
-    # a fallback to the old red, so a sport this ever runs for without
-    # setting it still looks exactly as it did before.
-    live_glow = _TEAM_COLOR_RGB.get(sport)
-    board_style = f' style="--live-glow-rgb:{live_glow[0]},{live_glow[1]},{live_glow[2]}"' if live_glow else ""
-
     # Session request: "in the original prototype there was a cool dark
     # gradient behind the big score section with both team's colors."
     # Each side's own real color (_side_color — our fixed color, or the
@@ -1734,6 +1840,23 @@ def _board_html(state: dict, now: datetime) -> str:
     # a hard-edged color band that stops dead above the win-probability
     # bar — the score still sits right at the top of it either way.
     away_rgb, home_rgb = _side_color(sport, match, away), _side_color(sport, match, home)
+    # Session request: "how can we improve the experience watching the
+    # game... feel good and seamless and like its all orchestrated in a
+    # sophisticated manner." The live pulse used to glow a fixed generic
+    # red (--live) regardless of which team was actually playing — this
+    # ties it to OUR team's own real accent color instead (the same
+    # _TEAM_COLOR_RGB the board gradient/win-probability bar already
+    # use for "our" side), so the whole board's own identity feels
+    # specific to whichever sport/team is actually up, not a stock
+    # "something's live" indicator. A plain CSS variable rather than a
+    # new class per sport — theme.py's .jumbo-board-live reads it with
+    # a fallback to the old red, so a sport this ever runs for without
+    # setting it still looks exactly as it did before. No fixed "our
+    # team" color exists for a neutral game — the home side's own real
+    # ESPN color (already computed above) stands in for it instead.
+    live_glow = home_rgb if neutral else _TEAM_COLOR_RGB.get(sport)
+    board_style = f' style="--live-glow-rgb:{live_glow[0]},{live_glow[1]},{live_glow[2]}"' if live_glow else ""
+
     board_gradient = (
         "background:linear-gradient(90deg,"
         f"rgba({away_rgb[0]},{away_rgb[1]},{away_rgb[2]},0.22) 0%,"
@@ -2410,7 +2533,12 @@ def render(now: datetime, state: dict, weather: dict | None, ufc_state: dict | N
     # usual 5s — see that function's own comment on why 9 players is a
     # genuinely different cost than that card's one or two).
     batting_entries = None
-    if state.get("phase") == "live" and state.get("game") and state["league"]["sport"] == "mlb":
+    if (
+        state.get("phase") == "live"
+        and state.get("game")
+        and state["league"]["sport"] == "mlb"
+        and not state["league"].get("neutral")
+    ):
         game_id = state["game"]["game_id"]
         full_order = sports_client.fetch_mlb_batting_order(game_id)
         live_detail = sports_client.fetch_mlb_live_detail(game_id) if full_order else None
@@ -2451,7 +2579,12 @@ def render(now: datetime, state: dict, weather: dict | None, ufc_state: dict | N
     # own docstring) — MLB-live only, same gating _current_matchup_html
     # already uses; NHL has no per-play "event" classification to key off.
     play_result_overlay = ""
-    if state.get("phase") == "live" and state.get("game") and state["league"]["sport"] == "mlb":
+    if (
+        state.get("phase") == "live"
+        and state.get("game")
+        and state["league"]["sport"] == "mlb"
+        and not state["league"].get("neutral")
+    ):
         play_result_overlay = _play_result_overlay_html(
             state["game"]["game_id"], sports_client.fetch_mlb_last_play(state["game"]["game_id"])
         )
