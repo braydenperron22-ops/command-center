@@ -2057,11 +2057,31 @@ html, body, [class*="css"] {
    fetch, which could ask for any custom aspect ratio) — a plain
    square frame here, not the old 2.5:1 wide one, since the image
    itself is square this time. */
+/* Session report: "it's just a little box inside of a bigger box...
+   the box is also huge, so I can't see the clock, and I can't see the
+   weather." Two real, separate problems, both from the same root
+   cause: this tile used to be a plain flex child, which stretches to
+   its parent COLUMN's full width by default (Streamlit's own layout,
+   not this app's choice) — with the frame itself capped narrower than
+   that by the vh budget below, the dark .tile background (border,
+   radius, the works) ends up visibly bigger than the actual radar
+   square floating centered inside it, reading as exactly the "box
+   inside a box" described. width: fit-content makes the tile itself
+   shrink-wrap to whatever size the frame actually resolves to, so the
+   visible dark card IS the radar, edge to edge, not a bigger frame
+   around a smaller one. (display: flex, not the default inline-flex a
+   bare width: fit-content would fall back to, so align-items/text-
+   align keep behaving exactly as they did before — margin: 0 auto
+   keeps it centered in its column now that it no longer spans it.) */
 .weather-radar-tile-large {
+    display: flex;
+    flex-direction: column;
     align-items: center;
     text-align: center;
-    padding-top: 1rem;
-    padding-bottom: 0.9rem;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 0.7rem 0.8rem 0.6rem;
 }
 .weather-radar-frame {
     position: relative;
@@ -2073,29 +2093,39 @@ html, body, [class*="css"] {
 }
 /* Sizing technique (constrain *width* via min() against a vh budget,
    let aspect-ratio derive a matching height) is the old radar page's
-   own hard-won fix, reused verbatim — see git history around 100fddd^
-   for the full story: fighting max-height directly stretched the
-   image instead of shrinking it proportionally, and any single fixed
-   vh value was found live to still overflow a real 768px-tall kiosk
-   screen once the leave-headline/an active alert banner grew the
-   content stack above this tile, while a taller 1024px+ screen had
-   plenty of room to go bigger. Height-tiered for the same reason.
-   Deliberately AFTER the plain .weather-radar-frame rule above (both
-   classes land on the same element with equal specificity, so source
-   order is what decides the winner here) — confirmed live this same
-   ordering mistake (this block sitting BEFORE .weather-radar-frame)
-   let that rule's own width:100% silently win instead, rendering the
-   frame at the tile's full ~1230px content width regardless of
-   viewport height and pushing the page title/credit line off screen
-   above and below it. */
+   own hard-won fix — see git history around 100fddd^ for the full
+   story: fighting max-height directly stretched the image instead of
+   shrinking it proportionally, and a single fixed vh value doesn't
+   survive every real screen (a shorter kiosk vs. a taller one, an
+   active alert banner growing the header above this tile on a given
+   day and not another).
+   NOT reused verbatim, though: those 70vh/105vh numbers were tuned
+   for that page's own 2.5:1 WIDE frame (aspect-ratio: 2.5/1), where a
+   generous *width* budget only ever produces height = width / 2.5 —
+   the real thing that had to fit under the header. Copying the same
+   two numbers onto THIS square (1:1) frame, where height = width
+   directly, was the actual bug behind "the box is huge, I can't see
+   the clock" — it was consuming roughly 2.5x the vertical footprint
+   the old page's own live-tested budget ever actually used. Divided
+   through by that same 2.5 (70/2.5=28, 105/2.5=42) instead, so a
+   square frame gets the identical real HEIGHT budget already proven
+   live not to crowd out the header/ticker on both a short and a tall
+   kiosk screen, just expressed directly as width now that width and
+   height are the same number. min(90vw, ...) replaces the old
+   min(100%, ...) — 100% no longer means anything stable now that the
+   tile it would be relative to is itself sized to fit-content (a
+   circular reference, not just a wrong number), so this measures
+   against the viewport directly instead; 90vw is just a safety
+   ceiling; the vh term is what actually decides the size almost
+   everywhere. Deliberately AFTER the plain .weather-radar-frame rule
+   above — same-specificity classes on one element, so source order
+   decides the winner, and this needs to win. */
 .weather-radar-frame-large {
-    width: min(100%, 70vh);
-    max-width: 100%;
-    margin: 0 auto;
+    width: min(90vw, 28vh);
 }
 @media (min-height: 850px) {
     .weather-radar-frame-large {
-        width: min(100%, 105vh);
+        width: min(90vw, 42vh);
     }
 }
 /* Every frame is stacked full-bleed on top of the others (see pages_

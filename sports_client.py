@@ -522,9 +522,30 @@ def _recent_form(games: list[dict], now: datetime) -> list[str]:
     oldest first (reads left-to-right as a timeline, most recent on the
     right) — from the same full-season schedule already fetched to
     find the current game (see _pick_current_game), so this costs
-    nothing extra."""
+    nothing extra.
+
+    "final" alone isn't enough to trust a game's score, confirmed live:
+    a real Saints preseason game (Jaguars, Aug 15 2026, ESPN game id
+    401873281) came back state "final" with both team_score/opp_score
+    still None the day after — ESPN's own score field genuinely empty
+    on a game it otherwise reports as complete, not a parsing failure
+    (_normalize_nfl_game's own score() already casts defensively and
+    returns None rather than raising). Comparing two Nones with '>'
+    crashed this all the way up through sports_alerts.game_time_active
+    -> groq_client.ai_status_by_model, taking out every page's render
+    (not just this one — game_time_active is called far outside any
+    per-page try/except). Excluded here rather than trusting "final" on
+    its own the way this did before."""
     finals = sorted(
-        (g for g in games if g["state"] == "final" and g["start_time"] <= now), key=lambda g: g["start_time"]
+        (
+            g
+            for g in games
+            if g["state"] == "final"
+            and g["start_time"] <= now
+            and g["team_score"] is not None
+            and g["opp_score"] is not None
+        ),
+        key=lambda g: g["start_time"],
     )
     return ["W" if g["team_score"] > g["opp_score"] else "L" for g in finals[-RECENT_FORM_GAMES:]]
 
