@@ -26,7 +26,7 @@ import commute_history
 import kiosk_tts
 import ntfy_client
 import persisted_state
-from config import COMMUTE_DESTINATION
+from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
 EARLY_BUFFER_MINUTES = 10
 # How volatile the default commute's been recently bumps the buffer
@@ -100,16 +100,34 @@ HEADLINE_GRACE_MINUTES = 10
 _shown_state: dict = persisted_state.load_per_instance("commute_reminder_shown", {"date": None, "events": {}})
 
 
-def _leave_text(minutes: int) -> str:
+def _is_home_event(shift: dict) -> bool:
+    """True when this event's own calendar location is just "Home" —
+    session request: "if the location of an event is... home, don't do
+    the whole leave in blah blah blah... it's like a task that I have
+    to do... from home... just the timer... don't do the talking."
+    A commute-style countdown (drive time to somewhere, a voice reading
+    "leave in") doesn't mean anything for something happening right
+    where the kiosk already is — matched against COMMUTE_ORIGIN's own
+    "Home" label rather than a separate hardcoded string, since that's
+    already this app's one canonical name for the home address."""
+    location = (shift.get("location") or "").strip().lower()
+    return location == COMMUTE_ORIGIN["label"].strip().lower()
+
+
+def _leave_text(minutes: int, is_home: bool = False) -> str:
+    # is_home swaps "Leave" for "Starts" throughout — a home event has
+    # nowhere to leave FOR, just a start time to count down to (see
+    # _is_home_event's own docstring).
+    verb = "Starts" if is_home else "Leave"
     if minutes == 0:
-        return "Leave now"
+        return "Starts now" if is_home else "Leave now"
     if minutes % 60 == 0:
         hours = minutes // 60
-        return "Leave in an hour" if hours == 1 else f"Leave in {hours} hours"
-    return f"Leave in {minutes} min"
+        return f"{verb} in an hour" if hours == 1 else f"{verb} in {hours} hours"
+    return f"{verb} in {minutes} min"
 
 
-def _alert_label(shift: dict) -> str:
+def _alert_label(shift: dict, is_home: bool = False) -> str:
     """The toast label / push title for this shift's leave reminder —
     session request: "make it say work when it's, like, sales or
     customer experience associate or a mix of both... for everything
@@ -122,7 +140,13 @@ def _alert_label(shift: dict) -> str:
     "sales"/"customer experience associate"/etc. a second time — a
     real work shift's summary is already collapsed to exactly "Work"
     by the time it reaches this module (see _SUMMARY_ALIASES), so
-    checking for that string is checking "is this actually a shift"."""
+    checking for that string is checking "is this actually a shift".
+
+    is_home skips the "Leave soon: " framing entirely (see
+    _is_home_event) — just the event's own name, same as "Work" already
+    gets on its own."""
+    if is_home:
+        return shift["summary"]
     if shift["summary"] == "Work":
         return "Work"
     return f"Leave soon: {shift['summary']}"
@@ -266,10 +290,16 @@ def todays_destination(now: datetime) -> dict:
     Today page's commute tile so they always agree on the destination
     rather than the tile silently still assuming Work while the
     countdown routes somewhere else. Falls back to COMMUTE_DESTINATION
-    when there's no currently-relevant shift, no location on it, or
-    geocoding fails."""
+    when there's no currently-relevant shift, no location on it,
+    geocoding fails, or (see _is_home_event) the location is just
+    "Home" — geocoding that literal string is exactly as likely to
+    resolve to some unrelated place actually named "Home" somewhere
+    else entirely as it is to fail outright, and either way there's no
+    real commute to show for a task happening at the kiosk's own
+    address; same fallback as "no shift today at all" is the honest
+    answer here too."""
     current = _current_shift(now)
-    if current is None:
+    if current is None or _is_home_event(current[0]):
         return COMMUTE_DESTINATION
     return _destination_for_shift(current[0]) or COMMUTE_DESTINATION
 
@@ -304,7 +334,19 @@ def _due_milestone(minutes_until_leave: float, shown_for_event: set[int], now_ho
 
 def _leave_by_for_shift(shift: dict) -> datetime | None:
     """leave_by for one specific shift event — None if the commute
-    time to its destination isn't available."""
+    time to its destination isn't available.
+
+    For a home event (_is_home_event) this is just the event's own
+    start time, no commute math at all: there's no destination to
+    geocode and no drive time to subtract for something happening
+    right where the kiosk already is. Every downstream consumer of
+    "leave_by" (the milestone countdown, the persistent headline, the
+    ticker) still works unchanged either way — the target instant they
+    count down to is just the start time itself instead of a back-
+    computed depart time, and _is_home_event/check() below handle
+    swapping "Leave" for "Starts" in what actually gets displayed."""
+    if _is_home_event(shift):
+        return shift["start"]
     destination = _destination_for_shift(shift)
     route = commute_client.route(destination)
     if not route:
@@ -426,19 +468,27 @@ def check(now: datetime) -> dict | None:
     if pushed["date"] != now.date().isoformat():
         pushed = {"date": now.date().isoformat(), "keys": []}
     push_key = f"{event_key}|{milestone}"
-    label = _alert_label(shift)
+    # is_home: no commute framing (see _is_home_event) — plain "Starts
+    # in X" toast/push text, no "Leave soon: " label, and no spoken
+    # voice line at all (kiosk_tts/render_bar only synthesize audio
+    # when "summary" is non-empty — see render_bar's own comment on
+    # data-audio-b64). render_bar's chime is unconditional either way,
+    # so a home event still gets the same little ping, just no talking.
+    is_home = _is_home_event(shift)
+    label = _alert_label(shift, is_home)
+    headline = _leave_text(milestone, is_home)
     if push_key not in pushed["keys"]:
         pushed["keys"].append(push_key)
         persisted_state.save("commute_milestones", pushed)
-        ntfy_client.send(title=label, message=_leave_text(milestone), priority="high", tags="clock3")
+        ntfy_client.send(title=label, message=headline, priority="high", tags="clock3")
 
     return {
-        "headline": _leave_text(milestone),
+        "headline": headline,
         "category": "Commute",
         "important": False,
         "kind": "commute",
         "label": label,
-        "summary": _leave_spoken_text(shift, milestone),
+        "summary": "" if is_home else _leave_spoken_text(shift, milestone),
         "volume": _leave_volume_ceiling(now_aware, leave_by),
     }
 
@@ -512,22 +562,27 @@ def leave_headline_active(now: datetime) -> bool:
     return remaining is not None and -HEADLINE_GRACE_MINUTES * 60 <= remaining <= HEADLINE_WINDOW_MINUTES * 60
 
 
-def _countdown_info(now: datetime) -> tuple[int, str, str] | None:
-    """(target_ms, intensity tier, first-frame text) shared by
+def _countdown_info(now: datetime) -> tuple[int, str, str, bool] | None:
+    """(target_ms, intensity tier, first-frame text, is_home) shared by
     leave_headline_candidate below and render_ticker_leave_bar further
     down — same window/gating logic, just two different places it ends
     up on screen (the unified top-of-screen rotation vs. the jumbotron's
-    own compact ticker slot)."""
-    leave_by = leave_by_time(now)
-    if leave_by is None:
+    own compact ticker slot). is_home (_is_home_event) is what lets
+    both callers swap "Leave" for "Starts" without each re-deriving it
+    themselves."""
+    current = _current_shift(now)
+    if current is None:
         return None
+    shift, leave_by = current
     remaining = _remaining_until_leave(now)
     if remaining is None or not (-HEADLINE_GRACE_MINUTES * 60 <= remaining <= HEADLINE_WINDOW_MINUTES * 60):
         return None
     target_ms = int(leave_by.timestamp() * 1000)
     tier = _intensity_tier(remaining)
-    text = "Leave now" if remaining <= 0 else f"Leave in {_format_clock(remaining)}"
-    return target_ms, tier, text
+    is_home = _is_home_event(shift)
+    verb = "Starts" if is_home else "Leave"
+    text = f"{verb} now" if remaining <= 0 else f"{verb} in {_format_clock(remaining)}"
+    return target_ms, tier, text, is_home
 
 
 # Session request: "make it so all the red headlines within the last 2
@@ -553,13 +608,14 @@ def leave_headline_candidate(now: datetime) -> dict | None:
     info = _countdown_info(now)
     if info is None:
         return None
-    target_ms, tier, text = info
+    target_ms, tier, text, is_home = info
+    verb = "Starts" if is_home else "Leave"
     return {
         "text": text,
         "css_class": _TIER_TO_ROTATION_CLASS[tier],
         "target_ms": target_ms,
-        "template": "Leave in {}",
-        "zero_text": "Leave now",
+        "template": f"{verb} in {{}}",
+        "zero_text": f"{verb} now",
     }
 
 
@@ -591,11 +647,12 @@ def render_ticker_leave_bar(now: datetime) -> None:
     info = _countdown_info(now)
     if info is None:
         return
-    target_ms, tier, text = info
+    target_ms, tier, text, is_home = info
+    verb = "Starts" if is_home else "Leave"
     st.markdown(
         f'<div class="jumbo-leave-ticker intensity-{tier}"><span class="live-countdown" data-intensity '
-        f'data-target-ms="{target_ms}" data-format="clock" data-template="Leave in {{}}" '
-        f'data-zero-text="Leave now">{text}</span></div>',
+        f'data-target-ms="{target_ms}" data-format="clock" data-template="{verb} in {{}}" '
+        f'data-zero-text="{verb} now">{text}</span></div>',
         unsafe_allow_html=True,
     )
 
