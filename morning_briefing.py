@@ -27,8 +27,8 @@ framing itself, from real numbers, not a script. It was also
 previously instructed that "every other fact must actually appear" —
 removed too, for the same reason: forcing every fact into 2-3
 sentences is exactly what made it read like a crammed list instead of
-something someone actually chose to say; see _ai_sentence's own prompt
-for where genuine editorial freedom (what to mention, what to skip,
+something someone actually chose to say; see _ai_headline_and_body's own
+prompt for where genuine editorial freedom (what to mention, what to skip,
 in what order) replaced that mandate. The plain semicolon-joined
 fallback (still used only if the AI call itself fails) is now just
 those same neutral facts, unstyled — a rare degraded-mode path, not
@@ -46,8 +46,8 @@ regardless of which of the 10 rotating pages happens to be up.
 
 import functools
 import html
-import json
 import random
+import re
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -83,16 +83,10 @@ MORNING_WINDOW_END_HOUR = 10
 # Was 3 — widened so a morning that's genuinely eventful (an active
 # alert AND rain closing in AND a packed calendar) can actually say all
 # of it, instead of silently dropping whichever lost the priority sort.
+# Governs the degraded-mode plain-text fallback specifically (see
+# render()'s own `picked` below) — the AI prompt itself gets every fact
+# computed today, uncapped (see _ai_headline_and_body).
 MAX_CLAUSES = 5
-
-# Session redesign: "Separate the Status from the Commentary... Split
-# your brief card into a Quick Stats Bar on top and a 1-2 Sentence AI
-# Commentary/Vibe Check below it." How many of the top-priority facts
-# render() shows as plain bullets — mechanical, not AI-narrated, so
-# they're always accurate/complete even on a morning the AI call fails
-# entirely. Distinct from MAX_CLAUSES above, which still governs the
-# degraded-mode fallback text specifically.
-STATS_BAR_MAX = 3
 
 # Session redesign: "Give the LLM prompt a randomized 'Personality
 # Mode' parameter... so the tone doesn't feel monotonous or excessively
@@ -115,13 +109,30 @@ _PERSONALITY_MODES = {
         "comedy for its own sake. Never mean, never an extended bit — a single dry line, not a "
         "performance."
     ),
+    # Session request, on the headline+body redesign specifically: liked
+    # a loud, hyped, hype-man-style headline as a real option, then the
+    # immediate follow-up — "make it so that the headline doesn't have
+    # to be hype" — that it shouldn't be the MANDATORY tone every single
+    # morning. Same shape as every other mode here: a real, available
+    # note in the rotation, not the only one.
+    "hype": (
+        "Loud, hyped, high-energy — like a hype-man or sports-radio host opening the show. Real "
+        "excitement and personality in both the headline and the body, not just facts read out "
+        "loud. This is the mode that actually earns a genuinely loud, punchy headline."
+    ),
     "full_roast": (
         f"Go all the way — genuinely cutting, willing to roast {USER_FIRST_NAME} directly, real "
         "profanity fine if a line actually earns it. The one mode where the humor can BE the "
         "point, not just a garnish on the takeaway."
     ),
 }
-_PERSONALITY_WEIGHTS = {"professional": 70, "dry_humor": 20, "full_roast": 10}
+# hype weighted heaviest — the session request that added it named loud/
+# hyped as the thing actually wanted most mornings, with the other three
+# modes there so it's a real rotation (see _personality_mode's own
+# docstring on why "your call" alone doesn't reliably produce that) and
+# not hype forced on every single day regardless of whether today
+# actually earns it.
+_PERSONALITY_WEIGHTS = {"professional": 25, "dry_humor": 15, "hype": 55, "full_roast": 5}
 
 
 def _personality_mode(now: datetime) -> str:
@@ -305,8 +316,8 @@ def _agenda_clause(now: datetime) -> tuple[int, str] | None:
 # like everyday so don't worry about needing to mention it anymore" —
 # happening literally every day means it no longer distinguishes today
 # from any other day, so there's nothing left worth a dedicated clause
-# or a special callout for; see _ai_sentence's own docstring for the
-# full history and calendar_client.py's own comment on the same
+# or a special callout for; see _ai_headline_and_body's own docstring
+# for the full history and calendar_client.py's own comment on the same
 # retirement. The plain "Work at 9:00 AM" _agenda_clause already shows
 # for this same event covers it now, same as any other ordinary shift.
 
@@ -539,7 +550,7 @@ def _daylight_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
 AI_REFRESH_SECONDS = 30 * 60  # widened again from 15 min — session request: "make it generate every 30 mins instead of 15... to account for" the richer, smarter prompt below (more facts, more room to actually connect them) costing more per call than the plain version did; see groq_client's module docstring for the daily-budget guarantee this still contributes to
 
 
-def _ai_sentence(picked: list[str], now: datetime) -> str | None:
+def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, str] | None:
     """Same picked clause texts, woven into one or two flowing
     sentences instead of the mechanical semicolon-join below — session
     request: "revamp the morning brief" with "a jarvis type energy from
@@ -875,8 +886,43 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
     concrete failure case — same fix this file's profanity and
     personality-mode corrections already used: name the actual bad
     example instead of trusting a vaguer instruction to prevent it on
-    its own."""
-    facts = "; ".join(picked)
+    its own.
+
+    Session redesign: five real candidate formats generated from actual
+    live data and compared side by side (a stats bar + bigger AI
+    commentary, no bar at all with one full narrated paragraph, a loud
+    hype headline + body, a multi-beat rundown) — "I like loud hype
+    headline plus body, but make it so that the headline doesn't have
+    to be hype." Two real, separate changes from that:
+
+    1. The stats bar is gone. This function used to only write the
+    ADD-ON takeaway sitting below a separate, always-visible mechanical
+    bullet list (_select_featured_facts, STATS_BAR_MAX — both retired
+    entirely, see git history) — the whole "don't restate what's
+    already on screen" framing above existed only because that bar was
+    always there to restate. It isn't anymore: this now writes BOTH
+    parts of the card, a real headline plus a 2-4 sentence body, off
+    the FULL all_facts list every time (not a once-a-day-locked subset)
+    — closer to the pre-stats-bar full-narration era than to the
+    30-word add-on era, just split into two visual registers instead of
+    one paragraph.
+
+    2. "Doesn't have to be hype" is a personality-mode question, not a
+    prompt-freedom one. The very first draft of this redesign gave the
+    headline open "your call, hyped if it earns it, dry/sincere/plain
+    otherwise" discretion directly in the prompt — the exact shape of
+    freedom this file's own personality-mode redesign (see
+    _PERSONALITY_MODES's own docstring above) already proved doesn't
+    reliably produce real variety on its own; it settled into "constant
+    snark" the first time this exact lesson got learned, on this exact
+    function. Rather than repeat that mistake, "hype" became a fourth
+    _PERSONALITY_MODES entry (weighted heaviest, since that's what was
+    actually asked for most mornings) instead of a standalone
+    instruction — the headline's tone now comes from the same externally
+    -decided daily mode the body's tone already did, so "doesn't have to
+    be" is structurally true (3 other modes exist and really do fire)
+    without relying on the model's own restraint to make it true."""
+    facts = "; ".join(facts_list)
     weekday = now.strftime("%A")
     history_block = _recent_history_block(now)
     history_section = (
@@ -951,15 +997,15 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         f"Today's tone, already decided for you rather than your own call (it rotates day to day "
         f"on its own fixed schedule, so the voice doesn't settle into one repeated note): "
         f"{mode_instruction}\n\n"
-        "Maximum 30 words. This is the ONLY text you write on the card — the actual facts (today's "
-        "agenda, weather, commute, gas, portfolio, whatever else fired) are already shown "
-        "separately, above this, as plain bulleted stats. Do not narrate or restate any of that raw "
-        "data in prose — it's already on screen. Write ONLY the synthesized takeaway: the one thing "
-        "actually worth adding once you've looked at everything together — a real connection "
-        "between facts if one genuinely exists, or the honest vibe of the day in one line if it "
-        "doesn't. Never a list that got translated into a sentence. A single <strong> for one word "
-        "or phrase is available if it genuinely helps something land, used sparingly — no other "
-        "HTML, no line breaks, this is one short line.\n\n"
+        "Write this as two parts: a HEADLINE (under 10 words) hooking the single most interesting "
+        "or relevant real thing about today, and a BODY (2-4 sentences) that actually covers the "
+        "real facts worth knowing — there's no separate stats bar anymore, this is the only thing "
+        "on the card, so the body needs to genuinely inform, not just add a vibe on top of "
+        "something else shown elsewhere. Use real editorial judgment on what's worth covering vs. "
+        "skipping; a quiet day can lean on the headline and keep the body short, a genuinely "
+        "eventful one earns more of the 2-4 sentence range. Respond with the headline as the first "
+        "line, then one blank line, then the body — no labels like the word \"headline\" itself, no "
+        "quotation marks around either part, no other formatting.\n\n"
         f"Background on {USER_FIRST_NAME}, for something real and specific instead of generic — "
         f"reference it only when it genuinely connects to today's actual facts below, never as a "
         "standalone bit with nothing underneath it. A real bad example, live: 'at least until "
@@ -978,122 +1024,48 @@ def _ai_sentence(picked: list[str], now: datetime) -> str | None:
         "days record, the upcoming holidays, the upcoming season change, the environmental trend "
         "data above, and the raw data below. Always write numbers as actual digits, never spelled "
         "out as words — '18 minutes' and '0.8%', not 'eighteen minutes' or 'zero point eight percent'.\n\n"
-        "All of today's raw data — this is the exact same set already shown above in the stats "
-        "bar, nothing hidden and nothing extra, so anything you say connects to something the "
-        "reader can already see. Some facts share real physical "
+        "All of today's real raw data — everything computed for today, nothing hidden and nothing "
+        "invented. Some facts share real physical "
         f"cause and effect worth naming directly — cold enough and wet enough together on "
         f"{USER_FIRST_NAME}'s own roads meaning genuine ice risk, not just two separate numbers. "
         "Others are just separate things that happen to both be true the same morning with no real "
         "link, and manufacturing a connection that isn't there reads as a mistake, not a joke — "
         "don't do it. The genuinely interesting connections are usually across days, not within "
         "one: see the long-term notes/recent-days record above for that. "
-        f"Address {USER_FIRST_NAME} by name naturally. Start with a capital letter. Raw data: " + facts
+        f"Address {USER_FIRST_NAME} by name naturally somewhere in the body. Start the headline with "
+        "a capital letter. Raw data: " + facts
     )
     if groq_client.ai_pulls_paused():
         return None
-    # Session redesign: 30-word cap (see this function's own docstring)
-    # needs nowhere near the 450-token budget the prior discretion-based
-    # length needed — 90 is comfortable headroom over what 30 words
-    # actually costs in tokens, not a number chased right up against a
-    # truncation risk the way 450's own history was.
-    return gemini_client.generate_periodic(
-        "morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85, max_output_tokens=90
+    # 260 (up from the old one-line cap's 90) covers a real headline
+    # plus a genuine 2-4 sentence body with comfortable headroom — see
+    # this function's own docstring on why the format grew from one
+    # 30-word add-on line to two real parts.
+    raw = gemini_client.generate_periodic(
+        "morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85, max_output_tokens=260
     )
+    return _parse_headline_body(raw) if raw else None
 
 
-def _strip_code_fence(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text
-        text = text.rsplit("```", 1)[0]
-    return text.strip()
-
-
-# Any clause at or above this priority breaks through the daily lock
-# below regardless of what got selected at lock-in time — matches
-# _alert_clause's own priority tier exactly (the single highest one in
-# this file, reserved for an active weather alert), the one thing here
-# that can genuinely emerge mid-morning and needs to be seen the moment
-# it does. Same "safety-relevant info always breaks through" principle
-# already applied elsewhere in this app (storm lights bypassing night-
-# dim, etc.), not something a same-day lock should get to suppress for
-# hours just because it wasn't there yet when the lock was made.
-_URGENT_OVERRIDE_PRIORITY = 10
-
-_featured_facts_date: str | None = persisted_state.load("morning_brief_featured_date", None)
-_featured_facts: list[str] = persisted_state.load("morning_brief_featured_names", [])
-
-
-def _select_featured_facts(clauses: list[tuple[str, int, str]], now: datetime) -> list[str]:
-    """[name, ...] — which of today's clause names (see render()'s own
-    name/fn/args list) actually get featured in the stats bar and fed
-    to _ai_sentence, for the WHOLE rest of the calendar day once
-    decided. Session request: "the wording and the facts... refresh
-    and rerun every thirty minutes... it changes the entire flow...
-    filter right away what facts are important, and then just have the
-    morning brief stay within that context window... let the AI choose
-    the three bullets... unless there's more in which it's up to him."
-
-    A real AI judgment call, not just top-N by the clauses' own
-    priority numbers — those numbers already encode a reasonable
-    rough ordering, but not "is today itself genuinely eventful enough
-    to feature more than the usual few." Minimum STATS_BAR_MAX, up to
-    MAX_CLAUSES — most mornings should land on the minimum; the prompt
-    below explicitly warns against padding the count just because more
-    facts happen to be available.
-
-    Decided ONCE per calendar day (own persisted date/name-list pair,
-    same shape as _learned_notes_date above) — every later call this
-    same day returns the identical stored list without a new AI call,
-    which is the whole point: a stable, once-decided cast of TOPICS for
-    the day, not a fresh cut each time this runs. render() re-reads
-    each selected name's own CURRENT text every rerun regardless, so
-    each featured fact's real value still stays live — only WHICH
-    topics are featured is what's locked here, not their content.
-
-    Falls back to the previous mechanical behavior (top STATS_BAR_MAX
-    by priority) on any AI failure, an unparseable response, or a
-    response naming too few real clause names to be usable — never
-    lets a bad AI call leave the stats bar empty or stuck without a
-    real selection for the rest of the day."""
-    global _featured_facts_date, _featured_facts
-    today = now.date().isoformat()
-    if _featured_facts_date == today and _featured_facts:
-        return _featured_facts
-    fallback = [name for name, _, _ in clauses[:STATS_BAR_MAX]]  # clauses already priority-sorted by render()
-    valid_names = {name for name, _, _ in clauses}
-    chosen = fallback
-    if not groq_client.ai_pulls_paused():
-        facts_block = "\n".join(f'{i + 1}. name="{name}" (priority {priority}): {text}' for i, (name, priority, text) in enumerate(clauses))
-        prompt = (
-            f"Below are every real fact computed for {USER_FIRST_NAME}'s morning brief today, each "
-            "with its own name tag and the priority number this app assigns it (higher generally "
-            "means more important, but use your own real judgment, not just the number).\n\n"
-            f"{facts_block}\n\n"
-            f"Select which facts genuinely deserve to be featured as today's headline stats — at "
-            f"least {STATS_BAR_MAX}, up to {MAX_CLAUSES}. Most mornings, {STATS_BAR_MAX} is enough; "
-            "only include more if today specifically has a real reason to (an active alert, a packed "
-            "calendar, a notable financial move, several genuinely competing for attention the same "
-            "morning) — don't pad the count just because more facts happen to be available. This "
-            "selection stays fixed for the rest of the morning, so favor what will still genuinely "
-            "matter in a few hours over anything already stale or about to resolve on its own.\n\n"
-            'Respond with ONLY a JSON array of the exact name tags, most important first, no other '
-            'text and no markdown code fence — e.g. ["alert", "commute", "agenda"].'
-        )
-        try:
-            raw = gemini_client.generate(prompt, temperature=0.2, max_output_tokens=120)
-            selected = json.loads(_strip_code_fence(raw)) if raw else None
-        except Exception:
-            selected = None
-        if isinstance(selected, list):
-            candidate = [n for n in selected if isinstance(n, str) and n in valid_names][:MAX_CLAUSES]
-            if len(candidate) >= STATS_BAR_MAX:
-                chosen = candidate
-    _featured_facts = chosen
-    _featured_facts_date = today
-    persisted_state.save("morning_brief_featured_names", chosen)
-    persisted_state.save("morning_brief_featured_date", today)
-    return chosen
+def _parse_headline_body(raw: str) -> tuple[str, str] | None:
+    """Splits the AI's own "headline\\n\\nbody" response into (headline,
+    body) — None on anything that doesn't actually look like that shape
+    (no blank line to split on, or either half empty once trimmed),
+    same "don't guess, fall back cleanly" rule every other AI parse in
+    this app already follows (see e.g. _strip_code_fence's own
+    callers). Tolerates a stray "Headline:"/"Body:" label or wrapping
+    quotes the model adds despite being told not to — cheap insurance,
+    not load-bearing, since the prompt's own instruction is the real
+    fix for that."""
+    text = raw.strip()
+    if "\n\n" not in text:
+        return None
+    headline, _, body = text.partition("\n\n")
+    headline = re.sub(r'(?i)^(headline\s*:?\s*)', "", headline).strip().strip('"')
+    body = re.sub(r'(?i)^(body\s*:?\s*)', "", body).strip().strip('"')
+    if not headline or not body:
+        return None
+    return headline, body
 
 
 def render(now: datetime, weather: dict | None, air_quality: dict | None) -> None:
@@ -1146,104 +1118,66 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         _record_history(now, all_facts)
     except Exception:
         pass
-    # Session request: "the wording and the facts... refresh and rerun
-    # every thirty minutes... it changes the entire flow... what the
-    # morning brief might have been at 8am is not necessarily what the
-    # morning brief is at 8:30am... filter right away what facts are
-    # important, and then just have the morning brief stay within that
-    # context window." Root cause: the stats bar/AI-sentence input
-    # below used to be a fresh priority-sort of `clauses` EVERY rerun —
-    # not just the AI wording refreshing on its own 30-min cadence, but
-    # WHICH facts even qualified as "top 3" could quietly reshuffle
-    # underneath it as clause priorities shifted through the morning
-    # (a delay clearing, an agenda item passing), so the same 30-min
-    # window's own two edges could genuinely be reacting to two
-    # different sets of facts. _select_featured_facts below locks WHICH
-    # topics are featured once per day (an actual AI judgment call, not
-    # just top-N by priority — session request: "let the AI choose the
-    # three bullets... unless there's more in which it's up to him"),
-    # then every rerun re-reads each locked topic's own CURRENT text
-    # here — so the story stays the same shape all morning while each
-    # fact's own live value (today's real temp, the real commute delay
-    # right now) keeps updating, not frozen at whatever it read at
-    # lock-in time.
+    # Audit fix: this used to run BEFORE _ai_headline_and_body, which
+    # meant on the very first rerun of a new day, the "long-term
+    # notes... distinct from the day-by-day record" its own prompt
+    # promises would already have today's facts folded into them by the
+    # time it read _learned_notes — the exact same-day leak
+    # _recent_history_block deliberately guards against for the raw
+    # history. Ordered after _ai_headline_and_body now so today's brief
+    # always sees notes as they stood coming INTO today, and
+    # _update_learned_notes only folds today in afterward, for
+    # tomorrow's benefit.
+    #
+    # Fed the FULL all_facts list, not a locked/curated subset — see
+    # _ai_headline_and_body's own docstring on why the once-a-day
+    # "featured facts" lock (and the separate visible stats bar it
+    # existed for) is gone: there's no bar left to stay consistent
+    # with, and an active alert or anything else newly relevant is
+    # automatically covered every regeneration since nothing here is
+    # frozen at an earlier lock-in moment anymore.
     try:
-        featured_names = _select_featured_facts(clauses, now)
+        result = _ai_headline_and_body(all_facts, now)
     except Exception:
-        featured_names = [name for name, _, _ in clauses[:STATS_BAR_MAX]]
-    # Safety override, not subject to the lock above: an active weather
-    # alert (_alert_clause's own priority tier, the single highest in
-    # this file) can genuinely emerge mid-morning after the day's
-    # selection already locked in — same "safety-relevant info always
-    # breaks through" principle this app already applies elsewhere
-    # (storm lights bypassing night-dim, etc.), not something a
-    # same-day lock should be able to suppress for the rest of the
-    # morning just because it wasn't there yet at 5am.
-    urgent_names = [name for name, priority, _ in clauses if priority >= _URGENT_OVERRIDE_PRIORITY]
-    ordered_names = urgent_names + [n for n in featured_names if n not in urgent_names]
-    by_name = {name: text for name, _, text in clauses}
-    featured_facts = [by_name[n] for n in ordered_names if n in by_name]
-    # Audit fix: this used to run BEFORE _ai_sentence, which meant on
-    # the very first rerun of a new day, the "long-term notes... distinct
-    # from the day-by-day record" _ai_sentence's own prompt promises
-    # would already have today's facts folded into them by the time it
-    # read _learned_notes — the exact same-day leak _recent_history_
-    # block deliberately guards against for the raw history. Ordered
-    # after _ai_sentence now so today's brief always sees notes as they
-    # stood coming INTO today, and _update_learned_notes only folds
-    # today in afterward, for tomorrow's benefit.
-    # Session report: a real live example ("noon puts an end to the
-    # guessing game on start times... Wicket wakes up and demands a
-    # real schedule") referenced a fact that wasn't one of the 3 shown
-    # in the stats bar above it — confusing on its own terms (no way to
-    # know what "noon"/"start times" meant without seeing the fact that
-    # prompted it), on top of a background reference that wasn't
-    # grounded in anything real. Root cause: this passed the FULL
-    # all_facts list (everything computed today, not just what's
-    # visible) as the AI's own raw data — a deliberate choice from
-    # earlier in this file's history, before the stats bar existed, but
-    # actively wrong now: the whole point of the split layout is that
-    # the commentary reacts to what the reader can already see above
-    # it, not to something invisible. Restricted to the same
-    # featured_facts the bar itself shows below, so anything the
-    # commentary references is guaranteed visible.
-    try:
-        sentence = _ai_sentence(featured_facts, now)
-    except Exception:
-        sentence = None
+        result = None
     try:
         _update_learned_notes(now, all_facts)
     except Exception:
         pass
-    if sentence is None:
+    if result is None:
         # Rare path — only reached if the AI call itself fails (Gemini
-        # down, rate-limited, or the overnight pause). No styling left
-        # to fall back on now that the facts themselves are plain data,
-        # not pre-phrased prose (see this module's own docstring) — a
-        # flat semicolon join is exactly what a degraded-mode fallback
-        # should look like, not something worth its own templating.
-        # Still uses the capped `picked`, not `all_facts`, so a day
-        # with a lot going on doesn't turn this into an unreadable list.
+        # down, rate-limited, unparseable, or the overnight pause). No
+        # styling left to fall back on now that the facts themselves
+        # are plain data, not pre-phrased prose (see this module's own
+        # docstring) — a flat semicolon join is exactly what a
+        # degraded-mode fallback should look like, not something worth
+        # its own templating. Still uses the capped `picked`, not
+        # `all_facts`, so a day with a lot going on doesn't turn this
+        # into an unreadable body.
         plain = "; ".join(picked)
-        sentence = f"Morning update — {plain[0].upper() + plain[1:]}."
+        headline, body = "Morning update", plain[0].upper() + plain[1:] + "."
+    else:
+        headline, body = result
 
-    _notify_new_brief(sentence, now)
-    # Session redesign: "Separate the Status from the Commentary...
-    # Split your brief card into a Quick Stats Bar on top and a 1-2
-    # Sentence AI Commentary/Vibe Check below it." The bar is plain,
-    # mechanical bullets — not AI-narrated, so it's exactly as accurate
-    # on a morning the AI call fails as on a normal one — now pulled
-    # from featured_facts (see _select_featured_facts above), the same
-    # day-long-locked selection the AI commentary itself reacts to, not
-    # a fresh priority-sort of all_facts every rerun. HTML-escaped: some
-    # facts (the calendar one, since this session's earlier location/
-    # description addition) carry real external text, not a hand-
-    # authored string, same reasoning as headline_rotation.py's own
-    # escape call for the identical class of risk.
-    stats_html = "".join(f"<li>{html.escape(fact[0].upper() + fact[1:])}</li>" for fact in featured_facts)
+    _notify_new_brief(headline, body, now)
+    # Session redesign: five real candidate formats compared side by
+    # side from actual live data, then "I like loud hype headline plus
+    # body, but make it so that the headline doesn't have to be hype...
+    # now can we do the same thing with different formatting for it,"
+    # settled on a small uppercase eyebrow-style headline above a large,
+    # prominent body (.morning-headline/.morning-body, theme.py) —
+    # replaces the old mechanical stats bar (.morning-stats) and short
+    # AI add-on line (.morning-commentary) entirely, not something
+    # layered on top of them. HTML-escaped: this is AI-generated text,
+    # same reasoning as the old stats bar's own escape call (and unlike
+    # the old .morning-commentary line, which never escaped its AI text
+    # at all — tightened while rewriting this block regardless, not
+    # something the user asked for specifically, just the same
+    # protection every other external/generated string here already
+    # gets).
     st.markdown(
-        f'<div class="morning-briefing"><ul class="morning-stats">{stats_html}</ul>'
-        f'<div class="morning-commentary">{sentence}</div></div>',
+        f'<div class="morning-briefing"><div class="morning-headline">{html.escape(headline)}</div>'
+        f'<div class="morning-body">{html.escape(body)}</div></div>',
         unsafe_allow_html=True,
     )
 
@@ -1259,7 +1193,7 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
 _last_brief_date: str | None = persisted_state.load("morning_brief_date", None)
 
 
-def _notify_new_brief(sentence: str, now: datetime) -> None:
+def _notify_new_brief(headline: str, body: str, now: datetime) -> None:
     """Pushes the morning brief to the phone once per calendar day — the
     first time render() produces a real brief that day (AI-written or
     the plain fallback, whichever path it came from), not every 5s
@@ -1275,14 +1209,21 @@ def _notify_new_brief(sentence: str, now: datetime) -> None:
     restart, and this session's own several redeploys in a row kept
     resetting an in-memory version of this right back to "nothing sent
     yet," reproducing the exact same symptom (a duplicate real push)
-    from a different cause than the first fix addressed."""
+    from a different cause than the first fix addressed.
+
+    headline/body (see _ai_headline_and_body) rather than one flat
+    sentence, since the headline redesign — the push title stays the
+    fixed "Morning Brief" label (not the day's own real headline text,
+    which ntfy would otherwise show truncated in a phone's notification
+    preview) and the real headline/body pair goes in the message body,
+    same two-part shape the card itself renders."""
     global _last_brief_date
     today = now.date().isoformat()
     if _last_brief_date == today:
         return
     _last_brief_date = today
     persisted_state.save("morning_brief_date", today)
-    ntfy_client.send(title="Morning Brief", message=sentence, priority="default", tags="sunny")
+    ntfy_client.send(title="Morning Brief", message=f"{headline}\n\n{body}", priority="default", tags="sunny")
 
 
 # Recent days' picked facts, oldest first — session question: "would it
@@ -1290,7 +1231,7 @@ def _notify_new_brief(sentence: str, now: datetime) -> None:
 # day more often." The brief only ever saw today's own isolated facts,
 # so it had no way to notice a real pattern (a stretch of early shifts,
 # a run of bad weather, yesterday also being rough) — this gives
-# _ai_sentence something to actually connect to. Bounded to
+# _ai_headline_and_body something to actually connect to. Bounded to
 # HISTORY_MAX_DAYS entries (an ordered list, oldest popped off the
 # front once it's full) and persisted the same way _last_brief_date
 # above is, so a redeploy doesn't wipe the very thing this exists to
@@ -1327,7 +1268,7 @@ def _record_history(now: datetime, picked: list[str]) -> None:
 
 def _recent_history_block(now: datetime) -> str:
     """Prior days' facts (not including today), oldest first, as a
-    compact block for _ai_sentence's own prompt — "" if there's no
+    compact block for _ai_headline_and_body's own prompt — "" if there's no
     history yet (a fresh deploy, or simply the first few days this
     feature has existed). Excludes today's own entry even if
     _record_history already ran earlier this same process — this block
@@ -1517,13 +1458,14 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
     else "assumed." Two real, compounding causes, both fixed here:
 
     1. This function never actually received _recent_history_block —
-    the real multi-day fact log _ai_sentence's own prompt already used.
-    Pattern-finding was running through this function's OWN prior note
-    alone (a lossy, already-compressed single string) plus one new day
-    at a time, with no way to ever look directly at the raw record
-    itself. It now gets the same history block _ai_sentence does (see
-    history_section below), so it can cross-reference the actual
-    multi-day data directly instead of only trusting its own memory of
+    the real multi-day fact log _ai_headline_and_body's own prompt
+    already used. Pattern-finding was running through this function's
+    OWN prior note alone (a lossy, already-compressed single string)
+    plus one new day at a time, with no way to ever look directly at
+    the raw record itself. It now gets the same history block
+    _ai_headline_and_body does (see history_section below), so it can
+    cross-reference the actual multi-day data directly instead of only
+    trusting its own memory of
     its own memory.
 
     2. HISTORY_MAX_DAYS itself was only 4 (see that constant's own

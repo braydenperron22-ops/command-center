@@ -63,13 +63,20 @@ html, body, [class*="css"] {
    "pay attention now" language the weather-statement/leave-headline
    banners use above it.
 
-   Session redesign: "dense blocks of text kill the at-a-glance utility
-   of a dashboard... split your brief card into a Quick Stats Bar on
-   top and a 1-2 Sentence AI Commentary/Vibe Check below it." The card
-   itself now only owns the glass container (background/blur/border/
-   padding) — the two children below own their own typography, since
-   they're deliberately different registers (mechanical stats vs. a
-   real written line), not one uniform text block anymore. */
+   Session redesign: five real candidate formats (a stats bar + bigger
+   commentary, no bar with one full narrated paragraph, a loud hype
+   headline + body, a multi-beat rundown, each generated from actual
+   live data and compared side by side) — "I like loud hype headline
+   plus body, but make it so that the headline doesn't have to be
+   hype... can we do the same thing with different formatting for it,"
+   settled on a small uppercase eyebrow-style headline above a large,
+   prominent body. Replaces the old two-child split (a mechanical
+   .morning-stats bullet list plus a short .morning-commentary add-on
+   line) entirely — this app's own earlier "Quick Stats Bar + 1-2
+   Sentence Commentary" redesign, itself now retired by this same
+   session's follow-up request. The card still only owns the glass
+   container (background/blur/border/padding); .morning-headline/
+   .morning-body below own their own typography. */
 .morning-briefing {
     color: #E5E5EA;
     background: rgba(255,255,255,0.05);
@@ -81,50 +88,30 @@ html, body, [class*="css"] {
     margin-bottom: 0.8rem;
 }
 
-/* Plain, mechanical bullets — deliberately NOT the same expressive
-   register as .morning-commentary below: this is meant to be scanned
-   in three seconds, not read as prose. A small accent dot instead of
-   a default list marker, matching the same "colored dot before a
-   section label" convention this kiosk already uses elsewhere (see
-   e.g. the Conflicts page header) rather than introducing a new one. */
-.morning-stats {
-    list-style: none;
-    margin: 0 0 0.6rem 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-}
-.morning-stats li {
-    font-size: 1.05rem;
-    line-height: 1.35;
-    color: #C7C7CC;
-    padding-left: 1.1rem;
-    position: relative;
-}
-.morning-stats li::before {
-    content: "";
-    position: absolute;
-    left: 0.15rem;
-    top: 0.55rem;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #FF453A;
+/* Small uppercase tag rather than a big banner — the body below is the
+   actual star of the card now (see its own comment); this is a label
+   for it, not competing prose. Same accent red the old .morning-stats
+   dot used, so the card's own color identity carries over even though
+   the layout underneath it changed completely. */
+.morning-headline {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #FF453A;
+    margin: 0 0 0.5rem;
 }
 
-/* The one AI-written line — a real, separate register from the plain
-   stats above it, with a hairline divider only when the stats bar is
-   actually present above it (it always is in practice, but :not(:first
-   -child) keeps this correct even if that ever changes) so the split
-   itself is visible, not just implied by spacing. */
-.morning-commentary {
-    font-size: 1.3rem;
-    line-height: 1.5;
-}
-.morning-commentary:not(:first-child) {
-    padding-top: 0.6rem;
-    border-top: 1px solid rgba(255,255,255,0.08);
+/* The real written content — headline + body together are now the
+   ONLY text on the card (no separate mechanical stats bar above it
+   anymore), so this carries real weight: larger and brighter than the
+   old .morning-commentary add-on line ever needed to be, since that
+   used to sit below facts already shown elsewhere and this doesn't. */
+.morning-body {
+    font-size: 1.28rem;
+    line-height: 1.48;
+    font-weight: 500;
+    color: #F5F5F7;
 }
 
 .hero-weather {
@@ -4945,8 +4932,8 @@ html, body, [class*="css"] {
     .tile-value { font-size: 2rem; }
     .market-hero-value { font-size: 1.5rem; }
     .morning-briefing { padding: 0.8rem 1.1rem; }
-    .morning-stats li { font-size: 0.92rem; }
-    .morning-commentary { font-size: 1.05rem; }
+    .morning-headline { font-size: 0.72rem; }
+    .morning-body { font-size: 1.08rem; }
     .page-title { font-size: 1.2rem; }
 
     /* Streamlit stacks st.columns() grids into single-column full-width
