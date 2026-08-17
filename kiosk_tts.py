@@ -37,9 +37,21 @@ import wave
 
 import streamlit as st
 from piper import PiperVoice
+from piper.config import SynthesisConfig
 
 VOICE_MODEL_PATH = "piper_voices/en_US-hfc_male-medium.onnx"
 VOICE_CONFIG_PATH = "piper_voices/en_US-hfc_male-medium.onnx.json"
+
+# Session request, after A/B-ing the model's own default against three
+# real synthesis-parameter variants (rate, and this) side by side:
+# "make the voice quality... noise scale equals zero point five, noise
+# w scale zero point five." Both control how much of the underlying
+# VITS model's own stochastic variation makes it into the output —
+# lower means less of it, read live as cleaner/less "shimmery" than
+# the model's own untouched default. length_scale (speech rate) stays
+# at the model's own default — that comparison was offered too, but
+# never picked.
+_SYNTHESIS_CONFIG = SynthesisConfig(noise_scale=0.5, noise_w_scale=0.5)
 
 # Confirmed live: ~0.66s one-time model load, ~0.35s to synthesize a
 # full alert-length sentence after that — fast enough to run inline in
@@ -73,7 +85,7 @@ def synthesize_base64(text: str) -> str | None:
         voice = _get_voice()
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as wav_file:
-            voice.synthesize_wav(text, wav_file)
+            voice.synthesize_wav(text, wav_file, syn_config=_SYNTHESIS_CONFIG)
         return base64.b64encode(buffer.getvalue()).decode("ascii")
     except Exception:
         return None

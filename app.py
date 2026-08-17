@@ -840,6 +840,17 @@ components.html(
         // shouldn't open with the same "This is an alert" urgency as a
         // Tornado Warning even though both read the full EC bulletin).
         "var KIOSK_WEATHER_VOICE_SEL = '.weather-alert-bar-extreme, .weather-alert-bar-warning, .weather-alert-bar-warning-moderate, .weather-alert-bar-watch, .weather-alert-bar-statement';",
+        // Session request: "add the scoring play for the Habs, Jays and
+        // Saints [voice]" — sports toasts (sports_alerts.render_alert_bar)
+        // used to match none of the selectors above at all, the one
+        // alert kind in the whole toast queue with zero audio. Own tier
+        // between commute and the generic chime fallback: a distinct
+        // earcon plus a real spoken line when one's set (only "score"/
+        // "final" alerts carry one — see sports_alerts.get_new_alerts's
+        // own comments on why), same shape KIOSK_LEAVE_VOICE_SEL already
+        // uses. bar_class is built per-sport (sports-alert-bar-mlb/nhl/
+        // nfl), so this lists all three rather than one shared class.
+        "var KIOSK_SPORTS_VOICE_SEL = '.sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl';",
         "var kioskLastChimeKey = null;",
         // Session request: "make it so the audio alerts are dynamic based
         // on time of day starting quiet and dynamically getting louder
@@ -903,11 +914,87 @@ components.html(
         "  if (hour <= peak) { return (hour - dayStart) / (peak - dayStart); }",
         "  return 1 - (hour - peak) / (dayEnd - peak);",
         "}",
+        // Session feedback on the plain-sine chimes above: "not quite my
+        // tempo... restart from scratch... this is kinda bad." Rebuilt on
+        // FM synthesis instead of stacked sine harmonics (a real, tested
+        // pass — see the audio audit artifact this came from for the
+        // side-by-side comparisons) — a modulator oscillator sweeps the
+        // carrier's own pitch, and how far it sweeps decays across the
+        // note, the same real mechanism behind genuine bell/glass system
+        // sounds (why a struck bell simplifies from metallic to pure as
+        // it rings down, not just fades at one flat timbre). A small
+        // synthesized reverb (no sample file — a short burst of filtered
+        // noise decaying exponentially, through a ConvolverNode) gives it
+        // real space instead of sitting dry. Shared by kioskPlayChime,
+        // kioskPlayWeatherAlert's storm tone, and kioskPlaySportsVoice's
+        // earcon below — one voice, reused everywhere a tone plays.
+        "function kioskMakeReverbImpulse(c, duration, decay) {",
+        "  var rate = c.sampleRate;",
+        "  var length = Math.floor(rate * duration);",
+        "  var impulse = c.createBuffer(2, length, rate);",
+        "  for (var ch = 0; ch < 2; ch++) {",
+        "    var data = impulse.getChannelData(ch);",
+        "    for (var i = 0; i < length; i++) { data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay); }",
+        "  }",
+        "  return impulse;",
+        "}",
+        "function kioskGetReverb(c) {",
+        "  if (!window.__kioskReverbNode) {",
+        "    var convolver = c.createConvolver();",
+        "    convolver.buffer = kioskMakeReverbImpulse(c, 1.7, 2.4);",
+        "    convolver.connect(c.destination);",
+        "    window.__kioskReverbNode = convolver;",
+        "  }",
+        "  return window.__kioskReverbNode;",
+        "}",
+        // carrierFreq: fundamental Hz. opts: {time, gain, duration, wet,
+        // brightness, modRatio, modIndex}. A non-integer modRatio (2.8,
+        // 3.9, ...) is what reads as metal rather than a plain harmonic
+        // pad — integer ratios collapse back into an ordinary overtone
+        // series.
+        "function kioskPlayFMBell(c, carrierFreq, opts) {",
+        "  opts = opts || {};",
+        "  var t0 = opts.time !== undefined ? opts.time : c.currentTime;",
+        "  var duration = opts.duration || 1.1;",
+        "  var modRatio = opts.modRatio !== undefined ? opts.modRatio : 3.43;",
+        "  var modIndex = opts.modIndex !== undefined ? opts.modIndex : 3.2;",
+        "  var gainMul = opts.gain !== undefined ? opts.gain : 0.6;",
+        "  var carrier = c.createOscillator();",
+        "  carrier.type = 'sine'; carrier.frequency.value = carrierFreq;",
+        "  var modulator = c.createOscillator();",
+        "  modulator.type = 'sine'; modulator.frequency.value = carrierFreq * modRatio;",
+        "  var modGain = c.createGain();",
+        "  modGain.gain.setValueAtTime(carrierFreq * modIndex, t0);",
+        "  modGain.gain.exponentialRampToValueAtTime(Math.max(carrierFreq * 0.03, 1), t0 + duration * 0.85);",
+        "  modulator.connect(modGain); modGain.connect(carrier.frequency);",
+        "  var filter = c.createBiquadFilter();",
+        "  filter.type = 'lowpass'; filter.frequency.value = opts.brightness || 2200; filter.Q.value = 0.5;",
+        "  var out = c.createGain();",
+        "  out.gain.setValueAtTime(0, t0);",
+        "  out.gain.linearRampToValueAtTime(gainMul, t0 + 0.006);",
+        "  out.gain.exponentialRampToValueAtTime(0.0006, t0 + duration);",
+        "  carrier.connect(filter); filter.connect(out);",
+        "  var dry = c.createGain(); dry.gain.value = 0.85;",
+        "  var wet = c.createGain(); wet.gain.value = opts.wet !== undefined ? opts.wet : 0.14;",
+        "  out.connect(dry); dry.connect(c.destination);",
+        "  out.connect(wet); wet.connect(kioskGetReverb(c));",
+        "  carrier.start(t0); modulator.start(t0);",
+        "  carrier.stop(t0 + duration + 0.05); modulator.stop(t0 + duration + 0.05);",
+        "}",
         // Session request: "make it so the alert fires at 100% for leave
         // in notifications regardless of time." forceVol (optional) lets
         // a caller override the day/night curve entirely — kioskPlayLeaveVoice
         // passes 1 explicitly; every other caller (breaking news) omits
         // it and gets the normal time-of-day-scaled behavior unchanged.
+        //
+        // Session request, after A/B-ing current vs. rebuilt live: "change
+        // gentle to the new rebuild one, change urgent to the new rebuild
+        // one." Gentle is one quiet FM bell (D4) — the smallest, simplest
+        // cue in the system, since it's also the most frequent. Urgent
+        // reuses the exact same FM-bell voice at a touch more modulation
+        // edge, told apart from gentle by a quick double-hit instead of a
+        // brighter pitch — the same session's own earlier correction ("way
+        // too bright") ruled out reaching for brightness to signal urgency.
         "function kioskPlayChime(urgent, forceVol) {",
         "  try {",
         "    var vol = (typeof forceVol === 'number') ? forceVol : kioskAlertVolume(false);",
@@ -916,22 +1003,13 @@ components.html(
         "    if (!Ctx) return;",
         "    var ctx = window.__kioskChimeCtx || (window.__kioskChimeCtx = new Ctx());",
         "    if (ctx.state === 'suspended') { ctx.resume(); }",
-        "    var notes = urgent ? [659.25, 830.61, 1046.50] : [523.25, 659.25];",
         "    var now = ctx.currentTime;",
-        "    notes.forEach(function (freq, i) {",
-        "      var osc = ctx.createOscillator();",
-        "      var gain = ctx.createGain();",
-        "      osc.type = 'sine';",
-        "      osc.frequency.value = freq;",
-        "      var t0 = now + i * 0.14;",
-        "      gain.gain.setValueAtTime(0, t0);",
-        "      gain.gain.linearRampToValueAtTime(0.25 * vol, t0 + 0.02);",
-        "      gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.5);",
-        "      osc.connect(gain);",
-        "      gain.connect(ctx.destination);",
-        "      osc.start(t0);",
-        "      osc.stop(t0 + 0.5);",
-        "    });",
+        "    if (urgent) {",
+        "      kioskPlayFMBell(ctx, 329.63, { time: now, gain: 0.5 * vol, duration: 0.35, wet: 0.16, brightness: 2100, modRatio: 3.9, modIndex: 3.0 });",
+        "      kioskPlayFMBell(ctx, 329.63, { time: now + 0.15, gain: 0.6 * vol, duration: 0.95, wet: 0.2, brightness: 2100, modRatio: 3.9, modIndex: 3.0 });",
+        "    } else {",
+        "      kioskPlayFMBell(ctx, 293.66, { time: now, gain: 0.5 * vol, duration: 1.3, wet: 0.18, brightness: 1900, modRatio: 2.8, modIndex: 2.1 });",
+        "    }",
         "  } catch (e) {}",
         "}",
         // "Aaron" is a real macOS voice name and won't exist on every
@@ -1089,6 +1167,56 @@ components.html(
         "    }",
         "  } catch (e) {}",
         "}",
+        // Session request: "add the scoring play for the Habs, Jays and
+        // Saints [voice]... add the sports scoreboard ping." Same shape
+        // as kioskPlayLeaveVoice above (a distinct earcon, then an
+        // optional real spoken line if the toast carries one), but the
+        // earcon itself is a small two-note rise instead of one tone —
+        // this is deliberately the liveliest cue in the system, the one
+        // meant to still read as fun rather than matching gentle/urgent's
+        // own restraint. sports_alerts.render_alert_bar only sets data-
+        // audio-b64/data-summary for a "score" or "final" alert (see its
+        // own comment) — a pregame/warmup/start/streak/lead_change toast
+        // still gets the ping with no voice line after it, same as any
+        // other chime-only toast.
+        "function kioskPlaySportsVoice(el) {",
+        "  try {",
+        "    var Ctx = window.AudioContext || window.webkitAudioContext;",
+        "    if (Ctx) {",
+        "      var ctx = window.__kioskChimeCtx || (window.__kioskChimeCtx = new Ctx());",
+        "      if (ctx.state === 'suspended') { ctx.resume(); }",
+        "      var vol = kioskAlertVolume(false);",
+        "      if (vol > 0) {",
+        "        var now = ctx.currentTime;",
+        "        kioskPlayFMBell(ctx, 349.23, { time: now, gain: 0.5 * vol, duration: 0.3, wet: 0.14, brightness: 2400, modRatio: 2.5, modIndex: 2.4 });",
+        "        kioskPlayFMBell(ctx, 392.00, { time: now + 0.07, gain: 0.55 * vol, duration: 0.7, wet: 0.18, brightness: 2600, modRatio: 2.5, modIndex: 2.4 });",
+        "      }",
+        "    }",
+        "  } catch (e) {}",
+        "  try {",
+        "    var summary = el.getAttribute('data-summary') || '';",
+        "    var audioB64 = el.getAttribute('data-audio-b64');",
+        "    var spokenVol = kioskAlertVolume(false);",
+        "    if (audioB64) {",
+        "      setTimeout(function () {",
+        "        var audio = new Audio('data:audio/wav;base64,' + audioB64);",
+        "        audio.volume = spokenVol;",
+        "        audio.play().catch(function () {});",
+        "      }, 500);",
+        "    } else if (summary && window.speechSynthesis) {",
+        "      setTimeout(function () {",
+        "        window.speechSynthesis.cancel();",
+        "        var utter = new SpeechSynthesisUtterance(summary);",
+        "        var voice = kioskFindVoice();",
+        "        if (voice) utter.voice = voice;",
+        "        utter.rate = 0.98;",
+        "        utter.pitch = 1.0;",
+        "        utter.volume = spokenVol;",
+        "        window.speechSynthesis.speak(utter);",
+        "      }, 500);",
+        "    }",
+        "  } catch (e) {}",
+        "}",
         // Session request: "make it so the kiosk plays a muted sound
         // every 5 to 10 sec so it never goes stale... primed for when a
         // real alert comes through." Doesn't replace the one-time
@@ -1183,8 +1311,9 @@ components.html(
         "  var weatherEl = document.querySelector(KIOSK_WEATHER_VOICE_SEL);",
         "  var urgentEl = weatherEl ? null : document.querySelector(KIOSK_CHIME_URGENT_SEL);",
         "  var leaveEl = (weatherEl || urgentEl) ? null : document.querySelector(KIOSK_LEAVE_VOICE_SEL);",
-        "  var gentleEl = (weatherEl || urgentEl || leaveEl) ? null : document.querySelector(KIOSK_CHIME_GENTLE_SEL);",
-        "  var el = weatherEl || urgentEl || leaveEl || gentleEl;",
+        "  var sportsEl = (weatherEl || urgentEl || leaveEl) ? null : document.querySelector(KIOSK_SPORTS_VOICE_SEL);",
+        "  var gentleEl = (weatherEl || urgentEl || leaveEl || sportsEl) ? null : document.querySelector(KIOSK_CHIME_GENTLE_SEL);",
+        "  var el = weatherEl || urgentEl || leaveEl || sportsEl || gentleEl;",
         "  if (!el || el.style.display === 'none') { kioskLastChimeKey = null; return; }",
         // .jumbo-leave-ticker's own child .live-countdown span rewrites
         // its textContent once a second (kiosk-countdown-ticker script
@@ -1209,6 +1338,8 @@ components.html(
         "    if (weatherEl.getAttribute('data-silent') !== 'true') { kioskPlayWeatherAlert(weatherEl); }",
         "  } else if (leaveEl) {",
         "    kioskPlayLeaveVoice(leaveEl);",
+        "  } else if (sportsEl) {",
+        "    kioskPlaySportsVoice(sportsEl);",
         "  } else {",
         "    kioskPlayChime(!!urgentEl);",
         "  }",

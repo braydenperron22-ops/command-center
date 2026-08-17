@@ -57,6 +57,7 @@ import requests
 import streamlit as st
 
 import fetch_throttle
+import kiosk_tts
 import persisted_state
 import scores_client
 import sports_client
@@ -651,6 +652,17 @@ def get_new_alerts(now: datetime) -> list[dict]:
                         "opp_score": opp_score,
                         "description": play["description"],
                         "flash_color": league["flash_color"],
+                        # Session request: "add the scoring play for the
+                        # Habs, Jays and Saints [voice]." Real scoring-play
+                        # detection only exists for MLB/NHL (see
+                        # _nfl_scoring_plays's own docstring on why that's
+                        # permanent, not a gap) — spoken only for a real
+                        # scoring play specifically, not the streak entries
+                        # (a K-streak reads oddly read aloud as a "scoring
+                        # play"), team-labeled since MLB's own live-feed
+                        # sentence and NHL's built one don't always name
+                        # the team plainly on their own.
+                        "spoken": f"{league['label'].title()}: {play['description']}" if play_type == "score" else None,
                     }
                 )
                 # More in-game alerts (session request): a genuine lead
@@ -715,6 +727,15 @@ def get_new_alerts(now: datetime) -> list[dict]:
             team_score, opp_score = game["team_score"], game["opp_score"]
             result = "W" if team_score > opp_score else "L" if team_score < opp_score else "T"
             opponent_word = "vs" if game["is_home"] else "@"
+            # Session request: "add the scoring play for the Habs, Jays
+            # and Saints [voice]" — final fires for all three sports
+            # (unlike live scoring plays, which only MLB/NHL have real
+            # data for), so this is the one moment Saints games actually
+            # get a spoken callout too. The on-screen description ("Final
+            # — W vs Tigers") reads fine at a glance but badly out loud
+            # ("Final, W, vs, Tigers") — a real sentence built separately
+            # here instead of just handing the same string to Piper.
+            result_word = {"W": "beat", "L": "lost to", "T": "tied"}[result]
             alerts.append(
                 {
                     "kind": "sports",
@@ -727,6 +748,7 @@ def get_new_alerts(now: datetime) -> list[dict]:
                     "opp_score": opp_score,
                     "description": f"Final — {result} {opponent_word} {game['opponent']}",
                     "flash_color": league["flash_color"],
+                    "spoken": f"Final: the {league['label'].title()} {result_word} the {game['opponent']}, {team_score} to {opp_score}.",
                 }
             )
 
@@ -975,8 +997,19 @@ def render_alert_bar(alert: dict) -> None:
     score_text = f"{alert.get('team_score')}–{alert.get('opp_score')}" if has_score else ""
     team_logo = alert.get("team_logo", "")
     opponent_logo = alert.get("opponent_logo", "")
+    # Session request: "add the scoring play for the Habs, Jays and
+    # Saints [voice]" — only "score" and "final" alerts carry a real
+    # "spoken" sentence (see get_new_alerts's own comments on both);
+    # every other type (pregame, warmup, start, streak, lead_change)
+    # leaves it unset, same "no summary, no audio, chime only" shape
+    # weather_alerts_bar/commute_reminder already use for their own
+    # optional voice lines.
+    spoken_text = alert.get("spoken") or ""
+    summary_attr = html.escape(spoken_text)
+    audio_b64 = kiosk_tts.synthesize_base64(spoken_text) if spoken_text else None
+    audio_attr = f' data-audio-b64="{audio_b64}"' if audio_b64 else ""
     st.markdown(
-        f'<div class="{bar_class}">'
+        f'<div class="{bar_class}" data-summary="{summary_attr}"{audio_attr}>'
         f'<span class="news-breaking-label">{label_text}</span>'
         f'<span class="sports-alert-score">'
         f'<img src="{team_logo}" />{score_text}'
