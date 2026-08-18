@@ -65,10 +65,17 @@ FETCH_LOOKBACK_HOURS = 6
 # few minutes, far short of hammering Gmail every 5s kiosk rerun.
 CACHE_TTL_SECONDS = 3 * 60
 
-# Plain-text snippet length a toast/morning-brief fact ever carries —
-# same "cap it, don't dump the whole thing" reasoning as
-# morning_briefing._DESCRIPTION_FACT_CHARS for a calendar description.
-SNIPPET_MAX_CHARS = 200
+# Plain-text snippet length — in practice this is entirely a
+# classification input, not something ever actually displayed (see
+# render_alert_bar's own comment on why a toast deliberately never
+# shows it, and morning_brief_summary's own fact string, which only
+# ever uses subject/from). Session request: "have the AI parse the
+# headline and genuine email to see if its real or just promotional
+# junk" — raised 200 -> 500 so the classifier is actually reading real
+# body text, not just an opening fragment that's often still boilerplate
+# ("Dear customer," a preheader) regardless of which way the email
+# ultimately leans.
+SNIPPET_MAX_CHARS = 500
 
 # Session request: "give as much data as possible" is morning_briefing's
 # own established default for its OTHER facts, but email is a genuinely
@@ -274,14 +281,36 @@ def fetch_recent(lookback_hours: int) -> list[dict]:
 # reused here rather than re-invented — a real, already-proven pattern
 # in this exact codebase for "AI reads a numbered list, returns a JSON
 # array of judgments in the same order."
+#
+# Rewritten (session request: "have the AI parse the headline and
+# genuine email to see if its real or just promotional junk — enhance
+# the AI's intelligence") to explicitly point the model at the SNIPPET
+# as the real signal rather than the subject line — marketing mail
+# regularly disguises itself with an urgent- or personal-sounding
+# subject ("Re: your account", "Following up", "Action required"), so
+# a subject-only read is exactly the failure mode this rewrite targets.
+# Both halves now list concrete textual tells instead of category
+# names, closer to how a person would actually eyeball an inbox than a
+# rule list.
 _CLASSIFICATION_CRITERIA = (
-    "IMPORTANT: real personal correspondence — someone writing to him directly (not a company, "
-    "not a list), something that genuinely needs a reply or an action, a real appointment/"
-    "interview/deadline, a genuine account security alert (a real sign-in/password notice), a "
-    "bill or payment that's actually due. NOT important: marketing, promotions, newsletters, "
-    "social media notifications, automated receipts or shipping updates with nothing left to do, "
-    "mailing lists, anything that reads like bulk or automated sending regardless of how the "
-    "subject line is phrased."
+    "Read the actual SNIPPET text, not just the subject line — a marketing email will often "
+    "disguise itself with an urgent- or personal-sounding subject line, so the real tell is what "
+    "the body actually says.\n\n"
+    "IMPORTANT — genuine signals: a real person addressing him by name or with specific personal "
+    "context, a direct question or request only he can personally answer, a real appointment/"
+    "interview/deadline tied to an actual date, a genuine account security alert about a real "
+    "sign-in or password change (not a routine \"here's your statement\" notice), a bill or "
+    "payment that's actually due with a real amount and date, anything from a real person he'd "
+    "recognize (not a company, team, or list) that reads like it was actually written by them, "
+    "not templated.\n\n"
+    "NOT important — junk signals: percentage-off or dollar-off language, urgency/scarcity "
+    "phrasing (\"limited time\", \"today only\", \"don't miss out\"), a generic greeting or none "
+    "at all sent to what reads like a list, a sender name that's a brand/team/product rather than "
+    "a person, boilerplate legal or unsubscribe language visible in the snippet, routine automated "
+    "confirmations or status updates with nothing left for him to actually do (a statement being "
+    "available, a shipping update, a purely informational schedule), newsletters, social media "
+    "notifications, and anything else that reads like it was sent to many people at once rather "
+    "than written for him specifically — regardless of how the subject line is phrased."
 )
 
 
@@ -331,11 +360,21 @@ def _classify_pending(emails: list[dict]) -> None:
     if not pending:
         return
     prompt = _build_batch_prompt(pending)
-    # account="primary"/reasoning_effort="low" — same real-cost reasoning
-    # as news.py's own _classify_batch: a keep-or-reject judgment call,
-    # not creative prose, needs low effort, not a specific account
-    # tied to a shared model-keyed default (see groq_client.generate's
-    # own docstring on why an explicit account matters now).
+    # account="primary" resolves to GROQ_MODEL (see groq_client.py),
+    # which now IS gpt-oss-120b (the Aug 2026 llama-3.3-70b-versatile
+    # migration — see GROQ_MODEL's own comment) — so reasoning_effort
+    # stays "low" on purpose, not bumped for "enhance the AI's
+    # intelligence": _generate_or_raise's own docstring documents a
+    # real prior incident on this exact model — "gpt-oss-120b's hidden
+    # chain-of-thought (default reasoning_effort, 'medium') ate enough
+    # of the completion budget on its own that the visible JSON answer
+    # still got cut off mid-sentence... even after tightening the
+    # prompt and raising max_output_tokens." Spending the "smarter"
+    # budget on a richer, more specific prompt (_CLASSIFICATION_CRITERIA
+    # above) and more real snippet text (SNIPPET_MAX_CHARS) instead is
+    # the safe lever here — better judgment from more/better input, not
+    # a reasoning-effort dial already proven to break this model's own
+    # JSON output.
     result = groq_client.generate(prompt, temperature=0.1, max_output_tokens=400, account="primary", reasoning_effort="low")
     if result is None:
         return
