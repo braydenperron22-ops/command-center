@@ -1027,6 +1027,31 @@ html, body, [class*="css"] {
     box-shadow: 0 -4px 24px rgba(179,142,20,0.35);
 }
 
+/* Important-email toasts (email_client.py) — same bottom-strip
+   takeover/intro as the bars above, its own indigo so it reads as its
+   own category (not urgent-red, not the commute reminder's amber, not
+   any tracked team's color) at a glance. */
+.email-alert-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10000;  /* see .news-alert-bar's own comment above */
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+    padding: 0.9rem 1.5rem;
+    border-top: 2px solid rgba(255,255,255,0.25);
+    overflow: hidden;
+    background: linear-gradient(90deg, #2f1f6e 0%, #4a32a8 50%, #2f1f6e 100%);
+    box-shadow: 0 -4px 24px rgba(74,50,168,0.4);
+}
+.email-alert-from {
+    font-weight: 600;
+    color: #E8E3FF;
+    white-space: nowrap;
+}
+
 /* Jays/Habs scoring-play alerts (sports_alerts.py) — same bottom-strip
    takeover/intro as the bars above, own team color instead: Jays blue,
    Habs red (session request: "make it red i guess," same red the

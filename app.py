@@ -18,6 +18,7 @@ import air_quality_client
 import commute_reminder
 import cpp_payment_dates
 import data_health
+import email_client
 import govee_lighting
 import groq_client
 import headline_rotation
@@ -851,6 +852,14 @@ components.html(
         // uses. bar_class is built per-sport (sports-alert-bar-mlb/nhl/
         // nfl), so this lists all three rather than one shared class.
         "var KIOSK_SPORTS_VOICE_SEL = '.sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl';",
+        // Session request: "incorporate emails... important emails to
+        // be sent to me via a toast alert." Reuses the plain gentle
+        // chime below (kioskPlayChime(false)) rather than its own
+        // earcon — no spoken line either, deliberately: reading a
+        // stranger's-eye-view of personal email content out loud in a
+        // shared room is a real privacy step up from "a toast appeared
+        // on screen," not something this was asked for.
+        "var KIOSK_EMAIL_CHIME_SEL = '.email-alert-bar';",
         "var kioskLastChimeKey = null;",
         // Session request: "make it so the audio alerts are dynamic based
         // on time of day starting quiet and dynamically getting louder
@@ -1312,8 +1321,9 @@ components.html(
         "  var urgentEl = weatherEl ? null : document.querySelector(KIOSK_CHIME_URGENT_SEL);",
         "  var leaveEl = (weatherEl || urgentEl) ? null : document.querySelector(KIOSK_LEAVE_VOICE_SEL);",
         "  var sportsEl = (weatherEl || urgentEl || leaveEl) ? null : document.querySelector(KIOSK_SPORTS_VOICE_SEL);",
-        "  var gentleEl = (weatherEl || urgentEl || leaveEl || sportsEl) ? null : document.querySelector(KIOSK_CHIME_GENTLE_SEL);",
-        "  var el = weatherEl || urgentEl || leaveEl || sportsEl || gentleEl;",
+        "  var emailEl = (weatherEl || urgentEl || leaveEl || sportsEl) ? null : document.querySelector(KIOSK_EMAIL_CHIME_SEL);",
+        "  var gentleEl = (weatherEl || urgentEl || leaveEl || sportsEl || emailEl) ? null : document.querySelector(KIOSK_CHIME_GENTLE_SEL);",
+        "  var el = weatherEl || urgentEl || leaveEl || sportsEl || emailEl || gentleEl;",
         "  if (!el || el.style.display === 'none') { kioskLastChimeKey = null; return; }",
         // .jumbo-leave-ticker's own child .live-countdown span rewrites
         // its textContent once a second (kiosk-countdown-ticker script
@@ -1340,6 +1350,8 @@ components.html(
         "    kioskPlayLeaveVoice(leaveEl);",
         "  } else if (sportsEl) {",
         "    kioskPlaySportsVoice(sportsEl);",
+        "  } else if (emailEl) {",
+        "    kioskPlayChime(false);",
         "  } else {",
         "    kioskPlayChime(!!urgentEl);",
         "  }",
@@ -2588,6 +2600,17 @@ try:
 except Exception:
     pass
 
+# Important-email toasts — session request: "incorporate emails...
+# important emails to be sent to me via a toast alert, but you need to
+# make sure that they're important, and not crap." Own module
+# (email_client.py, IMAP + an app password — see its own docstring),
+# same isolation reasoning as every other block here: a Gmail hiccup
+# never takes down breaking news/weather/sports.
+try:
+    new_alerts.extend(email_client.get_new_alerts(now))
+except Exception:
+    pass
+
 # Prediction-market rate-odds toasts — session request: "rolling rate
 # odds from polymarket/kalshi... news/toast alert on a big swing." Same
 # isolation reasoning as every other block here: a bug in one bank's
@@ -2662,6 +2685,13 @@ def _alert_priority(alert: dict) -> int:
         priority = sports_alerts.COUNTDOWN_PRIORITY
         sport = alert.get("sport")
         return 1 + (priority.index(sport) if sport in priority else len(priority))
+    # Personal correspondence outranks routine/market news, same
+    # reasoning as every tier above it, but below anything that's
+    # actually time-boxed (a commute window, a live game) — an email
+    # already sitting in the inbox isn't going anywhere in the next
+    # few minutes the way those are.
+    if alert.get("kind") == "email":
+        return 5
     return 10
 
 
@@ -2793,6 +2823,8 @@ try:
                 sports_alerts.render_alert_bar(current_alert)
             elif current_alert.get("kind") == "weather":
                 weather_alerts_bar.render_alert_bar(current_alert)
+            elif current_alert.get("kind") == "email":
+                email_client.render_alert_bar(current_alert)
             else:
                 news.render_alert_bar(current_alert)
         except Exception as toast_render_exc:

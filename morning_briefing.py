@@ -60,6 +60,7 @@ import calendar_client
 import commute_client
 import commute_reminder
 import ec_alerts
+import email_client
 import fuel_price_client
 import gemini_client
 import groq_client
@@ -308,6 +309,23 @@ def _agenda_clause(now: datetime) -> tuple[int, str] | None:
     agenda_list = _format_agenda_list(events)
     priority = {1: 3, 2: 4}.get(len(events), 5)
     return priority, f"calendar: {agenda_list}"
+
+
+# Session request: "I want the morning brief to be able to see my
+# email so that it can kinda give me an update on what's going on in
+# the other aspects of my life as well." Reuses email_client's own
+# importance classification (the same real judgment call the toast
+# alerts already make — see that module's own docstring) rather than
+# a separate, looser "just summarize whatever's there" pass: a
+# newsletter or receipt showing up here would be exactly the "crap"
+# the toast side was explicitly built to keep out, and there's no
+# reason the morning brief should have a lower bar for what counts as
+# worth mentioning than a toast does.
+def _email_clause(now: datetime) -> tuple[int, str] | None:
+    summary = email_client.morning_brief_summary(now)
+    if summary is None:
+        return None
+    return 4, f"email: {summary}"
 
 
 # _teller_coverage_clause (priority 9, its own dedicated fact + AI
@@ -1083,6 +1101,7 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         ("air", _air_clause, (now, air_quality)),
         ("commute", _commute_clause, (now,)),
         ("agenda", _agenda_clause, (now,)),
+        ("email", _email_clause, (now,)),
         ("household", _household_clause, (now,)),
         ("markets", _markets_clause, (now,)),
         ("portfolio", _portfolio_clause, (now,)),
