@@ -88,6 +88,13 @@ def _configured() -> bool:
     return bool(st.secrets.get("GMAIL_ADDRESS")) and bool(st.secrets.get("GMAIL_APP_PASSWORD"))
 
 
+def configured() -> bool:
+    """Public wrapper — pages_email.py's own "not set up yet" tile
+    needs the same check every other caller in this module already
+    makes internally."""
+    return _configured()
+
+
 def _decode_mime_words(raw: str | None) -> str:
     """A MIME-encoded header (subject, display name) as plain text —
     email headers are technically ASCII-only, so anything outside that
@@ -166,13 +173,16 @@ def _extract_snippet(msg: email.message.Message) -> str:
 
 
 def _parse_message(raw_bytes: bytes) -> dict | None:
-    """{"message_id", "from", "subject", "date", "snippet"} from one
-    raw RFC 822 message, or None if it's missing the one field
-    (Message-ID) everything else here keys dedup off of. "from" is the
-    display name when the header has one ("Jane Doe <jane@x.com>" ->
-    "Jane Doe"), the bare address otherwise — a display name reads
-    better in a toast/fact and is what's actually available for most
-    real senders."""
+    """{"message_id", "from", "subject", "snippet"} from one raw RFC 822
+    message, or None if it's missing the one field (Message-ID)
+    everything else here keys dedup off of. "from" is the display name
+    when the header has one ("Jane Doe <jane@x.com>" -> "Jane Doe"), the
+    bare address otherwise — a display name reads better in a toast/fact
+    and is what's actually available for most real senders.
+
+    Deliberately no "unread" key here — that comes from the FETCH
+    response's own FLAGS, not the message bytes this function parses,
+    so _fetch_recent_raw attaches it separately."""
     try:
         msg = email.message_from_bytes(raw_bytes)
     except Exception:
@@ -193,16 +203,20 @@ def _parse_message(raw_bytes: bytes) -> dict | None:
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_recent_raw(lookback_hours: int) -> list[dict]:
-    """Every INBOX message since `lookback_hours` ago, newest first —
-    [] if not configured, and the last good copy on any fetch failure
-    (a transient IMAP hiccup), same graceful-degradation rule every
-    other live fetch in this app already follows.
+    """Every INBOX message since `lookback_hours` ago, newest first,
+    each carrying its own live "unread" bool — [] if not configured,
+    and the last good copy on any fetch failure (a transient IMAP
+    hiccup), same graceful-degradation rule every other live fetch in
+    this app already follows.
 
     `readonly=True` on select() puts the connection in IMAP's own
     EXAMINE mode — the protocol-level guarantee (not just a client-side
     convention) that nothing fetched through this connection can change
     a flag server-side, a real message's read/unread state included.
-    This app only ever looks."""
+    This app only ever looks, including for the \\Seen flag itself:
+    FLAGS is read alongside BODY.PEEK[] purely to report the *existing*
+    state, same as opening the inbox in EXAMINE mode from any other
+    read-only mail client would show."""
     global _last_good_raw
     if not _configured():
         return []
@@ -222,18 +236,36 @@ def _fetch_recent_raw(lookback_hours: int) -> list[dict]:
                 # kept even though readonly=True above already
                 # guarantees it at the connection level; two
                 # independent reasons this can never mark something
-                # read is better than relying on just one.
-                status, msg_data = imap.fetch(uid, "(BODY.PEEK[])")
+                # read is better than relying on just one. FLAGS
+                # alongside it is a pure read of the flag, not a
+                # request to set one — session request: "flag if I
+                # haven't read it," for the new email feed page
+                # (pages_email.py).
+                status, msg_data = imap.fetch(uid, "(FLAGS BODY.PEEK[])")
                 if status != "OK" or not msg_data or not isinstance(msg_data[0], tuple):
                     continue
-                parsed = _parse_message(msg_data[0][1])
+                meta, raw = msg_data[0]
+                parsed = _parse_message(raw)
                 if parsed:
+                    # meta looks like b'1 (FLAGS (\\Seen \\Answered) BODY[] {1234}'
+                    # — a substring check is all a real \Seen flag needs,
+                    # no need to fully parse the parenthesized flag list.
+                    parsed["unread"] = b"\\Seen" not in meta
                     out.append(parsed)
     except Exception:
         return _last_good_raw
     out.reverse()  # IMAP SEARCH returns ascending UID order; newest first for everything downstream
     _last_good_raw = out
     return out
+
+
+def fetch_recent(lookback_hours: int) -> list[dict]:
+    """Public wrapper around _fetch_recent_raw — pages_email.py's own
+    feed page needs the full raw list (unread flag included), not just
+    the toast-worthy subset get_new_alerts filters down to, so it calls
+    this directly rather than reaching past the module's private
+    fetch/dedup internals."""
+    return _fetch_recent_raw(lookback_hours)
 
 
 # Session request's own criteria, verbatim: "make sure that they're
@@ -320,6 +352,22 @@ def _classify_pending(emails: list[dict]) -> None:
         for _ in range(len(_decided) - MAX_DECIDED):
             _decided.pop(next(iter(_decided)))
     persisted_state.save("email_decided", _decided)
+
+
+def classify(emails: list[dict]) -> None:
+    """Public wrapper around _classify_pending — pages_email.py triggers
+    classification for its own full 24h list independently of
+    get_new_alerts's toast-only dedup path, sharing the same _decided
+    cache either way (a message classified for one is never
+    re-classified for the other)."""
+    _classify_pending(emails)
+
+
+def is_important(message_id: str) -> bool:
+    """Whatever _decided already knows about this message — False (not
+    "unknown yet") for anything not yet classified, since the feed page
+    just needs a badge to show or not, not a three-state answer."""
+    return bool(_decided.get(message_id))
 
 
 # Toast dedup — same "mark everything seen on first sight, only alert

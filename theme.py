@@ -1552,6 +1552,10 @@ html, body, [class*="css"] {
     background: #FFD60A;
     box-shadow: 0 0 8px 1px rgba(255,214,10,0.5);
 }
+.page-title-email::before {
+    background: #9F7AEA;
+    box-shadow: 0 0 8px 1px rgba(159,122,234,0.5);
+}
 .page-title-markets::before {
     background: #32D74B;
     box-shadow: 0 0 8px 1px rgba(50,215,75,0.5);
@@ -2357,6 +2361,39 @@ html, body, [class*="css"] {
 .news-feed-row.agenda-row-now { border-left-color: #32D74B; }
 .news-feed-row.agenda-row-past { opacity: 0.5; }
 .news-feed-row.agenda-row-next { border-left-color: #5AC8FA; background: rgba(90,200,250,0.08); }
+
+/* Email page (pages_email.py) reuses this same row/list shape too —
+   importance reuses news-feed-row-breaking's own red border-left
+   above (same "this needed your attention" signal everywhere in the
+   app), unread is its own separate dimension layered on top: a dot
+   plus bold subject, the same read/unread language real mail clients
+   already use, so a row can show either, both, or neither at a
+   glance. */
+.email-unread-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #5AC8FA;
+    margin-right: 0.5rem;
+    vertical-align: middle;
+    box-shadow: 0 0 6px 1px rgba(90,200,250,0.5);
+}
+.email-subject-unread {
+    font-weight: 700;
+}
+.email-important-badge {
+    flex-shrink: 0;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #FF6961;
+    border: 1px solid rgba(255,105,97,0.5);
+    border-radius: 8px;
+    padding: 0.15rem 0.5rem;
+    margin-left: 0.6rem;
+}
 
 /* Unified rotating slot for every "red headline" source — the leave-in
    countdown, storm proximity, the weather-statement banner, and

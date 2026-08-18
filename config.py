@@ -162,7 +162,7 @@ YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 # to build it from (see radar_client.py) — this time an addition, not
 # another swap.
 PAGES = [
-    "home", "conflicts", "news", "markets", "internals", "today", "household",
+    "home", "conflicts", "news", "email", "markets", "internals", "today", "household",
     "weather", "hourly", "radar", "sports", "scores", "portfolio", "predictions",
 ]
 PAGE_ROTATION_SECONDS = 5 * 60

@@ -27,6 +27,7 @@ import market_yf_client
 import morning_briefing
 import news
 import pages_conflicts
+import pages_email
 import pages_home
 import pages_household
 import pages_hourly
@@ -1567,7 +1568,7 @@ except Exception:
     pass
 
 _PAGE_LABELS = {
-    "home": "Home", "conflicts": "Conflicts", "news": "News", "markets": "Markets",
+    "home": "Home", "conflicts": "Conflicts", "news": "News", "email": "Email", "markets": "Markets",
     "internals": "Internals", "today": "Today", "household": "Household",
     "weather": "Weather", "hourly": "Hourly", "radar": "Radar", "sports": "Sports", "scores": "Scores",
     "portfolio": "Portfolio", "predictions": "Predictions",
@@ -2491,6 +2492,8 @@ with st.container(key="page_body"):
         _safe_render(pages_conflicts.render)
     elif page == "news":
         _safe_render(pages_news.render)
+    elif page == "email":
+        _safe_render(pages_email.render)
     elif page == "markets":
         _safe_render(pages_markets.render)
     elif page == "internals":
