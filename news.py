@@ -1014,6 +1014,17 @@ def _run_individual_decide() -> None:
     now = time.time()
     if now - _last_tick_at < INDIVIDUAL_REFRESH_SECONDS:
         return
+    # Session request: "pause the news, executing the emails, and then
+    # once that's all funneled through, do the news again" — email_client.py
+    # briefly holds "primary" around its own classify call (see
+    # groq_client.hold_account's own comment) so the two don't both fire
+    # inside Groq's real per-minute bucket; this yields to that instead
+    # of firing alongside it. _last_tick_at deliberately NOT updated
+    # here — this tick was never actually spent, so the very next rerun
+    # retries immediately once the hold clears, rather than waiting out
+    # another full INDIVIDUAL_REFRESH_SECONDS on top of it.
+    if groq_client.account_held("primary"):
+        return
     pending = [item for item in fetch_headlines() if _hash(item["headline"]) not in _decided]
     if not pending:
         _last_tick_at = now

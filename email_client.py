@@ -39,7 +39,6 @@ import html
 import imaplib
 import json
 import re
-import time
 from datetime import datetime, timedelta, timezone
 from email.header import decode_header
 
@@ -348,52 +347,37 @@ def _strip_code_fence(text: str) -> str:
 MAX_DECIDED = 1000
 _decided: dict[str, bool] = dict(persisted_state.load("email_decided", {}))
 
-# Session request: "are we being cautious with our AI tokens... our AIs
-# have been given a lot of responsibility... if you wanna have it feed
-# through every few hours... that'd be good." A real, worth-raising
-# concern: account="primary" is the SAME 100k-token/day Groq budget
-# news.py's own headline classifier already runs on (see
-# groq_client.py's own docstring — "each its own real key and its own
-# real 100k/day quota," shared across every "primary" caller, not a
-# private pool per feature). Without a floor between calls, email that
-# trickles in one message at a time pays this prompt's fixed overhead
-# (criteria text + wrapper, ~450+ tokens) on every single new message
-# instead of amortizing it across a real batch — three call sites
-# (get_new_alerts, pages_email.py, morning_brief_summary) could each
-# independently trip that. A shared, persisted cooldown — not
-# per-instance, same reasoning as _decided itself: one real classify
-# pass already serves every kiosk reading the same inbox (see
-# _decided's own comment), so the throttle has to be global too, or a
-# second instance would just get its own private window and the fixed
-# overhead multiplies right back up. 3 hours: inside every fetch
-# window that reads this cache (FETCH_LOOKBACK_HOURS=6,
-# MORNING_BRIEF_LOOKBACK_HOURS=24) with room to spare, so nothing ages
-# out unclassified — it only ever arrives at a toast/brief/feed-page
-# a few hours later than before, never dropped.
-CLASSIFY_MIN_INTERVAL_SECONDS = 3 * 60 * 60
-_last_classify_at: float = persisted_state.load("email_last_classify_at", 0)
-
-
 def _classify_pending(emails: list[dict]) -> None:
     """Classifies every email in `emails` not already in _decided, one
     real batched Groq call for all of them — mutates _decided in
     place. A failed or unparseable response leaves the whole batch
     pending or drops it (see get_new_alerts_for_toast — an email
     that's still unclassified this rerun is retried next time, not
-    lost). Also does nothing at all — pending stays pending, no call
-    made — inside CLASSIFY_MIN_INTERVAL_SECONDS of the last real
-    attempt (success or failure both count as an attempt; a failure
-    retrying immediately would just fail again against the same
-    rate limit)."""
-    global _decided, _last_classify_at
+    lost).
+
+    Session request: "I want it to honestly take whatever AI has
+    bandwidth... if ChatGPT fails, just make it so that Gemini takes
+    over for it" — already true for free, no change needed here:
+    groq_client.generate() already falls back to gemini_client on any
+    failure (rate limit included), same as news.py's own classifier —
+    see that function's own docstring. This replaces an earlier,
+    stricter 3-hour cooldown between calls (see git history) that the
+    same request asked to drop in favor of running as soon as there's
+    real mail pending; the actual per-minute collision risk that
+    cooldown was also guarding against is handled below instead, by
+    briefly holding "primary" so news.py's own classifier yields to
+    this call instead of firing alongside it."""
+    global _decided
     pending = [e for e in emails if e["message_id"] not in _decided]
     if not pending:
         return
-    now = time.time()
-    if now - _last_classify_at < CLASSIFY_MIN_INTERVAL_SECONDS:
-        return
-    _last_classify_at = now
-    persisted_state.save("email_last_classify_at", now)
+    # Session request: "pause the news, executing the emails, and then
+    # once that's all funneled through, do the news again... so that
+    # way we don't hit a minute rate limit." 60 seconds — Groq's real
+    # per-minute bucket (see groq_client.hold_account's own comment) —
+    # set before the call, not after, so it covers the call itself, not
+    # just whatever's left over once it's already done.
+    groq_client.hold_account("primary", 60)
     prompt = _build_batch_prompt(pending)
     # account="primary" resolves to GROQ_MODEL (see groq_client.py),
     # which now IS gpt-oss-120b (the Aug 2026 llama-3.3-70b-versatile

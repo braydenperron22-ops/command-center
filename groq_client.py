@@ -319,6 +319,39 @@ _last_served_by = "not_attempted"
 # key, instead. See ai_status_by_model below.
 _model_status: dict[str, dict] = {}
 
+# Session request: "the news, ChatGPT is often rate limited, and it
+# falls back to Gemini anyways... make it so when this goes through
+# [email], pause the news for a little bit. So that way we don't hit a
+# minute rate limit... stay well within that limit by pausing the
+# news, executing the emails, and then once that's all funneled
+# through, do the news again." Groq's real per-minute token bucket
+# (12k/min — see DAILY_TOKEN_BUDGET's own comment) isn't tracked
+# locally the way the rolling daily budget is; this app only ever
+# learns about it reactively, via a real 429 (already handled
+# gracefully — see generate()'s own Gemini fallback, which is the
+# "ChatGPT fails, Gemini takes over" behavior this request asks email
+# to share). This is the proactive half: a lightweight, in-process-only
+# reservation so two different "primary" callers (news.py,
+# email_client.py) don't fire within the same 60-second window and
+# stack up toward that bucket together. Not persisted — this only
+# needs to coordinate within one running server the same way
+# news._last_tick_at already does, not survive a restart or sync
+# across separate kiosk instances.
+_account_held_until: dict[str, float] = {}
+
+
+def hold_account(account: str, seconds: float) -> None:
+    """Reserves `account` for the next `seconds`, starting now. A
+    lower-priority caller on the same account checks account_held()
+    before firing and backs off if held — same "stays pending, retried
+    next tick" pattern every other throttled caller in this app
+    already follows, not a queue or a blocking wait."""
+    _account_held_until[account] = time.time() + seconds
+
+
+def account_held(account: str) -> bool:
+    return time.time() < _account_held_until.get(account, 0)
+
 # Display names + fixed slot order for the badge (ai_status_by_model).
 # Fixed rather than "whatever's been attempted so far this process" so
 # the badge doesn't grow/shrink or reorder itself as different
