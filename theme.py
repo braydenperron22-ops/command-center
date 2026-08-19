@@ -2254,6 +2254,29 @@ html, body, [class*="css"] {
     box-shadow: 0 0 12px 3px rgba(100,210,255,0.75);
     z-index: 2;
 }
+/* Session request: "does RainViewer offer timestamps for their
+   radar? it's cool, but it's hard to tell when each frame is." A
+   small pill in the frame's own top-left corner (same dark-glass badge
+   language as .weather-extra/.news-alert-tag elsewhere), updated by
+   app.py's kioskRadarAnim script every tick to name whichever frame is
+   actually on screen right now — never a separately-ticking clock. */
+.weather-radar-timestamp {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 2;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #F5F5F7;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    padding: 0.25rem 0.55rem;
+    letter-spacing: 0.01em;
+}
+
 /* RainViewer's own free-tier terms require visible attribution —
    small and quiet on purpose (this is a credit, not content), same
    weight/treatment as .prediction-source-note elsewhere. */

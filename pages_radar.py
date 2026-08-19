@@ -32,8 +32,8 @@ import radar_client
 def render() -> None:
     st.markdown('<div class="page-title page-title-radar">Live Radar — Corbeil</div>', unsafe_allow_html=True)
 
-    urls = radar_client.frame_urls()
-    if not urls:
+    frames = radar_client.frame_urls()
+    if not frames:
         st.markdown(
             '<div class="tile weather-radar-tile-large"><div class="tile-prev">Radar unavailable right now.</div></div>',
             unsafe_allow_html=True,
@@ -47,17 +47,26 @@ def render() -> None:
     # blank line in the middle of it ends that raw-HTML block early and
     # reparses everything after as an indented code block (literal
     # escaped text instead of the actual map). Nothing interpolated
-    # here is ever empty at this point (urls is already guarded above),
-    # so it's not currently at risk — kept flat anyway so it never can
-    # be, without needing to re-derive this each time something here
-    # changes.
+    # here is ever empty at this point (frames is already guarded
+    # above), so it's not currently at risk — kept flat anyway so it
+    # never can be, without needing to re-derive this each time
+    # something here changes.
+    #
+    # data-time-label carries each frame's own real timestamp
+    # (radar_client.py) — app.py's kioskRadarAnim script reads it off
+    # whichever frame it's currently showing and writes it into
+    # #weather-radar-timestamp, so the label always names the actual
+    # frame on screen instead of a separately-ticking clock that could
+    # drift out of sync with the animation.
     frames_html = "".join(
-        f'<img class="weather-radar-frame-img" id="weather-radar-frame-{i}" src="{html.escape(url)}" />'
-        for i, url in enumerate(urls)
+        f'<img class="weather-radar-frame-img" id="weather-radar-frame-{i}" data-time-label="{html.escape(frame["label"])}" '
+        f'src="{html.escape(frame["url"])}" />'
+        for i, frame in enumerate(frames)
     )
     st.markdown(
         '<div class="tile weather-radar-tile-large">'
-        + f'<div class="weather-radar-frame weather-radar-frame-large">{frames_html}<div class="weather-radar-marker"></div></div>'
+        + f'<div class="weather-radar-frame weather-radar-frame-large">{frames_html}<div class="weather-radar-marker"></div>'
+        + f'<div class="weather-radar-timestamp" id="weather-radar-timestamp">{html.escape(frames[0]["label"])}</div></div>'
         + '<div class="weather-radar-credit">Radar data by RainViewer</div>'
         + "</div>",
         unsafe_allow_html=True,

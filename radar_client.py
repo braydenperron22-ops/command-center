@@ -24,10 +24,13 @@ frame-cycling animation just toggles which already-loaded image is
 visible, it never re-fetches anything itself.
 """
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import requests
 import streamlit as st
 
-from config import WEATHER_LAT, WEATHER_LON
+from config import TIMEZONE, WEATHER_LAT, WEATHER_LON
 
 MAPS_JSON_URL = "https://api.rainviewer.com/public/weather-maps.json"
 # RainViewer's own real-world cadence is 10-minute intervals — no
@@ -56,16 +59,27 @@ def _fetch_maps_json() -> dict | None:
     return resp.json()
 
 
-def frame_urls() -> list[str]:
+def frame_urls() -> list[dict]:
     """The most recent FRAME_COUNT real radar frames, oldest first, as
-    real RainViewer CDN URLs already centered exactly on WEATHER_LAT/
-    WEATHER_LON (RainViewer's own lat/lon tile endpoint, not raw x/y/z
-    slippy-tile math) — [] if the feed is unreachable or genuinely
-    empty. Always dead-centered on the same point regardless of frame,
-    so pages_radar.py's "you are here" marker never needs its own per-
-    frame pixel math — same principle the old EC radar page's own
-    symmetric bbox already established, just via RainViewer's endpoint
-    shape instead."""
+    [{"url", "label"}, ...] — [] if the feed is unreachable or
+    genuinely empty. "url" is a real RainViewer CDN URL already
+    centered exactly on WEATHER_LAT/WEATHER_LON (RainViewer's own
+    lat/lon tile endpoint, not raw x/y/z slippy-tile math) — always
+    dead-centered on the same point regardless of frame, so pages_
+    radar.py's "you are here" marker never needs its own per-frame
+    pixel math, same principle the old EC radar page's own symmetric
+    bbox already established, just via RainViewer's endpoint shape
+    instead.
+
+    "label" — session request: "does RainViewer offer timestamps for
+    their radar? it's cool, but it's hard to tell when each frame is."
+    Confirmed live: every entry in the real API response already
+    carries its own real Unix "time" alongside "path" — this was
+    always there, just never read. Formatted here (not left as a raw
+    epoch for the client script to deal with) so the JS side never has
+    to touch timezones at all, same "server does the timezone-aware
+    formatting, JS just displays the already-formatted string" split
+    every other live-countdown/label in this app already follows."""
     try:
         data = _fetch_maps_json()
     except Exception:
@@ -78,8 +92,11 @@ def frame_urls() -> list[str]:
         return []
     recent = past[-FRAME_COUNT:]
     options = f"{SMOOTH}_{SHOW_SNOW}"
-    return [
-        f"{host}{frame['path']}/{TILE_SIZE}/{ZOOM}/{WEATHER_LAT}/{WEATHER_LON}/{COLOR_SCHEME}/{options}.png"
-        for frame in recent
-        if frame.get("path")
-    ]
+    out = []
+    for frame in recent:
+        if not frame.get("path") or frame.get("time") is None:
+            continue
+        url = f"{host}{frame['path']}/{TILE_SIZE}/{ZOOM}/{WEATHER_LAT}/{WEATHER_LON}/{COLOR_SCHEME}/{options}.png"
+        label = datetime.fromtimestamp(frame["time"], tz=ZoneInfo(TIMEZONE)).strftime("%I:%M %p").lstrip("0")
+        out.append({"url": url, "label": label})
+    return out

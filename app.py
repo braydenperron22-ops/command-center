@@ -320,8 +320,18 @@ components.html(
         "  var frames = document.querySelectorAll('.weather-radar-frame-img');",
         "  if (!frames.length) { kioskRadarIndex = 0; kioskRadarHoldTicks = 0; return; }",
         "  if (kioskRadarIndex >= frames.length) kioskRadarIndex = 0;",
+        // Session request: "does RainViewer offer timestamps... it's
+        // hard to tell when each frame is." Each frame already carries
+        // its own real time as data-time-label (radar_client.py/
+        // pages_radar.py) — read straight off whichever frame this
+        // tick is actually making visible, so the label can never
+        // drift out of sync with the animation the way a separately-
+        // ticking clock could.
+        "  var label = document.getElementById('weather-radar-timestamp');",
         "  for (var i = 0; i < frames.length; i++) {",
-        "    frames[i].style.opacity = (i === kioskRadarIndex) ? '1' : '0';",
+        "    var active = (i === kioskRadarIndex);",
+        "    frames[i].style.opacity = active ? '1' : '0';",
+        "    if (active && label) { label.textContent = frames[i].getAttribute('data-time-label') || ''; }",
         "  }",
         "  if (kioskRadarIndex === frames.length - 1 && kioskRadarHoldTicks < KIOSK_RADAR_HOLD_TICKS) {",
         "    kioskRadarHoldTicks++;",
