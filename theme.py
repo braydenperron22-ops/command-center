@@ -998,6 +998,7 @@ html, body, [class*="css"] {
 .news-alert-bar {
     background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
     box-shadow: 0 -4px 24px rgba(179,20,20,0.35);
+    animation: toast-pulse-red 1.6s ease-in-out infinite;
 }
 /* Generic market-news items aren't a surprise worth a red alert, but
    should still visibly take over the strip like breaking news does —
@@ -1005,6 +1006,70 @@ html, body, [class*="css"] {
 .news-alert-bar-market {
     background: linear-gradient(90deg, #0a0a0c 0%, #1c1c20 50%, #0a0a0c 100%);
     box-shadow: 0 -4px 24px rgba(0,0,0,0.45);
+    animation: toast-pulse-neutral 1.6s ease-in-out infinite;
+}
+
+/* Session request: "there is an animation for leave in alerts, but for
+   some reason it's only applied in the jumbotron... I really like how
+   it looks... make it so that that animation happens every single time
+   we have a toast alert... for every single toaster in the entire
+   system." The look in question is .jumbo-leave-ticker/.leave-headline's
+   own intensity-tier glow pulse (see leave-headline-pulse* below) —
+   deliberately NOT the old stretch-then-slide ENTRANCE animation
+   already removed from every toast bar in this file (see
+   commute_reminder.render_bar's own docstring: "get rid of the
+   animation... shorten up that animation window a lot" — a real,
+   live-confirmed bug where a one-shot intro tied to a freshly-appeared
+   node could get killed mid-transition by Streamlit's own 5s rerun
+   cycle patching content in place, making a toast intermittently
+   invisible). This is a genuinely different category: a continuous,
+   infinite `animation` declared directly on each bar's own static rule
+   — exactly like leave-headline-pulse/jumbo-blink/weather-warning-pulse
+   already are, rendered through this exact same rerun mechanism with
+   no reported issue. Nothing here depends on catching a single
+   "just appeared" moment; a rerun patching the node in place mid-cycle
+   just means the pulse keeps looping (or at worst restarts from 0%,
+   visually indistinguishable from any other frame of a symmetric
+   ease-in-out pulse) — not the failure mode the old intro had at all.
+   Each bar pulses its OWN existing box-shadow color, brighter and
+   wider at the peak — same shape as leave-headline-pulse, just on
+   box-shadow instead of text-shadow since these are solid bars, not
+   bare text. One keyframe per distinct accent color already in use
+   below, reused across every bar that already shares that same color
+   rather than one per module. */
+@keyframes toast-pulse-red {
+    0%, 100% { box-shadow: 0 -4px 24px rgba(179,20,20,0.35); }
+    50% { box-shadow: 0 -6px 40px rgba(179,20,20,0.65), 0 -2px 70px rgba(179,20,20,0.25); }
+}
+@keyframes toast-pulse-red-extreme {
+    0%, 100% { box-shadow: 0 -4px 24px rgba(212,24,26,0.5); }
+    50% { box-shadow: 0 -6px 44px rgba(212,24,26,0.85), 0 -2px 80px rgba(212,24,26,0.35); }
+}
+@keyframes toast-pulse-amber {
+    0%, 100% { box-shadow: 0 -4px 24px rgba(179,142,20,0.35); }
+    50% { box-shadow: 0 -6px 40px rgba(179,142,20,0.65), 0 -2px 70px rgba(179,142,20,0.25); }
+}
+@keyframes toast-pulse-orange {
+    0%, 100% { box-shadow: 0 -4px 24px rgba(179,100,20,0.3); }
+    50% { box-shadow: 0 -6px 40px rgba(179,100,20,0.6), 0 -2px 70px rgba(179,100,20,0.22); }
+}
+@keyframes toast-pulse-indigo {
+    0%, 100% { box-shadow: 0 -4px 24px rgba(74,50,168,0.4); }
+    50% { box-shadow: 0 -6px 40px rgba(74,50,168,0.7), 0 -2px 70px rgba(74,50,168,0.3); }
+}
+@keyframes toast-pulse-blue {
+    0%, 100% { box-shadow: 0 -4px 24px rgba(26,90,179,0.4); }
+    50% { box-shadow: 0 -6px 40px rgba(26,90,179,0.7), 0 -2px 70px rgba(26,90,179,0.3); }
+}
+@keyframes toast-pulse-gold {
+    0%, 100% { box-shadow: 0 -4px 24px rgba(179,153,63,0.35); }
+    50% { box-shadow: 0 -6px 40px rgba(179,153,63,0.65), 0 -2px 70px rgba(179,153,63,0.25); }
+}
+/* Black bg gets a neutral white/gray glow instead of a black-on-black
+   pulse of its own color, which wouldn't read as anything at all. */
+@keyframes toast-pulse-neutral {
+    0%, 100% { box-shadow: 0 -4px 24px rgba(0,0,0,0.45); }
+    50% { box-shadow: 0 -6px 40px rgba(255,255,255,0.18), 0 -2px 70px rgba(255,255,255,0.08); }
 }
 
 /* Commute reminder — same bottom-strip takeover and stretch/slide intro
@@ -1025,6 +1090,7 @@ html, body, [class*="css"] {
     overflow: hidden;
     background: linear-gradient(90deg, #7a4a0f 0%, #b3811a 50%, #7a4a0f 100%);
     box-shadow: 0 -4px 24px rgba(179,142,20,0.35);
+    animation: toast-pulse-amber 1.6s ease-in-out infinite;
 }
 
 /* Important-email toasts (email_client.py) — same bottom-strip
@@ -1045,6 +1111,7 @@ html, body, [class*="css"] {
     overflow: hidden;
     background: linear-gradient(90deg, #2f1f6e 0%, #4a32a8 50%, #2f1f6e 100%);
     box-shadow: 0 -4px 24px rgba(74,50,168,0.4);
+    animation: toast-pulse-indigo 1.6s ease-in-out infinite;
 }
 .email-alert-from {
     font-weight: 600;
@@ -1073,10 +1140,12 @@ html, body, [class*="css"] {
 .sports-alert-bar-mlb {
     background: linear-gradient(90deg, #0f2a7a 0%, #1a5ab3 50%, #0f2a7a 100%);
     box-shadow: 0 -4px 24px rgba(26,90,179,0.4);
+    animation: toast-pulse-blue 1.6s ease-in-out infinite;
 }
 .sports-alert-bar-nhl {
     background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
     box-shadow: 0 -4px 24px rgba(179,20,20,0.35);
+    animation: toast-pulse-red 1.6s ease-in-out infinite;
 }
 /* Saints' own gold — real team color (ESPN's #d3bc8d), not the fixed
    FLASH_BLUE/FLASH_RED shared by every other team's non-opponent
@@ -1084,6 +1153,7 @@ html, body, [class*="css"] {
 .sports-alert-bar-nfl {
     background: linear-gradient(90deg, #7a6a3f 0%, #b3993f 50%, #7a6a3f 100%);
     box-shadow: 0 -4px 24px rgba(179,153,63,0.35);
+    animation: toast-pulse-gold 1.6s ease-in-out infinite;
 }
 .sports-alert-score {
     display: flex;
@@ -1125,18 +1195,22 @@ html, body, [class*="css"] {
 .weather-alert-bar-extreme {
     background: linear-gradient(90deg, #5c0a0b 0%, #d4181a 50%, #5c0a0b 100%);
     box-shadow: 0 -4px 24px rgba(212,24,26,0.5);
+    animation: toast-pulse-red-extreme 1.6s ease-in-out infinite;
 }
 .weather-alert-bar-warning {
     background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
     box-shadow: 0 -4px 24px rgba(179,20,20,0.35);
+    animation: toast-pulse-red 1.6s ease-in-out infinite;
 }
 .weather-alert-bar-warning-moderate {
     background: linear-gradient(90deg, #7a3d10 0%, #b3641a 50%, #7a3d10 100%);
     box-shadow: 0 -4px 24px rgba(179,100,20,0.3);
+    animation: toast-pulse-orange 1.6s ease-in-out infinite;
 }
 .weather-alert-bar-watch, .weather-alert-bar-statement {
     background: linear-gradient(90deg, #7a4a0f 0%, #b3811a 50%, #7a4a0f 100%);
     box-shadow: 0 -4px 24px rgba(179,142,20,0.35);
+    animation: toast-pulse-amber 1.6s ease-in-out infinite;
 }
 
 /* Persistent top banner: holds the latest red (important) headline for
