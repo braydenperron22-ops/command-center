@@ -1293,7 +1293,28 @@ components.html(
         "    overlay = document.createElement('div');",
         "    overlay.id = 'kiosk-toast-overlay';",
         "    overlay.style.position = 'fixed';",
-        "    overlay.style.zIndex = '9999';",
+        // Session report: "take a look at the leave in alert for when
+        // you were on the Jumbotron mode... it slides out to the
+        // right, and it looks great... apply that one to the rest of
+        // the Toast alerts" — this reveal overlay already runs for
+        // every toast (see kioskCheckToastChime's own call below), but
+        // 9999 sat BELOW every real toast bar's own z-index:10000 (see
+        // .news-alert-bar's own comment in theme.py — every toast bar
+        // shares that same value). An overlay positioned exactly on
+        // top of an opaque bar with a LOWER z-index renders fully
+        // hidden behind it, so the wipe was only ever visible against
+        // .jumbo-leave-ticker, which sits at a mere z-index:10 — the
+        // one place it could actually show through. Raised to 10001,
+        // above every real toast bar, so the same wipe that was only
+        // ever reaching the jumbotron ticker now shows for all of
+        // them. Deliberately above .screen-picker's own 10000 too
+        // (that comment calls itself "above every other overlay" on
+        // purpose) — accepted here since this overlay is pointer-
+        // events:none and on screen well under a second, so the only
+        // real cost is a brief visual pass-through on the rare instant
+        // a toast fires while that manually-opened menu happens to be
+        // up, never a click blocked.
+        "    overlay.style.zIndex = '10001';",
         "    overlay.style.pointerEvents = 'none';",
         "    document.body.appendChild(overlay);",
         "  }",
