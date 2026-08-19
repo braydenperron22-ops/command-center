@@ -2635,6 +2635,17 @@ try:
 except Exception:
     pass
 
+# Rain-nowcast toasts — session request: "did the nowcast from xweather
+# fire this morning at all... build [a real alert]." Own module
+# (precip_nowcast_client.py), same isolation reasoning and "kind":
+# "weather" dispatch as the two blocks above — see that module's own
+# get_new_alerts docstring for why it reuses lightning_client's exact
+# pattern rather than a new toast family of its own.
+try:
+    new_alerts.extend(precip_nowcast_client.get_new_alerts(now))
+except Exception:
+    pass
+
 # Important-email toasts — session request: "incorporate emails...
 # important emails to be sent to me via a toast alert, but you need to
 # make sure that they're important, and not crap." Own module
