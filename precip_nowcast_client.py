@@ -20,11 +20,14 @@ and Pirate Weather's HRRR-derived nowcast — see the session's own
 research — steps in 15-minute increments), so there's no real signal
 being traded away, only budget being spent for no reason.
 
-NOT YET LIVE-VERIFIED against a real Xweather account — built from
-their documented request shape (client_id/client_secret + p=lat,lon +
-filter=minutelyprecip on the conditions endpoint), same as radar_
-client.py originally was before its own live test. Needs a real check
-once XWEATHER_CLIENT_ID/SECRET are actually in secrets.toml.
+Session report, once XWEATHER_CLIENT_ID/SECRET were actually added to
+secrets.toml: "the rain nowcast feature... isn't populating when rain
+is coming... check those." Root cause was simpler than a parsing bug —
+the two secrets had genuinely never been added, so _configured() was
+False and this had never once reached the real API. Verified live
+once the real credentials were in place: a real 200/success response,
+61 real minute-by-minute periods parsed correctly through
+minutely_forecast() end to end.
 """
 
 from datetime import datetime

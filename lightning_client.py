@@ -51,8 +51,16 @@ def _fetch_closest_raw() -> dict | None:
         params={
             "client_id": st.secrets.get("XWEATHER_CLIENT_ID"),
             "client_secret": st.secrets.get("XWEATHER_CLIENT_SECRET"),
-            "lat": WEATHER_LAT,
-            "lon": WEATHER_LON,
+            # Session request: "check those" — confirmed live against a
+            # real Xweather account (once XWEATHER_CLIENT_ID/SECRET were
+            # actually added) that separate lat/lon params get a real
+            # "no_location: A location was not provided" error back —
+            # Xweather's "closest" action wants a single combined point
+            # instead, same "p" parameter precip_nowcast_client.py's own
+            # request already used correctly. Verified this exact change
+            # against the live API before shipping it: 200, success,
+            # response returned.
+            "p": f"{WEATHER_LAT},{WEATHER_LON}",
             "radius": f"{RADIUS_KM}km",
         },
         timeout=10,
