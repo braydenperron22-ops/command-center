@@ -4686,6 +4686,39 @@ html, body, [class*="css"] {
     animation: jumbo-transition-sub-in 0.6s ease-out 0.5s forwards;
 }
 
+/* Ordinary page-to-page rotation (app.py, the plain "not jumbotron"
+   case — .jumbo-transition above already owns entering/leaving the
+   board specifically) — session report: "the transition between pages
+   is quite choppy at times where different elements from different
+   pages kinda blend into one before delivering the other ones." Root
+   cause: Streamlit doesn't swap a page atomically — it streams each
+   element of the new page in one at a time as the script computes it,
+   so for a brief window the DOM genuinely is a mix of the outgoing
+   page's not-yet-removed elements and the incoming page's not-yet-
+   arrived ones. Same fix shape as .jumbo-transition, just much
+   quicker: an opaque curtain matching the kiosk's own real base
+   background (.streamlit/config.toml's backgroundColor, #000000, not
+   the jumbotron's own near-black) holds for a beat while the real new
+   page finishes streaming in underneath it in this exact same rerun,
+   then fades away — the swap reads as a deliberate little crossfade
+   instead of the raw choppy patch. Below every toast bar's own
+   z-index:10000+ (a real alert should never be hidden behind a routine
+   rotation) and below .screen-picker's own 10000, same "manually-
+   opened UI stays on top" reasoning theme.py already documents there. */
+.page-transition-curtain {
+    position: fixed;
+    inset: 0;
+    z-index: 9990;
+    background: #000000;
+    pointer-events: none;
+    animation: page-transition-fade 0.6s cubic-bezier(.4,0,.2,1) forwards;
+}
+@keyframes page-transition-fade {
+    0% { opacity: 1; }
+    35% { opacity: 1; }
+    100% { opacity: 0; visibility: hidden; }
+}
+
 /* Full-screen "out of town scoreboard" during a natural break in the
    featured game — session request: "between innings / periods can we
    go to a full screen out of town scoreboard. with a timer till the

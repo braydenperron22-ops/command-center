@@ -1589,6 +1589,31 @@ try:
 except Exception:
     pass
 
+# Ordinary page-to-page rotation curtain — session report: "the
+# transition between pages is quite choppy at times where different
+# elements from different pages kinda blend into one before delivering
+# the other ones. Can we make it so that the other page is preloaded
+# prior to the switch so that it's a seamless swap, or even a little
+# animation to switch between the two pages." Real preloading would
+# mean rendering (and fetching data for) every page on every single
+# rerun just to have a hidden one ready — a genuine, ongoing cost for
+# a purely cosmetic fix. Same trick .jumbo-transition above already
+# uses instead: a same-rerun curtain, detected the identical way (a
+# genuine flip since the last rerun, via st.session_state — see that
+# block's own comment), that masks the moment while the real new page
+# finishes streaming in underneath it, then fades away — the practical
+# effect of a seamless swap without the cost of a real one. Scoped to
+# skip both jumbotron entry and exit (_prev_page/page != "jumbotron")
+# since those already get their own, more deliberate curtain above —
+# this is only for a routine swap between two ordinary pages.
+try:
+    _prev_page = st.session_state.get("_prev_page")
+    if not _jumbotron_active and _prev_page is not None and _prev_page != page and _prev_page != "jumbotron" and page != "jumbotron":
+        st.markdown('<div class="page-transition-curtain"></div>', unsafe_allow_html=True)
+    st.session_state["_prev_page"] = page
+except Exception:
+    pass
+
 _PAGE_LABELS = {
     "home": "Home", "conflicts": "Conflicts", "news": "News", "email": "Email", "markets": "Markets",
     "internals": "Internals", "today": "Today", "household": "Household",
