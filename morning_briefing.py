@@ -205,7 +205,37 @@ def _air_clause(now: datetime, air_quality: dict | None) -> tuple[int, str] | No
     return 5, f"air quality index {aqi_level} (elevated)"
 
 
+def _is_work_day(now: datetime) -> bool:
+    """True only when today's calendar actually has a real work shift
+    on it. Session request: "a day that is not characterized as work is
+    when I don't have an event in the calendar that is work or work at
+    3110 or sales or customer experience associate central... on those
+    days, don't show the commute." Reuses _is_shift_summary (defined
+    below — Python resolves this at call time, so the earlier position
+    in the file is fine) rather than re-deriving the same keyword logic
+    a second time: calendar_client._normalize_summary has already
+    collapsed "sales"/"customer experience associate [central]" down to
+    the literal "Work" by the time an event reaches here (see
+    _WORK_KEYWORDS there), and _is_shift_summary's own "Work"/"working
+    at..." check already covers the separately-titled "Work at 3110"
+    shift too — so matching on that one function already covers every
+    variant named."""
+    calendars = st.secrets.get("CALENDARS")
+    if not calendars:
+        return False
+    events = calendar_client.todays_events(calendars, now.date())
+    return any(_is_shift_summary(e["summary"]) for e in events if not e["all_day"])
+
+
 def _commute_clause(now: datetime) -> tuple[int, str] | None:
+    # Without this, todays_destination silently falls back to the
+    # default Work commute even on a day with no shift at all (see its
+    # own docstring — "no currently-relevant shift" behaves exactly
+    # like "no location on it"), which is exactly what read as a
+    # pointless "commute to Work: 18 min, no delays" fact on a day
+    # Brayden wasn't actually going anywhere.
+    if not _is_work_day(now):
+        return None
     destination = commute_reminder.todays_destination(now)
     using_default = destination is COMMUTE_DESTINATION
     data = commute_client.route(None if using_default else destination)
@@ -1353,7 +1383,50 @@ _learned_notes_date: str | None = persisted_state.load("morning_brief_learned_no
 # (now-removed) daily activity fact used — a pattern of many small
 # withdrawals IS exactly the kind of thing this function exists to
 # notice, so nothing here gets pre-filtered by size.
-_FINANCIAL_TRENDS_ACTIVITY_LIMIT = 15
+#
+# Raised 15 -> 60 — session request: "let it see my day by day
+# spending... make it see patterns a little bit better." Checked live
+# first: the real note this was producing at 15 talked in specifics
+# about work start times, commute minutes, and gas price trends, but
+# only ever said "recent activity including discretionary spending and
+# bill withdrawals" for money — vague where everything else was dated
+# and concrete, because 15 entries (across up to 7 tracked accounts)
+# often doesn't even span a full week, nowhere near enough room for a
+# real weekday-spending shape to repeat. 60 gives real multi-week
+# coverage, same "widen the window so a pattern has room to show up
+# twice" reasoning HISTORY_MAX_DAYS's own comment already used.
+_FINANCIAL_TRENDS_ACTIVITY_LIMIT = 60
+
+# Real spending only — a WITHDRAWAL from one of these three, not a
+# Transfer (see _mark_internal_transfers) and not, say, an RRSP
+# withdrawal or a dividend, which aren't "day to day spending" in the
+# sense being asked for here. Matches this function's own existing
+# account-label comment below exactly.
+_DAY_TO_DAY_SPENDING_ACCOUNTS = ("Spending", "Bills", "Gas")
+
+
+def _daily_spending_block(activities: list[dict]) -> str:
+    """Real day-to-day spending, totaled per calendar day, oldest
+    first — session request: "let it see my day by day spending." The
+    raw activity list _financial_trends_block already builds has this
+    same data, but only as a flat chronological feed; grouping it
+    explicitly by day is what actually makes a real weekday-spending
+    shape (spends more on Fridays, next to nothing most weekdays)
+    visible without asking the model to reconstruct that grouping
+    itself from a list it's already treating as "not filtered, don't
+    read too much into any single entry." "" if nothing in `activities`
+    is real spending (SnapTrade unreachable, or every entry here
+    happens to be investment activity/a transfer)."""
+    by_day: dict[str, float] = {}
+    for a in activities:
+        if a.get("is_transfer") or a["type"] != "WITHDRAWAL" or a["account"] not in _DAY_TO_DAY_SPENDING_ACCOUNTS:
+            continue
+        day = a["date"][:10]
+        by_day[day] = by_day.get(day, 0) + abs(a["amount"])
+    if not by_day:
+        return ""
+    daily = "; ".join(f"{day}: ${amount:,.0f}" for day, amount in sorted(by_day.items()))
+    return f"Real day-to-day spending (Spending/Bills/Gas withdrawals only, transfers excluded), totaled per calendar day, oldest first: {daily}."
 
 
 def _financial_trends_block() -> str:
@@ -1394,6 +1467,9 @@ def _financial_trends_block() -> str:
             for a in activities
         ]
         lines.append("Recent activity, newest first: " + "; ".join(recent))
+        daily_spending = _daily_spending_block(activities)
+        if daily_spending:
+            lines.append(daily_spending)
     return " ".join(lines)
 
 
