@@ -17,6 +17,7 @@ import streamlit as st
 import daily_gas_price
 import data_health
 import fetch_throttle
+import persisted_state
 import statcan_client
 
 FUEL_PRICES_URL = "https://ontario.ca/v1/files/fuel-prices/fueltypesall.csv"
@@ -50,7 +51,26 @@ CACHE_TTL_SECONDS = 2 * 60 * 60
 FLOOR_LOOKBACK_YEARS = 10
 CPI_VECTOR_ID = 41690973  # StatCan All-Items CPI (Canada) — same series config.py's own CPI (YoY) indicator tracks
 
-_last_good_readings: list[dict] | None = None
+# Session request: "cache the results so it doesn't die on refreshes"
+# — same fix, same reasoning as daily_gas_price._load_last_good's own
+# comment: a plain module-level list didn't survive a real process
+# restart, so a redeploy landing exactly while data.ontario.ca was
+# briefly unreachable had nothing real to fall back to at all. Stored
+# as [{"date": iso_string, "price_cents_per_litre": float}, ...] —
+# save()'s own docstring: callers convert dates to/from a JSON-friendly
+# shape themselves.
+def _load_last_good() -> list[dict]:
+    raw = persisted_state.load("fuel_price_last_good", [])
+    out = []
+    for r in raw:
+        try:
+            out.append({"date": date.fromisoformat(r["date"]), "price_cents_per_litre": float(r["price_cents_per_litre"])})
+        except (KeyError, ValueError, TypeError):
+            continue
+    return out
+
+
+_last_good_readings: list[dict] = _load_last_good()
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
@@ -87,8 +107,11 @@ def fetch_readings() -> list[dict]:
         result = _fetch_readings_raw()
     except Exception:
         return _last_good_readings or []
-    if result:
+    if result and result != _last_good_readings:
         _last_good_readings = result
+        persisted_state.save(
+            "fuel_price_last_good", [{"date": r["date"].isoformat(), "price_cents_per_litre": r["price_cents_per_litre"]} for r in result]
+        )
     return result or (_last_good_readings or [])
 
 

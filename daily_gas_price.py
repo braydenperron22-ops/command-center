@@ -33,6 +33,7 @@ import streamlit as st
 from bs4 import BeautifulSoup
 
 import fetch_throttle
+import persisted_state
 
 SOURCE_URL = "https://www.affordableenergy.ca/gas-prices/north-bay/"
 FUEL_LABEL = "Regular"
@@ -42,7 +43,33 @@ FUEL_LABEL = "Regular"
 # site the way a static government CSV can be polled more casually.
 CACHE_TTL_SECONDS = 60 * 60
 
-_last_good_prices: dict[date, float] | None = None
+
+# Session request: "cache the results so it doesn't die on refreshes" —
+# a plain module-level dict here didn't survive a real Streamlit
+# process restart (a redeploy, a crash, Streamlit Cloud's own idle
+# sleep/wake cycle): the very first today_price() call after one, if it
+# happened to land before the site had published today's own block yet
+# (real, confirmed live — see today_price's own comment below), had
+# nothing to fall back to at all and returned None outright. Persisted
+# now, same "survive a restart, not just a rerun" fix this app's other
+# last-good-copy fallbacks already got (see e.g. commute_reminder.
+# _shown_state's own comment on the identical class of bug). JSON can't
+# key a dict by a real date object — save()'s own docstring: callers
+# convert dates/sets to/from a JSON-friendly shape themselves — so this
+# is stored as {iso_date_string: price}, converted to/from real date
+# keys only at the two places that actually need them.
+def _load_last_good() -> dict[date, float]:
+    raw = persisted_state.load("daily_gas_last_good", {})
+    out = {}
+    for k, v in raw.items():
+        try:
+            out[date.fromisoformat(k)] = float(v)
+        except (ValueError, TypeError):
+            continue
+    return out
+
+
+_last_good_prices: dict[date, float] = _load_last_good()
 
 
 def _parse_heading_date(text: str) -> date:
@@ -88,28 +115,44 @@ def _fetch_raw() -> dict[date, float]:
 
 
 def today_price() -> dict | None:
-    """{"price_cents_per_litre", "date", "change"} for today's real
-    North Bay Regular price — "change" is today's price minus
-    yesterday's, in cents/litre, or None if the page didn't have
-    yesterday's block for some reason (never invented, same "no number
-    beats a guessed one" rule as this app's other real-data sources).
-    Falls back to the last successfully-fetched set of prices if the
-    page's briefly unreachable or hasn't shown today's block yet,
-    matching fuel_price_client.fetch_readings' own last-good-copy
-    convention; None if there's never been a good reading."""
+    """{"price_cents_per_litre", "date", "change"} for the most recent
+    real North Bay Regular price the site has actually published —
+    "change" is that date's price minus the day before it, in
+    cents/litre, or None if that prior day's block wasn't there (never
+    invented, same "no number beats a guessed one" rule as this app's
+    other real-data sources). Falls back to the last successfully-
+    fetched set of prices if the page's briefly unreachable, matching
+    fuel_price_client.fetch_readings' own last-good-copy convention;
+    None if there's never been a good reading.
+
+    Session report, once real live data existed to check this against:
+    "our daily gas source... only works sometimes." Two real, separate
+    causes, both fixed here. First: _last_good_prices used to be a
+    plain in-memory dict, wiped on every process restart — see this
+    module's own _load_last_good comment. Second, this function itself
+    used to require date.today() to be an EXACT key in `prices`,
+    returning None otherwise — confirmed live that the site's own
+    published dates aren't always a clean, consecutive Yesterday/Today/
+    Tomorrow set (a real fetch here came back {Aug 16, Aug 18, Aug 19}
+    — Aug 17 genuinely missing from the site's own page that day), and
+    the site "never discloses an update schedule" for when "Today"
+    actually flips over either. Now uses whichever date is genuinely
+    the LATEST one actually available, instead of insisting on an exact
+    match — still a real, honestly-dated price (never backdated or
+    invented), just no longer silently returning nothing over a gap
+    that isn't this app's own fault."""
     global _last_good_prices
     try:
         prices = _fetch_raw()
     except Exception:
         prices = None
-    if prices:
+    if prices and prices != _last_good_prices:
         _last_good_prices = prices
+        persisted_state.save("daily_gas_last_good", {d.isoformat(): p for d, p in prices.items()})
     prices = prices or _last_good_prices
     if not prices:
         return None
-    today = date.today()
-    if today not in prices:
-        return None
-    yesterday_price = prices.get(today - timedelta(days=1))
-    change = (prices[today] - yesterday_price) if yesterday_price is not None else None
-    return {"price_cents_per_litre": prices[today], "date": today, "change": change}
+    latest = max(prices)
+    prior_price = prices.get(latest - timedelta(days=1))
+    change = (prices[latest] - prior_price) if prior_price is not None else None
+    return {"price_cents_per_litre": prices[latest], "date": latest, "change": change}
