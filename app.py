@@ -18,12 +18,14 @@ import air_quality_client
 import commute_reminder
 import cpp_payment_dates
 import data_health
+import ec_forecast
 import email_client
 import evening_briefing
 import govee_lighting
 import groq_client
 import headline_rotation
 import lightning_client
+import local_news_client
 import market_yf_client
 import morning_briefing
 import news
@@ -48,6 +50,7 @@ import payday_schedule
 import persisted_state
 import precip_nowcast_client
 import prediction_markets_client
+import scores_client
 import seasons_client
 import sports_alerts
 import td_quarter_schedule
@@ -75,7 +78,7 @@ import streamlit.components.v1 as components
 from icons import icon_for, label_for
 from scenery import FADE_SECONDS, condition_category, phase_for, scene_html, sky_style
 import ticker
-from weather_client import fetch_weather
+from weather_client import daily_forecast, fetch_weather
 
 st.set_page_config(page_title="Command Center", layout="wide")
 theme.inject()
@@ -2501,6 +2504,45 @@ if FRED_API_KEY:
         readings, new_flags = pages_home.fetch_readings(FRED_API_KEY)
     except Exception:
         pass
+
+# Session report: "the transition between pages is quite choppy...
+# different elements from different pages pop up as longer than five
+# seconds." Root cause (confirmed via a full audit of every page's own
+# data sources against fetch_throttle.py's hard-floored 0.5s gap
+# between any two real, cache-miss outbound calls anywhere in the
+# app): the bottom ticker below already keeps most "many-source" pages
+# (Markets, Internals, News, Home, Today, non-live Sports) continuously
+# warm by incidentally calling the exact same underlying cached
+# functions on every rerun regardless of which page is showing — but
+# Scores, Household, and Weather each have their own data sources that
+# nothing else in the app ever touches. With PAGE_ROTATION_SECONDS at
+# 5 minutes and 15 pages in rotation, a full cycle is ~75 minutes —
+# far longer than any of these pages' own 5-15 minute TTLs — so every
+# single time rotation swings back around to one of them, ALL of its
+# sources are guaranteed stale at once, forcing several real fetches
+# to serialize back to back through fetch_throttle's own 0.5s-per-call
+# floor before the page can even finish rendering: 3 for Scores
+# (MLB/NHL/NFL), up to 4 bundled inside local_news_client.fetch_items
+# for Household, 2 for Weather (EC + Open-Meteo) — several real seconds
+# of pure throttled waiting, on top of actual network latency, exactly
+# matching the reported symptom. Same fix as the FRED readings above:
+# call them unconditionally too, so their own cache entries never
+# actually go cold between rotation visits, same as everything the
+# ticker already keeps warm by accident.
+try:
+    for _league in scores_client.LEAGUES:
+        scores_client.fetch_games(_league["key"])
+except Exception:
+    pass
+try:
+    local_news_client.fetch_items()
+except Exception:
+    pass
+try:
+    ec_forecast.current_conditions()
+    daily_forecast()
+except Exception:
+    pass
 
 # Intraday change of whatever instrument best represents "the market"
 # right now drives the Govee light's base color below — same open/
