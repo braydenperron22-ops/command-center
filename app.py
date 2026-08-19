@@ -19,6 +19,7 @@ import commute_reminder
 import cpp_payment_dates
 import data_health
 import email_client
+import evening_briefing
 import govee_lighting
 import groq_client
 import headline_rotation
@@ -2434,6 +2435,16 @@ if _stale_sources and not _jumbotron_active:
 if not _jumbotron_active:
     try:
         morning_briefing.render(now, weather, air_quality)
+    except Exception:
+        pass
+    # Session request: "make sure that the AI is only actually called
+    # if we're not in jumbotron mode... if we're not in jumbotron mode,
+    # have the AI called to do an evening brief." Same gate as the
+    # morning brief right above — their own time windows never overlap
+    # (5-10am vs 7-11pm), so at most one of the two ever actually
+    # renders anything on a given rerun regardless.
+    try:
+        evening_briefing.render(now)
     except Exception:
         pass
 

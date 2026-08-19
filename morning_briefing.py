@@ -305,7 +305,12 @@ def _is_shift_summary(summary: str) -> bool:
     return summary == "Work" or summary.lower().startswith("working")
 
 
-def _format_agenda_list(events: list[dict]) -> str:
+def format_agenda_list(events: list[dict]) -> str:
+    """Public — evening_briefing.py's own tomorrow-preview reuses this
+    exact formatting (shift end-time math, location/description
+    inclusion, the "plus N more" cap) rather than re-deriving it, so a
+    real work shift reads identically whether it's showing up in
+    today's agenda or tomorrow's preview."""
     shown = events[:AGENDA_LIST_CAP]
     parts = []
     for e in shown:
@@ -336,7 +341,7 @@ def _agenda_clause(now: datetime) -> tuple[int, str] | None:
     if not events:
         return 1, "calendar: nothing scheduled today"
     events.sort(key=lambda e: e["start"])
-    agenda_list = _format_agenda_list(events)
+    agenda_list = format_agenda_list(events)
     priority = {1: 3, 2: 4}.get(len(events), 5)
     return priority, f"calendar: {agenda_list}"
 
@@ -1092,10 +1097,10 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
     raw = gemini_client.generate_periodic(
         "morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85, max_output_tokens=260
     )
-    return _parse_headline_body(raw) if raw else None
+    return parse_headline_body(raw) if raw else None
 
 
-def _parse_headline_body(raw: str) -> tuple[str, str] | None:
+def parse_headline_body(raw: str) -> tuple[str, str] | None:
     """Splits the AI's own "headline\\n\\nbody" response into (headline,
     body) — None on anything that doesn't actually look like that shape
     (no blank line to split on, or either half empty once trimmed),
