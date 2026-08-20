@@ -53,6 +53,22 @@ _ACTIVITY_TAGS = {
 # money leaving/arriving versus his own money just changing pockets.
 _TRANSFER_TAG = ("TRANSFER", "#ABB2C4")
 
+# Session request: "for my day to day accounts, if there's any money
+# that gets inputted into there, make sure that instead of invested,
+# it says deposited or deposit." A CONTRIBUTION into Spending/Bills/Gas
+# (or the generic "Daily Banking" MSB fallback — see portfolio_client.
+# _MSB_ACCOUNT_LABELS/_ACTIVITY_DISPLAY_NAMES) isn't investment
+# activity at all, just money landing in an everyday account — the
+# same distinction _DAY_TO_DAY_SPENDING_ACCOUNTS already draws in
+# morning_briefing.py, kept as this page's own local set rather than
+# importing that one, since that constant is scoped to spending
+# specifically and deliberately excludes "Daily Banking." Same purple
+# as INVESTED (still fundamentally the same "money added" category,
+# just worded honestly for the account it actually landed in) — only
+# the label text changes.
+_DAY_TO_DAY_ACCOUNTS = {"Spending", "Bills", "Gas", "Daily Banking"}
+_DEPOSIT_TAG = ("DEPOSITED", "#A78BFA")
+
 
 def _period_metric(label: str, pct: float | None, amount: float | None = None) -> str:
     if pct is None:
@@ -94,6 +110,8 @@ def _activity_row(activity: dict, today_local) -> str:
 
     if activity.get("is_transfer"):
         tag_label, tag_color = _TRANSFER_TAG
+    elif activity["type"] == "CONTRIBUTION" and activity["account"] in _DAY_TO_DAY_ACCOUNTS:
+        tag_label, tag_color = _DEPOSIT_TAG
     else:
         tag_label, tag_color = _ACTIVITY_TAGS.get(activity["type"], (activity["type"], "#ABB2C4"))
     tag_html = f'<span class="activity-tag" style="color:{tag_color}; border-color:{tag_color};">{tag_label}</span>'
