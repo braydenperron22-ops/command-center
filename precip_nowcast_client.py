@@ -176,9 +176,19 @@ def get_new_alerts(now: datetime) -> list[dict]:
     pulse and the fixed reveal-wipe z-index included, no new styling
     needed), and the same KIOSK_WEATHER_VOICE_SEL voice treatment —
     already listed there for every severity including "statement" — at
-    zero extra wiring cost. "Rain has stopped" is the one silent
-    variant: real news, but nothing actionable enough to earn a chime
-    the way "rain's coming" or "it's raining now" do."""
+    zero extra wiring cost. "Clearing now" is the one silent variant:
+    real news, but nothing actionable enough to earn a chime the way
+    "rain's coming" or "it's raining now" do.
+
+    Session follow-up: "update the Toast alert with the same wording"
+    — these two headlines ("Rain now"/"Clearing now") deliberately
+    match the hero badge's own three-stage wording (app.py's own
+    nowcast badge block: "Rain in X min" -> "Rain now" -> "Clearing in
+    X min") exactly, so a toast and the badge it hands off to always
+    describe the same moment the same way. Only the headline changed
+    to match — "summary" (the spoken sentence) stays natural language,
+    since that's read aloud, not displayed as a short badge-style
+    label."""
     global _seen_starting_bucket, _was_raining
     forecast = minutely_forecast()
     if not forecast:
@@ -217,11 +227,11 @@ def get_new_alerts(now: datetime) -> list[dict]:
                     "kind": "weather",
                     "severity": "statement",
                     "label": "Rain",
-                    "headline": "Rain has started",
+                    "headline": "Rain now",
                     "summary": "It has started raining.",
                 }
             )
         else:
-            alerts.append({"kind": "weather", "severity": "statement", "label": "Rain", "headline": "Rain has stopped", "silent": True})
+            alerts.append({"kind": "weather", "severity": "statement", "label": "Rain", "headline": "Clearing now", "silent": True})
 
     return alerts
