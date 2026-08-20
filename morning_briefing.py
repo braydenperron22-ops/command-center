@@ -1648,6 +1648,28 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
         if environment_block
         else ""
     )
+    # Session request: "give the AI access to my email so it can build
+    # understandings of my hobbies and interests... during the morning
+    # brief." Deliberately the unfiltered week-wide feed
+    # (email_client.interest_signal_block), not morning_brief_summary's
+    # own "important, not crap" subset — a golf-store promo or a
+    # fantasy-hockey-league notification is exactly the real interest
+    # signal that classifier is tuned to reject, not something worth
+    # surfacing as a toast, but genuinely useful here.
+    email_interest_block = email_client.interest_signal_block()
+    email_interest_section = (
+        f"Sender and subject only from recent real email, for noticing genuine hobbies/interests/"
+        f"personality — recurring senders or subjects (a specific hobby's newsletter, a recurring "
+        f"fantasy league, a store he actually shops at) are real signal; a single one-off isn't. This "
+        f"is NOT a list of important/actionable email — plenty of it is ordinary marketing and "
+        f"notifications, which is exactly what makes it useful for this specific purpose, not for "
+        f"anything else. Never treat anything here as needing action or a reply, never repeat a "
+        f"subject line verbatim in the note, and never infer anything sensitive (health, finances "
+        f"beyond what the financial section above already covers, relationships) from a sender or "
+        f"subject alone — stick to genuine hobbies/interests/recurring habits: {email_interest_block}\n\n"
+        if email_interest_block
+        else ""
+    )
     prompt = (
         "You keep a short, private, evolving note about Brayden for your own future reference only — "
         "never shown to him directly. Your job is genuine pattern-finding, not a daily log: actively "
@@ -1669,9 +1691,14 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
         "move actually track that broader market run or diverge from it? Are gas prices actually "
         "rising, easing, or flat over the recent stretch below? Only worth naming when the real numbers "
         "show a genuine multi-day direction, not from a single reading.\n\n"
+        "Also build a real, standing picture of who he actually is — hobbies, interests, what he "
+        "cares about — from the recurring senders/subjects below, the same way you'd build any other "
+        "pattern: a one-off doesn't count, something that keeps showing up does. This part of the "
+        "note is about him as a person, not a fact to correlate against a specific day.\n\n"
         f"Your note so far: {_learned_notes or '(nothing recorded yet — this is early)'}\n\n"
         f"{financial_section}"
         f"{environment_section}"
+        f"{email_interest_section}"
         f"{history_section}"
         f"{holidays_section}"
         f"{seasons_section}"

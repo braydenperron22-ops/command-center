@@ -504,6 +504,46 @@ def morning_brief_summary(now: datetime) -> str | None:
     return f"{len(important)} important — {joined}{suffix}"
 
 
+# Session request: "give the AI access to my email so it can build
+# understandings of my hobbies and interests... during the morning
+# brief" — a genuinely different question from morning_brief_summary
+# above (which reuses the toast classifier's own "important, not crap"
+# filter) or get_new_alerts (a toast-worthy subset). A newsletter, a
+# hobby forum digest, a specific store's promo emails — exactly what
+# that classifier is tuned to reject as "not important" — is often the
+# real interest signal, so this deliberately skips classification
+# entirely and hands over raw sender+subject, unfiltered, same
+# "don't pre-judge what the pattern-finding AI gets to see"
+# reasoning morning_briefing._financial_trends_block already uses for
+# portfolio activity. Wider lookback than the 24h daily-brief window on
+# purpose — a single day rarely reveals a recurring subscription/
+# newsletter pattern; a week gives it room to actually repeat.
+INTEREST_SIGNAL_LOOKBACK_HOURS = 7 * 24
+# Same "don't let one unusually email-heavy stretch blow out the
+# prompt" reasoning as MORNING_BRIEF_MAX_EMAILS, just sized for a
+# week's worth instead of a day's.
+INTEREST_SIGNAL_MAX_EMAILS = 60
+
+
+def interest_signal_block() -> str | None:
+    """Sender + subject for up to INTEREST_SIGNAL_MAX_EMAILS emails
+    over the trailing INTEREST_SIGNAL_LOOKBACK_HOURS, newest first,
+    for morning_briefing._update_learned_notes specifically — None if
+    unconfigured or nothing came through. No snippet (subject/sender
+    alone is plenty for interest inference, and this is already a
+    wider net than the classified feeds elsewhere in this module — no
+    reason to also widen how much of each individual message it
+    reads), and deliberately no classification/filtering step of any
+    kind, unlike every other reader of _fetch_recent_raw in this file."""
+    if not _configured():
+        return None
+    raw = _fetch_recent_raw(INTEREST_SIGNAL_LOOKBACK_HOURS)
+    if not raw:
+        return None
+    shown = raw[:INTEREST_SIGNAL_MAX_EMAILS]
+    return "; ".join(f'"{e["subject"]}" from {e["from"]}' for e in shown)
+
+
 def render_alert_bar(alert: dict) -> None:
     """Bottom-strip toast — sender + subject, same plain immediately-
     visible bar shape as every other toast kind, its own color so it
