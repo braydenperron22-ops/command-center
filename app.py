@@ -2309,13 +2309,24 @@ if weather:
     # a minute-cast only ever covers the next 60 minutes in the first
     # place, so "flagged" means rain is actually about to start or
     # stop somewhere in that window, not a days-out heads-up the way
-    # the badges above this one work. "Continuing"/"no rain" (see
-    # precip_nowcast_client's own rain_starting_in_minutes/rain_ending_
-    # in_minutes docstrings) aren't flagged at all — neither one is a
-    # new, actionable moment the way an approaching or clearing edge
-    # is. Blue — unclaimed among this row's own palette, and already
-    # this app's own color for weather/rain elsewhere (the Weather
-    # page's beacon, the radar "you are here" marker).
+    # the badges above this one work. Blue — unclaimed among this
+    # row's own palette, and already this app's own color for weather/
+    # rain elsewhere (the Weather page's beacon, the radar "you are
+    # here" marker).
+    #
+    # Session report: "there was rain in the nowcast last night... I
+    # got the toast alert that rain was in forty five minutes, but I
+    # didn't end up seeing anything [on the badge]... the rain, in
+    # fact, did end up coming." Root cause: this used to only badge the
+    # two EDGES (an approaching or clearing moment), not the steady
+    # middle — real rain that's already started but whose model hasn't
+    # resolved a clear end within the 60-minute window yet fell into a
+    # real gap where neither rain_starting_in_minutes nor
+    # rain_ending_in_minutes returns anything, so the badge showed
+    # nothing even while it was genuinely raining. Follow-up request:
+    # "I want it to be a full thing... rain in, then rain now, and
+    # then clearing in" — a third, live "Rain now" state closes that
+    # gap, and "clearing" replaces the old "easing" wording to match.
     try:
         nowcast = precip_nowcast_client.minutely_forecast()
     except Exception:
@@ -2327,7 +2338,12 @@ if weather:
         if starting is not None:
             nowcast_text = "Rain starting now" if starting == 0 else f"Rain in {starting} min"
         elif ending is not None:
-            nowcast_text = "Rain easing now" if ending == 0 else f"Rain easing in {ending} min"
+            nowcast_text = "Clearing now" if ending == 0 else f"Clearing in {ending} min"
+        elif nowcast[0]["precip_rate_mm"] >= precip_nowcast_client.DEFAULT_THRESHOLD_MM:
+            # Raining right now, but the model hasn't resolved a clear
+            # end within the window yet — the exact gap from the
+            # session report above.
+            nowcast_text = "Rain now"
         if nowcast_text:
             extras.append(
                 f'<span class="weather-extra" style="color:#64D2FF; '
