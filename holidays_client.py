@@ -29,6 +29,32 @@ _CA_ON_HOLIDAYS = holidays.Canada(subdiv="ON")
 UPCOMING_WINDOW_DAYS = 3
 
 
+def next_holiday(today: date) -> dict | None:
+    """{"label", "date", "days_until"} for the next statutory holiday
+    on/after today — same shape as waste_schedule.next_pickup/
+    payday_schedule.next_payday/td_quarter_schedule.next_quarter_start/
+    cpp_payment_dates.next_payment_date/seasons_client.next_season_start,
+    session request: "What other hero badges can we add?" — so app.py's
+    own hero-badge row can gate this one exactly the same "today, or
+    evening-tomorrow" way as every other calendar badge already does,
+    instead of holiday_clause's own wider (and differently-worded)
+    UPCOMING_WINDOW_DAYS lookahead built for the morning brief
+    specifically. None only if the bounded scan below somehow finds
+    nothing — never actually happens in practice (Canada always has a
+    next holiday), kept Optional-shaped for the same defensive-
+    consistency reasons upcoming_holidays_block's own docstring notes."""
+    d = today
+    # Bounded scan, not unbounded — same 800-day reasoning as
+    # upcoming_holidays_block's own comment (comfortably covers the
+    # widest real gap in the Canadian calendar, Thanksgiving to
+    # Christmas, ~2.5 months).
+    for _ in range(800):
+        if d in _CA_ON_HOLIDAYS:
+            return {"label": _CA_ON_HOLIDAYS[d], "date": d, "days_until": (d - today).days}
+        d += timedelta(days=1)
+    return None
+
+
 def holiday_clause(now) -> tuple[int, str] | None:
     """(priority, text) for morning_briefing.py's own clause list —
     highest priority when today itself is a statutory holiday (real,

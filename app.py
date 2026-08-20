@@ -24,6 +24,7 @@ import evening_briefing
 import govee_lighting
 import groq_client
 import headline_rotation
+import holidays_client
 import lightning_client
 import local_news_client
 import market_yf_client
@@ -50,6 +51,7 @@ import payday_schedule
 import persisted_state
 import precip_nowcast_client
 import prediction_markets_client
+import road_conditions
 import scores_client
 import seasons_client
 import sports_alerts
@@ -2299,6 +2301,39 @@ if weather:
             f'<span class="weather-extra" style="color:#FFD60A; '
             f'background:{_badge_bg("#FFD60A", 0.22)}; border-color:#FFD60A;">'
             f'{season["label"]} starts {season_when}</span>'
+        )
+    # Session request: "what other hero badges can we add... is there
+    # an area that's not covered?" — statutory holidays already fed a
+    # morning-brief fact (holidays_client.holiday_clause) but never a
+    # badge. Same today/evening-tomorrow gating as every other calendar
+    # badge here, via next_holiday (a purpose-built twin of
+    # holiday_clause's own lookup, shaped like every other next_X
+    # function on this page rather than holiday_clause's own wider,
+    # differently-worded lookahead). Teal — every other color nearby
+    # (brown/green/violet/rose/gold) is already claimed, and it reads
+    # as its own distinct "calendar" signal rather than another green
+    # "money" badge.
+    holiday = holidays_client.next_holiday(now.date())
+    if holiday and (holiday["days_until"] == 0 or (holiday["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR)):
+        holiday_when = "today" if holiday["days_until"] == 0 else "tomorrow"
+        extras.append(
+            f'<span class="weather-extra" style="color:#30D5C8; '
+            f'background:{_badge_bg("#30D5C8", 0.22)}; border-color:#30D5C8;">'
+            f'{holiday["label"]} {holiday_when}</span>'
+        )
+    # Session follow-up, same "what other hero badges" question — black
+    # ice risk already fed a morning-brief fact (morning_briefing.
+    # _road_ice_clause) but never a badge either. Plain same-day flag,
+    # no days_until gating needed (road_conditions.ice_risk is already
+    # "is this true right now"), same shape as the UV/AQI badges above
+    # rather than the calendar-event badges' today/tomorrow pattern.
+    # Icy blue — distinct from rain nowcast's own #64D2FF further down,
+    # cold/warning enough to read as "drive carefully" at a glance.
+    if road_conditions.ice_risk(weather.get("temp_c"), weather.get("forecast_low_c"), weather):
+        extras.append(
+            f'<span class="weather-extra" style="color:#0A84FF; '
+            f'background:{_badge_bg("#0A84FF", 0.22)}; border-color:#0A84FF;">'
+            f"Black ice risk</span>"
         )
     # Session request: "move the rain forecasting into... a hero badge
     # if it's flagged" — the minute-cast (precip_nowcast_client.py)
