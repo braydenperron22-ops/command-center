@@ -22,6 +22,7 @@ import data_health
 import ec_forecast
 import email_client
 import evening_briefing
+import financial_plumbing_client
 import govee_lighting
 import groq_client
 import headline_rotation
@@ -2866,6 +2867,15 @@ for _pm_bank in prediction_markets_client.BANKS:
 # py), same isolation reasoning as every other block here.
 try:
     new_alerts.extend(market_volatility_alert.get_new_alerts(now))
+except Exception:
+    pass
+
+# Financial-plumbing toasts — session request: "financial-system
+# monitoring layer... identify whether financial plumbing is behaving
+# normally or becoming unusual." Own module (financial_plumbing_
+# client.py), same isolation reasoning as every other block here.
+try:
+    new_alerts.extend(financial_plumbing_client.get_new_alerts(now))
 except Exception:
     pass
 

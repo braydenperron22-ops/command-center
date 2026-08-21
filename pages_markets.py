@@ -31,6 +31,7 @@ rather than passed off as an observed live move.
 
 import streamlit as st
 
+import financial_plumbing_client
 import market_yf_client
 import prediction_markets_client
 import tiles
@@ -158,3 +159,27 @@ def render():
                 </div>""",
                 unsafe_allow_html=True,
             )
+
+    _render_plumbing_section()
+
+
+# Session request: "financial-system monitoring layer underneath the
+# existing market information." Own tile below the instrument grid,
+# reusing the Internals page's own verdict-first language
+# (.internals-verdict/-context) rather than inventing a second style
+# for "here's a plain-English read on a number" — same reasoning as
+# this page's own .tile-significant reuse just above.
+def _render_plumbing_section() -> None:
+    status = financial_plumbing_client.plumbing_status()
+    if not status:
+        return
+    tone = "bad" if status["overall"] == "UNUSUAL" else "good"
+    lines = "".join(f'<div class="internals-context">{b["detail"]}</div>' for b in status["buckets"])
+    st.markdown(
+        f"""<div class="tile tile-accent-{tone} plumbing-tile">
+            <div class="tile-label">🏦 FINANCIAL PLUMBING</div>
+            <div class="internals-verdict internals-verdict-{tone}">{status['overall']}</div>
+            {lines}
+        </div>""",
+        unsafe_allow_html=True,
+    )
