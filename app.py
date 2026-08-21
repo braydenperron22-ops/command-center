@@ -7,6 +7,7 @@ see PAGES in config.py and each page's own routing comments below for
 how they're reached instead (an automatic takeover / the J and D
 hotkeys)."""
 
+import html
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -52,6 +53,7 @@ import persisted_state
 import precip_nowcast_client
 import prediction_markets_client
 import road_conditions
+import road_conditions_511
 import scores_client
 import seasons_client
 import sports_alerts
@@ -2329,7 +2331,31 @@ if weather:
     # rather than the calendar-event badges' today/tomorrow pattern.
     # Icy blue — distinct from rain nowcast's own #64D2FF further down,
     # cold/warning enough to read as "drive carefully" at a glance.
-    if road_conditions.ice_risk(weather.get("temp_c"), weather.get("forecast_low_c"), weather):
+    #
+    # Session request: "I want five one one to track all types of road
+    # conditions, not just freezing rain... whether they're wet..."
+    # Real MTO-reported conditions for the actual roads near the
+    # commute (road_conditions_511.conditions_near_commute — genuine
+    # reported state, not this app's own inference) take priority when
+    # 511 actually has something to say; road_conditions.ice_risk
+    # (temp+precip inference) stays as the fallback for whenever 511
+    # itself has nothing reported yet but the real ingredients for ice
+    # are already there — the two are complementary, not a replacement.
+    try:
+        real_conditions = road_conditions_511.conditions_near_commute()
+    except Exception:
+        real_conditions = []
+    if real_conditions:
+        condition_text = "; ".join(
+            f"Hwy {c['roadway']}: {c['condition']}" if c["condition"] else f"Hwy {c['roadway']}: low visibility"
+            for c in real_conditions[:2]
+        )
+        extras.append(
+            f'<span class="weather-extra" style="color:#0A84FF; '
+            f'background:{_badge_bg("#0A84FF", 0.22)}; border-color:#0A84FF;">'
+            f"{html.escape(condition_text)}</span>"
+        )
+    elif road_conditions.ice_risk(weather.get("temp_c"), weather.get("forecast_low_c"), weather):
         extras.append(
             f'<span class="weather-extra" style="color:#0A84FF; '
             f'background:{_badge_bg("#0A84FF", 0.22)}; border-color:#0A84FF;">'
@@ -2771,6 +2797,16 @@ except Exception:
 # pattern rather than a new toast family of its own.
 try:
     new_alerts.extend(precip_nowcast_client.get_new_alerts(now))
+except Exception:
+    pass
+
+# Real road-closure toasts — session request: "I want five one one to
+# track all types of road conditions... as well as if there's any
+# closures along my commutes." Own module (road_conditions_511.py,
+# real MTO 511 data, not this app's own inference), same isolation
+# reasoning and "kind": "weather" dispatch as every block here.
+try:
+    new_alerts.extend(road_conditions_511.get_new_alerts(now))
 except Exception:
     pass
 

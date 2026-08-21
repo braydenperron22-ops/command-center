@@ -71,6 +71,7 @@ import payday_schedule
 import persisted_state
 import portfolio_client
 import road_conditions
+import road_conditions_511
 import seasons_client
 import sports_client
 import waste_schedule
@@ -185,7 +186,30 @@ def _road_ice_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
     priority tier as the precip forecast since it's the same underlying
     weather data, just the one connection (near-freezing + wet =
     genuine ice risk, not either alone) made explicit rather than left
-    for the AI to maybe notice on its own."""
+    for the AI to maybe notice on its own.
+
+    Session request: "I want five one one to track all types of road
+    conditions... as well as if there's any closures along my
+    commutes." Real MTO-reported conditions/closures for the actual
+    roads near the commute (road_conditions_511 — genuine reported
+    state, not this app's own inference) take priority when 511 has
+    something to say; ice_risk's temp+precip inference stays as the
+    fallback for whenever 511 itself has nothing reported yet but the
+    real ingredients for ice are already there — same "prefer real
+    data over inference, fall back gracefully" upgrade the hero badge
+    (app.py) already got."""
+    try:
+        real_conditions = road_conditions_511.conditions_near_commute()
+    except Exception:
+        real_conditions = []
+    try:
+        real_closures = road_conditions_511.closures_near_commute()
+    except Exception:
+        real_closures = []
+    if real_conditions or real_closures:
+        parts = [f"Hwy {c['roadway']}: {c['condition'] or 'reduced visibility'}" for c in real_conditions[:2]]
+        parts += [f"Hwy {c['roadway']} closed: {c['description']}" for c in real_closures[:2]]
+        return 7, f"road conditions (511 Ontario): {'; '.join(parts)}"
     if not road_conditions.ice_risk(weather.get("temp_c"), weather.get("forecast_low_c"), weather):
         return None
     return 7, "road conditions: near-freezing and wet — real black ice risk today"
