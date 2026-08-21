@@ -12,6 +12,7 @@ from datetime import datetime
 import streamlit as st
 
 import fuel_price_client
+import golf_client
 import local_news_client
 import tiles
 
@@ -126,8 +127,53 @@ def _render_local_news() -> None:
     st.markdown(f'<div class="news-feed-list">{row}</div>', unsafe_allow_html=True)
 
 
+# Session request: "Add a golf intelligence layer... PLAYABILITY...
+# BUSYNESS... combine them into an overall GOLFABILITY." Same compact-
+# tile styling as the gas price tile above — this page already is
+# "local conditions I'd otherwise have to check myself," which is
+# exactly what this is too.
+def _render_golf(now: datetime) -> None:
+    result = golf_client.golfability(now.date())
+    if not result or result["golfability"] is None:
+        return
+    weather = result["weather"] or {}
+    status = result["course_status"]
+    status_class = "badge-good" if status == "OPEN" else "badge-bad" if status == "FULLY BOOKED" else "badge-neutral"
+    demand_class = {"LOW": "badge-good", "MODERATE": "badge-neutral", "HIGH": "badge-bad"}.get(
+        result["demand"], "badge-neutral"
+    )
+    detail_lines = []
+    if weather.get("temp_c") is not None:
+        detail_lines.append(f"{weather['temp_c']:.0f}°C")
+    if weather.get("wind_kmh") is not None:
+        detail_lines.append(f"Wind {weather['wind_kmh']:.0f} km/h")
+    if weather.get("precip_probability") is not None:
+        detail_lines.append(f"Rain {weather['precip_probability']:.0f}%")
+    if result["occupancy_pct"] is not None:
+        detail_lines.append(f"Tee-sheet occupancy {result['occupancy_pct']:.0f}%")
+    detail_html = "".join(f'<div class="tile-prev">{line}</div>' for line in detail_lines)
+    sub_scores = []
+    if result["playability"] is not None:
+        sub_scores.append(f"Playability: {result['playability']}/10")
+    if result["busyness"] is not None:
+        sub_scores.append(f"Busyness: {result['busyness']}/10")
+    st.markdown(
+        f"""<div class="tile compact">
+            <div class="tile-label compact">⛳ HIGHVIEW GOLF · TODAY</div>
+            <div class="tile-value">{result['golfability']} / 10</div>
+            <div class="tile-prev">{" · ".join(sub_scores)}</div>
+            {detail_html}
+            <div class="badge {status_class}">{status or "—"}</div>
+            <div class="badge {demand_class}">DEMAND: {result["demand"] or "—"}</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+
 def render(now: datetime) -> None:
     st.markdown('<div class="page-title page-title-household">Household</div>', unsafe_allow_html=True)
     _render_fuel_price(now)
+    st.markdown('<div style="height: 0.5rem;"></div>', unsafe_allow_html=True)
+    _render_golf(now)
     st.markdown('<div style="height: 0.5rem;"></div>', unsafe_allow_html=True)
     _render_local_news()

@@ -25,6 +25,7 @@ import email_client
 import evening_briefing
 import financial_plumbing_client
 import govee_lighting
+import golf_client
 import groq_client
 import headline_rotation
 import holidays_client
@@ -2896,6 +2897,14 @@ except Exception:
 # same isolation reasoning as every other block here.
 try:
     new_alerts.extend(aviation_client.get_new_alerts(now))
+except Exception:
+    pass
+
+# Golf-intelligence toasts — session request: "Add a golf intelligence
+# layer... GOLFABILITY." Own module (golf_client.py), same isolation
+# reasoning as every other block here.
+try:
+    new_alerts.extend(golf_client.get_new_alerts(now))
 except Exception:
     pass
 
