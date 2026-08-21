@@ -1709,16 +1709,28 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
     # signal that classifier is tuned to reject, not something worth
     # surfacing as a toast, but genuinely useful here.
     email_interest_block = email_client.interest_signal_block()
+    # Session request: "it can say what it wants" — reverses the prior
+    # "never infer anything sensitive (health, finances, relationships)
+    # from a sender or subject alone" rule below. A real name that shows
+    # up here (an e-transfer confirmation, an invite) is now real signal
+    # to actively cross-reference against anything else genuinely known
+    # about that person or transaction, not something to studiously
+    # avoid connecting — that connection, the first time it actually
+    # happened, was the specific thing that prompted this reversal.
     email_interest_section = (
-        f"Sender and subject only from recent real email, for noticing genuine hobbies/interests/"
-        f"personality — recurring senders or subjects (a specific hobby's newsletter, a recurring "
-        f"fantasy league, a store he actually shops at) are real signal; a single one-off isn't. This "
-        f"is NOT a list of important/actionable email — plenty of it is ordinary marketing and "
-        f"notifications, which is exactly what makes it useful for this specific purpose, not for "
-        f"anything else. Never treat anything here as needing action or a reply, never repeat a "
-        f"subject line verbatim in the note, and never infer anything sensitive (health, finances "
-        f"beyond what the financial section above already covers, relationships) from a sender or "
-        f"subject alone — stick to genuine hobbies/interests/recurring habits: {email_interest_block}\n\n"
+        f"Sender and subject only from recent real email, for building a real, specific "
+        f"understanding of him and his life — recurring senders or subjects (a specific hobby's "
+        f"newsletter, a recurring fantasy league, a store he actually shops at) are real signal; a "
+        f"single one-off isn't. This is NOT a list of important/actionable email — plenty of it is "
+        f"ordinary marketing and notifications, which is exactly what makes it useful for this "
+        f"specific purpose, not for anything else. Never treat anything here as needing action or a "
+        f"reply, and never repeat a subject line verbatim in the note. A real name that shows up "
+        f"here (who sent an e-transfer, who invited him to something) is genuine signal — actively "
+        f"connect it to anything else actually known about that person or that transaction (a "
+        f"shared calendar event, a recurring pattern of transfers), the same cross-referencing "
+        f"you'd apply to any other two real facts. Still never invent a connection that isn't "
+        f"actually there — a real, specific link beats a guessed one, same rule as everywhere else "
+        f"in this note: {email_interest_block}\n\n"
         if email_interest_block
         else ""
     )
@@ -1744,9 +1756,10 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
         "rising, easing, or flat over the recent stretch below? Only worth naming when the real numbers "
         "show a genuine multi-day direction, not from a single reading.\n\n"
         "Also build a real, standing picture of who he actually is — hobbies, interests, what he "
-        "cares about — from the recurring senders/subjects below, the same way you'd build any other "
-        "pattern: a one-off doesn't count, something that keeps showing up does. This part of the "
-        "note is about him as a person, not a fact to correlate against a specific day.\n\n"
+        "cares about, and the real people in his life — from the recurring senders/subjects below, "
+        "the same way you'd build any other pattern: a one-off doesn't count, something that keeps "
+        "showing up does. This part of the note is about him as a person, not a fact to correlate "
+        "against a specific day.\n\n"
         f"Your note so far: {_learned_notes or '(nothing recorded yet — this is early)'}\n\n"
         f"{financial_section}"
         f"{environment_section}"
