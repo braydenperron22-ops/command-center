@@ -2350,9 +2350,18 @@ if weather:
             f"Hwy {c['roadway']}: {c['condition']}" if c["condition"] else f"Hwy {c['roadway']}: low visibility"
             for c in real_conditions[:2]
         )
+        # Session request: "do wet roads get the same treatment as
+        # freezing rain, or no?" — same gradient pattern as the UV/AQI/
+        # wildfire badges just above: a calm color at the mild end, an
+        # urgent one at the severe end, driven by the worst segment
+        # currently near the commute rather than a flat color for every
+        # real condition regardless of how bad it actually is.
+        intensity = max(c["severity"] for c in real_conditions)
+        condition_color = _lerp_hex("#64D2FF", "#FF3B30", intensity)
+        condition_bg = _badge_bg(condition_color, 0.22 + intensity * 0.25)
         extras.append(
-            f'<span class="weather-extra" style="color:#0A84FF; '
-            f'background:{_badge_bg("#0A84FF", 0.22)}; border-color:#0A84FF;">'
+            f'<span class="weather-extra" style="color:{condition_color}; '
+            f'background:{condition_bg}; border-color:{condition_color};">'
             f"{html.escape(condition_text)}</span>"
         )
     elif road_conditions.ice_risk(weather.get("temp_c"), weather.get("forecast_low_c"), weather):

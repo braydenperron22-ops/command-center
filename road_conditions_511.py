@@ -172,16 +172,68 @@ def _fetch_events_raw() -> list[dict]:
 
 
 _last_good_conditions: list[dict] = []
+
+# Session request: "do wet roads get the same treatment as... freezing
+# rain, or no?" Honest answer at the time: no distinction at all, every
+# non-benign condition rendered identically. Same gradient technique
+# app.py's own UV/AQI/wildfire badges already use (_lerp_hex, a calm
+# color sliding toward an urgent one) rather than a fixed lookup table
+# of exact MTO strings — this module's own docstring already explains
+# why: checked live in August with zero active winter conditions
+# anywhere in the province, so MTO's real hazard vocabulary couldn't be
+# directly observed to build an exhaustive exact-match table against.
+# Keyword search is robust to whatever exact wording MTO actually uses
+# ("Snow Packed," "Packed Snow," "Snowpack" all contain "pack" or
+# "snow" regardless of exact phrasing) in a way a fixed table isn't.
+# Order matters: severe keywords checked first so a real "snow packed"
+# (which also contains "snow") lands on the severe tier, not the
+# moderate one a plain "snow" match alone would suggest.
+_SEVERE_KEYWORDS = ("ice", "icy", "pack", "black ice")
+_MODERATE_KEYWORDS = ("snow", "slush", "drift")
+# Anything non-benign but not matching either — most likely just
+# "wet" — still gets flagged, never invisible, just at the calm end of
+# the gradient rather than the same red as a real ice hazard.
+_MILD_SEVERITY = 0.15
+_MODERATE_SEVERITY = 0.55
+_SEVERE_SEVERITY = 1.0
+# Reduced visibility or real drifting snow compounds whatever the
+# condition text alone suggests — same "either alone isn't as risky as
+# both together" logic road_conditions.ice_risk's own docstring
+# already establishes for temp+precip.
+_VISIBILITY_BUMP = 0.2
+_DRIFTING_FLOOR = 0.7
+
+
+def _condition_severity(condition_text: str, visibility: str | None, drifting: bool) -> float:
+    """0.0-1.0 — how severe a real, non-benign road condition reads,
+    for app.py's own badge gradient. Never exactly 0 once something
+    non-benign is present at all (see _MILD_SEVERITY) — a genuinely
+    benign day never reaches this function in the first place
+    (conditions_near_commute already filters those out entirely)."""
+    text = condition_text.lower()
+    severity = _MILD_SEVERITY
+    if any(k in text for k in _SEVERE_KEYWORDS):
+        severity = _SEVERE_SEVERITY
+    elif any(k in text for k in _MODERATE_KEYWORDS):
+        severity = _MODERATE_SEVERITY
+    if drifting:
+        severity = max(severity, _DRIFTING_FLOOR)
+    if visibility:
+        severity = min(1.0, severity + _VISIBILITY_BUMP)
+    return severity
 _last_good_closures: list[dict] = []
 
 
 def conditions_near_commute() -> list[dict]:
-    """[{"roadway", "location", "condition", "visibility", "drifting"}]
-    for every real /roadconditions segment near the commute that's
-    reporting something other than a known-benign state — [] on a
-    genuinely quiet day (the real common case) or a fetch failure
-    (falls back to the last good read, same graceful-degradation rule
-    every other live source in this app already follows)."""
+    """[{"roadway", "location", "condition", "visibility", "drifting",
+    "severity"}] for every real /roadconditions segment near the
+    commute that's reporting something other than a known-benign state
+    — [] on a genuinely quiet day (the real common case) or a fetch
+    failure (falls back to the last good read, same graceful-
+    degradation rule every other live source in this app already
+    follows). "severity" (see _condition_severity) is 0.0-1.0, for
+    app.py's own badge gradient — a wet road and an ice-covered one no
+    longer render identically."""
     global _last_good_conditions
     try:
         raw = _fetch_conditions_raw()
@@ -194,17 +246,19 @@ def conditions_near_commute() -> list[dict]:
         conditions = [c for c in (e.get("Condition") or []) if c and c.strip().lower() not in _BENIGN_CONDITIONS]
         visibility = e.get("Visibility")
         visibility = visibility if visibility and visibility.strip().lower() not in _BENIGN_VISIBILITY else None
-        drifting = e.get("Drifting")
-        drifting = drifting if drifting and drifting.strip().lower() not in _BENIGN_DRIFTING else None
+        drifting_raw = e.get("Drifting")
+        drifting = bool(drifting_raw and drifting_raw.strip().lower() not in _BENIGN_DRIFTING and drifting_raw.strip().lower() == "yes")
         if not conditions and not visibility and not drifting:
             continue
+        condition_text = "; ".join(conditions)
         out.append(
             {
                 "roadway": e.get("RoadwayName") or "",
                 "location": e.get("LocationDescription") or "",
-                "condition": "; ".join(conditions),
+                "condition": condition_text,
                 "visibility": visibility,
-                "drifting": drifting == "Yes",
+                "drifting": drifting,
+                "severity": _condition_severity(condition_text, visibility, drifting),
             }
         )
     _last_good_conditions = out
