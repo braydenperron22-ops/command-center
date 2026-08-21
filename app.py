@@ -16,6 +16,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 import air_quality_client
+import aviation_client
 import commute_reminder
 import cpp_payment_dates
 import data_health
@@ -2889,6 +2890,15 @@ try:
 except Exception:
     pass
 
+# Aviation toasts — session request: "Detect aircraft in the
+# surrounding area and surface an event when an aircraft is genuinely
+# interesting or sufficiently close." Own module (aviation_client.py),
+# same isolation reasoning as every other block here.
+try:
+    new_alerts.extend(aviation_client.get_new_alerts(now))
+except Exception:
+    pass
+
 # Radar-based severe/tracking-started toast alerts (ec_radar.
 # severe_weather_alert / tracking_started_alert) removed along with the
 # rest of the radar lookahead-forecasting layer at the user's own
@@ -3014,6 +3024,12 @@ def _render_bottom_ticker(readings: dict) -> None:
         wildfire_stat = ticker.build_wildfire_stat_item()
         if wildfire_stat:
             stats.append(wildfire_stat)
+    except Exception:
+        pass
+    try:
+        aviation_stat = ticker.build_aviation_stat_item()
+        if aviation_stat:
+            stats.append(aviation_stat)
     except Exception:
         pass
 

@@ -8,6 +8,7 @@ elsewhere in this app — nothing here makes its own new network request
 beyond what those modules' own callers already pay for.
 """
 
+import aviation_client
 import commute_client
 import market_internals
 import market_yf_client
@@ -287,6 +288,20 @@ def build_wildfire_stat_item() -> dict | None:
     if not wildfire:
         return None
     return {"text": f'Wildfire {wildfire["distance_km"]:.0f} km away', "tone": "neutral"}
+
+
+# Session request: "should feel like a passive local radar sensor" —
+# same quiet-unless-there's-something-real shape as the wildfire item
+# just above: nothing shown when the sky's empty (the common case,
+# confirmed live — usually 0-3 real aircraft in range at once for this
+# location), the nearest one's callsign + distance when it isn't.
+def build_aviation_stat_item() -> dict | None:
+    nearby = aviation_client.nearby_aircraft()
+    if not nearby:
+        return None
+    closest = nearby[0]
+    label = closest["callsign"] or closest["icao24"]
+    return {"text": f'✈️ {label} {closest["distance_km"]} km away', "tone": "neutral"}
 
 
 def render_html(items: list[dict]) -> str:
