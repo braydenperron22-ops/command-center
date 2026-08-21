@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 import game_blurb
+import league_transactions_client
 import sports_client
 from config import TIMEZONE
 
@@ -331,8 +332,43 @@ def _render_live_tile(label: str, status: dict, sport: str) -> None:
     )
 
 
+# Session request: "Add a unified structured transaction feed for
+# MLB, NHL, NFL... normalize them into a common transaction experience
+# so the existing sports/event system can surface important
+# transactions." Own compact section on the existing Sports page
+# rather than a new page — this page already IS "the existing sports/
+# event system." Shown unconditionally, before the season-dependent
+# early return below (offseason is genuinely when most real signings
+# and trades happen, so hiding it right when it matters most would
+# defeat the point). NFL/Saints has no live-game section on this page
+# at all (see module docstring — MLB/NHL only), but its transactions
+# still belong here; this is the one place all three tracked teams
+# actually appear together.
+_TRANSACTIONS_PER_TEAM = 3
+
+
+def _render_transactions_section() -> None:
+    rows = []
+    for league in ("mlb", "nhl", "nfl"):
+        try:
+            transactions = league_transactions_client.significant_transactions(league, limit=_TRANSACTIONS_PER_TEAM)
+        except Exception:
+            continue
+        emoji = league_transactions_client.LEAGUE_EMOJI[league]
+        for t in transactions:
+            rows.append(f'<div class="news-feed-row">'
+                        f'<div class="news-feed-headline">{emoji} {html.escape(t["description"])}</div>'
+                        f'<div class="news-feed-meta">{t["date"][:10]}</div>'
+                        f'</div>')
+    if not rows:
+        return
+    st.markdown(f'<div class="news-feed-list">{"".join(rows)}</div>', unsafe_allow_html=True)
+
+
 def render() -> None:
     st.markdown('<div class="page-title page-title-sports">Sports</div>', unsafe_allow_html=True)
+
+    _render_transactions_section()
 
     jays = sports_client.fetch_jays()
     habs = sports_client.fetch_habs()

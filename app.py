@@ -27,6 +27,7 @@ import govee_lighting
 import groq_client
 import headline_rotation
 import holidays_client
+import league_transactions_client
 import lightning_client
 import local_news_client
 import market_volatility_alert
@@ -2876,6 +2877,15 @@ except Exception:
 # client.py), same isolation reasoning as every other block here.
 try:
     new_alerts.extend(financial_plumbing_client.get_new_alerts(now))
+except Exception:
+    pass
+
+# League-transaction toasts — session request: "Add a unified
+# structured transaction feed for MLB, NHL, NFL... filter out the
+# noise... just make it for my teams." Own module (league_transactions
+# _client.py), same isolation reasoning as every other block here.
+try:
+    new_alerts.extend(league_transactions_client.get_new_alerts(now))
 except Exception:
     pass
 
