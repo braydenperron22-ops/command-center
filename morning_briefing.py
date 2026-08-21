@@ -483,6 +483,18 @@ def _markets_clause(now: datetime) -> tuple[int, str] | None:
     if not quote or quote["intraday"] is None:
         return None
     pct = quote["intraday"]
+    # Session request: "if the futures are included in this, if S&P
+    # futures are outside of that band, it should also trigger an
+    # alert. So the morning brief is also included in this." Same
+    # VIX/16 band market_volatility_alert.py's toast and the Markets
+    # page badge already use — priority 6 here (payday/big-commute-
+    # delay tier) rather than the plain "3" this clause normally gets,
+    # since a move already outside what the options market itself
+    # priced in overnight is a genuinely unusual fact worth leading
+    # the brief with, not routine market chatter.
+    band = market_yf_client.volatility_band_status(pct)
+    if band and band["outside_band"]:
+        return 6, f"S&P 500 futures already {pct:+.1f}% — outside the day's VIX-implied ±{band['expected_move_pct']:.1f}% range"
     return 3, f"S&P 500 futures {pct:+.1f}%"
 
 

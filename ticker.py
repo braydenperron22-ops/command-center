@@ -36,7 +36,19 @@ _STATUS_INSTRUMENTS = {
 def build_market_stat_items() -> list[dict]:
     """Live intraday % change for the same instruments the Markets page
     itself shows (see config.MARKET_INSTRUMENTS_*, swapped by session
-    status exactly like that page's own STATUS_INSTRUMENTS)."""
+    status exactly like that page's own STATUS_INSTRUMENTS).
+
+    Session request: "the stock market portion should be, like,
+    slashing or something" when it's trading outside its VIX-derived
+    priced-in range (see market_yf_client.volatility_band_status) —
+    only the "sp500" item ever gets this (VIX/16 is specifically the
+    S&P's own priced-in move, no equivalent band exists for Dow/
+    Nasdaq/TSX/commodities/FX). A new "alert" tone plus a ⚡ prefix
+    rather than reusing plain good/bad, since this needs to read as
+    "notable" at a glance in a scrolling strip, not just "up" or
+    "down" — same reasoning as the Predictions page's own separate
+    cut/hike tone below getting its own color instead of reusing
+    good/bad for something that isn't a plain "good or bad news" move."""
     status = market_yf_client.market_status()
     instruments = _STATUS_INSTRUMENTS[status] + MARKET_INSTRUMENTS_ALWAYS
     items = []
@@ -46,12 +58,14 @@ def build_market_stat_items() -> list[dict]:
             continue
         pct = quote["intraday"]
         sign = "+" if pct >= 0 else ""
-        items.append(
-            {
-                "text": f'{inst["label"]} {sign}{pct:.2f}%',
-                "tone": "good" if pct >= 0 else "bad",
-            }
-        )
+        text = f'{inst["label"]} {sign}{pct:.2f}%'
+        tone = "good" if pct >= 0 else "bad"
+        if inst["key"] == "sp500":
+            band = market_yf_client.volatility_band_status(pct)
+            if band and band["outside_band"]:
+                text = f'⚡ {text} — outside priced-in range'
+                tone = "alert"
+        items.append({"text": text, "tone": tone})
     return items
 
 

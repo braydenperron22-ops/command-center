@@ -128,15 +128,33 @@ def render():
             sparkline = tiles.sparkline_svg(quote["history"], tone)
             caption = "Market-implied forecast" if forecast_slot else "Intraday change"
 
+            # Session request: "change the three standard deviation
+            # rule... if the market is trading outside of that band...
+            # this should be flagged on the markets page." VIX/16 (see
+            # market_yf_client.volatility_band_status) only really means
+            # anything for the S&P itself — no equivalent band exists
+            # for Dow/Nasdaq/TSX/commodities/FX here — so this only ever
+            # fires on the "sp500" tile (real index or its futures,
+            # whichever this slot is currently showing). Reuses
+            # .tile-significant, the same quiet widened-accent-strip cue
+            # the macro indicator tiles already use for "significant
+            # move vs trend" rather than inventing a second visual
+            # language for "this number is notable."
+            band = market_yf_client.volatility_band_status(intraday) if inst["key"] == "sp500" else None
+            significant_class = "tile-significant" if band and band["outside_band"] else ""
+            trend_caption = "1-year trend"
+            if band and band["outside_band"]:
+                trend_caption += f' · outside priced-in range (±{band["expected_move_pct"]:.2f}%)'
+
             st.markdown(
-                f"""<div class="tile market-tile {accent_class}">
+                f"""<div class="tile market-tile {accent_class} {significant_class}">
                     <div class="tile-label">{label}</div>
                     <div class="tile-value market-hero-value {direction_class}">{sign}{intraday:.2f}%</div>
                     <div class="tile-prev">{caption}</div>
                     {_metric_row("1 Month", quote["one_month"])}
                     {_metric_row("YTD", quote["ytd"])}
                     <div class="market-sparkline-wrap">{sparkline}</div>
-                    <div class="severity-caption">1-year trend</div>
+                    <div class="severity-caption">{trend_caption}</div>
                 </div>""",
                 unsafe_allow_html=True,
             )

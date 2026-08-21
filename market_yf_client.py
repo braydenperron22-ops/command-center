@@ -169,3 +169,40 @@ def quote_for(symbol: str) -> dict | None:
         "ytd": ytd,
         "history": [float(v) for v in closes],
     }
+
+
+# Session request: "change the three standard deviation rule. Take the
+# VIX value, divide it by sixteen, that gives us the expected daily
+# market move in either direction... it's dynamically shifting based
+# on what the market is pricing in." VIX is an annualized 30-day
+# implied volatility (%); dividing by ~sqrt(252 trading days) ≈ 16 (the
+# standard trader's shorthand for that square root) converts it into
+# the market's own priced-in ONE-DAY, ONE-STANDARD-DEVIATION expected
+# move — a calm VIX near 13 implies a tight ~0.8% day is unremarkable,
+# a stressed VIX near 30 implies a ~1.9% day is unremarkable, in place
+# of one flat percent threshold meaning the same thing on both.
+VIX_MOVE_DIVISOR = 16
+
+
+def expected_daily_move_pct() -> float | None:
+    """Today's VIX close / 16 — the market's own priced-in one-day
+    expected move, in percent, either direction. None if VIX itself is
+    unreachable (quote_for's own graceful-degradation: falls back to
+    the last good history, only None when there's truly nothing)."""
+    quote = quote_for("^VIX")
+    if not quote or not quote.get("history"):
+        return None
+    return quote["history"][-1] / VIX_MOVE_DIVISOR
+
+
+def volatility_band_status(pct_move: float | None) -> dict | None:
+    """Compares a real % move (S&P index or futures intraday change)
+    against the VIX-derived expected daily band. None whenever either
+    input is unavailable, so every caller's existing "no data" handling
+    covers this for free. {"expected_move_pct": ..., "outside_band": bool}."""
+    if pct_move is None:
+        return None
+    expected = expected_daily_move_pct()
+    if expected is None:
+        return None
+    return {"expected_move_pct": expected, "outside_band": abs(pct_move) > expected}

@@ -949,6 +949,23 @@ html, body, [class*="css"] {
    already, no separate class needed. */
 .ticker-item-cut { color: #3DD9FF; font-weight: 600; }
 .ticker-item-hike { color: #FF5A1F; font-weight: 600; }
+/* Session request: "the stock market portion should be, like,
+   slashing or something" when it's trading outside its VIX-derived
+   priced-in range (ticker.build_market_stat_items). A slow pulsing
+   glow rather than a flat color — this fires rarely (once per
+   trading day at most, see market_volatility_alert.py's own gate), so
+   unlike the "too many things flashing at once" problem .tile-
+   significant deliberately moved away from (see that class's own
+   comment), a single animated item here has no competition. */
+.ticker-item-alert {
+    color: #FF453A;
+    font-weight: 700;
+    animation: ticker-alert-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ticker-alert-pulse {
+    0%, 100% { text-shadow: 0 0 6px rgba(255,69,58,0.55); }
+    50% { text-shadow: 0 0 16px rgba(255,69,58,0.95); }
+}
 /* Compact "(Nd)" companion to the Predictions page's own .prediction-
    row-days badge (see its own comment) — same neutral/soon/imminent
    escalation, sized for the ticker's own smaller type instead. */

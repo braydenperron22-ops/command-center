@@ -28,6 +28,7 @@ import headline_rotation
 import holidays_client
 import lightning_client
 import local_news_client
+import market_volatility_alert
 import market_yf_client
 import morning_briefing
 import news
@@ -2857,6 +2858,16 @@ for _pm_bank in prediction_markets_client.BANKS:
             new_alerts.append(prediction_markets_client.lock_in_alert(lock_in))
     except Exception:
         pass
+
+# Market-volatility toasts — session request: "take the VIX value,
+# divide it by sixteen, that gives us the expected daily market move
+# in either direction... if the market is trading outside of that
+# band, broadcast it as an alert." Own module (market_volatility_alert.
+# py), same isolation reasoning as every other block here.
+try:
+    new_alerts.extend(market_volatility_alert.get_new_alerts(now))
+except Exception:
+    pass
 
 # Radar-based severe/tracking-started toast alerts (ec_radar.
 # severe_weather_alert / tracking_started_alert) removed along with the
