@@ -85,8 +85,14 @@ SNIPPET_MAX_CHARS = 500
 # question). Capped count, not capped time, for the same "don't let one
 # unusually email-heavy day blow out the prompt" reasoning
 # AGENDA_LIST_CAP already uses for a packed calendar.
+#
+# Session follow-up: "loosen it up" — 5 was low enough that an
+# ordinary busy day (6-8 important emails, seen live) already hit
+# "plus N more" and never named the rest by subject. Raised well past
+# any realistic real day, so the "don't blow out the prompt" guard
+# above only ever matters on a genuinely extreme one.
 MORNING_BRIEF_LOOKBACK_HOURS = 24
-MORNING_BRIEF_MAX_EMAILS = 5
+MORNING_BRIEF_MAX_EMAILS = 20
 
 _last_good_raw: list[dict] = []
 

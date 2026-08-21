@@ -512,9 +512,18 @@ def _markets_clause(now: datetime) -> tuple[int, str] | None:
 # measured — expect these need real tuning against how the account
 # actually behaves over the next few weeks.
 _PORTFOLIO_MEANINGFUL_THRESHOLDS = {
-    1: (5.0, 75.0),  # (min abs %, min abs $) — today
-    7: (8.0, 100.0),  # this week
-    30: (12.0, 150.0),  # this month
+    # Session request: "loosen it up" — these used to require a real,
+    # sizable swing (5%+ AND $75+ same day) before portfolio earned a
+    # mention at all, so most ordinary days stayed silent even when
+    # something real was happening. Cut roughly 5x, low enough to catch
+    # genuine day-to-day movement instead of only the rare big one —
+    # still not zero, so a literal few-cent rounding blip still won't
+    # fire. The payday skip right below stays exactly as it was: that's
+    # a distinct, still-valid accuracy rule (a paycheck landing isn't
+    # portfolio performance), not the kind of restraint this loosens.
+    1: (1.0, 15.0),  # (min abs %, min abs $) — today
+    7: (2.0, 25.0),  # this week
+    30: (3.0, 40.0),  # this month
 }
 _PORTFOLIO_PERIOD_LABEL = {1: "today", 7: "this week", 30: "this month"}
 
@@ -1016,10 +1025,11 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
     history_block = _recent_history_block(now)
     history_section = (
         f"Recent days for context (oldest first, not including today):\n{history_block}\n\n"
-        "Use this ONLY to notice a genuine pattern actually worth a real line (a stretch of "
-        "early shifts, several rough-weather days in a row, yesterday being rough too) — most "
-        "days won't have one, and forcing a callback where there isn't a real connection reads "
-        "worse than not mentioning it at all.\n\n"
+        "Actively look here for a genuine pattern worth naming (a stretch of early shifts, "
+        "several rough-weather days in a row, yesterday being rough too, anything that connects "
+        "to today) — a real one is worth surfacing whenever it exists, not only on the rare day "
+        "it's unmissable. Still has to be real, not invented — a forced callback where there "
+        "isn't an actual connection reads worse than skipping it.\n\n"
         if history_block
         else ""
     )
@@ -1039,9 +1049,9 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
     # reaches the model unconditionally regardless of what's visible
     # in the bar.
     holidays_section = (
-        f"Upcoming Canadian statutory holidays, for context (not something that needs its own "
-        f"mention unless it's actually relevant to something below — a long weekend genuinely "
-        f"worth a line, most days not): {holidays_client.upcoming_holidays_block(now)}\n\n"
+        f"Upcoming Canadian statutory holidays, for context — worth naming whenever it's "
+        f"genuinely relevant to something below, not only the obvious long-weekend case: "
+        f"{holidays_client.upcoming_holidays_block(now)}\n\n"
     )
     # Session request: "include the first day of each season as a hero
     # badge/fact the AI can use" — same "always-given background, not
@@ -1049,9 +1059,8 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
     # seasons_client.season_clause's own comment for why it's the same
     # shape as holiday_clause).
     seasons_section = (
-        f"Upcoming season change, for context (not something that needs its own mention unless "
-        f"it's actually relevant — the actual season change day itself is worth a line, most "
-        f"other days not): {seasons_client.upcoming_seasons_block(now)}\n\n"
+        f"Upcoming season change, for context — worth naming whenever it actually connects to "
+        f"something below, not only on the change day itself: {seasons_client.upcoming_seasons_block(now)}\n\n"
     )
     # Session request: "show off some of these new patterns in the
     # morning brief a little bit... if it's appropriate, it should be
@@ -1070,9 +1079,8 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
     # numbers below, not invented.
     environment_block = _environment_trends_block()
     environment_section = (
-        f"Recent environmental trend data, for context (not something that needs its own mention "
-        f"unless a real multi-day direction is actually worth the one line — most days not): "
-        f"{environment_block}\n\n"
+        f"Recent environmental trend data, for context — actively worth naming whenever there's a "
+        f"real multi-day direction in it, not only when it's dramatic: {environment_block}\n\n"
         if environment_block
         else ""
     )
@@ -1087,21 +1095,23 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
         f"on its own fixed schedule, so the voice doesn't settle into one repeated note): "
         f"{mode_instruction}\n\n"
         "Write this as two parts: a HEADLINE (under 10 words) hooking the single most interesting "
-        "or relevant real thing about today, and a BODY (2-4 sentences) that actually covers the "
-        "real facts worth knowing — there's no separate stats bar anymore, this is the only thing "
+        "or relevant real thing about today, and a BODY that actually covers the real facts and "
+        "connections worth knowing — there's no separate stats bar anymore, this is the only thing "
         "on the card, so the body needs to genuinely inform, not just add a vibe on top of "
-        "something else shown elsewhere. Use real editorial judgment on what's worth covering vs. "
-        "skipping; a quiet day can lean on the headline and keep the body short, a genuinely "
-        "eventful one earns more of the 2-4 sentence range. Respond with the headline as the first "
+        "something else shown elsewhere. No fixed sentence count — real editorial judgment on what's "
+        "worth covering vs. skipping; a quiet day can lean on the headline and stay short, but a "
+        "genuinely eventful one, or one with a real cross-referenced connection actually worth "
+        "naming, earns real length rather than being forced to cut it for a sentence cap. Respond "
+        "with the headline as the first "
         "line, then one blank line, then the body — no labels like the word \"headline\" itself, no "
         "quotation marks around either part, no other formatting.\n\n"
         f"Background on {USER_FIRST_NAME}, for something real and specific instead of generic — "
-        f"reference it only when it genuinely connects to today's actual facts below, never as a "
-        "standalone bit with nothing underneath it. A real bad example, live: 'at least until "
-        "Wicket wakes up and demands a real schedule' — the cat has nothing to do with anything in "
-        "today's facts, so that reads as random filler reaching for personality, not an actual "
-        f"observation about his day. Most mornings won't have a genuine opening for this: "
-        f"{USER_PROFILE}\n\n"
+        f"actively look for a real connection to today's actual facts below and use it when there's "
+        "one, never as a standalone bit with nothing underneath it. A real bad example, live: 'at "
+        "least until Wicket wakes up and demands a real schedule' — the cat has nothing to do with "
+        "anything in today's facts, so that reads as random filler reaching for personality, not an "
+        f"actual observation about his day; the same rule against forcing a connection that isn't "
+        f"real still applies, just not as a reason to default to skipping this: {USER_PROFILE}\n\n"
         f"{notes_section}"
         f"{history_section}"
         f"{holidays_section}"
@@ -1126,12 +1136,15 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
     )
     if groq_client.ai_pulls_paused():
         return None
-    # 260 (up from the old one-line cap's 90) covers a real headline
-    # plus a genuine 2-4 sentence body with comfortable headroom — see
-    # this function's own docstring on why the format grew from one
-    # 30-word add-on line to two real parts.
+    # Session request: "loosen it up" — the fixed "2-4 sentences" body
+    # cap (and the 260-token budget that enforced it) meant even a real,
+    # genuinely-earned cross-referenced connection (a name, a past
+    # event, a financial detail) had to compete for room against
+    # whatever else was worth saying that day, most days losing. Raised
+    # well past what a normal 2-6 sentence body needs, so a genuinely
+    # eventful day has real room instead of hitting a wall mid-thought.
     raw = gemini_client.generate_periodic(
-        "morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85, max_output_tokens=260
+        "morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85, max_output_tokens=700
     )
     return parse_headline_body(raw) if raw else None
 
