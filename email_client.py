@@ -282,16 +282,30 @@ def fetch_recent(lookback_hours: int) -> list[dict]:
 # in this exact codebase for "AI reads a numbered list, returns a JSON
 # array of judgments in the same order."
 #
-# Rewritten (session request: "have the AI parse the headline and
-# genuine email to see if its real or just promotional junk — enhance
-# the AI's intelligence") to explicitly point the model at the SNIPPET
-# as the real signal rather than the subject line — marketing mail
-# regularly disguises itself with an urgent- or personal-sounding
-# subject ("Re: your account", "Following up", "Action required"), so
-# a subject-only read is exactly the failure mode this rewrite targets.
-# Both halves now list concrete textual tells instead of category
-# names, closer to how a person would actually eyeball an inbox than a
-# rule list.
+# Rewritten once already (session request: "have the AI parse the
+# headline and genuine email to see if its real or just promotional
+# junk — enhance the AI's intelligence") to point the model at the
+# SNIPPET as the real signal rather than the subject line. Tightened
+# again — session report: "take a pass at tightening it up," after
+# live testing on the real inbox turned up two concrete failure modes.
+# First: an obvious marketing flyer ("Your weekly flyer is here")
+# scored important despite matching several NOT-important tells
+# already listed below — not a gap in what was covered, just the
+# model not reliably weighing it; the new closing paragraph's explicit
+# tie-break instruction targets this directly. Second, the more
+# interesting one: two structurally identical "X has joined your
+# Fantasy Hockey league" notifications got OPPOSITE verdicts — traced
+# with a clean controlled 4-email test first (ruled out a batch/zip
+# ordering bug — that came back perfectly aligned), which means it was
+# a genuine judgment call the old criteria never actually addressed:
+# an automated notification about a group/account/subscription he
+# belongs to isn't personal correspondence (nothing here was written
+# TO him by a person) but also isn't a marketing pitch (no discount,
+# no urgency language, no "shop now") — it fell in the real gap
+# between the two lists, which is exactly where a model's judgment
+# gets least stable. Named explicitly below now, and the same closing
+# tie-break line gives every other gap like it a consistent default
+# instead of a coin flip.
 _CLASSIFICATION_CRITERIA = (
     "Read the actual SNIPPET text, not just the subject line — a marketing email will often "
     "disguise itself with an urgent- or personal-sounding subject line, so the real tell is what "
@@ -310,7 +324,15 @@ _CLASSIFICATION_CRITERIA = (
     "confirmations or status updates with nothing left for him to actually do (a statement being "
     "available, a shipping update, a purely informational schedule), newsletters, social media "
     "notifications, and anything else that reads like it was sent to many people at once rather "
-    "than written for him specifically — regardless of how the subject line is phrased."
+    "than written for him specifically — regardless of how the subject line is phrased. This "
+    "includes automated notifications about a group, league, subscription, or account he belongs "
+    "to — someone else joining a fantasy league, a membership renewal confirmation, an activity "
+    "digest — even when nothing about it is a sales pitch: no real person wrote it to him and "
+    "there's nothing for him to actually do, which is what actually matters here, not whether it "
+    "happens to be trying to sell him something.\n\n"
+    "When something genuinely doesn't fit either list above, the default is NOT important — a "
+    "missed low-stakes email costs nothing, but marking something important that isn't undermines "
+    "the one thing this whole judgment call exists to be trusted for."
 )
 
 
