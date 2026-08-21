@@ -1487,6 +1487,21 @@ def _financial_trends_block() -> str:
     if not portfolio or portfolio.get("total_cad") is None:
         return ""
     lines = [f"Current total: ${portfolio['total_cad']:,.0f} CAD."]
+    # Session follow-up: "look at all the available sources to build a
+    # profile for me... understand who I am and what matters to me" —
+    # everything above/below this is cash FLOW (spending, deposits, net
+    # worth trend); it never actually said where the money sits.
+    # portfolio_client.fetch_portfolio's "accounts" list is the real
+    # registered-account breakdown (RRSP/TFSA/FHSA/Emergency Fund only —
+    # see ACCOUNT_DISPLAY_NAMES; day-to-day Spending/Bills/Gas isn't in
+    # this list) and was never surfaced here at all before, despite
+    # being genuine identity signal a cash-flow summary alone can't
+    # give: which registered account he's actually prioritizing right
+    # now, or one that's been left untouched for a long stretch.
+    accounts = portfolio.get("accounts") or []
+    if accounts:
+        account_text = "; ".join(f"{a['name']} ${a['amount']:,.0f}" for a in accounts)
+        lines.append(f"Registered account breakdown: {account_text}.")
     for days, label in ((7, "7-day"), (30, "30-day")):
         change = portfolio_client.fetch_period_change(days)
         if change:
@@ -1636,7 +1651,8 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
     financial_block = _financial_trends_block()
     financial_section = (
         f"Financial detail, for noticing genuine multi-day/week/month patterns only (a consistent "
-        f"pace of withdrawals, net worth actually trending down or up over real time) — this is NOT "
+        f"pace of withdrawals, net worth actually trending down or up over real time, which registered "
+        f"account he's actually prioritizing right now vs one that's sat untouched) — this is NOT "
         f"filtered the way the daily brief's own portfolio fact is, so routine day-to-day activity is "
         f"included on purpose; do not treat any single entry here as noteworthy on its own, only a "
         f"real pattern across several. Account names below tell you what kind of money it is: "
