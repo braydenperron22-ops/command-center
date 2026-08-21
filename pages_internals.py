@@ -18,23 +18,40 @@ HYG/LQD") for the same reason.
 import streamlit as st
 
 import market_internals as mi
+from config import SIGNIFICANT_Z
 
 GAUGE_CONTEXT_EXTERNAL = "The market's mood right now — the same seven-factor index CNN publishes."
 GAUGE_CONTEXT_COMPUTED = "Estimated from four of CNN's seven factors — feargreedmeter.com is unreachable."
 
 # Per-tone verdict + one-line context for each supporting tile. The
 # verdict is the headline; the context line is the "so what."
+#
+# Session request: "evaluate the system as a whole... where we can
+# plug formulas in that really shine a light on important data" —
+# market_internals.price_ratio now exposes a real z-score for these two
+# series (see its own comment), but this page's own established rule
+# (session feedback: "I should be able to understand what the numbers
+# mean at a glance... not have these super tiny little context bars")
+# is plain-English verdicts, not a raw σ figure — so a genuinely
+# unusual reading (SIGNIFICANT_Z, the same bar the macro indicator
+# tiles use) swaps in a stronger context sentence and the same widened
+# .tile-significant accent those tiles use, instead of printing the
+# number itself.
 HYG_LQD_TILE = {
     "label": "CREDIT APPETITE · HYG/LQD",
     "good": ("RISK-ON", "Junk bonds outperforming — credit markets aren't worried."),
     "bad": ("RISK-OFF", "Money fleeing to safer bonds — often leads stocks lower."),
     "neutral": ("STEADY", "Credit risk appetite holding about level."),
+    "good_significant": "Junk bonds outperforming hard — the widest credit risk-on gap in over a year.",
+    "bad_significant": "Money fleeing to safer bonds fast — the sharpest credit pullback in over a year.",
 }
 RSP_SPY_TILE = {
     "label": "RALLY BREADTH · RSP/SPY",
     "good": ("BROADENING", "Most stocks are joining in — real participation."),
     "bad": ("NARROWING", "A handful of mega-caps doing all the lifting."),
     "neutral": ("STEADY", "Market breadth holding about level."),
+    "good_significant": "Most stocks are joining in — the broadest rally in over a year.",
+    "bad_significant": "A handful of mega-caps carrying the market — the narrowest breadth in over a year.",
 }
 
 
@@ -198,10 +215,20 @@ def _render_ratio_tile(tile: dict, symbol_a: str, symbol_b: str) -> None:
 
     arrow, tone = mi.trend(data["value"], data["prior_value"], higher_is_good=True)
     verdict, context = tile[tone]
+    # A z-score-significant reading only makes sense to call out when
+    # tone itself has a real direction — "neutral" already means this
+    # month's move was too small to trend either way, so a "significant"
+    # context sentence naming a strong risk-on/risk-off swing would
+    # contradict the STEADY verdict sitting right above it.
+    z = data.get("zscore")
+    significant = z is not None and abs(z) >= SIGNIFICANT_Z and tone != "neutral"
+    if significant:
+        context = tile[f"{tone}_significant"]
+    significant_class = "tile-significant" if significant else ""
     # Just the arrow glyph, not trend()'s full "↑ Rising" wording — the
     # verdict word next to it already says what the direction means.
     st.markdown(
-        f"""<div class="tile tile-accent-{tone} internals-ratio-tile">
+        f"""<div class="tile tile-accent-{tone} internals-ratio-tile {significant_class}">
             <div class="tile-label">{tile['label']}</div>
             <div class="tile-value">{data['value']:.3f}</div>
             <div class="internals-verdict internals-verdict-{tone}">{arrow.split()[0]} {verdict}</div>

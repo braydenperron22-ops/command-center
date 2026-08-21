@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 import streamlit as st
 
 import govee_client
+import market_yf_client
 import scenery
 from config import AQI_EXTREME, GOVEE_LIGHT, GOVEE_PLUG
 
@@ -64,8 +65,33 @@ MARKET_DOWN_COLOR = (255, 0, 0)
 # move is significant, it has to fall back below the (lower) RELEASE
 # threshold before the light reverts — standard hysteresis, tracked
 # per-session in govee_market_significant below.
+#
+# Session request: "evaluate the system as a whole... where we can
+# plug formulas in that really shine a light on important data" — a
+# flat 1.0% meant the exact same thing on a dead-calm session and a
+# genuinely turbulent one. _significance_thresholds below now derives
+# this pair from market_yf_client.expected_daily_move_pct (the same
+# VIX/16 priced-in daily move the Markets page/ticker/morning brief
+# already use), keeping the same 0.7/1.0 = 70% release ratio this
+# hysteresis was already tuned around. These two constants stay as the
+# fallback for whenever VIX itself is unreachable — same graceful-
+# degradation convention as every other live source in this app.
 MARKET_SIGNIFICANT_MOVE = 1.0
 MARKET_SIGNIFICANT_RELEASE = 0.7
+# The exact ratio the two constants above were already tuned to —
+# preserved when deriving the pair from a live VIX-based enter
+# threshold instead, so the hysteresis behaves the same either way.
+_MARKET_RELEASE_RATIO = MARKET_SIGNIFICANT_RELEASE / MARKET_SIGNIFICANT_MOVE
+
+
+def _significance_thresholds() -> tuple[float, float]:
+    """(enter, release) threshold pair for whether today's market move
+    counts as "significant" — VIX/16 when VIX is reachable, the original
+    flat MARKET_SIGNIFICANT_MOVE/RELEASE pair otherwise."""
+    expected = market_yf_client.expected_daily_move_pct()
+    if expected is None:
+        return MARKET_SIGNIFICANT_MOVE, MARKET_SIGNIFICANT_RELEASE
+    return expected, expected * _MARKET_RELEASE_RATIO
 FLASH_RED = (255, 0, 0)
 FLASH_WHITE = (255, 255, 255)
 FLASH_BRIGHTNESS = 100
@@ -206,21 +232,24 @@ def _brightness_envelope(now: datetime, base_brightness: int, sunset: datetime |
 def _desired_base_state(
     market_intraday_pct: float | None, category: str | None, now: datetime, sunset: datetime | None
 ) -> tuple[tuple[int, int, int], int]:
-    """Market color only for a move actually worth noticing
-    (MARKET_SIGNIFICANT_MOVE); otherwise the light just mirrors whatever
-    condition is actually on screen (scenery.condition_light_color),
-    same as the sunrise/sunset override already does for that specific
-    window. `category` is None only if the weather fetch itself failed —
-    condition_light_color's own "cloudy" fallback covers that case, same
-    as scenery.py's own rendering does.
+    """Market color only for a move actually worth noticing (see
+    _significance_thresholds — VIX/16 when reachable, otherwise the
+    flat MARKET_SIGNIFICANT_MOVE fallback); otherwise the light just
+    mirrors whatever condition is actually on screen (scenery.
+    condition_light_color), same as the sunrise/sunset override
+    already does for that specific window. `category` is None only if
+    the weather fetch itself failed — condition_light_color's own
+    "cloudy" fallback covers that case, same as scenery.py's own
+    rendering does.
 
     Whether today's move counts as "significant" is itself hysteresis-
-    gated (see MARKET_SIGNIFICANT_RELEASE above) rather than a flat
-    >=MARKET_SIGNIFICANT_MOVE check, so a move sitting right at the
+    gated (see _significance_thresholds' release ratio) rather than a
+    flat >=enter-threshold check, so a move sitting right at the
     threshold on a choppy session doesn't flip the light back and forth
     every time it nudges a hair either side."""
     global _market_significant
-    threshold = MARKET_SIGNIFICANT_RELEASE if _market_significant else MARKET_SIGNIFICANT_MOVE
+    enter_threshold, release_threshold = _significance_thresholds()
+    threshold = release_threshold if _market_significant else enter_threshold
     is_significant = market_intraday_pct is not None and abs(market_intraday_pct) >= threshold
     _market_significant = is_significant
 

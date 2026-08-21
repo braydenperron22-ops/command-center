@@ -291,10 +291,23 @@ def price_ratio(symbol_a: str, symbol_b: str) -> dict | None:
     current = float(ratio_series.iloc[-1])
     prior = float(ratio_series.iloc[-TREND_LOOKBACK_DAYS]) if len(ratio_series) > TREND_LOOKBACK_DAYS else current
 
+    # Session request: "evaluate the system as a whole... where we can
+    # plug formulas in that really shine a light on important data" —
+    # this module already computes a rolling z-score for these exact
+    # two series (as the junk-bond/safe-haven inputs feeding the Fear &
+    # Greed blend below) but never exposed it here, so the tile itself
+    # only ever said "up" or "down" over the last month with no sense
+    # of whether that's a routine wobble or a genuinely unusual
+    # reading. None whenever there isn't yet a full ZSCORE_WINDOW of
+    # history to measure against (a freshly-added symbol pair, say).
+    z_series = _rolling_zscore(ratio_series)
+    latest_z = float(z_series.iloc[-1]) if len(z_series) and pd.notna(z_series.iloc[-1]) else None
+
     return {
         "value": current,
         "prior_value": prior,
         "history": [float(v) for v in ratio_series.tail(252)],
+        "zscore": latest_z,
     }
 
 
