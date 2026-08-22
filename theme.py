@@ -4176,27 +4176,10 @@ html, body, [class*="css"] {
     margin-left: 22px;
     letter-spacing: 0.04em;
 }
-/* Most-recent-play ticker — session request equivalent: broadcast
-   score bugs always show "what just happened," and this app already
-   fetches the exact text ESPN's own last-play field carries (was
-   sitting unused in the same situation payload the down/distance
-   figure above already reads). Own line under the main situation
-   strip rather than crammed inline — real play text runs long enough
-   ("Z.Wilson scrambles left end to NO 36 for 7 yards") to need its
-   own wrapped row. Fades in on a genuine new play via the shared
-   kiosk-jumbo-fade mechanism (data-fade-slot/data-fade-value, see
-   app.py's own comment), keyed by the play's own id so a repeated
-   fetch of the SAME last play never re-flashes. */
-.jumbo-nfl-lastplay {
-    text-align: center;
-    font-family: var(--label);
-    font-size: 18px;
-    color: var(--mut-2);
-    letter-spacing: 0.02em;
-    padding: 0 40px 10px;
-    line-height: 1.4;
-}
-.jumbo-nfl-lastplay b { color: var(--bone); font-weight: 600; }
+/* A .jumbo-nfl-lastplay ticker line lived here briefly — removed, see
+   pages_jumbotron._nfl_situation_html's own comment: it pushed the
+   actually-requested quarter/clock/down-distance strip out of this
+   fixed-height, overflow:hidden panel's visible area. */
 
 /* Batting order (pages_jumbotron._batting_order_rail_html) — session
    request, after attending a real Jays game: "the only stat they

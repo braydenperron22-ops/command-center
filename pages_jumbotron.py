@@ -397,18 +397,18 @@ def _nfl_situation_html(match: dict | None, game: dict) -> str:
         us_to, opp_to = (home_to, away_to) if game["is_home"] else (away_to, home_to)
         parts.append(f'<span class="jumbo-nfl-timeouts">TIMEOUTS {us_to}-{opp_to}</span>')
 
-    strip = f'<div class="jumbo-situ">{"".join(parts)}</div>' if parts else ""
-
-    last_play = situation.get("lastPlay") or {}
-    play_text, play_id = last_play.get("text"), last_play.get("id")
-    lastplay_html = ""
-    if play_text and play_id:
-        lastplay_html = (
-            f'<div class="jumbo-nfl-lastplay" data-fade-slot="nfl-lastplay-{game_id}" '
-            f'data-fade-value="{html.escape(str(play_id))}">'
-            f'<b>LAST PLAY</b> {html.escape(play_text.strip())}</div>'
-        )
-    return strip + lastplay_html
+    # A last-play ticker line lived here briefly — session report,
+    # right after it shipped: "I can't see time, and downs, and
+    # quarter, and anything." .jumbo-board-body is a fixed-height,
+    # overflow:hidden panel (this kiosk never scrolls, see this app's
+    # own established no-scroll-content precedent) — a whole extra
+    # wrapped sentence of text was enough to push the entire situation
+    # strip (quarter/clock/down-distance, the actually-requested info)
+    # out of the visible area. Removed rather than shrunk: no way to
+    # verify a smaller version still fits without a real screen to
+    # check against, and the strip below is what was actually asked
+    # for.
+    return f'<div class="jumbo-situ">{"".join(parts)}</div>' if parts else ""
 
 
 _TEAM_ESPN_NAME = {
