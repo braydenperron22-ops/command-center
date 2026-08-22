@@ -400,10 +400,30 @@ def leaders_with_headshots(match: dict, max_items: int = 8) -> list[dict]:
     returning leaders (never happens in practice, but no different a
     result to callers than "no leaders yet")."""
     competition = match["competition"]
+    per_team = [
+        (c.get("team", {}).get("abbreviation", ""), c.get("leaders") or []) for c in competition.get("competitors", [])
+    ]
+    # NFL's own scoreboard competitor objects never carry a "leaders"
+    # field at all — confirmed live against a real game (Rams @ Saints,
+    # 2026-08-22): MLB/NHL's scoreboard competitors do carry it (this
+    # function worked for both without ever needing this fallback), but
+    # NFL's genuinely doesn't, which silently produced an empty Top
+    # Performers card for every NFL game before this fix, not just a
+    # quiet game with nothing to show. The same real data still exists
+    # one level up — a top-level "leaders" array (one entry per team,
+    # same per-category shape) on the fuller summary payload — so this
+    # only reaches for that heavier fetch when the lighter scoreboard-
+    # embedded shape comes up genuinely empty, leaving MLB/NHL's own
+    # already-working path untouched.
+    if not any(leaders for _, leaders in per_team):
+        summary = fetch_summary(match)
+        per_team = [
+            (entry.get("team", {}).get("abbreviation", ""), entry.get("leaders") or [])
+            for entry in (summary.get("leaders") or [])
+        ]
     out = []
-    for competitor in competition.get("competitors", []):
-        abbr = competitor.get("team", {}).get("abbreviation", "")
-        for category in competitor.get("leaders") or []:
+    for abbr, categories in per_team:
+        for category in categories:
             leaders = category.get("leaders") or []
             if not leaders or "rating" in (category.get("name") or "").lower():
                 continue
@@ -416,9 +436,17 @@ def leaders_with_headshots(match: dict, max_items: int = 8) -> list[dict]:
             stat = l0.get("displayValue") or ""
             if not who or not stat:
                 continue
+            # NFL's own top-level leaders (the fallback fetched above)
+            # carry only "name" (raw camelCase, e.g. "passingYards") and
+            # "displayName" ("Passing Yards") — no "abbreviation"/
+            # "shortDisplayName" at all, unlike MLB/NHL's scoreboard-
+            # embedded categories, which is why displayName sits ahead
+            # of the raw name in this fallback chain but behind the
+            # two MLB/NHL actually provide.
+            cat = category.get("abbreviation") or category.get("shortDisplayName") or category.get("displayName") or category.get("name") or ""
             out.append(
                 {
-                    "cat": category.get("abbreviation") or category.get("shortDisplayName") or category.get("name") or "",
+                    "cat": cat,
                     "who": f"{who} · {abbr}",
                     "stat": stat,
                     "hshot": hshot,

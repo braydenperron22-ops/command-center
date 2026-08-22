@@ -337,37 +337,78 @@ def _neutral_situation_html(status_text: str | None) -> str:
 _NFL_ORDINALS = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
 
 
-def _nfl_situation_html(match: dict | None) -> str:
-    """Quarter + game clock, plus down & distance when ESPN's own
-    "situation" field carries it — lighter than the MLB/NHL situation
-    strips above (no dedicated live-detail endpoint built for the
-    Saints, see sports_client.py's own comment above
-    NFL_TEAM_SCHEDULE_URL for why), built from the same ESPN
-    competition object _win_probability_html/_top_performers_html
-    already fetch via _espn_match_for, so this costs nothing extra.
-    Best-effort: down/distance field names/shapes haven't been
-    confirmed against a real live game yet — this was built during the
-    NFL offseason with no live game to check the actual payload
-    against — so every field is read defensively rather than trusted,
-    same "never crash on an unexpected shape" posture the rest of this
-    module already uses for genuinely verified data."""
+def _nfl_situation_html(match: dict | None, game: dict) -> str:
+    """Quarter + game clock, down & distance, live possession, red
+    zone, and timeouts remaining — pulled from ESPN's own scoreboard
+    "situation" object (match["situation"]), which this app was
+    already fetching (find_espn_competition -> the scoreboard raw
+    event, same object _win_probability_html/_top_performers_html
+    already use via _espn_match_for, so this costs nothing extra) but
+    barely reading: only down/distance were parsed before, with no
+    possession/red-zone/timeouts at all — flagged at the time as
+    "built during the NFL offseason, never confirmed against a real
+    live game." First live game (Rams @ Saints, 2026-08-22) confirmed
+    the fuller shape live: downDistanceText, possession, isRedZone,
+    home/awayTimeouts all populate exactly as ESPN's own docs suggest.
+
+    Possession is read from ESPN's own competitor "homeAway" field,
+    not name-matching team strings — "Saints" (this app's own short
+    label) vs "New Orleans Saints" (ESPN's displayName) would be
+    fragile to match directly when ESPN already hands back which SIDE
+    of the matchup has the ball."""
     if not match:
         return ""
     status = match.get("status") or {}
     period = status.get("period")
     clock = status.get("displayClock")
+    game_id = game["game_id"]
     parts = []
     if isinstance(period, int) and period > 0:
         label = f"{_NFL_ORDINALS.get(period, f'{period}th')} QUARTER" if period <= 4 else "OVERTIME"
         parts.append(f'<span class="jumbo-situ-hot">{html.escape(label)}</span>')
     if clock:
         parts.append(f'<span class="jumbo-clockbig">{html.escape(str(clock))}</span>')
+
     situation = match.get("situation") or {}
-    down, distance = situation.get("down"), situation.get("distance")
-    if isinstance(down, int) and isinstance(distance, int) and 1 <= down <= 4:
-        down_text = f"{_NFL_ORDINALS.get(down, f'{down}th')} & {distance}"
-        parts.append(f'<span class="jumbo-situ-count">{html.escape(down_text)}</span>')
-    return f'<div class="jumbo-situ">{"".join(parts)}</div>' if parts else ""
+    down_text = situation.get("downDistanceText") or situation.get("shortDownDistanceText")
+    is_red_zone = bool(situation.get("isRedZone"))
+    if down_text:
+        parts.append(
+            f'<span class="jumbo-situ-count" data-fade-slot="nfl-down-{game_id}" '
+            f'data-fade-value="{html.escape(down_text)}">{html.escape(down_text)}</span>'
+        )
+    if is_red_zone:
+        parts.append('<span class="jumbo-nfl-redzone-badge">RED ZONE</span>')
+
+    possession_id = situation.get("possession")
+    if possession_id:
+        possession_home = next(
+            (c.get("homeAway") == "home" for c in match.get("competitors", []) if c.get("id") == possession_id),
+            None,
+        )
+        if possession_home is not None:
+            possession_is_us = possession_home == game["is_home"]
+            tone = "jumbo-possession-us" if possession_is_us else "jumbo-possession-opp"
+            label = "US" if possession_is_us else "OPP"
+            parts.append(f'<span class="jumbo-possession {tone}">🏈 {label} BALL</span>')
+
+    home_to, away_to = situation.get("homeTimeouts"), situation.get("awayTimeouts")
+    if home_to is not None and away_to is not None:
+        us_to, opp_to = (home_to, away_to) if game["is_home"] else (away_to, home_to)
+        parts.append(f'<span class="jumbo-nfl-timeouts">TIMEOUTS {us_to}-{opp_to}</span>')
+
+    strip = f'<div class="jumbo-situ">{"".join(parts)}</div>' if parts else ""
+
+    last_play = situation.get("lastPlay") or {}
+    play_text, play_id = last_play.get("text"), last_play.get("id")
+    lastplay_html = ""
+    if play_text and play_id:
+        lastplay_html = (
+            f'<div class="jumbo-nfl-lastplay" data-fade-slot="nfl-lastplay-{game_id}" '
+            f'data-fade-value="{html.escape(str(play_id))}">'
+            f'<b>LAST PLAY</b> {html.escape(play_text.strip())}</div>'
+        )
+    return strip + lastplay_html
 
 
 _TEAM_ESPN_NAME = {
@@ -1787,7 +1828,7 @@ def _board_html(state: dict, now: datetime) -> str:
             elif sport == "nhl":
                 situation = _nhl_situation_html(game["game_id"])
             else:
-                situation = _nfl_situation_html(match)
+                situation = _nfl_situation_html(match, game)
         else:
             situation = ""
         blurb_html = ""

@@ -4133,6 +4133,71 @@ html, body, [class*="css"] {
     100% { transform: scale(1); color: var(--bone); text-shadow: none; }
 }
 
+/* NFL live situation strip (pages_jumbotron._nfl_situation_html) —
+   this used to only ever show quarter/clock/down-distance (built
+   during the offseason with no live game to check ESPN's real payload
+   against). First live game (Rams @ Saints, 2026-08-22) confirmed
+   ESPN's own scoreboard "situation" object already carries possession,
+   red zone, and per-team timeouts remaining too — the same request-
+   for-more-live-detail this app already gave MLB (bases/count/outs)
+   and NHL (period/intermission) of their own, now NFL's turn. Same
+   .jumbo-situ-pulse fade-in-on-change the down/distance figure below
+   already reuses (not a new animation) — consistency over novelty. */
+.jumbo-nfl-redzone-badge {
+    display: inline-block;
+    font-family: var(--num);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    color: #0A0D12;
+    background: #FF453A;
+    padding: 4px 14px 3px 16px;
+    border-radius: 6px;
+    margin-left: 18px;
+    box-shadow: 0 0 18px rgba(255,69,58,0.55);
+    vertical-align: middle;
+}
+.jumbo-possession {
+    display: inline-block;
+    font-family: var(--label);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    margin-left: 22px;
+    font-size: 22px;
+}
+.jumbo-possession-ball { margin-right: 6px; }
+.jumbo-possession-us { color: var(--led); }
+.jumbo-possession-opp { color: var(--mut-2); }
+.jumbo-nfl-timeouts {
+    display: inline-block;
+    font-family: var(--label);
+    font-size: 18px;
+    color: var(--mut-2);
+    margin-left: 22px;
+    letter-spacing: 0.04em;
+}
+/* Most-recent-play ticker — session request equivalent: broadcast
+   score bugs always show "what just happened," and this app already
+   fetches the exact text ESPN's own last-play field carries (was
+   sitting unused in the same situation payload the down/distance
+   figure above already reads). Own line under the main situation
+   strip rather than crammed inline — real play text runs long enough
+   ("Z.Wilson scrambles left end to NO 36 for 7 yards") to need its
+   own wrapped row. Fades in on a genuine new play via the shared
+   kiosk-jumbo-fade mechanism (data-fade-slot/data-fade-value, see
+   app.py's own comment), keyed by the play's own id so a repeated
+   fetch of the SAME last play never re-flashes. */
+.jumbo-nfl-lastplay {
+    text-align: center;
+    font-family: var(--label);
+    font-size: 18px;
+    color: var(--mut-2);
+    letter-spacing: 0.02em;
+    padding: 0 40px 10px;
+    line-height: 1.4;
+}
+.jumbo-nfl-lastplay b { color: var(--bone); font-weight: 600; }
+
 /* Batting order (pages_jumbotron._batting_order_rail_html) — session
    request, after attending a real Jays game: "the only stat they
    showed was OPS... gave me a very easy way of seeing who is the best
