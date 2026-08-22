@@ -244,16 +244,13 @@ html, body, [class*="css"] {
     color: #F5F5F7;
 }
 
-/* Markets page runs 7 tiles in one row (see pages_markets.render) —
-   the narrowest lineup any tile grid in this app uses, and its labels
-   range from a single unbreakable word ("BITCOIN") to a genuinely
-   multi-word one ("S&P 500 (SPY forecast)") where the "(forecast)"
-   part matters — it's the only on-tile cue this hero number is a
-   Polymarket-implied projection, not an observed live move (see
-   pages_markets._weekend_forecast_quote). A flat nowrap+ellipsis first
-   pass fixed BITCOIN's mid-word garbling under width pressure but
-   silently truncated that forecast qualifier off the long labels
-   instead — same overflow-hidden height as the shared .tile-label
+/* Markets page runs up to 7 tiles in one row (see pages_markets.render)
+   — the narrowest lineup any tile grid in this app uses, and its labels
+   range from a single unbreakable word ("BITCOIN") to a multi-word one
+   ("CRUDE OIL"). A flat nowrap+ellipsis first pass fixed BITCOIN's
+   mid-word garbling under width pressure but silently truncated
+   multi-word labels too — same overflow-hidden height as the shared
+   .tile-label
    (multi-line-capable elsewhere, e.g. "NORTH BAY GAS"), just with
    break-word so a single long word breaks instead of overflowing the
    tile, while multi-word labels still wrap at their spaces same as

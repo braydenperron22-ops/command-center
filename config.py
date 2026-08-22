@@ -224,16 +224,16 @@ MARKET_INSTRUMENTS_CLOSED = [
     {"key": "nasdaq", "label": "Nasdaq Futures", "symbol": "NQ=F"},
     {"key": "tsx", "label": "Canada", "symbol": "^GSPTSE"},
 ]
-# Dogecoin dropped (session request): the Markets page's weekend grid
-# now prepends a Polymarket-derived S&P 500 (SPY) forecast tile ahead
-# of this list rather than overriding "btc" in place, so Bitcoin itself
-# needed to move back into the crypto lineup shown alongside it —
-# keeping the same 4-tile weekend count meant something had to go, and
-# Dogecoin was the newest/least-major addition of the four.
+# A Polymarket-derived weekend forecast (a synthetic S&P 500 tile that
+# briefly displaced Bitcoin/Dogecoin from this list) came and went —
+# session request: "get rid of the market implied weekend moves and
+# just resort to Bitcoin, Ethereum, whatever, the main cryptos." Back
+# to a plain crypto lineup, the four main ones.
 MARKET_INSTRUMENTS_WEEKEND = [
     {"key": "btc", "label": "Bitcoin", "symbol": "BTC-USD"},
     {"key": "eth", "label": "Ethereum", "symbol": "ETH-USD"},
     {"key": "sol", "label": "Solana", "symbol": "SOL-USD"},
+    {"key": "doge", "label": "Dogecoin", "symbol": "DOGE-USD"},
 ]
 # Commodities always quote via futures (how gold/oil actually trade
 # nearly around the clock anyway) and FX always via spot — neither needs
