@@ -1218,15 +1218,55 @@ html, body, [class*="css"] {
     border-top: 2px solid rgba(255,255,255,0.25);
     overflow: hidden;
 }
+/* Session request: "how can we make the severe weather alerts a
+   little bit more menacing... they're just on and then talking" —
+   extreme/warning tiers used to share the exact same 1.6s pulse and
+   plain headline size every other toast type in this app uses (a
+   score update, a news headline). A faster, harder pulse plus a
+   subtle shake — and bigger text — for just these two genuinely
+   severe tiers, distinct from watch/statement/warning-moderate below,
+   which stay at the calmer shared pace; a routine advisory shouldn't
+   read as urgently as a real warning. */
 .weather-alert-bar-extreme {
     background: linear-gradient(90deg, #5c0a0b 0%, #d4181a 50%, #5c0a0b 100%);
     box-shadow: 0 -4px 24px rgba(212,24,26,0.5);
-    animation: toast-pulse-red-extreme 1.6s ease-in-out infinite;
+    animation: toast-pulse-red-extreme 0.7s ease-in-out infinite, weather-menace-shake 0.35s ease-in-out infinite;
 }
 .weather-alert-bar-warning {
     background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
     box-shadow: 0 -4px 24px rgba(179,20,20,0.35);
-    animation: toast-pulse-red 1.6s ease-in-out infinite;
+    animation: toast-pulse-red 0.8s ease-in-out infinite, weather-menace-shake 0.4s ease-in-out infinite;
+}
+.weather-alert-bar-extreme .news-alert-headline, .weather-alert-bar-warning .news-alert-headline,
+.weather-alert-bar-extreme .news-breaking-label, .weather-alert-bar-warning .news-breaking-label {
+    font-size: 1.15em;
+}
+@keyframes weather-menace-shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-2px); }
+    75% { transform: translateX(2px); }
+}
+/* Full-screen red pulse behind whatever page is showing — session
+   request: "make it more obvious... not just a bottom strip." Created/
+   removed by app.py's kioskShowMenaceOverlay, alongside the toast
+   above (not instead of it) whenever a genuinely severe alert fires.
+   Sits just under the toast bar's own z-index so the toast text stays
+   readable on top of it; a radial gradient (transparent center, red
+   edges) rather than a flat tint so it reads as an alarmed vignette
+   around whatever's on screen instead of a flat color wash that would
+   fight with the page's own content for contrast. pointer-events:none
+   so it can never trap a touch/click on this non-interactive kiosk. */
+.weather-menace-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(212,24,26,0) 45%, rgba(212,24,26,0.5) 100%);
+    animation: weather-menace-pulse 0.9s ease-in-out infinite;
+}
+@keyframes weather-menace-pulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
 }
 .weather-alert-bar-warning-moderate {
     background: linear-gradient(90deg, #7a3d10 0%, #b3641a 50%, #7a3d10 100%);
