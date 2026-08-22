@@ -4539,7 +4539,7 @@ html, body, [class*="css"] {
     background: #141A25;
     border: 2.5px solid var(--edge-hi);
 }
-.jumbo-ufc-photo-a .jumbo-ufc-photo { border-color: var(--led); }
+.jumbo-ufc-photo-a .jumbo-ufc-photo { border-color: #FF3B30; }
 .jumbo-ufc-photo-b .jumbo-ufc-photo { border-color: #5AC8FA; }
 .jumbo-ufc-flag {
     position: absolute;
@@ -4589,9 +4589,9 @@ html, body, [class*="css"] {
 /* Tale of the tape — session request: "make it more obvious... more
    professional," the height/reach/age comparison every real UFC
    broadcast leads with. One compact row (see _ufc_tale_of_tape_html's
-   own docstring on why), same gold/blue accent pair the photos/stat
-   bars already use so it reads as part of the same comparison, not a
-   separate feature. */
+   own docstring on why), same red/blue corner accent pair the photos/
+   stat bars already use so it reads as part of the same comparison,
+   not a separate feature. */
 .jumbo-ufc-tot {
     flex: 0 0 auto;
     display: flex;
@@ -4606,7 +4606,7 @@ html, body, [class*="css"] {
     font-family: var(--num);
     font-size: 16px;
 }
-.jumbo-ufc-tot-a { color: var(--led); font-weight: 700; }
+.jumbo-ufc-tot-a { color: #FF3B30; font-weight: 700; }
 .jumbo-ufc-tot-b { color: #5AC8FA; font-weight: 700; }
 .jumbo-ufc-tot-label {
     font-family: var(--label);
@@ -4655,10 +4655,17 @@ html, body, [class*="css"] {
    fetch_bout_stats' own docstring), so the bar here reflects each
    fighter's actual share of real landed strikes/takedowns/control
    seconds, not a probability the way the team board's bar does. Two
-   fixed accent colors (gold/blue) rather than per-side team colors —
-   fighters don't have one the way a team's own color does, and ESPN's
-   fighter_a/fighter_b order isn't a real red-corner/blue-corner
-   assignment worth asserting. */
+   fixed accent colors rather than per-side team colors — fighters
+   don't have one the way a team's own color does (checked live across
+   three separate ESPN endpoints — scoreboard, athlete profile, core
+   API — none carry a trunk/corner color at all; UFC has no per-athlete
+   branding the way a franchise does). Session follow-up: "can we make
+   the bar be the trunk size... the trunk color" — recolored to the
+   classic red-corner/blue-corner broadcast convention instead of the
+   original gold/blue, on the explicit understanding (confirmed with
+   the user) that this still isn't each fighter's own real color, just
+   applied to whichever side ESPN's own fighter_a/fighter_b order lists
+   first/second. */
 .jumbo-ufc-stats { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 14px; padding: 4px 40px 20px; }
 .jumbo-ufc-stat-row {}
 .jumbo-ufc-stat-title {
@@ -4677,7 +4684,7 @@ html, body, [class*="css"] {
     flex: 0 0 auto;
     min-width: 64px;
 }
-.jumbo-ufc-stat-value.jumbo-ufc-stat-a { text-align: right; color: var(--led); }
+.jumbo-ufc-stat-value.jumbo-ufc-stat-a { text-align: right; color: #FF3B30; }
 .jumbo-ufc-stat-value.jumbo-ufc-stat-b { color: #5AC8FA; }
 .jumbo-ufc-stat-bar {
     flex: 1;
@@ -4687,7 +4694,7 @@ html, body, [class*="css"] {
     display: flex;
     border: 1px solid var(--edge);
 }
-.jumbo-ufc-stat-seg-a { background: var(--led); }
+.jumbo-ufc-stat-seg-a { background: #FF3B30; }
 .jumbo-ufc-stat-seg-b { background: #5AC8FA; }
 .jumbo-ufc-stat-labels {
     display: flex;

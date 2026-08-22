@@ -2493,8 +2493,11 @@ def _ufc_fighter_hero_html(fighter: dict, profile: dict | None, is_winner: bool,
     """One side of the hero face-off — photo, flag, name, nickname,
     record, and career win-method breakdown. Session request: "add
     player photos... make it feel more professional... right now it
-    just has the name." `accent` ("a"/"b") matches the same gold/blue
-    pair _ufc_stats_html's own bars already use for these two fighters,
+    just has the name." `accent` ("a"/"b") matches the same red/blue
+    corner pair _ufc_stats_html's own bars already use for these two
+    fighters (see that CSS's own comment on why it's a broadcast
+    convention, not each fighter's real color — checked live, no such
+    data exists anywhere in ESPN's own UFC feed),
     so a viewer can connect "this photo" to "this side of the stat
     bars below" at a glance. profile (ufc_client.fetch_fighter_profile)
     is None on a fetch failure — every optional line below just omits
