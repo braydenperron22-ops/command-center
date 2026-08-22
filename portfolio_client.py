@@ -233,9 +233,6 @@ def _fetch_history_by_account() -> dict[str, list[tuple[str, float]]] | None:
     return {name: sorted(by_date.items()) for name, by_date in by_name.items()}
 
 
-_last_good_value_history: list[float] | None = None
-
-
 def fetch_value_history(days: int = 180) -> list[float] | None:
     """Daily total portfolio value (every real account, same scope as
     fetch_portfolio's own total_cad) over the trailing `days` — for a
@@ -244,13 +241,12 @@ def fetch_value_history(days: int = 180) -> list[float] | None:
     available for that date rather than being excluded outright (unlike
     _period_change_pct's stricter all-or-nothing inclusion for a real %
     number). None if there's not enough history to draw a real trend."""
-    global _last_good_value_history
     try:
         series_by_account = _fetch_history_by_account()
     except Exception:
-        return _last_good_value_history
+        return None
     if not series_by_account:
-        return _last_good_value_history
+        return None
 
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     totals: dict[str, float] = {}
@@ -260,9 +256,8 @@ def fetch_value_history(days: int = 180) -> list[float] | None:
                 continue
             totals[d] = totals.get(d, 0.0) + v
     if len(totals) < 2:
-        return _last_good_value_history
-    _last_good_value_history = [v for _, v in sorted(totals.items())]
-    return _last_good_value_history
+        return None
+    return [v for _, v in sorted(totals.items())]
 
 
 def _period_change(
@@ -614,51 +609,3 @@ def fetch_changes() -> dict | None:
     }
     _last_good_changes = result
     return result
-
-
-# Session report, live photo evidence: two unrelated dashboard pages
-# visibly stacked/overlapping — Weather's forecast still visible while
-# Portfolio's own content tried to stream in underneath it (weather
-# itself wasn't the bug; it just happened to still be on screen when
-# THIS page's slow render collided with the next autorefresh tick).
-# Same root cause and same fix already applied to golf_client.
-# golfability/financial_plumbing_client.plumbing_status: fetch_changes,
-# fetch_value_history, and fetch_activities were all being called
-# directly from pages_portfolio.py's own render() — measured live,
-# ~5.5-5.6s each on a cold cache (SnapTrade's real per-account balance-
-# history endpoint, one real call per sub-account — Wealthsimple splits
-# a single registered account into several of those on SnapTrade's own
-# side), well past the app's 5-second autorefresh window. This one
-# predates today's own new systems entirely, which is exactly why it
-# read as a "lingering issue" rather than something new.
-#
-# cached_changes/cached_value_history/cached_activities below return
-# whatever was last successfully fetched, with NO fetch of their own —
-# always instant. pages_portfolio.py now calls only these; the real
-# (possibly slow) fetches happen exclusively inside warm_cache(),
-# wired into app.py's own toast-check loop, which already runs
-# unconditionally every rerun regardless of which page is showing —
-# the same background pattern every other toast source in this app
-# already relies on, even though portfolio itself has no toast of its
-# own to raise here.
-def cached_changes() -> dict | None:
-    return _last_good_changes
-
-
-def cached_value_history() -> list[float] | None:
-    return _last_good_value_history
-
-
-def cached_activities() -> list[dict] | None:
-    return _last_good_activities
-
-
-def warm_cache() -> None:
-    """Pure side effect — refreshes the three module-level caches above
-    so they're ready before a page render ever needs them. No return
-    value; callers (app.py's own always-on background loop) don't need
-    one, and each of the three functions already keeps its own last-
-    good state on a partial failure, same as everywhere else."""
-    fetch_changes()
-    fetch_value_history(days=180)
-    fetch_activities(limit=14)

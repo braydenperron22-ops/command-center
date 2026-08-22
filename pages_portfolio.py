@@ -168,11 +168,7 @@ def render() -> None:
     # count would misleadingly imply the rows below sum to this total.
     subtitle = "Wealthsimple" + (f" · {other_text}" if other_text else "")
 
-    # cached_changes(), not fetch_changes() — this page render must
-    # never be the thing that triggers a real (~5.5s on a cold cache)
-    # fetch; see portfolio_client's own comment above cached_changes
-    # for the live bug this caused.
-    changes = portfolio_client.cached_changes() or {}
+    changes = portfolio_client.fetch_changes() or {}
     # Session request: "outsource it by caching yesterday's result and
     # comparing to today's result" — see portfolio_client.daily_change's
     # own docstring for why: SnapTrade's own per-account balance-history
@@ -206,7 +202,7 @@ def render() -> None:
     # (not the 1-day change) decides the color, since a sparkline this
     # short-range is about "which way has this actually been going,"
     # same reasoning tiles.sparkline_svg's other callers already use.
-    value_history = portfolio_client.cached_value_history()
+    value_history = portfolio_client.fetch_value_history(days=180)
     sparkline_html = ""
     if value_history:
         trend_tone = "good" if value_history[-1] >= value_history[0] else "bad"
@@ -266,7 +262,7 @@ def render() -> None:
         # things actually worth glancing at. A bigger limit than before
         # now that activity has its own dedicated column instead of
         # competing with two other tiles for vertical space.
-        activities = portfolio_client.cached_activities()
+        activities = portfolio_client.fetch_activities(limit=14)
         if activities:
             today_local = datetime.now(ZoneInfo(TIMEZONE)).date()
             activity_rows = "".join(_activity_row(a, today_local) for a in activities)

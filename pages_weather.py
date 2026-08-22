@@ -70,11 +70,7 @@ def render() -> None:
     _render_current(ec_forecast.current_conditions())
     st.markdown('<div style="height: 0.6rem;"></div>', unsafe_allow_html=True)
 
-    # cached_daily_forecast(), not daily_forecast() directly — this
-    # page render must never be the thing that triggers a real
-    # (cold-cache) Open-Meteo fetch; see weather_client's own module
-    # comment for the live bug this caused.
-    days = weather_client.cached_daily_forecast()
+    days = weather_client.daily_forecast()
     if not days:
         st.markdown(
             '<div class="tile"><div class="tile-prev">Forecast unavailable right now.</div></div>',

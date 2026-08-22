@@ -507,44 +507,6 @@ def get_new_alerts(now: datetime) -> list[dict]:
     return alerts
 
 
-# pages_email.py's own render() used to call fetch_recent(MORNING_
-# BRIEF_LOOKBACK_HOURS) + classify(raw) directly — a real IMAP connect
-# + fetch (MORNING_BRIEF_LOOKBACK_HOURS=24 is a DIFFERENT st.cache_data
-# key than get_new_alerts' own FETCH_LOOKBACK_HOURS=6, see both
-# constants above, so the toast loop's own warm 6h fetch never covered
-# this page's 24h one) plus, for anything newly seen in that wider
-# window, a real blocking Groq classification call. Live bug: this page
-# blocking past app.py's 5s st_autorefresh window, corrupting the
-# Streamlit rerun and blending pages together on screen — same class of
-# bug fixed this session for golf_client/financial_plumbing_client/
-# portfolio_client (see their own module comments). warm_daily_feed
-# below is wired into app.py's toast-check loop instead, unconditionally
-# every rerun; pages_email.py now reads only cached_recent_important,
-# which never fetches or classifies anything itself.
-_last_good_daily_raw: list[dict] = []
-
-
-def warm_daily_feed() -> None:
-    global _last_good_daily_raw
-    if not _configured():
-        return
-    try:
-        raw = _fetch_recent_raw(MORNING_BRIEF_LOOKBACK_HOURS)
-    except Exception:
-        return
-    if raw:
-        _classify_pending(raw)
-        _last_good_daily_raw = raw
-
-
-def cached_recent_important() -> list[dict]:
-    """Instant, zero-fetch read of whatever warm_daily_feed's last real
-    pass cached — already fully classified (see that function's own
-    comment), so pages_email.py's render() only needs to apply its own
-    24h-window/first-seen bookkeeping on top, same as before."""
-    return _last_good_daily_raw
-
-
 def morning_brief_summary(now: datetime) -> str | None:
     """"email: N important — 'Subject' from Sender, ..." for
     morning_briefing's own fact list, capped to MORNING_BRIEF_MAX_EMAILS

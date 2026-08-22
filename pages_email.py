@@ -66,12 +66,11 @@ def render():
     now_ts = time.time()
     changed = False
 
-    # cached_recent_important(), not fetch_recent(...) + classify(...)
-    # directly — this page render must never be the thing that triggers
-    # a real (IMAP connect+fetch, plus a possible Groq classification
-    # call) fetch; see email_client's own module comment for the live
-    # bug this caused. Already fully classified by warm_daily_feed.
-    raw = email_client.cached_recent_important()
+    # Same 24h lookback/cache key morning_briefing.py's own email fact
+    # already uses (email_client.MORNING_BRIEF_LOOKBACK_HOURS) — sharing
+    # the cache means this page costs nothing extra whenever the
+    # morning brief has already fetched today.
+    raw = email_client.fetch_recent(email_client.MORNING_BRIEF_LOOKBACK_HOURS)
     if not raw:
         st.markdown(
             '<div class="tile"><div class="tile-prev">No emails in the last 24 hours.</div></div>',
@@ -79,6 +78,7 @@ def render():
         )
         return
 
+    email_client.classify(raw)
     raw_by_id = {e["message_id"]: e for e in raw}
 
     for e in raw:

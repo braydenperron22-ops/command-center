@@ -83,15 +83,11 @@ def _day_or_night(at, sunrise, sunset) -> str:
 def render() -> None:
     st.markdown('<div class="page-title page-title-hourly">Hourly Forecast</div>', unsafe_allow_html=True)
 
-    # cached_weather()/cached_hourly_forecast(), not fetch_weather()/
-    # hourly_forecast() directly — this page render must never be the
-    # thing that triggers a real (cold-cache) Open-Meteo fetch; see
-    # weather_client's own module comment for the live bug this caused.
-    weather = weather_client.cached_weather()
+    weather = weather_client.fetch_weather()
     _render_current(weather)
     st.markdown('<div class="internals-section-gap"></div>', unsafe_allow_html=True)
 
-    hours = weather_client.cached_hourly_forecast()[:HOURS_SHOWN]
+    hours = weather_client.hourly_forecast()[:HOURS_SHOWN]
     if not hours:
         st.markdown(
             '<div class="tile"><div class="tile-prev">Forecast unavailable right now.</div></div>',

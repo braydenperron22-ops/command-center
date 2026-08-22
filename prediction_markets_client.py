@@ -743,15 +743,7 @@ def next_data_series() -> str | None:
     session request: "have the next closest event show up automatically
     on that page across Canada and the US," instead of a fixed pair.
     None if nothing across the whole roster currently parses (e.g. every
-    series' market happens to be between contracts at the same moment).
-
-    Calls current_data_forecast for every DATA_SERIES key in turn — a
-    real Polymarket search per series (~1-2s each) on a cold cache, the
-    dominant cost in a live bug where pages_predictions.py's own
-    render() called this directly and blocked past app.py's 5s
-    st_autorefresh window. See warm_data_series_cache/
-    cached_next_data_series below for the fix; this function's own
-    logic is unchanged, just no longer called from page render."""
+    series' market happens to be between contracts at the same moment)."""
     candidates = []
     for series in DATA_SERIES:
         forecast = current_data_forecast(series)
@@ -761,35 +753,6 @@ def next_data_series() -> str | None:
         return None
     candidates.sort(key=lambda c: c[0])
     return candidates[0][1]
-
-
-_last_good_next_series: str | None = None
-
-
-def warm_data_series_cache() -> None:
-    """Real (possibly ~10s+ cold, one Polymarket search per DATA_SERIES
-    key) refresh, called unconditionally from app.py's toast-check loop
-    every rerun so pages_predictions.py's render() never pays this cost
-    itself. next_data_series()'s own loop already populates
-    _last_good_series for every series it touches as a side effect
-    (see current_data_forecast) — this just also remembers which one
-    was soonest, and only overwrites _last_good_next_series on a real
-    hit so a transient all-series failure doesn't blank the page."""
-    global _last_good_next_series
-    result = next_data_series()
-    if result is not None:
-        _last_good_next_series = result
-
-
-def cached_next_data_series() -> str | None:
-    return _last_good_next_series
-
-
-def cached_data_forecast(series: str) -> dict | None:
-    """Instant, zero-fetch read of whatever warm_data_series_cache's
-    last real pass cached for `series` — see that function's own
-    comment for the live bug this avoids."""
-    return _last_good_series.get(series)
 
 
 # Below this, a print reads as flat/"in-line" rather than hotter or

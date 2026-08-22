@@ -88,19 +88,6 @@ TOP_ALERT_HOLD_SECONDS = 2 * 60 * 60
 # skipped rather than queued.
 MAX_BURST_ALERTS = 6
 
-# Session report: "the UI elements were freaking out — pulsing,
-# flashing, duplicate elements everywhere" — traced to "kind":
-# "weather" toasts having NO burst cap at all (see app.py's own
-# _alert_priority comment for the full story): fine back when only
-# 4 real sources shared that lane, not once a later session added 5
-# more sharing the same uncapped top-priority bucket. Lower than
-# MAX_BURST_ALERTS (the sibling cap just above) on purpose — weather
-# already always sorts ahead of everything else, so even a capped run
-# of these still dominates the queue; this just stops "several
-# genuinely new toasts in one rerun" from becoming an uninterrupted
-# cascade.
-MAX_WEATHER_BURST = 4
-
 ROTATION_SECONDS = 5 * 60
 # How often the Scores page flips to the next active league (MLB/NHL/
 # NFL) — deliberately much shorter than PAGE_ROTATION_SECONDS

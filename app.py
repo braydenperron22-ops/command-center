@@ -16,24 +16,18 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 import air_quality_client
-import aviation_client
 import commute_reminder
 import cpp_payment_dates
 import data_health
 import ec_forecast
 import email_client
 import evening_briefing
-import fetch_throttle
-import financial_plumbing_client
 import govee_lighting
-import golf_client
 import groq_client
 import headline_rotation
 import holidays_client
-import league_transactions_client
 import lightning_client
 import local_news_client
-import market_internals
 import market_volatility_alert
 import market_yf_client
 import morning_briefing
@@ -57,7 +51,6 @@ import pages_today
 import pages_weather
 import payday_schedule
 import persisted_state
-import portfolio_client
 import precip_nowcast_client
 import prediction_markets_client
 import road_conditions
@@ -71,7 +64,6 @@ import toast_queue
 import ufc_client
 import waste_schedule
 import weather_alerts_bar
-import weather_client
 import weather_records_client
 import wildfire_client
 from config import (
@@ -81,7 +73,6 @@ from config import (
     EXTREME_HEAT_THRESHOLD_C,
     FEELS_LIKE_DIVERGENCE_THRESHOLD_C,
     MAX_BURST_ALERTS,
-    MAX_WEATHER_BURST,
     PAGE_DURATION_OVERRIDES,
     PAGE_ROTATION_SECONDS,
     PAGES,
@@ -2854,115 +2845,29 @@ except Exception:
 # alongside check_for_swing, same isolation/None-most-of-the-time
 # shape, own try/except so one bank's lock-in check can't take down
 # another's.
-def _pm_bank_alerts() -> list[dict]:
-    alerts = []
-    for _pm_bank in prediction_markets_client.BANKS:
-        try:
-            swing = prediction_markets_client.check_for_swing(_pm_bank)
-            if swing:
-                alerts.append(prediction_markets_client.swing_alert(swing))
-        except Exception:
-            pass
-        try:
-            lock_in = prediction_markets_client.check_for_lock_in(_pm_bank)
-            if lock_in:
-                alerts.append(prediction_markets_client.lock_in_alert(lock_in))
-        except Exception:
-            pass
-    return alerts
-
-
-# Every source below used to run fully synchronously, one after another,
-# with only a per-source try/except for isolation from each other — no
-# limit on how long the WHOLE loop could take. Live bug, confirmed
-# twice: any single one of these going cold at once (confirmed live:
-# portfolio_client.warm_cache alone measured 14s) blocks the entire
-# loop, and by extension whichever page happens to be rendering that
-# rerun, past app.py's 5s st_autorefresh window — corrupting the
-# in-flight Streamlit rerun (screen shows two pages' content blended
-# together). See fetch_throttle.run_bounded's own docstring for the
-# actual fix: every call here now shares one wall-clock budget, so the
-# loop as a whole can never hold up a rerun regardless of how many
-# sources exist or how slow any one upstream API is that day. A source
-# that doesn't get its turn this rerun (budget already spent) just
-# tries again next rerun, 5s later — nothing here has a real-time
-# requirement tighter than that.
-_toast_budget_start = time.time()
-
-new_alerts.extend(
-    fetch_throttle.run_bounded("pm_bank_alerts", _pm_bank_alerts, _toast_budget_start, default=[]) or []
-)
+for _pm_bank in prediction_markets_client.BANKS:
+    try:
+        swing = prediction_markets_client.check_for_swing(_pm_bank)
+        if swing:
+            new_alerts.append(prediction_markets_client.swing_alert(swing))
+    except Exception:
+        pass
+    try:
+        lock_in = prediction_markets_client.check_for_lock_in(_pm_bank)
+        if lock_in:
+            new_alerts.append(prediction_markets_client.lock_in_alert(lock_in))
+    except Exception:
+        pass
 
 # Market-volatility toasts — session request: "take the VIX value,
 # divide it by sixteen, that gives us the expected daily market move
 # in either direction... if the market is trading outside of that
 # band, broadcast it as an alert." Own module (market_volatility_alert.
 # py), same isolation reasoning as every other block here.
-new_alerts.extend(
-    fetch_throttle.run_bounded(
-        "market_volatility", lambda: market_volatility_alert.get_new_alerts(now), _toast_budget_start, default=[]
-    )
-    or []
-)
-
-# Financial-plumbing toasts — session request: "financial-system
-# monitoring layer... identify whether financial plumbing is behaving
-# normally or becoming unusual." Own module (financial_plumbing_
-# client.py), same isolation reasoning as every other block here.
-new_alerts.extend(
-    fetch_throttle.run_bounded(
-        "financial_plumbing", lambda: financial_plumbing_client.get_new_alerts(now), _toast_budget_start, default=[]
-    )
-    or []
-)
-
-# League-transaction toasts — session request: "Add a unified
-# structured transaction feed for MLB, NHL, NFL... filter out the
-# noise... just make it for my teams." Own module (league_transactions
-# _client.py), same isolation reasoning as every other block here.
-new_alerts.extend(
-    fetch_throttle.run_bounded(
-        "league_transactions", lambda: league_transactions_client.get_new_alerts(now), _toast_budget_start, default=[]
-    )
-    or []
-)
-
-# Aviation toasts — session request: "Detect aircraft in the
-# surrounding area and surface an event when an aircraft is genuinely
-# interesting or sufficiently close." Own module (aviation_client.py),
-# same isolation reasoning as every other block here.
-new_alerts.extend(
-    fetch_throttle.run_bounded(
-        "aviation", lambda: aviation_client.get_new_alerts(now), _toast_budget_start, default=[]
-    )
-    or []
-)
-
-# Golf-intelligence toasts — session request: "Add a golf intelligence
-# layer... GOLFABILITY." Own module (golf_client.py), same isolation
-# reasoning as every other block here.
-new_alerts.extend(
-    fetch_throttle.run_bounded("golf", lambda: golf_client.get_new_alerts(now), _toast_budget_start, default=[]) or []
-)
-
-# Portfolio cache warming — no toast of its own, just keeping
-# fetch_changes/fetch_value_history/fetch_activities warm in the
-# background so pages_portfolio.py's own render (which now only ever
-# reads the cached snapshot, never fetches directly) doesn't have to.
-# See portfolio_client.warm_cache's own docstring for the live "two
-# pages visibly overlapping" bug this fixes.
-fetch_throttle.run_bounded("portfolio_warm", portfolio_client.warm_cache, _toast_budget_start)
-
-# Same cache-warming pattern as portfolio_client.warm_cache above, for
-# five more pages found to have the identical live bug during a full
-# sweep: each one's render() used to call a real, possibly-slow fetch
-# directly. See each module's own warm_cache/warm_data_series_cache/
-# warm_daily_feed docstring for its specific live evidence.
-fetch_throttle.run_bounded("predictions_warm", prediction_markets_client.warm_data_series_cache, _toast_budget_start)
-fetch_throttle.run_bounded("market_internals_warm", market_internals.warm_cache, _toast_budget_start)
-fetch_throttle.run_bounded("email_warm", email_client.warm_daily_feed, _toast_budget_start)
-fetch_throttle.run_bounded("conflicts_warm", pages_conflicts.warm_cache, _toast_budget_start)
-fetch_throttle.run_bounded("weather_warm", weather_client.warm_cache, _toast_budget_start)
+try:
+    new_alerts.extend(market_volatility_alert.get_new_alerts(now))
+except Exception:
+    pass
 
 # Radar-based severe/tracking-started toast alerts (ec_radar.
 # severe_weather_alert / tracking_started_alert) removed along with the
@@ -2997,37 +2902,13 @@ fetch_throttle.run_bounded("weather_warm", weather_client.warm_cache, _toast_bud
 # body fails before reaching the assignment further down — it has its
 # own try/except too, but there's no reason to make it depend on this
 # block's internals for a safe default.
-# Session report: "the screen was on Jumbotron and the UI elements
-# were freaking out — pulsing, flashing, duplicate elements
-# everywhere... refreshing made it go away." Root cause: "kind":
-# "weather" started this session with 4 real sources (EC alerts,
-# lightning, precip nowcast, road conditions) — genuinely rare/
-# singular events in practice, which is why the burst-trim below only
-# ever capped the NEWS bucket, unconditionally keeping every weather-
-# kind alert no matter how many arrived in one rerun. This same
-# session's own later work added 5 MORE "kind": "weather" sources
-# (market volatility, financial plumbing, league transactions,
-# aviation, golf) sharing that exact same uncapped top-priority lane —
-# a burst of several genuinely-new toasts arriving in the same rerun
-# (very plausible the first day all nine sources are live at once) had
-# nothing left to trim it, so all of them queued and cycled through
-# the bottom bar in rapid succession, each triggering its own reveal/
-# chime/pulse animation. Fixed two ways below: a real severity-aware
-# sub-rank so a genuine hazard (extreme/warning) always sorts ahead of
-# an informational "statement" toast even within the same "weather"
-# bucket, and a real burst cap on that bucket (MAX_WEATHER_BURST),
-# matching the exact same "cap it, don't unconditionally trust it
-# stays rare" lesson the news bucket already learned.
-_WEATHER_SEVERITY_RANK = {"extreme": 0, "warning": 1, "warning-moderate": 2, "watch": 3, "statement": 4}
-
-
-def _alert_priority(alert: dict) -> float:
+def _alert_priority(alert: dict) -> int:
     # Weather ranks above even commute — session request: weather alerts
     # are "arguably the most important part of the dashboard," and a
     # genuine EC warning outranks a leave-for-work reminder the same way
     # it already outranks everything else in this queue.
     if alert.get("kind") == "weather":
-        return -1 + _WEATHER_SEVERITY_RANK.get(alert.get("severity"), 4) * 0.01
+        return -1
     if alert.get("kind") == "commute":
         return 0
     if alert.get("kind") == "sports":
@@ -3115,12 +2996,6 @@ def _render_bottom_ticker(readings: dict) -> None:
             stats.append(wildfire_stat)
     except Exception:
         pass
-    try:
-        aviation_stat = ticker.build_aviation_stat_item()
-        if aviation_stat:
-            stats.append(aviation_stat)
-    except Exception:
-        pass
 
     if stats:
         st.markdown(ticker.render_html(stats), unsafe_allow_html=True)
@@ -3129,17 +3004,6 @@ def _render_bottom_ticker(readings: dict) -> None:
 current_alert, elapsed = None, None
 try:
     new_alerts.sort(key=_alert_priority)
-    # See MAX_WEATHER_BURST's own comment (config.py) — weather-kind
-    # alerts got their own real cap here for the same reason news
-    # already had one, just discovered later (live, on the kiosk
-    # screen) instead of up front. Already sorted most-severe-first
-    # within this bucket (_alert_priority's own severity sub-rank), so
-    # trimming the tail drops the lowest-severity excess, never a
-    # genuine hazard.
-    weather_only = [a for a in new_alerts if a.get("kind") == "weather"]
-    if len(weather_only) > MAX_WEATHER_BURST:
-        drop_ids = {id(a) for a in weather_only[MAX_WEATHER_BURST:]}
-        new_alerts = [a for a in new_alerts if id(a) not in drop_ids]
     if len(new_alerts) > MAX_BURST_ALERTS:
         overflow = len(new_alerts) - MAX_BURST_ALERTS
         news_only = [a for a in new_alerts if _alert_priority(a) == 10]
