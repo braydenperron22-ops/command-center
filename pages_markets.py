@@ -170,7 +170,11 @@ def render():
 # for "here's a plain-English read on a number" — same reasoning as
 # this page's own .tile-significant reuse just above.
 def _render_plumbing_section() -> None:
-    status = financial_plumbing_client.plumbing_status()
+    # cached_status(), not plumbing_status() — this page render must
+    # never be the thing that triggers a real (possibly ~5s, cold-
+    # cache) fetch; see financial_plumbing_client's own module-level
+    # comment for the live bug this caused.
+    status = financial_plumbing_client.cached_status()
     if not status:
         return
     tone = "bad" if status["overall"] == "UNUSUAL" else "good"

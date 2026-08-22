@@ -43,6 +43,7 @@ Three buckets, matching the session's own example mockup exactly
     category)."""
 
 import statistics
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import requests
@@ -155,17 +156,63 @@ def _series_reading(item: dict) -> dict | None:
     }
 
 
+# Session report, live photo evidence: two unrelated dashboard pages
+# visibly overlapping mid-transition, traced to plumbing_status() (and
+# golf_client.golfability) blocking their whole rerun for several
+# seconds on a cold cache — long enough that the app's own 5-second
+# autorefresh tick could fire again before the previous rerun
+# finished, landing two script runs' output in the DOM at once.
+#
+# First attempt: fetch all ~10 series concurrently via a thread pool
+# instead of one at a time. Measured live: barely moved the needle
+# (5.11s -> 4.83s), because fetch_throttle's own lock enforces a real
+# minimum gap between EVERY call project-wide, thread or no thread —
+# threading only overlaps each call's own network I/O, not the
+# throttle wait itself, and that wait is what actually dominates here.
+# Deliberately NOT worked around by shortening the gap for just this
+# module's own FRED calls either — the gap already sits close to
+# FRED's own real published rate limit, so beating it isn't "an
+# inefficiency to fix," it's the actual, legitimate cost of being a
+# well-behaved caller of a rate-limited API. (The thread pool stays —
+# it's still strictly faster and correct, just not the real fix.)
+#
+# The actual fix: stop letting a page's own render() ever be the thing
+# that triggers this fetch at all. cached_status() below always
+# returns instantly, whatever the LAST successful computation was —
+# real freshness comes from get_new_alerts() below, which already runs
+# unconditionally every single rerun regardless of which page is
+# showing (the same background check every other toast source in this
+# app already relies on), so the cache is essentially always warm by
+# the time a user's own page rotation actually reaches Markets. Only
+# that background path is still allowed to block; nothing rendered on
+# screen ever waits on it again.
+_last_good_status: dict | None = None
+
+
 def plumbing_status() -> dict | None:
     """{"overall": "NORMAL"|"UNUSUAL", "buckets": [{"key", "label",
-    "status", "detail", "readings": [...]}]} — None only if every
-    single series failed to fetch (FRED and Bank of Canada both
-    unreachable at once, same all-sources-down fallback shape every
-    other multi-source client in this app already uses)."""
+    "status", "detail", "readings": [...]}]} — a REAL fetch, possibly
+    slow on a cold cache (see the module-level comment above for why
+    this is no longer called from any page render). None only if every
+    single series failed to fetch AND nothing has ever succeeded this
+    process (FRED and Bank of Canada both unreachable at once, same
+    all-sources-down fallback shape every other multi-source client in
+    this app already uses) — falls back to the last real success
+    otherwise, same as everywhere else, not just None."""
+    global _last_good_status
+    all_series = [(key, bucket, s) for key, bucket in _BUCKETS.items() for s in bucket["series"]]
+    with ThreadPoolExecutor(max_workers=len(all_series)) as pool:
+        results = list(pool.map(lambda item: _series_reading(item[2]), all_series))
+    readings_by_bucket: dict[str, list[dict]] = {key: [] for key in _BUCKETS}
+    for (key, _, _), reading in zip(all_series, results):
+        if reading is not None:
+            readings_by_bucket[key].append(reading)
+
     buckets = []
     any_data = False
     overall_unusual = False
     for key, bucket in _BUCKETS.items():
-        readings = [r for r in (_series_reading(s) for s in bucket["series"]) if r is not None]
+        readings = readings_by_bucket[key]
         if not readings:
             continue
         any_data = True
@@ -179,8 +226,20 @@ def plumbing_status() -> dict | None:
             status, detail = "normal", f"{bucket['label']} normal"
         buckets.append({"key": key, "label": bucket["label"], "status": status, "detail": detail, "readings": readings})
     if not any_data:
-        return None
-    return {"overall": "UNUSUAL" if overall_unusual else "NORMAL", "buckets": buckets}
+        return _last_good_status
+    _last_good_status = {"overall": "UNUSUAL" if overall_unusual else "NORMAL", "buckets": buckets}
+    return _last_good_status
+
+
+def cached_status() -> dict | None:
+    """Whatever plumbing_status() last successfully computed, with NO
+    fetch of its own — always instant. This is what pages_markets.py's
+    tile actually calls; see the module-level comment above
+    plumbing_status for why a page render must never be the thing that
+    triggers a real, possibly-slow fetch. None only before this
+    process's very first successful plumbing_status() call (e.g. right
+    after a fresh deploy, before get_new_alerts has run even once)."""
+    return _last_good_status
 
 
 # "Only surface meaningful changes or stress" — fires once on the

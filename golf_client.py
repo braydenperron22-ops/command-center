@@ -267,18 +267,40 @@ def _demand_label(occupancy_pct: float) -> str:
     return "LOW"
 
 
+# Session report, live photo evidence: two unrelated dashboard pages
+# visibly overlapping mid-transition, traced to this function (and
+# financial_plumbing_client.plumbing_status) blocking a page's whole
+# rerun for several seconds on a cold cache — the tee-sheet scan alone
+# is a real 4-step session handshake plus several sequential searches
+# against the SAME course website, ~5s measured live, well past the
+# app's own 5-second autorefresh tick. Unlike financial_plumbing_
+# client's independent FRED/BoC reads, this one genuinely can't be
+# parallelized away — every call here shares one requests.Session (real
+# cookies), and requests.Session is not documented as safe for
+# concurrent use from multiple threads. The real fix is the same one
+# anyway: pages_household.py now calls cached_golfability() below,
+# never this function directly — only get_new_alerts() (which already
+# runs unconditionally every rerun regardless of page, same background
+# check every other toast source in this app relies on) is still
+# allowed to block.
+_last_good_golfability: dict | None = None
+
+
 def golfability(target_date: date | None = None) -> dict | None:
     """{"golfability", "playability", "busyness", "weather": {...},
     "occupancy_pct", "demand", "course_status", "slots": [...]} for
-    the given date (today by default). None only if BOTH real sources
-    (weather and the tee sheet) failed at once — a single source
-    failing still returns a partial, honestly-labeled result rather
-    than nothing."""
+    the given date (today by default) — a REAL fetch, possibly slow on
+    a cold cache (see the module-level comment above for why this is
+    no longer called from any page render). None only if BOTH real
+    sources (weather and the tee sheet) failed at once AND nothing has
+    ever succeeded this process — falls back to the last real success
+    otherwise, same as everywhere else, not just None."""
+    global _last_good_golfability
     target_date = target_date or date.today()
     weather = _course_weather()
     slots = tee_sheet(target_date)
     if weather is None and slots is None:
-        return None
+        return _last_good_golfability
 
     playability = _playability_score(weather) if weather else None
     occupancy_pct = round(max(0.0, min(100.0, 100 * (1 - len(slots) / _ASSUMED_DAILY_CAPACITY))), 0) if slots is not None else None
@@ -289,7 +311,7 @@ def golfability(target_date: date | None = None) -> dict | None:
     else:
         combined = playability if playability is not None else busyness
 
-    return {
+    _last_good_golfability = {
         "golfability": combined,
         "playability": playability,
         "busyness": busyness,
@@ -301,6 +323,18 @@ def golfability(target_date: date | None = None) -> dict | None:
         "course_status": "OPEN" if slots else ("FULLY BOOKED" if slots is not None else None),
         "slots": slots or [],
     }
+    return _last_good_golfability
+
+
+def cached_golfability() -> dict | None:
+    """Whatever golfability() last successfully computed, with NO
+    fetch of its own — always instant. This is what pages_household.py
+    actually calls; see the module-level comment above golfability for
+    why a page render must never be the thing that triggers a real,
+    possibly-slow fetch. None only before this process's very first
+    successful golfability() call (e.g. right after a fresh deploy,
+    before get_new_alerts has run even once)."""
+    return _last_good_golfability
 
 
 # Session's own overall framing for all four systems: "Most of the

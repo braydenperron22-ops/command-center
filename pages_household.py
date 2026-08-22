@@ -133,7 +133,11 @@ def _render_local_news() -> None:
 # "local conditions I'd otherwise have to check myself," which is
 # exactly what this is too.
 def _render_golf(now: datetime) -> None:
-    result = golf_client.golfability(now.date())
+    # cached_golfability(), not golfability() — this page render must
+    # never be the thing that triggers a real (possibly ~5s, cold-
+    # cache) fetch; see golf_client's own module-level comment for the
+    # live bug this caused.
+    result = golf_client.cached_golfability()
     if not result or result["golfability"] is None:
         return
     weather = result["weather"] or {}
