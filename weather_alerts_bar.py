@@ -453,14 +453,16 @@ def render_alert_bar(alert: dict) -> None:
     # explicitly asks for quiet (lightning, at least for now) skips it,
     # while still getting the same visible slide-in toast.
     silent_attr = ' data-silent="true"' if alert.get("silent", False) else ""
-    # Real siren clip for the two tiers that actually deserve to feel
-    # different from a routine toast — see this module's own top-of-
-    # file comment for why. app.py's kioskPlayWeatherAlert reads this
-    # (and the bar's own severity class) to decide whether to play this
-    # instead of the shared gentle chime, and whether to also trigger
-    # the full-screen menace overlay — both gated the same way, off the
-    # same two tiers, so they're never out of sync with each other.
-    menace_b64 = _alarm_base64() if alert.get("severity") in ("extreme", "warning") else None
+    # Real siren clip — session follow-up: "all of them get that sound"
+    # (originally scoped to just extreme/warning, see this module's own
+    # top-of-file comment). Every real EC alert now plays this instead
+    # of the shared gentle chime, regardless of tier. The full-screen
+    # menace overlay stays scoped to extreme/warning specifically
+    # (app.py's kioskPlayWeatherAlert checks the bar's own severity
+    # class for that, independently of this attribute) — that wasn't
+    # part of this follow-up, and a routine statement/watch still
+    # shouldn't red-pulse the whole screen the way a real warning does.
+    menace_b64 = _alarm_base64()
     menace_attr = f' data-alarm-b64="{menace_b64}"' if menace_b64 else ""
     st.markdown(
         f"""<div class="{bar_class}" data-summary="{summary}"{audio_attr} data-severe="{severe_attr}"{silent_attr}{menace_attr}>

@@ -1122,7 +1122,15 @@ components.html(
         "  var vol = kioskAlertVolume(severe);",
         "  var alarmB64 = el.getAttribute('data-alarm-b64');",
         "  var isMenace = !!alarmB64;",
-        "  if (isMenace) { kioskShowMenaceOverlay(14000); }",
+        // Session follow-up: "all of them get that sound" — every real
+        // EC alert now carries data-alarm-b64 (weather_alerts_bar.py's
+        // own change), so isMenace above is no longer specific to
+        // extreme/warning. The full-screen overlay stays scoped to
+        // just those two tiers though (that part of the original
+        // request still stands) — checked here independently, off the
+        // bar's own severity class, rather than off isMenace.
+        "  var isSevereVisual = el.classList.contains('weather-alert-bar-extreme') || el.classList.contains('weather-alert-bar-warning');",
+        "  if (isSevereVisual) { kioskShowMenaceOverlay(14000); }",
         "  if (isMenace) {",
         "    try {",
         "      var alarm = new Audio('data:audio/mpeg;base64,' + alarmB64);",
