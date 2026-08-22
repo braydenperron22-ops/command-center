@@ -79,6 +79,12 @@ _FORM_GAMES_SHOWN = 8
 # _AROUND_LEAGUES/_AROUND_PAGE_SIZE above, same 12s cadence.
 _UFC_CARD_PAGE_SIZE = 4
 _UFC_CARD_ROTATE_SECONDS = 12
+# How long a recent-action ticker line (_ufc_board_html) holds the
+# phase-line slot before reverting to the plain round/clock display —
+# long enough to actually read from across the room, short enough that
+# a real new development (or just the normal round/clock line) isn't
+# stuck waiting behind a stale one.
+_UFC_RECENT_EVENT_HOLD_SECONDS = 6
 
 
 def _fmt_countdown(target: datetime, now: datetime) -> str:
@@ -2364,18 +2370,6 @@ def _ufc_card_row_html(bout: dict) -> str:
     )
 
 
-def _parse_control_time_seconds(text: str | None) -> int:
-    """"1:24" -> 84 — only ever used to size the comparison bar below,
-    never displayed itself (ESPN's own "M:SS" string is what's actually
-    shown). 0 for None/empty/anything unparseable, same as a bout that
-    hasn't had any control time yet."""
-    if not text:
-        return 0
-    try:
-        minutes, seconds = text.split(":")
-        return int(minutes) * 60 + int(seconds)
-    except (ValueError, AttributeError):
-        return 0
 
 
 def _ufc_stat_bar_html(
@@ -2469,8 +2463,8 @@ def _ufc_stats_html(bout_id: str, fighter_a: dict, fighter_b: dict, stats: dict)
             fighter_b["short_name"],
             a.get("control_time") or "0:00",
             b.get("control_time") or "0:00",
-            _parse_control_time_seconds(a.get("control_time")),
-            _parse_control_time_seconds(b.get("control_time")),
+            ufc_client.parse_control_time_seconds(a.get("control_time")),
+            ufc_client.parse_control_time_seconds(b.get("control_time")),
         ),
     ]
     return f'<div class="jumbo-ufc-stats">{"".join(rows)}</div>'
@@ -2599,14 +2593,6 @@ def _ufc_board_html(ufc_state: dict, now: datetime) -> str:
     phase = ufc_state["phase"]
     bouts = event["bouts"]
     hero = bouts[-1] if phase == "countdown" else ufc_client.current_bout(event)
-
-    if phase == "countdown":
-        phase_html = f'<div class="jumbo-ufc-phase">STARTS IN {_fmt_countdown(event["start_time"], now)}</div>'
-    elif hero["state"] == "live":
-        phase_html = f'<div class="jumbo-ufc-phase jumbo-ufc-phase-live">LIVE · ROUND {hero["round"]} · {hero["clock"]}</div>'
-    else:
-        phase_html = '<div class="jumbo-ufc-phase">CARD UNDERWAY</div>'
-
     a, b = hero["fighter_a"], hero["fighter_b"]
 
     # Only once the hero bout has actually started — a countdown/
@@ -2619,6 +2605,38 @@ def _ufc_board_html(ufc_state: dict, now: datetime) -> str:
             stats = ufc_client.fetch_bout_stats(event["event_id"], hero["bout_id"], a["id"], b["id"])
         except Exception:
             stats = None
+
+    if phase == "countdown":
+        phase_html = f'<div class="jumbo-ufc-phase">STARTS IN {_fmt_countdown(event["start_time"], now)}</div>'
+    elif hero["state"] == "live":
+        # Recent-action ticker — session follow-up: "how else can we
+        # improve the viewing experience... I genuinely want to enjoy
+        # watching this." Temporarily takes over this same phase-line
+        # slot (no new panel space needed — this hero panel is already
+        # at its real height budget, see _ufc_tale_of_tape_html's own
+        # docstring on the live overflow bug that stays deliberately
+        # avoided) for a few seconds right after a real stat delta
+        # lands, then reverts to the plain round/clock line. Built from
+        # ufc_client.recent_event's own attributed stat-delta detection,
+        # not ESPN's unattributed play-by-play log — see that module's
+        # own comment for why. Held in session_state (not just "was the
+        # most recent recent_event() call non-None") since a genuine
+        # delta is only ever detected on the ONE rerun it actually
+        # lands — every rerun straight after would otherwise see zero
+        # further delta and revert instantly, showing it for well under
+        # one 5s autorefresh tick.
+        recent = ufc_client.recent_event(hero["bout_id"], a, b, stats)
+        hold_key = f"jumbotron_ufc_recent_{hero['bout_id']}"
+        if recent:
+            st.session_state[hold_key] = {**recent, "at": time.time()}
+        held = st.session_state.get(hold_key)
+        if held and time.time() - held["at"] < _UFC_RECENT_EVENT_HOLD_SECONDS:
+            tone_class = f" jumbo-ufc-phase-recent-{held['accent']}"
+            phase_html = f'<div class="jumbo-ufc-phase jumbo-ufc-phase-live{tone_class}">{html.escape(held["text"])}</div>'
+        else:
+            phase_html = f'<div class="jumbo-ufc-phase jumbo-ufc-phase-live">LIVE · ROUND {hero["round"]} · {hero["clock"]}</div>'
+    else:
+        phase_html = '<div class="jumbo-ufc-phase">CARD UNDERWAY</div>'
 
     a_kd_badge = _ufc_kd_badge_html(stats["fighter_a"] if stats else None)
     b_kd_badge = _ufc_kd_badge_html(stats["fighter_b"] if stats else None)

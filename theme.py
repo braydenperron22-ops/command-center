@@ -1138,7 +1138,7 @@ html, body, [class*="css"] {
    Habs red (session request: "make it red i guess," same red the
    breaking-news bar already uses since that's genuinely the Canadiens'
    own color too). */
-.sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl, .sports-alert-bar-goalline {
+.sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl, .sports-alert-bar-goalline, .sports-alert-bar-ufc {
     position: fixed;
     left: 0;
     right: 0;
@@ -1180,6 +1180,20 @@ html, body, [class*="css"] {
     background: linear-gradient(90deg, #7a6a3f 0%, #b3993f 50%, #7a6a3f 100%);
     box-shadow: 0 -4px 24px rgba(179,153,63,0.35);
     animation: toast-pulse-gold 1.6s ease-in-out infinite;
+}
+/* UFC knockdown toast (ufc_client.get_new_alerts) — session follow-up:
+   "I genuinely want to enjoy watching this... but I don't know how" —
+   a knockdown is the one UFC moment that deserves the same "impossible
+   to miss" treatment the goal-line toast above gets, not a routine
+   team-color bar. Same hot corner-red the jumbotron's own fighter-a
+   accent already uses (#FF3B30, see .jumbo-ufc-photo-a's own comment),
+   not UFC's real black/red brand identity — this app has no license
+   to reproduce that, just the same red already established elsewhere
+   on this board for this exact fighter side. */
+.sports-alert-bar-ufc {
+    background: linear-gradient(90deg, #7a1108 0%, #cc2c1a 50%, #7a1108 100%);
+    box-shadow: 0 -4px 26px rgba(204,44,26,0.45);
+    animation: toast-pulse-red 1.1s ease-in-out infinite;
 }
 .sports-alert-score {
     display: flex;
@@ -3038,6 +3052,7 @@ html, body, [class*="css"] {
 .stElementContainer:has(.sports-alert-bar-nhl),
 .stElementContainer:has(.sports-alert-bar-nfl),
 .stElementContainer:has(.sports-alert-bar-goalline),
+.stElementContainer:has(.sports-alert-bar-ufc),
 .stElementContainer:has(.weather-alert-bar-watch),
 .stElementContainer:has(.weather-alert-bar-statement),
 .stElementContainer:has(.weather-statement-bar) {
@@ -4504,6 +4519,17 @@ html, body, [class*="css"] {
     padding: 10px 0 0;
 }
 .jumbo-ufc-phase-live { color: var(--live); animation: jumbo-blink 1.4s infinite; }
+/* Recent-action ticker (pages_jumbotron._ufc_board_html) — session
+   follow-up: "how else can we improve the viewing experience... I
+   genuinely want to enjoy watching this." Temporarily replaces the
+   plain round/clock line above with what just happened, colored by
+   which fighter did it (same red/blue corner pair as the photos/stat
+   bars) — no blink here (that's specifically the ever-present "LIVE"
+   cue above), a plain solid color reads as "this already happened,"
+   not "watch this space." */
+.jumbo-ufc-phase-recent-a, .jumbo-ufc-phase-recent-b { animation: none; }
+.jumbo-ufc-phase-recent-a { color: #FF3B30; }
+.jumbo-ufc-phase-recent-b { color: #5AC8FA; }
 .jumbo-ufc-hero {
     flex: 0 0 auto;
     display: flex;
@@ -5351,7 +5377,7 @@ html, body, [class*="css"] {
     }
     .news-alert-bar, .news-alert-bar-market, .commute-alert-bar,
     .sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl,
-    .sports-alert-bar-goalline {
+    .sports-alert-bar-goalline, .sports-alert-bar-ufc {
         padding: 0.7rem 1rem;
     }
     .news-alert-headline, .top-alert-headline { font-size: 0.95rem; }

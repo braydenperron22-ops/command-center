@@ -2904,6 +2904,19 @@ try:
 except Exception:
     pass
 
+# UFC knockdown toasts — session follow-up: "how else can we improve
+# the viewing experience... I genuinely want to enjoy watching this."
+# Own module (ufc_client.py), same isolation reasoning as every other
+# block here. Runs unconditionally every rerun regardless of page (a
+# knockdown is worth knowing about even if the kiosk isn't currently
+# showing the UFC takeover) but is a fast no-op almost all the time —
+# get_new_alerts itself gates on the Saturday-5pm+ coverage window and
+# a genuinely live bout before it ever calls fetch_bout_stats.
+try:
+    new_alerts.extend(ufc_client.get_new_alerts(now))
+except Exception:
+    pass
+
 # Cache-warming for pages whose render() used to call a real, possibly-
 # slow fetch directly (Portfolio/Predictions/Market-Internals/Email/
 # Conflicts/Weather-Hourly — each independently confirmed live to block

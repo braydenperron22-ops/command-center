@@ -392,3 +392,159 @@ def takeover_state(now: datetime) -> dict | None:
         return None
     phase = "live" if event["state"] == "live" else "countdown"
     return {"phase": phase, "event": event}
+
+
+# --- Toast alerts + recent-action ticker (stat-delta based) -------------
+# Session follow-up: "how else can we improve the viewing experience...
+# I genuinely want to enjoy watching this... but I don't know how."
+# Two asks: a toast for big moments, and a compact "recent action" line.
+# Both come from fetch_bout_stats' own per-fighter numbers, not ESPN's
+# raw play-by-play log (comp["details"]/the core-API "plays" endpoint) —
+# checked live against a full finished bout: every single entry there
+# (Takedown, Takedown Attempt, Round Start/End, Walkout...) carries only
+# a bare type/period/clock, genuinely no fighter attribution anywhere,
+# for the entire fight. Reporting "TAKEDOWN" with no name would be
+# honest but nearly useless; the per-fighter stats this module already
+# polls for the stat bars ARE attributed, so both features are built by
+# comparing this poll's numbers against the last poll's, per fighter,
+# instead — real, attributed data, not a compromise version of the
+# ticker idea.
+_last_seen_stats: dict[str, dict] = {}
+_last_seen_kd: dict[str, dict] = {}
+# A real, sustained control sequence, not just the clock ticking one
+# second — see recent_event's own docstring.
+CONTROL_TIME_DELTA_SECONDS = 8
+
+
+def parse_control_time_seconds(text: str | None) -> int:
+    """"1:24" -> 84 — used both to size pages_jumbotron.py's own stat
+    comparison bar and (below) to detect a real control-time delta, so
+    it lives here rather than duplicated in both modules. 0 for None/
+    empty/anything unparseable, same as a bout that hasn't had any
+    control time yet."""
+    if not text:
+        return 0
+    try:
+        minutes, seconds = text.split(":")
+        return int(minutes) * 60 + int(seconds)
+    except (ValueError, AttributeError):
+        return 0
+
+
+# Ranked most-notable first — a poll can see several deltas land at
+# once (a burst of strikes plus a takedown between two 5s polls isn't
+# rare), and only the single most notable one is worth a ticker line;
+# showing all of them at once would read as noise, not a broadcast cue.
+_EVENT_PRIORITY = ["knockdowns", "takedowns_landed", "sig_strikes_landed", "control_time"]
+_EVENT_LABEL = {
+    "knockdowns": "KNOCKDOWN",
+    "takedowns_landed": "TAKEDOWN",
+    "sig_strikes_landed": "SIG. STRIKE",
+    "control_time": "TAKES CONTROL",
+}
+
+
+def recent_event(bout_id: str, fighter_a: dict, fighter_b: dict, stats: dict | None) -> dict | None:
+    """{"text", "accent"} for the single most notable stat change since
+    the last time this was called for this bout, or None if nothing
+    changed (the common case — most 5s polls see no real delta) or
+    `stats` itself is None. Compares real per-fighter numbers to the
+    last-seen snapshot rather than reading anything off ESPN's own
+    unattributed play-by-play log — see this section's own top comment
+    for why. control_time is compared in whole seconds (its own
+    "1:24"-style display string isn't directly comparable) via
+    parse_control_time_seconds, and only flagged once it grows by a
+    real amount (CONTROL_TIME_DELTA_SECONDS) rather than every single
+    second it ticks up, which would otherwise dominate every poll
+    during any real grappling exchange."""
+    if not stats:
+        return None
+    prev = _last_seen_stats.get(bout_id)
+    _last_seen_stats[bout_id] = stats
+    if prev is None:
+        return None
+
+    def val(fighter_stats: dict, key: str) -> float:
+        raw = fighter_stats.get(key)
+        if key == "control_time":
+            return parse_control_time_seconds(raw)
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+
+    for key in _EVENT_PRIORITY:
+        for side, fighter, tone in (("fighter_a", fighter_a, "a"), ("fighter_b", fighter_b, "b")):
+            delta = val(stats[side], key) - val(prev[side], key)
+            if key == "control_time" and delta < CONTROL_TIME_DELTA_SECONDS:
+                continue
+            if key != "control_time" and delta < 1:
+                continue
+            return {"text": f"{fighter['short_name']} {_EVENT_LABEL[key]}", "accent": tone}
+    return None
+
+
+def get_new_alerts(now: datetime) -> list[dict]:
+    """A toast for a genuine knockdown — {"kind": "sports", "sport":
+    "ufc", ...}, the exact shape sports_alerts.render_alert_bar already
+    renders (reused directly rather than building a parallel toast
+    path — see theme.py's own .sports-alert-bar-ufc for the one new
+    thing that shape needed). [] outside the Saturday-5pm+ coverage
+    window (same gate takeover_state uses) or when nothing's changed.
+    Knockdowns specifically, not every stat delta recent_event also
+    tracks — a knockdown is the one moment genuinely worth a toast on
+    its own; the rest is what the jumbotron's own ticker line is for."""
+    if now.weekday() != 5 or now.hour < COVERAGE_START_HOUR:
+        return []
+    event = fetch_event_for_date(now.date())
+    if event is None or event["state"] != "live":
+        return []
+    bout = current_bout(event)
+    if not bout or bout["state"] != "live":
+        return []
+    try:
+        stats = fetch_bout_stats(event["event_id"], bout["bout_id"], bout["fighter_a"]["id"], bout["fighter_b"]["id"])
+    except Exception:
+        return []
+    if not stats:
+        return []
+
+    prev_kd = _last_seen_kd.get(bout["bout_id"])
+    current_kd = {
+        "fighter_a": int(float(stats["fighter_a"].get("knockdowns") or 0)),
+        "fighter_b": int(float(stats["fighter_b"].get("knockdowns") or 0)),
+    }
+    _last_seen_kd[bout["bout_id"]] = current_kd
+    if prev_kd is None:
+        return []
+
+    alerts = []
+    for side, fighter, opponent in (
+        ("fighter_a", bout["fighter_a"], bout["fighter_b"]),
+        ("fighter_b", bout["fighter_b"], bout["fighter_a"]),
+    ):
+        if current_kd[side] > prev_kd.get(side, 0):
+            try:
+                profile = fetch_fighter_profile(fighter["id"])
+            except Exception:
+                profile = None
+            try:
+                opp_profile = fetch_fighter_profile(opponent["id"])
+            except Exception:
+                opp_profile = None
+            alerts.append(
+                {
+                    "kind": "sports",
+                    "type": "score",
+                    "sport": "ufc",
+                    "team_label": "UFC",
+                    "team_logo": (profile or {}).get("headshot") or "",
+                    "opponent_logo": (opp_profile or {}).get("headshot") or "",
+                    "team_score": None,
+                    "opp_score": None,
+                    "description": f"KNOCKDOWN! {fighter['name']} rocks {opponent['name']}",
+                    "flash_color": (255, 59, 48),
+                    "spoken": f"Knockdown! {fighter['name']} rocks {opponent['name']}",
+                }
+            )
+    return alerts
