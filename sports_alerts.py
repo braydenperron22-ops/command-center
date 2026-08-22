@@ -460,18 +460,37 @@ def _nhl_scoring_plays(game_id: int) -> list[dict]:
 
 
 def _nfl_scoring_plays(game_id: int) -> list[dict]:
-    """Deliberately, permanently a no-op — the Saints' own jumbotron
-    integration is a lighter tier by design (see sports_client.py's own
-    comment above NFL_TEAM_SCHEDULE_URL): there's no equally rich free
-    NFL play-by-play source the way MLB Stats API's live feed and the
-    NHL API's landing endpoint are, so no live scoring-play toasts/Govee
-    flashes for Saints games. Still needs a real entry in
-    _SCORING_PLAY_FETCHERS below (get_new_alerts calls it unconditionally
-    for every live game in _LEAGUES) — an always-empty list means that
-    loop simply never has anything to report for football, while
-    pregame/start/final alerts (which don't go through this) still
-    fire normally."""
-    return []
+    """Every scoring play so far in this game — {"play_id",
+    "description", "away_score", "home_score"}, same shape/purpose as
+    _mlb_scoring_plays/_nhl_scoring_plays above. Used to be a
+    deliberate, permanent no-op — flagged at the time as "no equally
+    rich free NFL play-by-play source the way MLB Stats API's live feed
+    and the NHL API's landing endpoint are." That turned out to be
+    wrong: ESPN's own summary endpoint (scores_client.fetch_summary,
+    already used elsewhere in this app for win probability/leaders/
+    game_blurb) carries a real top-level "scoringPlays" array in
+    exactly this shape — confirmed live (Rams @ Saints, 2026-08-22).
+    Session report that caught the gap: "they just scored another
+    touchdown, and I didn't get a single alert." Same broadcast-delay
+    wrapping (sports_client.delayed) the MLB/NHL versions use, for the
+    same reason theirs do — see that function's own docstring."""
+    match = {"sport": "football", "league": "nfl", "event_id": game_id}
+    summary = scores_client.fetch_summary(match)
+    out = []
+    for p in summary.get("scoringPlays") or []:
+        description = p.get("text")
+        play_id = p.get("id")
+        if not description or play_id is None:
+            continue
+        out.append(
+            {
+                "play_id": f"nfl-{game_id}-{play_id}",
+                "description": description,
+                "away_score": p.get("awayScore"),
+                "home_score": p.get("homeScore"),
+            }
+        )
+    return sports_client.delayed(f"nfl_alert_scoring_{game_id}", out)
 
 
 _SCORING_PLAY_FETCHERS = {"mlb": _mlb_scoring_plays, "nhl": _nhl_scoring_plays, "nfl": _nfl_scoring_plays}
@@ -653,15 +672,15 @@ def get_new_alerts(now: datetime) -> list[dict]:
                         "description": play["description"],
                         "flash_color": league["flash_color"],
                         # Session request: "add the scoring play for the
-                        # Habs, Jays and Saints [voice]." Real scoring-play
-                        # detection only exists for MLB/NHL (see
-                        # _nfl_scoring_plays's own docstring on why that's
-                        # permanent, not a gap) — spoken only for a real
-                        # scoring play specifically, not the streak entries
-                        # (a K-streak reads oddly read aloud as a "scoring
-                        # play"), team-labeled since MLB's own live-feed
-                        # sentence and NHL's built one don't always name
-                        # the team plainly on their own.
+                        # Habs, Jays and Saints [voice]." Now real for all
+                        # three leagues (see _nfl_scoring_plays's own
+                        # docstring for when NFL's own gap closed) —
+                        # spoken only for a real scoring play specifically,
+                        # not the streak entries (a K-streak reads oddly
+                        # read aloud as a "scoring play"), team-labeled
+                        # since MLB's own live-feed sentence and NHL's
+                        # built one don't always name the team plainly on
+                        # their own.
                         "spoken": f"{league['label'].title()}: {play['description']}" if play_type == "score" else None,
                     }
                 )
