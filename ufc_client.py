@@ -34,6 +34,7 @@ import streamlit as st
 
 import data_health
 import fetch_throttle
+import sports_client
 from config import TIMEZONE
 
 UFC_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard"
@@ -244,12 +245,27 @@ def fetch_bout_stats(event_id: str, bout_id: str, fighter_a_id: str, fighter_b_i
     returns a real dict of zeros (an honest "nothing's happened," not
     missing data), so this isn't gated on bout state; callers decide
     whether zeros are worth showing (see pages_jumbotron._ufc_board_html
-    — pregame countdown skips this entirely, nothing to show yet)."""
+    — pregame countdown skips this entirely, nothing to show yet).
+
+    Session report: "can we incorporate the same delay mode as we have
+    with the ESPN API... it's low key spoiling some of the data before
+    I even know what's going on." Wrapped through sports_client.
+    delayed() — the same broadcast-delay buffer sports_alerts.py's own
+    MLB/NHL/NFL scoring-play toasts already use, for the same reason
+    theirs do (session precedent: "just got an alert way before the
+    actual play happened"). Applied once, here at the shared source,
+    rather than at each caller separately: the jumbotron's own stat
+    bars, the recent-action ticker (recent_event, below — its delta
+    comparison naturally stays correct either way, since both sides of
+    the comparison are equally delayed), and the knockdown toast
+    (get_new_alerts, below) all read through this one function, so
+    delaying it here means all three move in lockstep at the same
+    trailing pace instead of the numbers updating live while only the
+    ticker/toast explaining them lagged behind."""
     a = _fighter_stat_line(event_id, bout_id, fighter_a_id)
     b = _fighter_stat_line(event_id, bout_id, fighter_b_id)
-    if a is None or b is None:
-        return None
-    return {"fighter_a": a, "fighter_b": b}
+    result = {"fighter_a": a, "fighter_b": b} if a is not None and b is not None else None
+    return sports_client.delayed(f"ufc_stats_{bout_id}", result)
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
