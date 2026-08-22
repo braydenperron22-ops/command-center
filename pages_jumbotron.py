@@ -340,16 +340,30 @@ _NFL_ORDINALS = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
 def _nfl_situation_html(match: dict | None, game: dict) -> str:
     """Quarter + game clock, down & distance, live possession, red
     zone, and timeouts remaining — pulled from ESPN's own scoreboard
-    "situation" object (match["situation"]), which this app was
-    already fetching (find_espn_competition -> the scoreboard raw
-    event, same object _win_probability_html/_top_performers_html
-    already use via _espn_match_for, so this costs nothing extra) but
-    barely reading: only down/distance were parsed before, with no
-    possession/red-zone/timeouts at all — flagged at the time as
-    "built during the NFL offseason, never confirmed against a real
-    live game." First live game (Rams @ Saints, 2026-08-22) confirmed
-    the fuller shape live: downDistanceText, possession, isRedZone,
-    home/awayTimeouts all populate exactly as ESPN's own docs suggest.
+    "situation" object, which this app was already fetching
+    (find_espn_competition -> the scoreboard raw event, same object
+    _win_probability_html/_top_performers_html already use via
+    _espn_match_for, so this costs nothing extra) but barely reading:
+    only down/distance were parsed before, with no possession/
+    red-zone/timeouts at all — flagged at the time as "built during the
+    NFL offseason, never confirmed against a real live game." First
+    live game (Rams @ Saints, 2026-08-22) confirmed the fuller shape
+    live: downDistanceText, possession, isRedZone, home/awayTimeouts
+    all populate exactly as ESPN's own docs suggest.
+
+    `match` is _espn_match_for's own {"event_id","competition","sport",
+    "league"} wrapper, not the raw ESPN competition object directly —
+    same convention _win_probability_html/leaders_with_headshots
+    already use (they read match["competition"]/match["sport"] etc.
+    themselves rather than expecting an already-unwrapped dict). Live
+    bug, first deploy: this function skipped that unwrap and read
+    straight off `match`, so every field silently came back empty in
+    the real render path — confirmed nothing showed at all ("I also
+    can't see time, and downs, and quarter, and anything," reported
+    even after a separate, real overflow bug in the same commit was
+    also fixed) despite a passing unit test, because that test had
+    manually pre-unwrapped match["competition"] before calling this,
+    masking the exact mismatch the real call site hits.
 
     Possession is read from ESPN's own competitor "homeAway" field,
     not name-matching team strings — "Saints" (this app's own short
@@ -358,7 +372,8 @@ def _nfl_situation_html(match: dict | None, game: dict) -> str:
     of the matchup has the ball."""
     if not match:
         return ""
-    status = match.get("status") or {}
+    competition = match.get("competition") or {}
+    status = competition.get("status") or {}
     period = status.get("period")
     clock = status.get("displayClock")
     game_id = game["game_id"]
@@ -369,7 +384,7 @@ def _nfl_situation_html(match: dict | None, game: dict) -> str:
     if clock:
         parts.append(f'<span class="jumbo-clockbig">{html.escape(str(clock))}</span>')
 
-    situation = match.get("situation") or {}
+    situation = competition.get("situation") or {}
     down_text = situation.get("downDistanceText") or situation.get("shortDownDistanceText")
     is_red_zone = bool(situation.get("isRedZone"))
     if down_text:
@@ -383,7 +398,7 @@ def _nfl_situation_html(match: dict | None, game: dict) -> str:
     possession_id = situation.get("possession")
     if possession_id:
         possession_home = next(
-            (c.get("homeAway") == "home" for c in match.get("competitors", []) if c.get("id") == possession_id),
+            (c.get("homeAway") == "home" for c in competition.get("competitors", []) if c.get("id") == possession_id),
             None,
         )
         if possession_home is not None:
