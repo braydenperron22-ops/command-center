@@ -880,6 +880,38 @@ def fetch_all_nhl_standings() -> list[dict]:
     return out
 
 
+def _nfl_live_scoreboard_score(game_id) -> tuple[int | None, int | None] | None:
+    """(home_score, away_score) straight from the scoreboard endpoint's
+    own fast 5s cache (NFL_LIVE_DETAIL_CACHE_TTL_SECONDS — the same one
+    fetch_nfl_live_detail already polls), for a game_id currently on
+    today's scoreboard. None if it isn't there or the fetch fails.
+
+    Exists because NFL_TEAM_SCHEDULE_URL — what _normalize_nfl_game
+    below otherwise reads score from — confirmed live to leave every
+    competitor's own "score" field null for the entire time a game is
+    actually in progress (only populating once the game reaches its
+    final state), which silently read as a real 0-0 scoreline on
+    screen throughout a live game rather than a missing-data gap.
+    Session report: "it's literally not showing the score... it's
+    saying zero zero when that's a lie.\""""
+    try:
+        events = _fetch_nfl_scoreboard_raw()
+    except Exception:
+        return None
+    for e in events:
+        if e.get("id") != str(game_id):
+            continue
+        comp = (e.get("competitions") or [{}])[0]
+        scores: dict[str, int | None] = {}
+        for c in comp.get("competitors", []):
+            try:
+                scores[c.get("homeAway")] = int(c.get("score"))
+            except (TypeError, ValueError):
+                scores[c.get("homeAway")] = None
+        return scores.get("home"), scores.get("away")
+    return None
+
+
 def _normalize_nfl_game(e: dict) -> dict:
     comp = e["competitions"][0]
     home = next(c for c in comp["competitors"] if c["homeAway"] == "home")
@@ -903,13 +935,24 @@ def _normalize_nfl_game(e: dict) -> dict:
         except (TypeError, ValueError):
             return None
 
+    team_score, opp_score = score(us), score(opp)
+    # See _nfl_live_scoreboard_score's own docstring for the live bug
+    # this closes — the schedule endpoint's own score field is real
+    # once "final", but null the whole time a game is actually "live".
+    if state == "live":
+        live = _nfl_live_scoreboard_score(e["id"])
+        if live:
+            home_score, away_score = live
+            team_score = home_score if is_home else away_score
+            opp_score = away_score if is_home else home_score
+
     return {
         "game_id": e["id"],
         "opponent": opp["team"]["displayName"],
         "opponent_logo": _nfl_logo_url(opp["team"]["abbreviation"]),
         "is_home": is_home,
-        "team_score": score(us),
-        "opp_score": score(opp),
+        "team_score": team_score,
+        "opp_score": opp_score,
         "state": state,
         "start_time": _to_local(e["date"]),
         "level": NFL_GAME_LEVEL.get((e.get("seasonType") or {}).get("type"), "regular"),
