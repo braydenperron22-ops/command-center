@@ -21,6 +21,7 @@ import cpp_payment_dates
 import data_health
 import ec_forecast
 import email_client
+import fetch_throttle
 import evening_briefing
 import govee_lighting
 import groq_client
@@ -28,6 +29,7 @@ import headline_rotation
 import holidays_client
 import lightning_client
 import local_news_client
+import market_internals
 import market_volatility_alert
 import market_yf_client
 import morning_briefing
@@ -51,6 +53,7 @@ import pages_today
 import pages_weather
 import payday_schedule
 import persisted_state
+import portfolio_client
 import precip_nowcast_client
 import prediction_markets_client
 import road_conditions
@@ -64,6 +67,7 @@ import toast_queue
 import ufc_client
 import waste_schedule
 import weather_alerts_bar
+import weather_client
 import weather_records_client
 import wildfire_client
 from config import (
@@ -2852,6 +2856,25 @@ try:
     new_alerts.extend(market_volatility_alert.get_new_alerts(now))
 except Exception:
     pass
+
+# Cache-warming for pages whose render() used to call a real, possibly-
+# slow fetch directly (Portfolio/Predictions/Market-Internals/Email/
+# Conflicts/Weather-Hourly — each independently confirmed live to block
+# past app.py's 5s st_autorefresh window on a cold cache and blend
+# pages together on screen; see each module's own warm_cache/
+# warm_data_series_cache/warm_daily_feed docstring for its specific
+# evidence). Every call here shares one wall-clock budget via
+# fetch_throttle.run_bounded — see that function's own docstring for
+# why a plain unbounded call isn't enough on its own (a single slow
+# source, e.g. Portfolio's ~14s cold, can still block the whole loop
+# even with nothing else running).
+_toast_budget_start = time.time()
+fetch_throttle.run_bounded("portfolio_warm", portfolio_client.warm_cache, _toast_budget_start)
+fetch_throttle.run_bounded("predictions_warm", prediction_markets_client.warm_data_series_cache, _toast_budget_start)
+fetch_throttle.run_bounded("market_internals_warm", market_internals.warm_cache, _toast_budget_start)
+fetch_throttle.run_bounded("email_warm", email_client.warm_daily_feed, _toast_budget_start)
+fetch_throttle.run_bounded("conflicts_warm", pages_conflicts.warm_cache, _toast_budget_start)
+fetch_throttle.run_bounded("weather_warm", weather_client.warm_cache, _toast_budget_start)
 
 # Radar-based severe/tracking-started toast alerts (ec_radar.
 # severe_weather_alert / tracking_started_alert) removed along with the

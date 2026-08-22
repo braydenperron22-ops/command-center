@@ -356,3 +356,42 @@ def daily_forecast() -> list[dict]:
         return result
     except Exception:
         return _normalize_ec_daily(ec_forecast.daily_forecast())
+
+
+# fetch_weather/hourly_forecast/daily_forecast above each degrade
+# gracefully on a genuine failure (last-good or an independent EC
+# fallback), but none of that helps the live bug this closes: each one
+# is only ever called from its own single page (pages_hourly.py /
+# pages_weather.py), so a cold 15-minute st.cache_data expiry means
+# that page's own render() pays the real Open-Meteo fetch cost
+# synchronously — risking blocking past app.py's 5s st_autorefresh
+# window and blending pages together on screen (Weather's 7-day
+# forecast was named in the very first live report of this bug class).
+# warm_cache below is wired into app.py's toast-check loop instead (via
+# fetch_throttle.run_bounded); both pages now read only the cached_*
+# accessors, which never fetch anything themselves.
+_last_good_hourly: list[dict] = []
+_last_good_daily: list[dict] = []
+
+
+def warm_cache() -> None:
+    global _last_good_hourly, _last_good_daily
+    fetch_weather()
+    hourly = hourly_forecast()
+    if hourly:
+        _last_good_hourly = hourly
+    daily = daily_forecast()
+    if daily:
+        _last_good_daily = daily
+
+
+def cached_weather() -> dict | None:
+    return _last_good_weather
+
+
+def cached_hourly_forecast() -> list[dict]:
+    return _last_good_hourly
+
+
+def cached_daily_forecast() -> list[dict]:
+    return _last_good_daily

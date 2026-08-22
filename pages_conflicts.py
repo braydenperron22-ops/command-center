@@ -277,6 +277,37 @@ def _ai_overview(headlines: list[dict]) -> list[dict] | None:
     return _parse(result)
 
 
+# Live bug, seen more than once, most recently reported as the Conflicts
+# page blending with the Predictions ("macro") page: render() used to
+# call _ai_overview (a real Groq call on any REFRESH_SECONDS cache miss
+# — confirmed live at 13.27s cold for a real gpt-oss-120b generation)
+# directly, meaning whichever rerun happened to land on this page right
+# as the 24h cache went stale paid that cost synchronously, blocking
+# past app.py's 5s st_autorefresh window. That corrupts the Streamlit
+# rerun and blends pages together on screen. warm_cache below is wired
+# into app.py's toast-check loop instead (via fetch_throttle.
+# run_bounded); render() now reads only cached_overview, which never
+# calls the AI itself. groq_client.generate_periodic's own 24h internal
+# cache means warm_cache is a fast already-cached read on every rerun
+# except the one that happens to cross the daily refresh boundary.
+_last_good_entries: list[dict] | None = None
+
+
+def warm_cache() -> None:
+    global _last_good_entries
+    headline_pool = conflict_news.fetch_conflict_headlines()
+    try:
+        entries = _ai_overview(headline_pool)
+    except Exception:
+        entries = None
+    if entries:
+        _last_good_entries = entries
+
+
+def cached_overview() -> list[dict] | None:
+    return _last_good_entries
+
+
 def render():
     """Session request: "hide the rss feed but let the ai see them for
     the conflict recap" — the raw sourced headlines used to be listed
@@ -284,15 +315,11 @@ def render():
     conflict-headlines markup); each tile is now just the AI's own
     synthesis, no visible headline list. The underlying fetch and the
     AI's own use of the full pool are both completely unchanged —
-    headline_pool below still goes into _ai_overview in full, this only
-    changes what render() puts on screen afterward."""
+    headline_pool still goes into _ai_overview in full via warm_cache
+    above, this only changes what render() puts on screen afterward."""
     st.markdown('<div class="page-title page-title-conflicts">Ongoing Conflicts — AI Overview</div>', unsafe_allow_html=True)
 
-    headline_pool = conflict_news.fetch_conflict_headlines()
-    try:
-        entries = _ai_overview(headline_pool)
-    except Exception:
-        entries = None
+    entries = cached_overview()
 
     if not entries:
         st.markdown(

@@ -233,6 +233,9 @@ def _fetch_history_by_account() -> dict[str, list[tuple[str, float]]] | None:
     return {name: sorted(by_date.items()) for name, by_date in by_name.items()}
 
 
+_last_good_value_history: list[float] | None = None
+
+
 def fetch_value_history(days: int = 180) -> list[float] | None:
     """Daily total portfolio value (every real account, same scope as
     fetch_portfolio's own total_cad) over the trailing `days` — for a
@@ -240,13 +243,15 @@ def fetch_value_history(days: int = 180) -> list[float] | None:
     account's own history begins just sums whatever's actually
     available for that date rather than being excluded outright (unlike
     _period_change_pct's stricter all-or-nothing inclusion for a real %
-    number). None if there's not enough history to draw a real trend."""
+    number). Falls back to the last successful result on any failure —
+    see this module's own warm_cache/cached_value_history for why."""
+    global _last_good_value_history
     try:
         series_by_account = _fetch_history_by_account()
     except Exception:
-        return None
+        return _last_good_value_history
     if not series_by_account:
-        return None
+        return _last_good_value_history
 
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     totals: dict[str, float] = {}
@@ -256,8 +261,10 @@ def fetch_value_history(days: int = 180) -> list[float] | None:
                 continue
             totals[d] = totals.get(d, 0.0) + v
     if len(totals) < 2:
-        return None
-    return [v for _, v in sorted(totals.items())]
+        return _last_good_value_history
+    result = [v for _, v in sorted(totals.items())]
+    _last_good_value_history = result
+    return result
 
 
 def _period_change(
@@ -609,3 +616,32 @@ def fetch_changes() -> dict | None:
     }
     _last_good_changes = result
     return result
+
+
+# pages_portfolio.py's own render() used to call fetch_changes/
+# fetch_value_history/fetch_activities directly — each a real SnapTrade
+# call (per-account balance history, several accounts) confirmed live
+# to take up to ~14s combined on a cold cache. Live bug: this page
+# blocking past app.py's 5s st_autorefresh window, corrupting the
+# Streamlit rerun and blending pages together on screen. warm_cache
+# below is wired into app.py's toast-check loop instead (via
+# fetch_throttle.run_bounded, not called directly — see that function's
+# own docstring for why a plain unbounded call isn't enough on its
+# own); render() now reads only the cached_* accessors, which never
+# fetch anything themselves.
+def cached_changes() -> dict | None:
+    return _last_good_changes
+
+
+def cached_value_history() -> list[float] | None:
+    return _last_good_value_history
+
+
+def cached_activities() -> list[dict] | None:
+    return _last_good_activities
+
+
+def warm_cache() -> None:
+    fetch_changes()
+    fetch_value_history(days=180)
+    fetch_activities(limit=14)

@@ -152,11 +152,16 @@ def _global_consensus_html() -> str:
 
 
 def _macro_hero_html(readings: dict, fred_api_key: str | None) -> str:
-    series = pmc.next_data_series()
+    # cached_next_data_series()/cached_data_forecast(), not the real
+    # next_data_series()/current_data_forecast() — this page render
+    # must never be the thing that triggers a real (a Polymarket search
+    # per tracked series, ~14s cold) fetch; see prediction_markets_
+    # client's own module comment for the live bug this caused.
+    series = pmc.cached_next_data_series()
     if series is None:
         return '<div class="tile-prev">data unavailable</div>'
     cfg = pmc.DATA_SERIES[series]
-    forecast_data = pmc.current_data_forecast(series)
+    forecast_data = pmc.cached_data_forecast(series)
     if not forecast_data:
         return '<div class="tile-prev">data unavailable</div>'
     unit = cfg["unit"]
