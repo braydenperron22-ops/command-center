@@ -2378,7 +2378,9 @@ def _parse_control_time_seconds(text: str | None) -> int:
         return 0
 
 
-def _ufc_stat_bar_html(label: str, a_short: str, b_short: str, a_display: str, b_display: str, a_val: float, b_val: float) -> str:
+def _ufc_stat_bar_html(
+    bout_id: str, label: str, a_short: str, b_short: str, a_display: str, b_display: str, a_val: float, b_val: float
+) -> str:
     """One live stat comparison row — same big-flanking-numbers-plus-
     bar shape as _win_probability_html's own bar (session request:
     "live fight stats... similar to how a baseball or hockey game would
@@ -2389,7 +2391,17 @@ def _ufc_stat_bar_html(label: str, a_short: str, b_short: str, a_display: str, b
     width reflects each fighter's actual share of the two combined
     (landed strikes, landed takedowns, seconds of control) rather than
     a probability — real volume/control differential is genuinely what
-    a fight gets read by, unlike a score-derived model."""
+    a fight gets read by, unlike a score-derived model.
+
+    Session follow-up: "make everything more interactive." This kiosk
+    has no real click/touch interaction to give it (session precedent
+    elsewhere in this app), so "interactive" here means the board
+    visibly reacting to what's actually happening — the two flanking
+    numbers fade on a genuine change via the shared kiosk-jumbo-fade
+    mechanism (data-fade-slot/data-fade-value, see app.py's own
+    comment), the same "this just changed" cue the NFL board's own
+    down-and-distance figure already uses, rather than silently
+    updating to a new number every 5s rerun with no visual cue at all."""
     total = a_val + b_val
     a_pct = round(100 * a_val / total) if total else 50
     b_pct = 100 - a_pct
@@ -2397,19 +2409,21 @@ def _ufc_stat_bar_html(label: str, a_short: str, b_short: str, a_display: str, b
         f'<div class="jumbo-ufc-stat-row">'
         f'<div class="jumbo-ufc-stat-title">{html.escape(label)}</div>'
         f'<div class="jumbo-ufc-stat-line">'
-        f'<div class="jumbo-ufc-stat-value jumbo-ufc-stat-a">{html.escape(a_display)}</div>'
+        f'<div class="jumbo-ufc-stat-value jumbo-ufc-stat-a" data-fade-slot="ufc-stat-{bout_id}-{label}-a" '
+        f'data-fade-value="{html.escape(a_display)}">{html.escape(a_display)}</div>'
         f'<div class="jumbo-ufc-stat-bar">'
         f'<div class="jumbo-ufc-stat-seg jumbo-ufc-stat-seg-a" style="width:{a_pct}%"></div>'
         f'<div class="jumbo-ufc-stat-seg jumbo-ufc-stat-seg-b" style="width:{b_pct}%"></div>'
         f"</div>"
-        f'<div class="jumbo-ufc-stat-value jumbo-ufc-stat-b">{html.escape(b_display)}</div>'
+        f'<div class="jumbo-ufc-stat-value jumbo-ufc-stat-b" data-fade-slot="ufc-stat-{bout_id}-{label}-b" '
+        f'data-fade-value="{html.escape(b_display)}">{html.escape(b_display)}</div>'
         f"</div>"
         f'<div class="jumbo-ufc-stat-labels"><span>{html.escape(a_short)}</span><span>{html.escape(b_short)}</span></div>'
         f"</div>"
     )
 
 
-def _ufc_stats_html(fighter_a: dict, fighter_b: dict, stats: dict) -> str:
+def _ufc_stats_html(bout_id: str, fighter_a: dict, fighter_b: dict, stats: dict) -> str:
     """Significant Strikes / Takedowns / Control Time — the same trio a
     real UFC broadcast's own lower-third leans on — for whichever bout
     is the current hero. "" whenever fetch_bout_stats itself came back
@@ -2429,6 +2443,7 @@ def _ufc_stats_html(fighter_a: dict, fighter_b: dict, stats: dict) -> str:
 
     rows = [
         _ufc_stat_bar_html(
+            bout_id,
             "SIG. STRIKES",
             fighter_a["short_name"],
             fighter_b["short_name"],
@@ -2438,6 +2453,7 @@ def _ufc_stats_html(fighter_a: dict, fighter_b: dict, stats: dict) -> str:
             num(b.get("sig_strikes_landed")),
         ),
         _ufc_stat_bar_html(
+            bout_id,
             "TAKEDOWNS",
             fighter_a["short_name"],
             fighter_b["short_name"],
@@ -2447,6 +2463,7 @@ def _ufc_stats_html(fighter_a: dict, fighter_b: dict, stats: dict) -> str:
             num(b.get("takedowns_landed")),
         ),
         _ufc_stat_bar_html(
+            bout_id,
             "CONTROL TIME",
             fighter_a["short_name"],
             fighter_b["short_name"],
@@ -2470,6 +2487,83 @@ def _ufc_kd_badge_html(stat_line: dict | None) -> str:
     except (TypeError, ValueError):
         return ""
     return f'<span class="jumbo-ufc-kd-badge">KD ×{kd_n}</span>' if kd_n > 0 else ""
+
+
+def _ufc_fighter_hero_html(fighter: dict, profile: dict | None, is_winner: bool, accent: str, kd_badge: str = "") -> str:
+    """One side of the hero face-off — photo, flag, name, nickname,
+    record, and career win-method breakdown. Session request: "add
+    player photos... make it feel more professional... right now it
+    just has the name." `accent` ("a"/"b") matches the same gold/blue
+    pair _ufc_stats_html's own bars already use for these two fighters,
+    so a viewer can connect "this photo" to "this side of the stat
+    bars below" at a glance. profile (ufc_client.fetch_fighter_profile)
+    is None on a fetch failure — every optional line below just omits
+    itself rather than showing a broken image or blank space, same
+    "never show a placeholder for missing data" rule this app already
+    follows everywhere else."""
+    hl = " jumbo-ufc-winner" if is_winner else ""
+    photo_html = ""
+    if profile and profile.get("headshot"):
+        flag_html = f'<img class="jumbo-ufc-flag" src="{html.escape(fighter["flag"])}" />' if fighter.get("flag") else ""
+        photo_html = (
+            f'<div class="jumbo-ufc-photo-wrap jumbo-ufc-photo-{accent}">'
+            f'<img class="jumbo-ufc-photo" src="{html.escape(profile["headshot"])}" '
+            f'onerror="this.parentElement.style.display=\'none\'" />{flag_html}'
+            f"</div>"
+        )
+    nickname_html = (
+        f'<div class="jumbo-ufc-hero-nickname">&ldquo;{html.escape(profile["nickname"])}&rdquo;</div>'
+        if profile and profile.get("nickname")
+        else ""
+    )
+    method_parts = []
+    if profile:
+        if profile.get("wins_ko"):
+            method_parts.append(f'{profile["wins_ko"]} KO')
+        if profile.get("wins_sub"):
+            method_parts.append(f'{profile["wins_sub"]} SUB')
+        if profile.get("wins_dec"):
+            method_parts.append(f'{profile["wins_dec"]} DEC')
+    method_html = f'<div class="jumbo-ufc-hero-method">{" &middot; ".join(method_parts)}</div>' if method_parts else ""
+    record_html = f'<span class="jumbo-ufc-hero-record-text">{html.escape(fighter["record"])}</span>' if fighter.get("record") else ""
+    return (
+        f'<div class="jumbo-ufc-hero-fighter{hl}">'
+        f"{photo_html}"
+        f'<div class="jumbo-ufc-hero-name">{html.escape(fighter["name"])}</div>'
+        f"{nickname_html}"
+        f'<div class="jumbo-ufc-hero-record">{record_html}{kd_badge}</div>'
+        f"{method_html}"
+        f"</div>"
+    )
+
+
+def _ufc_tale_of_tape_html(profile_a: dict | None, profile_b: dict | None) -> str:
+    """Height/reach/age, one compact row — session request: "make it
+    more obvious... more professional," the same "tale of the tape"
+    comparison every real UFC broadcast leads with. One line, not three
+    stacked rows: .jumbo-ufc-hero-panel is a fixed-height, non-
+    scrolling kiosk panel already carrying two photos, two names,
+    records, and the live stat bars below — a live bug fixed earlier
+    this session (the NFL situation strip's own last-play line pushing
+    its panel's actually-wanted content off-screen) is exactly the
+    failure mode staying this compact avoids. "" whenever either
+    profile fetch failed — a partial tale of the tape (one side blank)
+    would read as a data error, not an honest gap."""
+    if not profile_a or not profile_b:
+        return ""
+    cells = []
+    for label, key in (("HT", "height"), ("REACH", "reach"), ("AGE", "age")):
+        va, vb = profile_a.get(key), profile_b.get(key)
+        if va is None or vb is None:
+            continue
+        cells.append(
+            f'<div class="jumbo-ufc-tot-cell">'
+            f'<span class="jumbo-ufc-tot-a">{html.escape(str(va))}</span>'
+            f'<span class="jumbo-ufc-tot-label">{label}</span>'
+            f'<span class="jumbo-ufc-tot-b">{html.escape(str(vb))}</span>'
+            f"</div>"
+        )
+    return f'<div class="jumbo-ufc-tot">{"".join(cells)}</div>' if cells else ""
 
 
 def _ufc_board_html(ufc_state: dict, now: datetime) -> str:
@@ -2525,23 +2619,36 @@ def _ufc_board_html(ufc_state: dict, now: datetime) -> str:
 
     a_kd_badge = _ufc_kd_badge_html(stats["fighter_a"] if stats else None)
     b_kd_badge = _ufc_kd_badge_html(stats["fighter_b"] if stats else None)
-    a_rec = f'<div class="jumbo-ufc-hero-record">{html.escape(a["record"])}{a_kd_badge}</div>' if a["record"] else a_kd_badge
-    b_rec = f'<div class="jumbo-ufc-hero-record">{html.escape(b["record"])}{b_kd_badge}</div>' if b["record"] else b_kd_badge
-    a_hl = " jumbo-ufc-winner" if hero["state"] == "final" and a["winner"] else ""
-    b_hl = " jumbo-ufc-winner" if hero["state"] == "final" and b["winner"] else ""
+    a_hl = hero["state"] == "final" and a["winner"]
+    b_hl = hero["state"] == "final" and b["winner"]
+
+    # Bio data (photo/nickname/height/reach/age/career method split) —
+    # own long-cached fetch (ufc_client.PROFILE_CACHE_TTL_SECONDS, 6h),
+    # separate from the live per-round stats above. Only for the hero
+    # bout's own two fighters, not the whole 13-bout card below — see
+    # this module's own comment on why that scope was chosen.
+    try:
+        profile_a = ufc_client.fetch_fighter_profile(a["id"])
+    except Exception:
+        profile_a = None
+    try:
+        profile_b = ufc_client.fetch_fighter_profile(b["id"])
+    except Exception:
+        profile_b = None
 
     hero_html = (
         f'<div class="jumbo-ufc-hero">'
-        f'<div class="jumbo-ufc-hero-fighter{a_hl}"><div class="jumbo-ufc-hero-name">{html.escape(a["name"])}</div>{a_rec}</div>'
+        f"{_ufc_fighter_hero_html(a, profile_a, a_hl, 'a', a_kd_badge)}"
         f'<div class="jumbo-ufc-hero-mid">'
         f'<div class="jumbo-ufc-hero-weight">{html.escape(hero["weight_class"])}</div>'
         f'<div class="jumbo-ufc-hero-vs">VS</div>'
         f"</div>"
-        f'<div class="jumbo-ufc-hero-fighter{b_hl}"><div class="jumbo-ufc-hero-name">{html.escape(b["name"])}</div>{b_rec}</div>'
+        f"{_ufc_fighter_hero_html(b, profile_b, b_hl, 'b', b_kd_badge)}"
         f"</div>"
+        f"{_ufc_tale_of_tape_html(profile_a, profile_b)}"
     )
 
-    stats_html = _ufc_stats_html(a, b, stats)
+    stats_html = _ufc_stats_html(hero["bout_id"], a, b, stats)
 
     # Paginated the same way _around_html above handles a slate that
     # doesn't fit — see _UFC_CARD_PAGE_SIZE's own comment on why the

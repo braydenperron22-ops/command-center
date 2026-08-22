@@ -4509,30 +4509,111 @@ html, body, [class*="css"] {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 56px;
-    padding: 28px 20px 20px;
+    gap: 40px;
+    padding: 18px 20px 8px;
 }
 .jumbo-ufc-hero-fighter { flex: 1; text-align: center; min-width: 0; }
-/* Sized up from 34px alongside the rest of this hero — session
-   follow-up asked for this to read like the team-scoreboard's own big
-   score digits (92px, see .jumbo-digit above), not a small caption;
-   fighter names run longer than a 1-2 digit score though, so this
-   lands well under that to avoid wrapping/overflow at 2-3 word names. */
+/* Fighter photo — session request: "add player photos... make it feel
+   more professional." Sized to leave real room for the name/nickname/
+   record/method lines still below it in this same fixed-height,
+   non-scrolling panel (see _ufc_tale_of_tape_html's own docstring on
+   the live overflow bug elsewhere in this app that this stays
+   deliberately compact to avoid) — .jumbo-leader-big-hshot elsewhere
+   in this file uses the same 84px circle size in a comparably tight
+   panel, confirmed to fit there. The flag badge sits in the corner
+   the way a real broadcast lower-third does, not as a separate line
+   of its own text. onerror hides the whole wrap (not just the broken
+   image) rather than leaving an empty circle. */
+.jumbo-ufc-photo-wrap {
+    position: relative;
+    width: 84px;
+    height: 84px;
+    margin: 0 auto 10px;
+}
+.jumbo-ufc-photo {
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    object-fit: cover;
+    object-position: top;
+    background: #141A25;
+    border: 2.5px solid var(--edge-hi);
+}
+.jumbo-ufc-photo-a .jumbo-ufc-photo { border-color: var(--led); }
+.jumbo-ufc-photo-b .jumbo-ufc-photo { border-color: #5AC8FA; }
+.jumbo-ufc-flag {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #0A0D12;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+}
+/* Trimmed from 56px to make room for the photo/nickname/method lines
+   above and below it within the same overall hero height — still
+   comfortably the largest text in this panel besides the live stat
+   bars' own big flanking numbers. */
 .jumbo-ufc-hero-name {
     font-family: var(--disp);
     font-weight: 600;
-    font-size: 56px;
+    font-size: 36px;
     letter-spacing: 0.01em;
-    line-height: 1.1;
+    line-height: 1.15;
+}
+.jumbo-ufc-hero-nickname {
+    font-family: var(--disp);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 16px;
+    color: var(--mut);
+    margin-top: 2px;
 }
 .jumbo-ufc-hero-record {
     font-family: var(--num);
-    font-size: 22px;
+    font-size: 20px;
     color: var(--mut);
-    margin-top: 10px;
+    margin-top: 8px;
+}
+.jumbo-ufc-hero-method {
+    font-family: var(--label);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--mut-2);
+    margin-top: 3px;
 }
 .jumbo-ufc-winner .jumbo-ufc-hero-name { color: var(--ok); }
 .jumbo-ufc-hero-mid { flex: 0 0 auto; text-align: center; }
+/* Tale of the tape — session request: "make it more obvious... more
+   professional," the height/reach/age comparison every real UFC
+   broadcast leads with. One compact row (see _ufc_tale_of_tape_html's
+   own docstring on why), same gold/blue accent pair the photos/stat
+   bars already use so it reads as part of the same comparison, not a
+   separate feature. */
+.jumbo-ufc-tot {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: center;
+    gap: 36px;
+    padding: 2px 20px 10px;
+}
+.jumbo-ufc-tot-cell {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-family: var(--num);
+    font-size: 16px;
+}
+.jumbo-ufc-tot-a { color: var(--led); font-weight: 700; }
+.jumbo-ufc-tot-b { color: #5AC8FA; font-weight: 700; }
+.jumbo-ufc-tot-label {
+    font-family: var(--label);
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    color: var(--mut-2);
+}
 .jumbo-ufc-hero-weight {
     font-size: 13px;
     font-weight: 300;
