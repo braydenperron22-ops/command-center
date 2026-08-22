@@ -272,7 +272,44 @@ def fear_greed_index() -> dict | None:
     # itself has stopped returning price history.
     if result is not None:
         data_health.record_success("fear_greed")
+        _last_good_fear_greed["value"] = result
     return result
+
+
+# Nothing else in the app ever called fear_greed_index/shiller_cape/
+# price_ratio before this fix — pages_internals.py's own render() was
+# the sole caller of all three, meaning a cold cache (15min for the
+# gauge, 6h for CAPE, whatever yfinance's own history TTL is for the
+# ratios) meant render() itself paid the real fetch cost synchronously,
+# risking the same page-blending bug already fixed this session for
+# golf_client/financial_plumbing_client/portfolio_client (see their own
+# module comments) once it ran past app.py's 5s st_autorefresh window.
+# warm_cache() below is wired into app.py's toast-check loop instead,
+# unconditionally every rerun; pages_internals.py now reads only the
+# cached_* accessors, which never fetch anything themselves.
+_last_good_fear_greed: dict[str, dict] = {}
+_last_good_ratio: dict[tuple[str, str], dict] = {}
+
+
+def cached_fear_greed_index() -> dict | None:
+    return _last_good_fear_greed.get("value")
+
+
+def cached_shiller_cape() -> dict | None:
+    return {"value": _last_good_cape} if _last_good_cape is not None else None
+
+
+def cached_price_ratio(symbol_a: str, symbol_b: str) -> dict | None:
+    return _last_good_ratio.get((symbol_a, symbol_b))
+
+
+def warm_cache() -> None:
+    fear_greed_index()
+    shiller_cape()
+    for pair in (("HYG", "LQD"), ("RSP", "SPY")):
+        result = price_ratio(*pair)
+        if result is not None:
+            _last_good_ratio[pair] = result
 
 
 def price_ratio(symbol_a: str, symbol_b: str) -> dict | None:

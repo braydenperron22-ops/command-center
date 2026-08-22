@@ -350,8 +350,15 @@ _TRANSACTIONS_PER_TEAM = 3
 def _render_transactions_section() -> None:
     rows = []
     for league in ("mlb", "nhl", "nfl"):
+        # cached_significant_transactions(), not significant_
+        # transactions() — this page render must never be the thing
+        # that triggers a real (possibly ~3s/league, cold-cache) ESPN
+        # fetch; see league_transactions_client's own module comment
+        # for the live bug this caused.
         try:
-            transactions = league_transactions_client.significant_transactions(league, limit=_TRANSACTIONS_PER_TEAM)
+            transactions = league_transactions_client.cached_significant_transactions(
+                league, limit=_TRANSACTIONS_PER_TEAM
+            )
         except Exception:
             continue
         emoji = league_transactions_client.LEAGUE_EMOJI[league]

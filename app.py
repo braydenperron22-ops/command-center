@@ -32,6 +32,7 @@ import holidays_client
 import league_transactions_client
 import lightning_client
 import local_news_client
+import market_internals
 import market_volatility_alert
 import market_yf_client
 import morning_briefing
@@ -69,6 +70,7 @@ import toast_queue
 import ufc_client
 import waste_schedule
 import weather_alerts_bar
+import weather_client
 import weather_records_client
 import wildfire_client
 from config import (
@@ -2920,6 +2922,35 @@ except Exception:
 # live "two pages visibly overlapping" bug this fixes.
 try:
     portfolio_client.warm_cache()
+except Exception:
+    pass
+
+# Same cache-warming pattern as portfolio_client.warm_cache above, for
+# four more pages found to have the identical live bug during a full
+# sweep: each one's render() used to call a real, possibly-slow fetch
+# directly, risking blocking past app.py's 5s st_autorefresh window
+# and corrupting the Streamlit rerun (the "pages blending together"
+# bug photographed live on Weather/Portfolio and Conflicts). See each
+# module's own warm_cache/warm_data_series_cache/warm_daily_feed
+# docstring for its specific live evidence.
+try:
+    prediction_markets_client.warm_data_series_cache()
+except Exception:
+    pass
+try:
+    market_internals.warm_cache()
+except Exception:
+    pass
+try:
+    email_client.warm_daily_feed()
+except Exception:
+    pass
+try:
+    pages_conflicts.warm_cache()
+except Exception:
+    pass
+try:
+    weather_client.warm_cache()
 except Exception:
     pass
 

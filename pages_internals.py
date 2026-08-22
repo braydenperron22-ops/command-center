@@ -116,7 +116,11 @@ _BAND_COLOR = {
 
 
 def _render_gauge_hero() -> None:
-    data = mi.fear_greed_index()
+    # cached_fear_greed_index(), not fear_greed_index() — this page
+    # render must never be the thing that triggers a real (possibly
+    # cold-cache) fetch; see market_internals's own module comment for
+    # the live bug this caused.
+    data = mi.cached_fear_greed_index()
     if not data:
         st.markdown(
             '<div class="tile"><div class="tile-label">FEAR &amp; GREED INDEX</div>'
@@ -172,7 +176,7 @@ def _render_gauge_hero() -> None:
 
 
 def _render_cape_tile() -> None:
-    data = mi.shiller_cape()
+    data = mi.cached_shiller_cape()
     if not data or data.get("value") is None:
         st.markdown(
             '<div class="tile"><div class="tile-label">VALUATION · SHILLER CAPE</div>'
@@ -204,7 +208,7 @@ def _render_cape_tile() -> None:
 
 
 def _render_ratio_tile(tile: dict, symbol_a: str, symbol_b: str) -> None:
-    data = mi.price_ratio(symbol_a, symbol_b)
+    data = mi.cached_price_ratio(symbol_a, symbol_b)
     if not data:
         st.markdown(
             f'<div class="tile"><div class="tile-label">{tile["label"]}</div>'

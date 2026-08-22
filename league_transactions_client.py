@@ -126,13 +126,22 @@ def _fetch_league(league: str) -> list[dict]:
     return raw
 
 
+_last_good_significant: dict[str, list[dict]] = {}
+
+
 def significant_transactions(league: str, limit: int = 10) -> list[dict]:
     """[{"id", "date", "description", "team"}] for Brayden's own
     tracked team in this league only — real roster moves, newest first
     (ESPN's own order), capped at `limit`. "id" is a synthetic dedup
     key (date+description — ESPN gives no stable transaction id of its
     own), stable enough since an exact repeat would mean the same real
-    event, not a coincidence."""
+    event, not a coincidence.
+
+    Also refreshes _last_good_significant[league] on every call — the
+    only real (possibly cold-cache, ~3s x 3 leagues) caller left is
+    get_new_alerts below, wired unconditionally into app.py's toast-
+    check loop every rerun; see cached_significant_transactions for the
+    zero-fetch read pages_sports.py's own render() uses instead."""
     tracked_team = _TRACKED_TEAMS[league]
     raw = _fetch_league(league)
     out = []
@@ -146,7 +155,20 @@ def significant_transactions(league: str, limit: int = 10) -> list[dict]:
         out.append({"id": f"{league}:{t.get('date')}:{desc}", "date": t.get("date"), "description": desc})
         if len(out) >= limit:
             break
+    _last_good_significant[league] = out
     return out
+
+
+def cached_significant_transactions(league: str, limit: int = 10) -> list[dict]:
+    """Instant, zero-fetch read of whatever get_new_alerts's own
+    limit=15 toast-check call last cached — pages_sports.py's render()
+    must never be the thing that triggers the real ESPN fetch itself
+    (live bug: this page blocking past app.py's 5s st_autorefresh
+    window on a cold 15-minute st.cache_data expiry, corrupting the
+    Streamlit rerun and blending pages together on screen — same class
+    of bug fixed this session for golf_client/financial_plumbing_client/
+    portfolio_client, see their own module comments)."""
+    return _last_good_significant.get(league, [])[:limit]
 
 
 # Session request: "filter out the noise" (see above) covers WHICH
