@@ -77,6 +77,7 @@ from config import (
     EXTREME_HEAT_THRESHOLD_C,
     FEELS_LIKE_DIVERGENCE_THRESHOLD_C,
     MAX_BURST_ALERTS,
+    MAX_WEATHER_BURST,
     PAGE_DURATION_OVERRIDES,
     PAGE_ROTATION_SECONDS,
     PAGES,
@@ -2941,13 +2942,37 @@ except Exception:
 # body fails before reaching the assignment further down — it has its
 # own try/except too, but there's no reason to make it depend on this
 # block's internals for a safe default.
-def _alert_priority(alert: dict) -> int:
+# Session report: "the screen was on Jumbotron and the UI elements
+# were freaking out — pulsing, flashing, duplicate elements
+# everywhere... refreshing made it go away." Root cause: "kind":
+# "weather" started this session with 4 real sources (EC alerts,
+# lightning, precip nowcast, road conditions) — genuinely rare/
+# singular events in practice, which is why the burst-trim below only
+# ever capped the NEWS bucket, unconditionally keeping every weather-
+# kind alert no matter how many arrived in one rerun. This same
+# session's own later work added 5 MORE "kind": "weather" sources
+# (market volatility, financial plumbing, league transactions,
+# aviation, golf) sharing that exact same uncapped top-priority lane —
+# a burst of several genuinely-new toasts arriving in the same rerun
+# (very plausible the first day all nine sources are live at once) had
+# nothing left to trim it, so all of them queued and cycled through
+# the bottom bar in rapid succession, each triggering its own reveal/
+# chime/pulse animation. Fixed two ways below: a real severity-aware
+# sub-rank so a genuine hazard (extreme/warning) always sorts ahead of
+# an informational "statement" toast even within the same "weather"
+# bucket, and a real burst cap on that bucket (MAX_WEATHER_BURST),
+# matching the exact same "cap it, don't unconditionally trust it
+# stays rare" lesson the news bucket already learned.
+_WEATHER_SEVERITY_RANK = {"extreme": 0, "warning": 1, "warning-moderate": 2, "watch": 3, "statement": 4}
+
+
+def _alert_priority(alert: dict) -> float:
     # Weather ranks above even commute — session request: weather alerts
     # are "arguably the most important part of the dashboard," and a
     # genuine EC warning outranks a leave-for-work reminder the same way
     # it already outranks everything else in this queue.
     if alert.get("kind") == "weather":
-        return -1
+        return -1 + _WEATHER_SEVERITY_RANK.get(alert.get("severity"), 4) * 0.01
     if alert.get("kind") == "commute":
         return 0
     if alert.get("kind") == "sports":
@@ -3049,6 +3074,17 @@ def _render_bottom_ticker(readings: dict) -> None:
 current_alert, elapsed = None, None
 try:
     new_alerts.sort(key=_alert_priority)
+    # See MAX_WEATHER_BURST's own comment (config.py) — weather-kind
+    # alerts got their own real cap here for the same reason news
+    # already had one, just discovered later (live, on the kiosk
+    # screen) instead of up front. Already sorted most-severe-first
+    # within this bucket (_alert_priority's own severity sub-rank), so
+    # trimming the tail drops the lowest-severity excess, never a
+    # genuine hazard.
+    weather_only = [a for a in new_alerts if a.get("kind") == "weather"]
+    if len(weather_only) > MAX_WEATHER_BURST:
+        drop_ids = {id(a) for a in weather_only[MAX_WEATHER_BURST:]}
+        new_alerts = [a for a in new_alerts if id(a) not in drop_ids]
     if len(new_alerts) > MAX_BURST_ALERTS:
         overflow = len(new_alerts) - MAX_BURST_ALERTS
         news_only = [a for a in new_alerts if _alert_priority(a) == 10]
