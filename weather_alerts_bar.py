@@ -358,6 +358,17 @@ def _spoken_summary(alert: dict) -> str:
     # this exact prompt: only 7 reasoning tokens, comfortably inside
     # the existing 400-token budget below — a plain rewrite task like
     # this one needs far less reasoning than a judgment call.
+    # Session request: "make sure a toast actually fires if the AIs are
+    # asleep... make sure it wakes them up." The toast and its Piper
+    # voice were already unaffected by the pause (this module never
+    # touches groq_client's own gated path except right here) — this
+    # was the one real gap: a genuine severe-weather bulletin arriving
+    # during the overnight pause or a live tracked game used to
+    # silently skip this smoothing step and fall back to the plainer
+    # raw EC text. allow_during_pause=True treats this call the same
+    # way weather_alerts_bar's own storm-phase Govee lights already
+    # treat the night gate — a real, narrowly-scoped safety exception,
+    # not a blanket removal of the pause for anything else.
     rewritten = groq_client.generate(
         "Rewrite this Environment Canada weather alert bulletin as a single smooth, natural-sounding "
         "paragraph meant to be read aloud by a text-to-speech voice. Keep every real fact — hazard, "
@@ -368,6 +379,7 @@ def _spoken_summary(alert: dict) -> str:
         max_output_tokens=400,
         account="primary",
         reasoning_effort="low",
+        allow_during_pause=True,
     )
     return _strip_spoken_labels(rewritten or raw)
 

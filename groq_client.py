@@ -661,6 +661,7 @@ def generate(
     model: str = GROQ_MODEL,
     reasoning_effort: str | None = None,
     account: str | None = None,
+    allow_during_pause: bool = False,
 ) -> str | None:
     """One short piece of AI-written text for `prompt`, or None if the
     key's missing, the request fails, or the free tier's rate-limited
@@ -722,7 +723,25 @@ def generate(
     problem (see this module's own docstring and sports_alerts.
     game_time_active's own comment for the game-time one specifically —
     session request, after a real rate-limit hit: "make all the ai's go
-    into a forced rest during game time"). This function has no
+    into a forced rest during game time").
+
+    `allow_during_pause` — session request: "make sure a toast actually
+    fires if the AIs are asleep... make sure it wakes them up," about a
+    real severe-weather-alert toast. The toast itself and its Piper
+    voice were already fully independent of this pause (see weather_
+    alerts_bar.py/kiosk_tts.py — neither one ever calls into this
+    module's pause-gated path at all), so nothing there was actually
+    broken; what WAS gated was _spoken_summary's own optional smoothing
+    rewrite of EC's raw bulletin into a flowing sentence, which used to
+    silently skip during the pause and fall back to the plain (still
+    complete, still accurate, just choppier) raw text. `allow_during_
+    pause=True` — used only by that one call — bypasses BOTH quiet
+    periods above for this specific request, same "genuinely safety-
+    critical content gets a scoped exception, nothing else does" rule
+    weather_alerts_bar's own storm-phase Govee lights already follow
+    for the night gate. Defaults False, so every other caller (morning/
+    evening brief commentary, pages_conflicts, etc.) keeps respecting
+    both quiet periods exactly as before. This function has no
     exception for game_blurb.py's own postgame recap since that call
     goes through gemini_client.generate directly, not this one — see
     that function's own allow_during_game parameter. Otherwise resolves
@@ -738,7 +757,7 @@ def generate(
     pause itself, since that's a separate status, not a failure to
     record."""
     global _last_served_by
-    if _in_pause_window(_local_now()) or sports_alerts.game_time_active():
+    if not allow_during_pause and (_in_pause_window(_local_now()) or sports_alerts.game_time_active()):
         return None
     resolved_account = account or _MODEL_ACCOUNT.get(model)
     if resolved_account is not None:
@@ -750,7 +769,15 @@ def generate(
         except Exception:
             if resolved_account is not None:
                 _model_status[resolved_account] = {"ok": False, "via": None, "at": time.time()}
-    result = gemini_client.generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens)
+    # allow_during_game forwarded here too — without it, a call that
+    # bypassed the pause above to reach this fallback (Groq itself
+    # failed, not skipped) would hit gemini_client.generate's own
+    # separate game-time check and silently lose the bypass mid-chain,
+    # right during the one window (a live game) allow_during_pause is
+    # actually meant to cover.
+    result = gemini_client.generate(
+        prompt, temperature=temperature, max_output_tokens=max_output_tokens, allow_during_game=allow_during_pause
+    )
     _last_served_by = "gemini" if result is not None else "none"
     return result
 
