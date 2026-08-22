@@ -23,6 +23,7 @@ import data_health
 import ec_forecast
 import email_client
 import evening_briefing
+import fetch_throttle
 import financial_plumbing_client
 import govee_lighting
 import golf_client
@@ -2853,106 +2854,115 @@ except Exception:
 # alongside check_for_swing, same isolation/None-most-of-the-time
 # shape, own try/except so one bank's lock-in check can't take down
 # another's.
-for _pm_bank in prediction_markets_client.BANKS:
-    try:
-        swing = prediction_markets_client.check_for_swing(_pm_bank)
-        if swing:
-            new_alerts.append(prediction_markets_client.swing_alert(swing))
-    except Exception:
-        pass
-    try:
-        lock_in = prediction_markets_client.check_for_lock_in(_pm_bank)
-        if lock_in:
-            new_alerts.append(prediction_markets_client.lock_in_alert(lock_in))
-    except Exception:
-        pass
+def _pm_bank_alerts() -> list[dict]:
+    alerts = []
+    for _pm_bank in prediction_markets_client.BANKS:
+        try:
+            swing = prediction_markets_client.check_for_swing(_pm_bank)
+            if swing:
+                alerts.append(prediction_markets_client.swing_alert(swing))
+        except Exception:
+            pass
+        try:
+            lock_in = prediction_markets_client.check_for_lock_in(_pm_bank)
+            if lock_in:
+                alerts.append(prediction_markets_client.lock_in_alert(lock_in))
+        except Exception:
+            pass
+    return alerts
+
+
+# Every source below used to run fully synchronously, one after another,
+# with only a per-source try/except for isolation from each other — no
+# limit on how long the WHOLE loop could take. Live bug, confirmed
+# twice: any single one of these going cold at once (confirmed live:
+# portfolio_client.warm_cache alone measured 14s) blocks the entire
+# loop, and by extension whichever page happens to be rendering that
+# rerun, past app.py's 5s st_autorefresh window — corrupting the
+# in-flight Streamlit rerun (screen shows two pages' content blended
+# together). See fetch_throttle.run_bounded's own docstring for the
+# actual fix: every call here now shares one wall-clock budget, so the
+# loop as a whole can never hold up a rerun regardless of how many
+# sources exist or how slow any one upstream API is that day. A source
+# that doesn't get its turn this rerun (budget already spent) just
+# tries again next rerun, 5s later — nothing here has a real-time
+# requirement tighter than that.
+_toast_budget_start = time.time()
+
+new_alerts.extend(
+    fetch_throttle.run_bounded("pm_bank_alerts", _pm_bank_alerts, _toast_budget_start, default=[]) or []
+)
 
 # Market-volatility toasts — session request: "take the VIX value,
 # divide it by sixteen, that gives us the expected daily market move
 # in either direction... if the market is trading outside of that
 # band, broadcast it as an alert." Own module (market_volatility_alert.
 # py), same isolation reasoning as every other block here.
-try:
-    new_alerts.extend(market_volatility_alert.get_new_alerts(now))
-except Exception:
-    pass
+new_alerts.extend(
+    fetch_throttle.run_bounded(
+        "market_volatility", lambda: market_volatility_alert.get_new_alerts(now), _toast_budget_start, default=[]
+    )
+    or []
+)
 
 # Financial-plumbing toasts — session request: "financial-system
 # monitoring layer... identify whether financial plumbing is behaving
 # normally or becoming unusual." Own module (financial_plumbing_
 # client.py), same isolation reasoning as every other block here.
-try:
-    new_alerts.extend(financial_plumbing_client.get_new_alerts(now))
-except Exception:
-    pass
+new_alerts.extend(
+    fetch_throttle.run_bounded(
+        "financial_plumbing", lambda: financial_plumbing_client.get_new_alerts(now), _toast_budget_start, default=[]
+    )
+    or []
+)
 
 # League-transaction toasts — session request: "Add a unified
 # structured transaction feed for MLB, NHL, NFL... filter out the
 # noise... just make it for my teams." Own module (league_transactions
 # _client.py), same isolation reasoning as every other block here.
-try:
-    new_alerts.extend(league_transactions_client.get_new_alerts(now))
-except Exception:
-    pass
+new_alerts.extend(
+    fetch_throttle.run_bounded(
+        "league_transactions", lambda: league_transactions_client.get_new_alerts(now), _toast_budget_start, default=[]
+    )
+    or []
+)
 
 # Aviation toasts — session request: "Detect aircraft in the
 # surrounding area and surface an event when an aircraft is genuinely
 # interesting or sufficiently close." Own module (aviation_client.py),
 # same isolation reasoning as every other block here.
-try:
-    new_alerts.extend(aviation_client.get_new_alerts(now))
-except Exception:
-    pass
+new_alerts.extend(
+    fetch_throttle.run_bounded(
+        "aviation", lambda: aviation_client.get_new_alerts(now), _toast_budget_start, default=[]
+    )
+    or []
+)
 
 # Golf-intelligence toasts — session request: "Add a golf intelligence
 # layer... GOLFABILITY." Own module (golf_client.py), same isolation
 # reasoning as every other block here.
-try:
-    new_alerts.extend(golf_client.get_new_alerts(now))
-except Exception:
-    pass
+new_alerts.extend(
+    fetch_throttle.run_bounded("golf", lambda: golf_client.get_new_alerts(now), _toast_budget_start, default=[]) or []
+)
 
 # Portfolio cache warming — no toast of its own, just keeping
 # fetch_changes/fetch_value_history/fetch_activities warm in the
 # background so pages_portfolio.py's own render (which now only ever
 # reads the cached snapshot, never fetches directly) doesn't have to.
-# Same "runs every rerun regardless of which page is showing" pattern
-# every toast-check block here already uses, just without an alert to
-# append — see portfolio_client.warm_cache's own docstring for the
-# live "two pages visibly overlapping" bug this fixes.
-try:
-    portfolio_client.warm_cache()
-except Exception:
-    pass
+# See portfolio_client.warm_cache's own docstring for the live "two
+# pages visibly overlapping" bug this fixes.
+fetch_throttle.run_bounded("portfolio_warm", portfolio_client.warm_cache, _toast_budget_start)
 
 # Same cache-warming pattern as portfolio_client.warm_cache above, for
-# four more pages found to have the identical live bug during a full
+# five more pages found to have the identical live bug during a full
 # sweep: each one's render() used to call a real, possibly-slow fetch
-# directly, risking blocking past app.py's 5s st_autorefresh window
-# and corrupting the Streamlit rerun (the "pages blending together"
-# bug photographed live on Weather/Portfolio and Conflicts). See each
-# module's own warm_cache/warm_data_series_cache/warm_daily_feed
-# docstring for its specific live evidence.
-try:
-    prediction_markets_client.warm_data_series_cache()
-except Exception:
-    pass
-try:
-    market_internals.warm_cache()
-except Exception:
-    pass
-try:
-    email_client.warm_daily_feed()
-except Exception:
-    pass
-try:
-    pages_conflicts.warm_cache()
-except Exception:
-    pass
-try:
-    weather_client.warm_cache()
-except Exception:
-    pass
+# directly. See each module's own warm_cache/warm_data_series_cache/
+# warm_daily_feed docstring for its specific live evidence.
+fetch_throttle.run_bounded("predictions_warm", prediction_markets_client.warm_data_series_cache, _toast_budget_start)
+fetch_throttle.run_bounded("market_internals_warm", market_internals.warm_cache, _toast_budget_start)
+fetch_throttle.run_bounded("email_warm", email_client.warm_daily_feed, _toast_budget_start)
+fetch_throttle.run_bounded("conflicts_warm", pages_conflicts.warm_cache, _toast_budget_start)
+fetch_throttle.run_bounded("weather_warm", weather_client.warm_cache, _toast_budget_start)
 
 # Radar-based severe/tracking-started toast alerts (ec_radar.
 # severe_weather_alert / tracking_started_alert) removed along with the
