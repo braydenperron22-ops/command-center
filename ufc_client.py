@@ -38,9 +38,25 @@ import sports_client
 from config import TIMEZONE
 
 UFC_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard"
-# Matches sports_client.py's own GAME_CACHE_TTL_SECONDS — frequent
-# enough to catch a live bout ending and the next one starting.
+# Only for the season-wide calendar (_fetch_calendar_raw, ~40+ events,
+# name + date only — genuinely doesn't need a fast refresh). Originally
+# also backed the live scoreboard fetch below — wrong: this claimed to
+# be "frequent enough to catch a live bout ending and the next one
+# starting," but sports_client.py's own established pattern for every
+# other sport (GAME_CACHE_TTL_SECONDS, 5min, for the schedule) already
+# pairs with a SEPARATE fast tier for live state (LIVE_DETAIL_CACHE_
+# TTL_SECONDS/NFL_LIVE_DETAIL_CACHE_TTL_SECONDS, 5s) — UFC never got
+# that second tier, so the round/clock/live-vs-final state (and the
+# broadcast-delay buffer now built on top of it) was bottlenecked by a
+# schedule-level cache the whole time. See LIVE_EVENT_CACHE_TTL_SECONDS
+# below for the fix.
 CACHE_TTL_SECONDS = 5 * 60
+# The live scoreboard's own real refresh rate — matches sports_client.
+# py's LIVE_DETAIL_CACHE_TTL_SECONDS/NFL_LIVE_DETAIL_CACHE_TTL_SECONDS,
+# the same 5s cadence this app's own st_autorefresh reruns on, so the
+# round/clock/live-final state genuinely updates every rerun instead of
+# sitting stale for up to 5 minutes.
+LIVE_EVENT_CACHE_TTL_SECONDS = 5
 
 _last_good_event: dict | None = None
 _last_good_event_date: str | None = None  # which calendar date _last_good_event actually answers for
@@ -268,7 +284,7 @@ def fetch_bout_stats(event_id: str, bout_id: str, fighter_a_id: str, fighter_b_i
     return sports_client.delayed(f"ufc_stats_{bout_id}", result)
 
 
-@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
+@st.cache_data(ttl=LIVE_EVENT_CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_raw(date_str: str) -> dict | None:
     fetch_throttle.wait_turn()
     resp = requests.get(UFC_SCOREBOARD_URL, params={"dates": date_str}, timeout=10)
@@ -289,20 +305,36 @@ def fetch_event_for_date(day: date) -> dict | None:
     returns the last real answer only if it was actually for this same
     date; a stale answer for a different day would be actively wrong
     here (unlike a team's single ongoing game, where "yesterday's last
-    known state" is still a reasonable stand-in)."""
+    known state" is still a reasonable stand-in).
+
+    Session report (the same one that led to fetch_bout_stats' own
+    delay): the live/final state, round, clock, and — critically — the
+    winner flag on every bout all come from here, completely undelayed
+    until now. That's a far bigger spoiler than the stat numbers this
+    module already delays: the instant ESPN marks a bout final, the
+    board would highlight the winner in green before a delayed
+    broadcast even showed the finish. Delayed as one whole unit (not
+    per-field) so current_bout()'s own "which bout is live right now"
+    selection logic runs against the SAME trailing snapshot everything
+    else sees — the board's own idea of which fight is "current" lags
+    the real feed by the same amount, not just the details once
+    selected, so it never jumps ahead to the next bout as "live"
+    before the delayed broadcast has gotten there either."""
     global _last_good_event, _last_good_event_date
     date_str = day.strftime("%Y%m%d")
     try:
         raw = _fetch_raw(date_str)
     except Exception:
-        return _last_good_event if _last_good_event_date == date_str else None
-    data_health.record_success("sports_schedule")
-    if raw is None:
-        _last_good_event, _last_good_event_date = None, date_str
-        return None
-    event = _normalize_event(raw)
-    _last_good_event, _last_good_event_date = event, date_str
-    return event
+        event = _last_good_event if _last_good_event_date == date_str else None
+    else:
+        data_health.record_success("sports_schedule")
+        if raw is None:
+            _last_good_event, _last_good_event_date = None, date_str
+            event = None
+        else:
+            event = _normalize_event(raw)
+            _last_good_event, _last_good_event_date = event, date_str
+    return sports_client.delayed(f"ufc_event_{date_str}", event)
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
