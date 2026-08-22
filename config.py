@@ -94,10 +94,11 @@ MAX_BURST_ALERTS = 6
 # _alert_priority comment for the full story): fine back when only
 # 4 real sources shared that lane, not once a later session added 5
 # more sharing the same uncapped top-priority bucket. Lower than
-# MAX_BURST_ALERTS on purpose — weather already always sorts ahead of
-# everything else, so even a capped run of these still dominates the
-# queue; this just stops "several genuinely new toasts in one rerun"
-# from becoming an uninterrupted cascade.
+# MAX_BURST_ALERTS (the sibling cap just above) on purpose — weather
+# already always sorts ahead of everything else, so even a capped run
+# of these still dominates the queue; this just stops "several
+# genuinely new toasts in one rerun" from becoming an uninterrupted
+# cascade.
 MAX_WEATHER_BURST = 4
 
 ROTATION_SECONDS = 5 * 60
