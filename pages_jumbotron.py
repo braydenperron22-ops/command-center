@@ -29,7 +29,6 @@ import streamlit as st
 
 import game_blurb
 import scores_client
-import sports_alerts
 import sports_client
 import ufc_client
 from config import TIMEZONE

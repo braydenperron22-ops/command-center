@@ -2,7 +2,7 @@ __pycache__/
 *.pyc
 .venv/
 .DS_Store
-.streamlit/secrets.toml
+.streamlit/secrets.toml*
 todo.json
 commute_history.json
 .periodic_cache.json

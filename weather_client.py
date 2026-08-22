@@ -16,7 +16,7 @@ observed instance of Open-Meteo being wrong (see fetch_weather()'s own
 comment) — everything else here didn't have that history against it.
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import requests
