@@ -55,6 +55,7 @@ import pages_today
 import pages_weather
 import payday_schedule
 import persisted_state
+import portfolio_client
 import precip_nowcast_client
 import prediction_markets_client
 import road_conditions
@@ -2906,6 +2907,19 @@ except Exception:
 # reasoning as every other block here.
 try:
     new_alerts.extend(golf_client.get_new_alerts(now))
+except Exception:
+    pass
+
+# Portfolio cache warming — no toast of its own, just keeping
+# fetch_changes/fetch_value_history/fetch_activities warm in the
+# background so pages_portfolio.py's own render (which now only ever
+# reads the cached snapshot, never fetches directly) doesn't have to.
+# Same "runs every rerun regardless of which page is showing" pattern
+# every toast-check block here already uses, just without an alert to
+# append — see portfolio_client.warm_cache's own docstring for the
+# live "two pages visibly overlapping" bug this fixes.
+try:
+    portfolio_client.warm_cache()
 except Exception:
     pass
 
