@@ -1137,14 +1137,8 @@ def fetch_nfl_live_detail(game_id) -> dict | None:
     same well-established convention ESPN uses for this exact state
     across every sport its API covers (STATUS_IN_PROGRESS/STATUS_FINAL/
     STATUS_SCHEDULED are all confirmed live elsewhere in this file
-    against real games). Flagged honestly: this specific value hasn't
-    itself been checked against a real live halftime moment yet — none
-    of the real live preseason games running when this was built
-    happened to actually BE at halftime at the time. Read defensively
-    either way (a wrong/renamed field just means is_halftime stays
-    False, never a crash), same posture _nfl_situation_html's own
-    docstring already takes for NFL's generally-less-verified fields —
-    worth confirming against a real halftime the first real chance."""
+    against real games). Confirmed live against a real halftime (Rams @
+    Saints, 2026-08-22) — reads exactly as expected."""
     try:
         events = _fetch_nfl_scoreboard_raw()
     except Exception:
@@ -1160,6 +1154,28 @@ def fetch_nfl_live_detail(game_id) -> dict | None:
             "clock": status.get("displayClock"),
             "is_halftime": status_type.get("name") == "STATUS_HALFTIME",
         }
+    return None
+
+
+def fetch_nfl_situation(game_id) -> dict | None:
+    """ESPN's own raw scoreboard "situation" object for this game_id —
+    down/distance text, possession, red zone, timeouts, yard line — the
+    same fast-refreshing scoreboard cache fetch_nfl_live_detail above
+    already polls (NFL_LIVE_DETAIL_CACHE_TTL_SECONDS, 5s), just handing
+    back the fuller object instead of the three fields that function
+    already extracts. None if this game_id isn't on today's scoreboard,
+    the fetch fails, or the game genuinely has no situation right now
+    (e.g. between plays at halftime — confirmed live, ESPN's own
+    situation is null there rather than a stale leftover value)."""
+    try:
+        events = _fetch_nfl_scoreboard_raw()
+    except Exception:
+        return None
+    for e in events:
+        if e.get("id") != str(game_id):
+            continue
+        comp = (e.get("competitions") or [{}])[0]
+        return comp.get("situation")
     return None
 
 

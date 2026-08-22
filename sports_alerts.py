@@ -104,6 +104,11 @@ _last_leader: dict[int, str] = {}
 _start_alerted: dict[int, bool] = {}
 _final_alerted: dict[int, bool] = {}
 _baseline_done: dict[str, bool] = {}
+# game_id -> True while a goal-to-go alert has already fired for the
+# CURRENT drive's approach to the end zone — see _nfl_goal_to_go_alert's
+# own docstring for why this resets (rather than staying True for the
+# rest of the game) the moment the situation stops being goal-to-go.
+_nfl_goal_to_go_active: dict[int, bool] = {}
 
 FLASH_BLUE = (0, 70, 255)  # Blue Jays' own game — a clean, unmistakable blue on a light bulb
 FLASH_RED = (255, 0, 0)  # Canadiens' own game — same red govee_lighting's breaking-news flash already uses
@@ -733,6 +738,58 @@ def get_new_alerts(now: datetime) -> list[dict]:
                 elif play_type == "score":
                     leader = "us" if team_score > opp_score else "opp" if opp_score > team_score else "tied"
                     last_leader[game_id] = leader
+
+            # Goal-to-go toast — session request, live during the
+            # Saints' own first game watched on the kiosk: "when
+            # they're within, like, first and goal, second and goal...
+            # fire off a toast and make it red. That'd be so fucking
+            # sick." NFL only — the other two leagues have no equivalent
+            # "about to score" situational state to watch for. Fires
+            # once per drive's approach (goes True the first live
+            # sighting of "& Goal" in the down/distance text, and stays
+            # True — no repeat toast every 5s rerun while the same
+            # goal-to-go stretch continues), then resets the moment the
+            # situation stops being goal-to-go (a score, a turnover, or
+            # the ball moving back out of goal-to-go range), so the
+            # NEXT drive that reaches the goal line fires its own fresh
+            # toast rather than staying silently "already alerted"
+            # forever after the first one.
+            if league["sport"] == "nfl" and baseline_done:
+                situation = sports_client.fetch_nfl_situation(game_id) or {}
+                down_text = situation.get("shortDownDistanceText") or situation.get("downDistanceText") or ""
+                is_goal_to_go = "goal" in down_text.lower()
+                was_active = _nfl_goal_to_go_active.get(game_id, False)
+                _nfl_goal_to_go_active[game_id] = is_goal_to_go
+                if is_goal_to_go and not was_active:
+                    # Direct team-id compare (situation.possession is a
+                    # raw ESPN team id) rather than resolving home/away
+                    # first — simpler than threading the competitors
+                    # list all the way through just to answer "is this
+                    # us" when sports_client.NFL_TEAM_ID already answers
+                    # it directly, same shortcut _normalize_nfl_game's
+                    # own is_home check already takes.
+                    possessor_is_us = situation.get("possession") == str(sports_client.NFL_TEAM_ID)
+                    # Real broadcast excitement is watching OUR team
+                    # threaten to score, not the opponent's — session
+                    # framing was entirely from that angle ("that'd be
+                    # so fucking sick"), so this only fires for our own
+                    # offense reaching the goal line, not the opponent's.
+                    if possessor_is_us:
+                        alerts.append(
+                            {
+                                "kind": "sports",
+                                "type": "goal_line",
+                                "sport": league["sport"],
+                                "team_label": league["label"],
+                                "team_logo": status["team_logo"],
+                                "opponent_logo": game["opponent_logo"],
+                                "team_score": game["team_score"],
+                                "opp_score": game["opp_score"],
+                                "description": f"{down_text} — {league['label'].title()} are threatening to score!",
+                                "flash_color": FLASH_RED,
+                                "spoken": f"{league['label'].title()}: {down_text}",
+                            }
+                        )
             _baseline_done[baseline_key] = True
 
         elif (
@@ -998,7 +1055,13 @@ def render_alert_bar(alert: dict) -> None:
     mlb/nhl binary, which is what this was before the Saints) — needs
     a matching `.sports-alert-bar-{sport}` rule in theme.py for every
     sport in _LEAGUES, same convention `.jumbo-hero-{sport}`/
-    `.game-countdown-{sport}` already use elsewhere.
+    `.game-countdown-{sport}` already use elsewhere. A "goal_line" alert
+    (see the NFL-only goal-to-go check above) overrides this per-sport
+    color with a fixed red instead — session request: "fire off a
+    toast and make it red... that'd be so fucking sick" — real urgency
+    should read as red regardless of Saints gold being the sport's own
+    normal color, the same way this app already reserves red for a
+    genuinely urgent moment elsewhere (storm-phase lighting).
 
     Session report: "the bottom bar goes away... the red headliner...
     should be there, but it's not." Every field below is now `.get()`
@@ -1006,11 +1069,17 @@ def render_alert_bar(alert: dict) -> None:
     missing key here used to be able to crash the whole render (caught
     upstream in app.py, but leaving the bottom bar blank for that
     rerun instead of at least showing this alert's other fields)."""
-    bar_class = f"sports-alert-bar-{alert.get('sport', 'mlb')}"
+    is_goal_line = alert.get("type") == "goal_line"
+    bar_class = "sports-alert-bar-goalline" if is_goal_line else f"sports-alert-bar-{alert.get('sport', 'mlb')}"
     description = html.escape(alert.get("description", ""))
-    suffix = {"final": "FINAL", "streak": "STREAK", "pregame": "PREGAME", "start": "LIVE", "lead_change": "LEAD CHANGE"}.get(
-        alert.get("type"), "UPDATE"
-    )
+    suffix = {
+        "final": "FINAL",
+        "streak": "STREAK",
+        "pregame": "PREGAME",
+        "start": "LIVE",
+        "lead_change": "LEAD CHANGE",
+        "goal_line": "GOAL LINE",
+    }.get(alert.get("type"), "UPDATE")
     label_text = f"{alert.get('team_label', '')} {suffix}"
     has_score = alert.get("team_score") is not None and alert.get("opp_score") is not None
     score_text = f"{alert.get('team_score')}–{alert.get('opp_score')}" if has_score else ""

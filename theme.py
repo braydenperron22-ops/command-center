@@ -1138,7 +1138,7 @@ html, body, [class*="css"] {
    Habs red (session request: "make it red i guess," same red the
    breaking-news bar already uses since that's genuinely the Canadiens'
    own color too). */
-.sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl {
+.sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl, .sports-alert-bar-goalline {
     position: fixed;
     left: 0;
     right: 0;
@@ -1150,6 +1150,18 @@ html, body, [class*="css"] {
     padding: 0.9rem 1.5rem;
     border-top: 2px solid rgba(255,255,255,0.25);
     overflow: hidden;
+}
+/* Goal-to-go toast (sports_alerts.py, NFL only) — session request:
+   "fire off a toast and make it red... that'd be so fucking sick."
+   Deliberately its own hotter red than .sports-alert-bar-nhl's own
+   Habs red just below (a genuinely urgent moment should read as more
+   alarmed than a routine team-color bar), and a faster pulse to match
+   — same "urgency reads as both color AND motion" language the storm-
+   phase Govee lighting already established elsewhere in this app. */
+.sports-alert-bar-goalline {
+    background: linear-gradient(90deg, #7a0000 0%, #e6180f 50%, #7a0000 100%);
+    box-shadow: 0 -4px 28px rgba(230,24,15,0.55);
+    animation: toast-pulse-red 1s ease-in-out infinite;
 }
 .sports-alert-bar-mlb {
     background: linear-gradient(90deg, #0f2a7a 0%, #1a5ab3 50%, #0f2a7a 100%);
@@ -2985,6 +2997,7 @@ html, body, [class*="css"] {
 .stElementContainer:has(.sports-alert-bar-mlb),
 .stElementContainer:has(.sports-alert-bar-nhl),
 .stElementContainer:has(.sports-alert-bar-nfl),
+.stElementContainer:has(.sports-alert-bar-goalline),
 .stElementContainer:has(.weather-alert-bar-watch),
 .stElementContainer:has(.weather-alert-bar-statement),
 .stElementContainer:has(.weather-statement-bar) {
@@ -3575,6 +3588,10 @@ html, body, [class*="css"] {
     filter: drop-shadow(0 5px 18px rgba(0,0,0,0.75));
 }
 .jumbo-tname { font-weight: 600; font-size: 26px; letter-spacing: 0.05em; }
+/* NFL possession icon next to the team name (pages_jumbotron.
+   _side_html) — session request: "make it more obvious who has the
+   ball... a little ball icon next to their name." */
+.jumbo-side-ball { margin-right: 8px; }
 .jumbo-trec { font-size: 13px; font-weight: 300; color: var(--mut); letter-spacing: 0.14em; }
 .jumbo-center { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .jumbo-score { display: flex; align-items: center; gap: 12px; }
@@ -5205,7 +5222,8 @@ html, body, [class*="css"] {
         padding: 0.6rem 1rem;
     }
     .news-alert-bar, .news-alert-bar-market, .commute-alert-bar,
-    .sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl {
+    .sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl,
+    .sports-alert-bar-goalline {
         padding: 0.7rem 1rem;
     }
     .news-alert-headline, .top-alert-headline { font-size: 0.95rem; }
