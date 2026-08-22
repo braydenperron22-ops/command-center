@@ -1500,14 +1500,18 @@ if _takeover and _takeover["game"]["game_id"] == st.session_state.get("jumbotron
 # fully separate from `_takeover` above (see ufc_client.py's own
 # docstring on why a fight card needed a genuinely different data
 # shape/takeover concept, not a config tweak to the existing one) —
-# the exception is applied here, narrowly: only a LIVE Habs or Jays
-# game specifically wins, not Saints — UFC still takes the screen over
-# a live Saints game if both happen to be active at once.
+# the exception originally excluded Saints/NFL specifically (UFC would
+# still take the screen over a live Saints game), a narrower rule
+# than "nhl"/"mlb" simply predating NFL coverage on the jumbotron at
+# all. Session correction, live during the Saints' own first game
+# watched on the kiosk: "I would rather watch the NFL than the UFC
+# right now" — nfl now gets the same live-game priority Habs/Jays
+# already had.
 try:
     _ufc_takeover = ufc_client.takeover_state(now)
 except Exception:
     _ufc_takeover = None
-if _ufc_takeover is not None and _takeover and _takeover["league"]["sport"] in ("nhl", "mlb") and _takeover["phase"] == "live":
+if _ufc_takeover is not None and _takeover and _takeover["league"]["sport"] in ("nhl", "mlb", "nfl") and _takeover["phase"] == "live":
     _ufc_takeover = None
 
 _requested_page = None
