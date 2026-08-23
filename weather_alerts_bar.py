@@ -5,9 +5,7 @@ observations (ec_aqhi), confirmed live to not overlap at all — and our
 own extreme-heat/extreme-cold fallback only ever shows when neither
 has anything active for the region."""
 
-import base64
 import html
-import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -22,32 +20,13 @@ import persisted_state
 from config import EXTREME_COLD_THRESHOLD_C, EXTREME_HEAT_THRESHOLD_C, TIMEZONE
 
 # Session request: "how can we make the severe weather alerts a little
-# bit more menacing... they're just on and then talking" — extreme/
-# warning tier toasts used to play the exact same gentle two-tone bell
-# chime every other toast in this app uses (scores, news, commute),
-# then read the bulletin. A real siren clip, played instead of that
-# chime for genuinely severe hazards only, so a tornado/severe-
-# thunderstorm warning sounds nothing like a routine toast before you
-# even read the screen. Loaded once and cached as base64 (same
-# data-URI-in-the-DOM pattern kiosk_tts.synthesize_base64's own Piper
-# audio already uses) — a static asset, not per-call synthesis, so a
-# plain module-level cache is enough; no TTL needed since the file
-# itself never changes.
-_ALARM_PATH = os.path.join(os.path.dirname(__file__), "assets", "severe_weather_alarm.mp3")
-_alarm_b64_cache: str | None = None
-
-
-def _alarm_base64() -> str | None:
-    global _alarm_b64_cache
-    if _alarm_b64_cache is not None:
-        return _alarm_b64_cache
-    try:
-        with open(_ALARM_PATH, "rb") as f:
-            _alarm_b64_cache = base64.b64encode(f.read()).decode("ascii")
-    except OSError:
-        return None
-    return _alarm_b64_cache
-
+# bit more menacing... they're just on and then talking" — tried a real
+# siren clip in place of the shared gentle bell chime for genuinely
+# severe hazards. Session follow-up: "scrap it and go back to the
+# regular bell" — reverted; the full-screen red pulse overlay
+# (app.py's kioskShowMenaceOverlay) stays for extreme/warning tiers,
+# just the audio itself is back to the plain chime every other toast
+# in this app already uses.
 
 # Tornado/hurricane/tsunami are categorically more dangerous than any
 # other hazard EC issues for this region — a Tornado Watch still
@@ -453,19 +432,8 @@ def render_alert_bar(alert: dict) -> None:
     # explicitly asks for quiet (lightning, at least for now) skips it,
     # while still getting the same visible slide-in toast.
     silent_attr = ' data-silent="true"' if alert.get("silent", False) else ""
-    # Real siren clip — session follow-up: "all of them get that sound"
-    # (originally scoped to just extreme/warning, see this module's own
-    # top-of-file comment). Every real EC alert now plays this instead
-    # of the shared gentle chime, regardless of tier. The full-screen
-    # menace overlay stays scoped to extreme/warning specifically
-    # (app.py's kioskPlayWeatherAlert checks the bar's own severity
-    # class for that, independently of this attribute) — that wasn't
-    # part of this follow-up, and a routine statement/watch still
-    # shouldn't red-pulse the whole screen the way a real warning does.
-    menace_b64 = _alarm_base64()
-    menace_attr = f' data-alarm-b64="{menace_b64}"' if menace_b64 else ""
     st.markdown(
-        f"""<div class="{bar_class}" data-summary="{summary}"{audio_attr} data-severe="{severe_attr}"{silent_attr}{menace_attr}>
+        f"""<div class="{bar_class}" data-summary="{summary}"{audio_attr} data-severe="{severe_attr}"{silent_attr}>
             <span class="news-breaking-label">{label}</span>
             <span class="news-alert-headline">{headline}</span>
         </div>""",

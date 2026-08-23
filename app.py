@@ -1088,13 +1088,13 @@ components.html(
         // is still the safety net.
         // Session request: "how can we make the severe weather alerts
         // a little bit more menacing... they're just on and then
-        // talking." Extreme/warning tier toasts (weather_alerts_bar.py
-        // only sets data-alarm-b64 for those two) get a real siren clip
-        // instead of the shared gentle bell below, plus a full-screen
-        // red pulse overlay for the same stretch — genuinely different
-        // from a routine toast before you even read the screen, not
-        // just a recolored version of the same chime every other toast
-        // in this app uses.
+        // talking." Extreme/warning tier toasts get a full-screen red
+        // pulse overlay for the same stretch the bell plays — genuinely
+        // different from a routine toast before you even read the
+        // screen. (A real siren clip played instead of the bell here
+        // too for a while; session follow-up "scrap it and go back to
+        // the regular bell" reverted the audio side of this — see
+        // kioskPlayWeatherAlert below — while keeping this overlay.)
         "function kioskShowMenaceOverlay(durationMs) {",
         "  var existing = document.getElementById('kiosk-menace-overlay');",
         "  if (existing) { existing.remove(); }",
@@ -1120,24 +1120,13 @@ components.html(
         // follows the normal quiet-at-night curve like any other alert.
         "  var severe = el.getAttribute('data-severe') === 'true';",
         "  var vol = kioskAlertVolume(severe);",
-        "  var alarmB64 = el.getAttribute('data-alarm-b64');",
-        "  var isMenace = !!alarmB64;",
-        // Session follow-up: "all of them get that sound" — every real
-        // EC alert now carries data-alarm-b64 (weather_alerts_bar.py's
-        // own change), so isMenace above is no longer specific to
-        // extreme/warning. The full-screen overlay stays scoped to
-        // just those two tiers though (that part of the original
-        // request still stands) — checked here independently, off the
-        // bar's own severity class, rather than off isMenace.
+        // Full-screen overlay stays scoped to extreme/warning tiers,
+        // off the bar's own severity class — the visual half of the
+        // "more menacing" request that's still in place (see the
+        // comment on kioskShowMenaceOverlay above for the audio half's
+        // own history).
         "  var isSevereVisual = el.classList.contains('weather-alert-bar-extreme') || el.classList.contains('weather-alert-bar-warning');",
         "  if (isSevereVisual) { kioskShowMenaceOverlay(14000); }",
-        "  if (isMenace) {",
-        "    try {",
-        "      var alarm = new Audio('data:audio/mpeg;base64,' + alarmB64);",
-        "      alarm.volume = vol;",
-        "      alarm.play().catch(function () {});",
-        "    } catch (e) {}",
-        "  } else {",
         // Session report: "make the original sound a little more
         // noticeable cause i cannot hear it right off the bat" — a lone
         // 220Hz sine is a real bell's fundamental, but real bells are
@@ -1148,33 +1137,27 @@ components.html(
         // character — still one low tone, not a different sound — just
         // with the harmonic content real bells have that helps it cut
         // through) and raised the base gain from 0.4 to 0.55.
-        "    try {",
-        "      var Ctx = window.AudioContext || window.webkitAudioContext;",
-        "      if (Ctx) {",
-        "        var ctx = window.__kioskChimeCtx || (window.__kioskChimeCtx = new Ctx());",
-        "        if (ctx.state === 'suspended') { ctx.resume(); }",
-        "        var now = ctx.currentTime;",
-        "        [[220, 0.55], [440, 0.18]].forEach(function (pair) {",
-        "          var osc = ctx.createOscillator(), gain = ctx.createGain();",
-        "          osc.type = 'sine'; osc.frequency.value = pair[0];",
-        "          gain.gain.setValueAtTime(0, now);",
-        "          gain.gain.linearRampToValueAtTime(pair[1] * vol, now + 0.02);",
-        "          gain.gain.exponentialRampToValueAtTime(0.001, now + 1.9);",
-        "          osc.connect(gain); gain.connect(ctx.destination);",
-        "          osc.start(now); osc.stop(now + 1.9);",
-        "        });",
-        "      }",
-        "    } catch (e) {}",
-        "  }",
+        "  try {",
+        "    var Ctx = window.AudioContext || window.webkitAudioContext;",
+        "    if (Ctx) {",
+        "      var ctx = window.__kioskChimeCtx || (window.__kioskChimeCtx = new Ctx());",
+        "      if (ctx.state === 'suspended') { ctx.resume(); }",
+        "      var now = ctx.currentTime;",
+        "      [[220, 0.55], [440, 0.18]].forEach(function (pair) {",
+        "        var osc = ctx.createOscillator(), gain = ctx.createGain();",
+        "        osc.type = 'sine'; osc.frequency.value = pair[0];",
+        "        gain.gain.setValueAtTime(0, now);",
+        "        gain.gain.linearRampToValueAtTime(pair[1] * vol, now + 0.02);",
+        "        gain.gain.exponentialRampToValueAtTime(0.001, now + 1.9);",
+        "        osc.connect(gain); gain.connect(ctx.destination);",
+        "        osc.start(now); osc.stop(now + 1.9);",
+        "      });",
+        "    }",
+        "  } catch (e) {}",
         "  try {",
         "    var summary = el.getAttribute('data-summary') || '';",
         "    var audioB64 = el.getAttribute('data-audio-b64');",
-        // The alarm clip itself runs ~10.5s (84,612-byte MP3 at its own
-        // 64kbps bitrate) — waiting that long before the spoken bulletin
-        // starts means the two never talk over each other, unlike the
-        // gentle chime's own short 2150ms gap (that tone is under 2s
-        // total, so 2150ms was already enough clearance for it).
-        "    var voiceDelay = isMenace ? 10500 : 2150;",
+        "    var voiceDelay = 2150;",
         "    if (audioB64) {",
         "      setTimeout(function () {",
         "        var audio = new Audio('data:audio/wav;base64,' + audioB64);",
