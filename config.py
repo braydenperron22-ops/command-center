@@ -56,6 +56,18 @@ RAIN_LOOKAHEAD_HOURS = 12
 AQI_SHOW_THRESHOLD = 50
 AQI_EXTREME = 200  # AQI at which the badge reaches full saturated color
 
+# Session request: hero badges are for "things going on right now that
+# impact my day to day routine" — wind was the one physical condition
+# with that same right-now, act-on-it-outside quality (secure patio
+# furniture, garbage bins) that had no badge yet. 50 km/h gusts is a
+# real "things start moving" level, well under Environment Canada's own
+# actual Wind Warning criteria for this region (sustained 70+ km/h or
+# gusts 90+ km/h) — WIND_GUST_EXTREME_KMH is that real EC warning-gust
+# threshold, not a guessed ceiling, matching AQI_EXTREME's own use of a
+# real published boundary above.
+WIND_GUST_SHOW_THRESHOLD_KMH = 50
+WIND_GUST_EXTREME_KMH = 90
+
 # Environment Canada's public alert regions are free, no-key ATOM feeds at
 # weather.gc.ca/rss/battleboard/{code}_e.xml — "onrm119" is the North Bay -
 # Powassan - Mattawa region (found via weather.gc.ca/warnings/report_e.html

@@ -82,6 +82,8 @@ from config import (
     PAGES,
     TIMEZONE,
     UV_HIGH_THRESHOLD,
+    WIND_GUST_EXTREME_KMH,
+    WIND_GUST_SHOW_THRESHOLD_KMH,
 )
 import streamlit.components.v1 as components
 from icons import icon_for, label_for
@@ -2185,6 +2187,29 @@ if weather:
                 f'<span class="weather-extra" style="color:{feels_color}; '
                 f'background:{feels_bg}; border-color:{feels_color};">Feels like {feels_like:.0f}°C</span>'
             )
+    # Session request: "hero badges are... for things going on right
+    # now that impact my day to day routine" — wind gusts strong enough
+    # to move patio furniture or tip a garbage bin are exactly that,
+    # and unlike UV/AQI/feels-like just above, wind never had a badge
+    # at all before this. Same gradient-intensity pattern as those:
+    # calm color at WIND_GUST_SHOW_THRESHOLD_KMH (a real "notice this"
+    # level), full saturated color at WIND_GUST_EXTREME_KMH (Environment
+    # Canada's own real Wind Warning gust criteria for this region —
+    # see config.py's own comment). Gust, not sustained speed, drives
+    # both the trigger and the displayed number — a gusty-but-otherwise-
+    # calm day is exactly the case this badge exists for, and sustained
+    # speed alone would miss it.
+    wind_gust = weather.get("wind_gust_kmh")
+    if wind_gust is not None and wind_gust >= WIND_GUST_SHOW_THRESHOLD_KMH:
+        intensity = min(
+            (wind_gust - WIND_GUST_SHOW_THRESHOLD_KMH) / (WIND_GUST_EXTREME_KMH - WIND_GUST_SHOW_THRESHOLD_KMH), 1.0
+        )
+        wind_color = _lerp_hex("#64D2FF", "#FF3B30", intensity)
+        wind_bg = _badge_bg(wind_color, 0.22 + intensity * 0.25)
+        extras.append(
+            f'<span class="weather-extra" style="color:{wind_color}; '
+            f'background:{wind_bg}; border-color:{wind_color};">Wind gusts {wind_gust:.0f} km/h</span>'
+        )
     # The CURRENT actual reading against the historical extreme for
     # this exact calendar date (see weather_records_client) — the
     # day's forecast high/low deliberately isn't used here: showing

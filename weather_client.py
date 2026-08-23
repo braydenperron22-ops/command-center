@@ -104,6 +104,12 @@ def _fallback_from_ec() -> dict | None:
         "feels_like_c": None,
         "weather_code": _EC_CATEGORY_TO_WMO_CODE.get(cc["category"], 2),
         "uv_index": None,
+        # Already sitting in this same EC station reading (cc, fetched
+        # above) — no extra call needed, unlike UV just above which
+        # genuinely has no EC equivalent (see this function's own
+        # docstring).
+        "wind_speed_kmh": cc.get("wind_speed"),
+        "wind_gust_kmh": cc.get("wind_gust"),
         "sunrise": sunrise,
         "sunset": sunset,
         "first_light": first_light,
@@ -121,9 +127,17 @@ def _fetch_weather_raw() -> dict | None:
     params = {
         "latitude": WEATHER_LAT,
         "longitude": WEATHER_LON,
-        "current": "temperature_2m,apparent_temperature,weather_code,uv_index",
+        # wind_gusts_10m added for the hero-badge wind alert (session
+        # request: "wind gust is good") — same current-conditions call
+        # this already makes every 15 minutes, just two more fields on
+        # it, not a new fetch. wind_speed_10m comes along with it since
+        # Open-Meteo bills them as a pair and sustained speed is useful
+        # context next to the gust figure even though gust is the one
+        # the badge itself keys off.
+        "current": "temperature_2m,apparent_temperature,weather_code,uv_index,wind_speed_10m,wind_gusts_10m",
         "daily": "sunrise,sunset,temperature_2m_max,temperature_2m_min",
         "temperature_unit": "celsius",
+        "wind_speed_unit": "kmh",
         "timezone": TIMEZONE,
         "forecast_days": 2,
     }
@@ -155,6 +169,8 @@ def _fetch_weather_raw() -> dict | None:
         "feels_like_c": current.get("apparent_temperature"),
         "weather_code": current.get("weather_code", 0),
         "uv_index": current.get("uv_index"),
+        "wind_speed_kmh": current.get("wind_speed_10m"),
+        "wind_gust_kmh": current.get("wind_gusts_10m"),
         "sunrise": sunrise,
         "sunset": sunset,
         "first_light": first_light,
