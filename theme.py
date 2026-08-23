@@ -3470,30 +3470,59 @@ html, body, [class*="css"] {
 
 /* ---- My Teams rail ---- */
 .jumbo-rail-body { flex: 1; min-height: 0; overflow: hidden; }
+/* Network Primetime, extended: session follow-up after the featured
+   board's own reskin — "show me what it would look like if you gave
+   the entire rest of the jumbotron this kind of emphasis... my teams
+   page, the standings, and then the around the leagues," then "build
+   it into the real jumbotron." Same rule as the featured board's own
+   reskin: every *_html function that builds this rail keeps its exact
+   existing signature/behavior — this is CSS only, no new Python param
+   needed, since --tc (each sport's real accent color, already set per
+   .jumbo-hero-{sport} below) was already available to read from. */
 .jumbo-hero {
     /* Was 20px 20px 22px — trimmed for a third team (the Saints) now
        routinely sharing this rail; see .jumbo-rail-col's own comment. */
-    padding: 13px 20px 14px;
+    padding: 13px 20px 14px 22px;
     border-bottom: 1px solid rgba(30,38,52,0.55);
     position: relative;
+    overflow: hidden;
 }
 .jumbo-hero:last-child { border-bottom: none; }
+/* Full-height team-color flag down the left edge (was a short 4px
+   pill floating mid-card) plus a soft color wash behind the whole
+   card — the same "team card" language the featured board's diagonal
+   panels use, just a flat wash here rather than a diagonal cut (this
+   rail is too narrow for a clean diagonal to read at a glance). */
 .jumbo-hero::before {
     content: "";
     position: absolute;
-    left: 0; top: 10%; bottom: 10%;
-    width: 4px;
-    border-radius: 2px;
+    left: 0; top: 0; bottom: 0;
+    width: 6px;
     background: var(--tc, var(--edge-hi));
 }
-.jumbo-hero-nhl { --tc: #D8323F; }
-.jumbo-hero-mlb { --tc: #3E7CC9; }
-.jumbo-hero-nfl { --tc: #D3BC8D; }
-.jumbo-hero-ufc { --tc: #D20A0A; }
-.jumbo-hero-head { display: flex; align-items: center; gap: 14px; }
-.jumbo-hero-head img { width: 58px; height: 58px; object-fit: contain; flex: 0 0 auto; }
+.jumbo-hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(100deg, rgba(var(--tc-rgb, 46,59,84), 0.16), rgba(var(--tc-rgb, 46,59,84), 0) 60%);
+}
+.jumbo-hero-nhl { --tc: #D8323F; --tc-rgb: 216,50,63; }
+.jumbo-hero-mlb { --tc: #3E7CC9; --tc-rgb: 62,124,201; }
+.jumbo-hero-nfl { --tc: #D3BC8D; --tc-rgb: 211,188,141; }
+.jumbo-hero-ufc { --tc: #D20A0A; --tc-rgb: 210,10,10; }
+.jumbo-hero-head { display: flex; align-items: center; gap: 14px; position: relative; z-index: 1; }
+/* Solid rounded badge behind the logo (background/padding/radius work
+   fine directly on an <img> — no wrapper element needed) — most of
+   these are transparent-background SVGs, so this reads as a real
+   broadcast team-card badge instead of a logo floating on bare panel. */
+.jumbo-hero-head img {
+    width: 58px; height: 58px; padding: 6px; box-sizing: border-box;
+    object-fit: contain; flex: 0 0 auto;
+    background: rgba(255,255,255,0.08); border-radius: 10px;
+}
 .jumbo-hero-id { min-width: 0; white-space: nowrap; }
-.jumbo-hero-name { font-weight: 600; font-size: 24px; letter-spacing: 0.02em; line-height: 1.1; white-space: nowrap; }
+.jumbo-hero-name { font-weight: 800; font-size: 23px; letter-spacing: 0.01em; line-height: 1.1; white-space: nowrap; }
 .jumbo-hero-div {
     font-size: 13px;
     font-weight: 300;
@@ -3510,28 +3539,33 @@ html, body, [class*="css"] {
    (set per .jumbo-hero-{sport} above), so this reads as a highlight,
    not routine muted text. */
 .jumbo-hero-odds { color: var(--tc); font-weight: 600; letter-spacing: 0.08em; }
-.jumbo-hero-rec { margin-left: auto; text-align: right; flex: 0 0 auto; padding-left: 10px; }
-.jumbo-hero-rec-v { font-family: var(--label); font-size: 30px; line-height: 1; white-space: nowrap; }
-.jumbo-hero-rec-l { font-size: 10px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.3em; white-space: nowrap; }
-.jumbo-form { display: flex; gap: 7px; align-items: center; margin-top: 9px; }  /* was 13px — see .jumbo-rail-col's own comment */
-.jumbo-form-label { font-size: 12px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.24em; margin-right: 3px; }
-.jumbo-form i { width: 13px; height: 13px; border-radius: 50%; display: inline-block; }
+.jumbo-hero-rec { margin-left: auto; text-align: right; flex: 0 0 auto; padding-left: 10px; position: relative; z-index: 1; }
+.jumbo-hero-rec-v { font-family: var(--label); font-weight: 800; font-size: 28px; line-height: 1; white-space: nowrap; }
+.jumbo-hero-rec-l { font-size: 9px; font-weight: 700; color: var(--mut-2); letter-spacing: 0.26em; white-space: nowrap; }
+.jumbo-form { display: flex; gap: 6px; align-items: center; margin-top: 9px; position: relative; z-index: 1; }  /* was 13px — see .jumbo-rail-col's own comment */
+.jumbo-form-label { font-size: 11px; font-weight: 700; color: var(--mut-2); letter-spacing: 0.2em; margin-right: 3px; }
+.jumbo-form i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 .jumbo-form-w { background: var(--ok); box-shadow: 0 0 6px rgba(50,213,131,0.5); }
 .jumbo-form-l { background: rgba(255,69,58,0.35); border: 1px solid rgba(255,69,58,0.5); }
 .jumbo-gameline {
     /* margin-top/padding trimmed from 14px/12px 15px — see
-       .jumbo-rail-col's own comment on why this rail got tighter. */
+       .jumbo-rail-col's own comment on why this rail got tighter.
+       Solid "ticket stub" plate now, not blurred glass (see --glass's
+       own comment on the wider token change this follows) — border-
+       radius pulled in from 14px to match the rest of this reskin's
+       sharper, less-rounded broadcast-panel language. */
     margin-top: 9px;
-    border: 1px solid var(--glass-edge);
-    border-radius: 14px;
-    background: rgba(8,11,17,0.7);
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 5px;
+    background: rgba(0,0,0,0.4);
     padding: 9px 15px;
     font-family: var(--label);
     font-size: 16px;
+    font-weight: 600;
     color: var(--mut);
     line-height: 1.6;
+    position: relative;
+    z-index: 1;
 }
 .jumbo-gameline b { color: var(--bone); font-weight: 600; }
 .jumbo-gl-score { color: var(--led); font-weight: 800; font-size: 19px; }
@@ -3576,35 +3610,45 @@ html, body, [class*="css"] {
    _standings_table, restyled for the jumbotron's LED-mono look. */
 .jumbo-standings-body { flex: 1; min-height: 0; padding: 4px 18px 14px; overflow: hidden; }
 .jumbo-standings {
-    border: 1px solid var(--glass-edge);
-    border-radius: 14px;
-    background: rgba(8,11,17,0.7);
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    background: #0B0B0E;
     overflow: hidden;
     font-family: var(--label);
     font-size: 14px;
+    font-weight: 600;
 }
 .jumbo-standings-row {
     display: flex;
     align-items: center;
     gap: 10px;
     padding: 9px 14px;
-    border-bottom: 1px solid rgba(30,38,52,0.5);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
     color: var(--mut);
 }
 .jumbo-standings-row:last-child { border-bottom: none; }
-.jumbo-standings-row-team { color: var(--bone); background: rgba(255,179,0,0.07); font-weight: 700; }
-.jumbo-standings-rank { flex: 0 0 18px; color: var(--mut-2); }
-.jumbo-standings-logo { width: 22px; height: 22px; object-fit: contain; flex: 0 0 auto; }
+/* Network Primetime, extended: a hard amber flag on our own team's
+   row (border + gradient wash fading right) instead of the old flat,
+   even wash across the whole row — same "real flag, not a tint"
+   language the featured board's win-glow and the My Teams rail's own
+   left bar both already use. */
+.jumbo-standings-row-team {
+    color: var(--led);
+    font-weight: 800;
+    background: linear-gradient(90deg, rgba(255,196,0,0.16), rgba(255,196,0,0) 70%);
+    border-left: 3px solid var(--led);
+    padding-left: 11px;
+}
+.jumbo-standings-rank { flex: 0 0 18px; color: var(--mut-2); font-weight: 700; }
+.jumbo-standings-logo { width: 22px; height: 22px; border-radius: 5px; object-fit: contain; flex: 0 0 auto; background: rgba(255,255,255,0.08); }
 .jumbo-standings-team { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jumbo-standings-record { flex: 0 0 auto; }
+.jumbo-standings-record { flex: 0 0 auto; font-weight: 700; }
 .jumbo-standings-extra { flex: 0 0 40px; text-align: right; color: var(--mut-2); }
 /* Session request: "playoff odds for each of my teams" — only ever
    present on our own team's row (see pages_jumbotron._standings_rows_html's
    own comment), so this never competes with .jumbo-standings-extra for
    every OTHER row in the division. */
-.jumbo-standings-odds { flex: 0 0 auto; text-align: right; color: var(--led); font-weight: 600; margin-left: 8px; }
+.jumbo-standings-odds { flex: 0 0 auto; text-align: right; color: var(--led); font-weight: 800; margin-left: 8px; }
 
 /* ---- Featured board ---- */
 /* Session request: "how can we improve the experience watching the
@@ -4441,13 +4485,29 @@ html, body, [class*="css"] {
    already uses for the Featured board's own team boxes, just at a much
    smaller "compact identity strip" scale here — this rail is 420px
    wide, nowhere near that card's own 132px hero treatment. */
-.jumbo-lineup-head { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; margin-bottom: 8px; }
-.jumbo-lineup-logo { width: 46px; height: 46px; object-fit: contain; flex: 0 0 auto; }
+/* Network Primetime, extended — session follow-up: "show me what it
+   would look like if you gave the entire rest of the jumbotron this
+   kind of emphasis," then "build it into the real jumbotron." Same
+   diagonal team-color wash as the featured board's own .jumbo-side
+   (--side-rgb, pages_jumbotron._batting_order_rail_html's own
+   accent_rgb param) — a flat clip here rather than the board's two-
+   sided cut, since this is one team's own header strip, not a
+   matchup. */
+.jumbo-lineup-head {
+    position: relative; display: flex; align-items: center; gap: 12px;
+    padding: 10px 4px 10px 10px; margin-bottom: 8px; overflow: hidden;
+}
+.jumbo-lineup-head::before {
+    content: ""; position: absolute; inset: 0; z-index: -1;
+    background: linear-gradient(100deg, rgba(var(--side-rgb, 46,59,84), 0.4), rgba(var(--side-rgb, 46,59,84), 0.05) 80%);
+    clip-path: polygon(0 0, 92% 0, 100% 100%, 0 100%);
+}
+.jumbo-lineup-logo { width: 44px; height: 44px; padding: 5px; box-sizing: border-box; object-fit: contain; flex: 0 0 auto; background: rgba(255,255,255,0.1); border-radius: 9px; }
 .jumbo-lineup-headtext { flex: 1; min-width: 0; }
 .jumbo-lineup-teamname {
     font-family: var(--label);
     font-size: 18px;
-    font-weight: 700;
+    font-weight: 800;
     color: var(--bone);
     white-space: nowrap;
     overflow: hidden;
@@ -4488,6 +4548,13 @@ html, body, [class*="css"] {
     border: 2px solid var(--led);
     border-radius: 8px;
     background: rgba(255, 179, 0, 0.10);
+    /* Session follow-up (extending Network Primetime to the rest of
+       the board): a touch more broadcast presence on the spotlighted
+       row — box-shadow only, no change to the fill/border above, so
+       the real color-clash fix those already went through (fighting
+       an elite/below OPS tier color in the same row, see this rule's
+       own comment above) stays intact. */
+    box-shadow: 0 0 18px rgba(255,196,0,0.18);
 }
 /* .jumbo-lineup-row:last-child's own border-bottom: none (above) is a
    more specific selector (two classes-worth of specificity via the
@@ -4866,19 +4933,28 @@ html, body, [class*="css"] {
    roughly 25-30% (17->22px abbreviations, 26->32px scores, 11-12->13-
    14px status/leader lines, 28->34px team logos) — this panel is read
    at arm's length from a bed, not up close like a phone screen. */
+/* Network Primetime, extended — session follow-up: "show me what it
+   would look like if you gave the entire rest of the jumbotron this
+   kind of emphasis... around the leagues," then "build it into the
+   real jumbotron." Solid section-label block instead of plain
+   letter-spaced text on bare panel, matching the same treatment
+   .jumbo-ph/.jumbo-al-sec-style headers use elsewhere in this reskin. */
 .jumbo-around-league {
     font-family: var(--label);
-    font-size: 14px;
-    letter-spacing: 0.28em;
-    color: var(--led);
-    padding: 14px 18px 7px;
+    font-weight: 800;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: var(--mut-2);
+    text-transform: uppercase;
+    background: rgba(255,255,255,0.02);
+    padding: 10px 18px 8px;
 }
 .jumbo-mini {
     display: flex;
     align-items: center;
     padding: 13px 18px;
     gap: 16px;
-    border-bottom: 1px solid rgba(30,38,52,0.4);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 /* Session report: "final scores are... super grayed out... make sure
    they're still visible and white" — was opacity 0.42, unreadable on
@@ -4890,13 +4966,13 @@ html, body, [class*="css"] {
    report clarified only the dimming was unwanted, the red live tag
    should stay red. */
 .jumbo-mini-final { opacity: 1; }
-.jumbo-mini-live { background: rgba(255,69,58,0.05); border-left: 3px solid var(--live); }
+.jumbo-mini-live { background: rgba(255,69,58,0.07); border-left: 3px solid var(--live); }
 .jumbo-mini-teams { flex: 1; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .jumbo-mini-team { display: flex; align-items: center; gap: 10px; }
-.jumbo-mini-team img { width: 34px; height: 34px; object-fit: contain; flex: 0 0 auto; }
-.jumbo-mini-abbr { font-size: 22px; font-weight: 600; color: var(--mut); letter-spacing: 0.06em; }
-.jumbo-mini-record { font-size: 13px; font-weight: 400; color: var(--mut-2); letter-spacing: 0.04em; }
-.jumbo-mini-score { margin-left: auto; font-family: var(--label); font-size: 32px; line-height: 1; color: var(--bone); }
+.jumbo-mini-team img { width: 34px; height: 34px; padding: 4px; box-sizing: border-box; object-fit: contain; flex: 0 0 auto; background: rgba(255,255,255,0.08); border-radius: 7px; }
+.jumbo-mini-abbr { font-size: 21px; font-weight: 800; color: var(--mut); letter-spacing: 0.04em; }
+.jumbo-mini-record { font-size: 12px; font-weight: 700; color: var(--mut-2); letter-spacing: 0.02em; }
+.jumbo-mini-score { margin-left: auto; font-family: var(--label); font-weight: 800; font-size: 30px; line-height: 1; color: var(--bone); }
 /* Session request: bring back the standout-performer line (see
    scores_client.game_leader) that used to show on the regular
    rotation's own Scores page. */

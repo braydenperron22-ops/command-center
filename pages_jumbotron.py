@@ -1096,7 +1096,9 @@ _BATTING_ORDER_HEADER = (
 )
 
 
-def _batting_order_rail_html(entries: list[dict], team: dict, current_batter: str | None) -> str:
+def _batting_order_rail_html(
+    entries: list[dict], team: dict, current_batter: str | None, accent_rgb: tuple[int, int, int] | None = None
+) -> str:
     """The batting order for whichever team is actually at bat right
     now — one clean stat per hitter — session request, after attending
     a real Jays game: "they had the batting order, and the only stat
@@ -1133,10 +1135,26 @@ def _batting_order_rail_html(entries: list[dict], team: dict, current_batter: st
     this session, not a fixed number) — the at-bat highlight itself
     moved to a left accent bar (jumbo-lineup-row-current) rather than a
     full-row color wash specifically so it doesn't fight the tier
-    color sitting right next to it in the same row."""
+    color sitting right next to it in the same row.
+
+    `accent_rgb` — session follow-up to the featured board's own
+    Network Primetime reskin: "show me what it would look like if you
+    gave the entire rest of the jumbotron this kind of emphasis," then
+    "build it into the real jumbotron." Sets --side-rgb inline so
+    theme.py's own .jumbo-lineup-head can paint the same diagonal
+    team-color wash the featured board's .jumbo-side already uses —
+    render() passes _side_color's own result for whichever side is
+    actually batting (not always "us"; the opponent's lineup shows the
+    same way when they're up). Deliberately NOT applied to .jumbo-
+    lineup-row-current (the current-batter highlight) — that row
+    already went through a real color-clash fix earlier (a solid wash
+    fought the OPS tier color sitting in the same row, see that CSS
+    rule's own comment); this stays scoped to the team header, which
+    has no competing color of its own."""
     tiers = sports_client.fetch_league_ops_tiers()
+    style = f' style="--side-rgb:{accent_rgb[0]},{accent_rgb[1]},{accent_rgb[2]}"' if accent_rgb else ""
     head = (
-        f'<div class="jumbo-lineup-head">'
+        f'<div class="jumbo-lineup-head"{style}>'
         f'<img class="jumbo-lineup-logo" src="{html.escape(team["logo"])}" />'
         f'<div class="jumbo-lineup-headtext">'
         f'<div class="jumbo-lineup-teamname">{html.escape(team["name"])}</div>'
@@ -2855,8 +2873,10 @@ def render(now: datetime, state: dict, weather: dict | None, ufc_state: dict | N
     if batting_entries:
         away, home = _sides(state["status"], state["game"], state["league"]["label"])
         batting_team = home if batting_side == "home" else away
+        batting_match = _espn_match_for(state["league"]["sport"], state["game"])
+        batting_rgb = _side_color(state["league"]["sport"], batting_match, batting_team)
         rail_label = "Batting Order"
-        rail = _batting_order_rail_html(batting_entries, batting_team, current_batter)
+        rail = _batting_order_rail_html(batting_entries, batting_team, current_batter, accent_rgb=batting_rgb)
     else:
         rail_label = "My Teams"
         rail = "".join(_rail_hero_html(entry, now) for entry in _RAIL) + _ufc_rail_hero_html(now)
