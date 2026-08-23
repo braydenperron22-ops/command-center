@@ -1146,7 +1146,31 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
     raw = gemini_client.generate_periodic(
         "morning_briefing_sentence", AI_REFRESH_SECONDS, prompt, temperature=0.85, max_output_tokens=700
     )
-    return parse_headline_body(raw) if raw else None
+    if not raw:
+        return None
+    # Session report: "why is my morning brief consistently referencing
+    # Tuesday? It's Sunday." Root cause: generate_periodic's own
+    # stale-on-failure fallback (gemini_client.py) has no staleness
+    # ceiling by design — the right call for most of its other callers
+    # (an hour-old market overview is still useful), wrong here
+    # specifically, since this prompt bakes the real weekday directly
+    # into the AI's own prose ("Today is {weekday}") — a response
+    # generated on a PRIOR calendar day doesn't just go stale, it
+    # actively states the wrong day as fact. Checked against the
+    # cache's own real generated_at (gemini_client.periodic_cache_
+    # status), not just trusted because generate_periodic returned
+    # something — AI_REFRESH_SECONDS only guarantees an attempt was
+    # made recently, not that it succeeded; a real Gemini outage
+    # spanning a midnight rollover (or several) is exactly the gap
+    # this closes. Falls through to render()'s own plain mechanical
+    # fallback below, which is always built from today's real facts
+    # and never claims a weekday at all.
+    generated_at = gemini_client.periodic_cache_status().get("morning_briefing_sentence")
+    if generated_at is not None:
+        generated_date = datetime.fromtimestamp(generated_at, tz=ZoneInfo(TIMEZONE)).date()
+        if generated_date != now.date():
+            return None
+    return parse_headline_body(raw)
 
 
 def parse_headline_body(raw: str) -> tuple[str, str] | None:
