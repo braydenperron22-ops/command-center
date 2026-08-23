@@ -190,7 +190,7 @@ def _sides_neutral(game: dict) -> tuple[dict, dict]:
     return side(game["away"]), side(game["home"])
 
 
-def _side_html(side: dict, dim: bool, has_ball: bool = False) -> str:
+def _side_html(side: dict, dim: bool, has_ball: bool = False, accent_rgb: tuple[int, int, int] | None = None) -> str:
     """`has_ball` — NFL only (see _nfl_possession_home below); every
     other sport's call site just leaves the default False, zero visual
     change. Session request: "make it more obvious who has the ball...
@@ -199,11 +199,23 @@ def _side_html(side: dict, dim: bool, has_ball: bool = False) -> str:
     directly to the team's own name here — the strip's badge stays too
     (still useful when the board isn't wide enough to draw a clear line
     from the icon back to a specific name), this is a second, more
-    direct cue, not a replacement."""
+    direct cue, not a replacement.
+
+    `accent_rgb` — session request: "incorporate the exact same
+    systems... make sure this format is accepted" (the "Network
+    Primetime" visual-polish pick, a diagonal team-color split behind
+    each side). Sets --side-rgb inline so theme.py's own .jumbo-side
+    ::before can paint that side's real color (the same away_rgb/
+    home_rgb _board_html already computes for the board's ambient
+    gradient wash — this just also hands it to the side that owns it).
+    None (the default) falls back to theme.py's own neutral-slate
+    fallback — every existing call site that predates this still
+    renders exactly as it did before without passing anything new."""
     classes = "jumbo-side" + (" jumbo-side-dim" if dim else "")
+    style = f' style="--side-rgb:{accent_rgb[0]},{accent_rgb[1]},{accent_rgb[2]}"' if accent_rgb else ""
     ball = '<span class="jumbo-side-ball">🏈</span>' if has_ball else ""
     return (
-        f'<div class="{classes}">'
+        f'<div class="{classes}"{style}>'
         f'<div class="jumbo-logobox"><img src="{html.escape(side["logo"])}" /></div>'
         f'<div class="jumbo-tname">{ball}{html.escape(side["name"])}</div>'
         f'<div class="jumbo-trec">{html.escape(side["record"])}</div>'
@@ -1989,8 +2001,8 @@ def _board_html(state: dict, now: datetime) -> str:
         f'<span class="jumbo-ph-right">{state_label}</span></div>'
         f'<div class="jumbo-board-body" style="{board_gradient}">'
         f'<div class="jumbo-matchup">'
-        f'{_side_html(away, dim_away, has_ball=nfl_possession_home is False)}{center}'
-        f'{_side_html(home, dim_home, has_ball=nfl_possession_home is True)}</div>'
+        f'{_side_html(away, dim_away, has_ball=nfl_possession_home is False, accent_rgb=away_rgb)}{center}'
+        f'{_side_html(home, dim_home, has_ball=nfl_possession_home is True, accent_rgb=home_rgb)}</div>'
         f"{wp_html}{situation}{blurb_html}{leaders_html}{last_play_html}"
         f"</div></div>"
     )
@@ -2523,8 +2535,18 @@ def _ufc_fighter_hero_html(fighter: dict, profile: dict | None, is_winner: bool,
             method_parts.append(f'{profile["wins_dec"]} DEC')
     method_html = f'<div class="jumbo-ufc-hero-method">{" &middot; ".join(method_parts)}</div>' if method_parts else ""
     record_html = f'<span class="jumbo-ufc-hero-record-text">{html.escape(fighter["record"])}</span>' if fighter.get("record") else ""
+    # jumbo-ufc-hero-fighter-{accent} — session request: "incorporate
+    # the exact same systems... make sure this format is accepted"
+    # (the "Network Primetime" pick: a diagonal color panel behind
+    # each side of a matchup, already built for the team-sport board's
+    # own .jumbo-side). UFC already had a fixed red/blue corner accent
+    # for the photo ring/stat bars (see this function's own docstring
+    # on why fixed, not a real per-fighter color) — this just also
+    # hands that same accent to the outer wrapper so theme.py can paint
+    # the same diagonal panel behind the whole fighter card, not just
+    # the photo ring.
     return (
-        f'<div class="jumbo-ufc-hero-fighter{hl}">'
+        f'<div class="jumbo-ufc-hero-fighter jumbo-ufc-hero-fighter-{accent}{hl}">'
         f"{photo_html}"
         f'<div class="jumbo-ufc-hero-name">{html.escape(fighter["name"])}</div>'
         f"{nickname_html}"

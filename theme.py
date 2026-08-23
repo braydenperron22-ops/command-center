@@ -3208,14 +3208,34 @@ html, body, [class*="css"] {
    sports_alerts.takeover_state() has the screen (T-60min through ~15min
    past final). Every rule here is namespaced .jumbo* so none of it can
    leak into the normal kiosk pages, which keep the Apple-glass look.
-   LED amber on near-black, glass bento panels, Apple-system type
-   throughout (see --label's own comment for why this no longer runs
-   its own separate arena font stack). */
+
+   Session request: "make an HTML document with three different
+   versions [of a visual polish], I'll tell you which one I like
+   most" -> user picked "Network Primetime" (real ESPN/Fox pregame-
+   card DNA: a diagonal VS seam splitting two full team-color panels,
+   solid color-blocked panel headers, amber as the network ID mark)
+   over the prior soft blurred-glass look, then: "incorporate the
+   exact same systems that are currently in the dashboard into this
+   new system... no features should be lost." Every *_html function in
+   pages_jumbotron.py is untouched by this reskin — this is a token +
+   structural CSS change on top of the exact same markup, not a
+   rewrite; the one Python change is additive (_side_html gained an
+   optional accent_rgb param, see its own docstring) and defaults to
+   the same behavior for any caller that doesn't pass it. Apple-system
+   type throughout still (see --label's own comment for why this
+   never runs its own separate arena font stack) — "Network Primetime"
+   pushes weight/tracking, it doesn't swap in a decorative face. */
 .jumbo {
-    --led: #FFB300;
-    --ledglow: rgba(255,179,0,0.5);
-    --arena: #05070C;
-    --glass: rgba(16,22,32,0.66);
+    --led: #FFC400;
+    --ledglow: rgba(255,196,0,0.5);
+    --arena: #07070A;
+    /* Solid panel now, not translucent glass — "Network Primetime"'s
+       own broadcast-graphics panels are opaque color blocks, not a
+       blurred see-through surface. Every rule below that still also
+       carries a backdrop-filter alongside `background: var(--glass)`
+       was left as-is rather than hunted down individually — a no-op
+       once the surface behind it is fully opaque, not a bug. */
+    --glass: #101014;
     --edge: #1E2634;
     --edge-hi: #2E3B54;
     /* Session request: "you know how we have the apple style thing for
@@ -3308,31 +3328,43 @@ html, body, [class*="css"] {
     display: flex;
     align-items: center;
     gap: 18px;
-    padding: 8px 16px;
+    padding: 8px 22px 8px 26px;
     flex: 0 0 auto;
-    background: linear-gradient(180deg, rgba(14,19,28,0.94), rgba(8,11,16,0.94));
-    backdrop-filter: blur(24px) saturate(160%);
-    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    background: var(--glass);
     border: 1px solid var(--glass-edge);
-    border-radius: 18px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
+    /* Network Primetime: a clipped bottom-left corner (real broadcast-
+       graphics panels are cut, not universally rounded) instead of the
+       old fully-rounded pill. */
+    border-radius: 14px;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
     position: relative;
+}
+/* Amber network-ID stripe down the left edge — the marquee's own
+   version of the same left-accent-bar language the featured board's
+   diagonal seam and the My Teams rail rows both use. */
+.jumbo-marquee::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: var(--led);
 }
 /* Jays blue on the left half, Habs red on the right — the arena's own
    two-team identity, stated once at the top instead of repeated. */
 .jumbo-marquee::after {
     content: "";
     position: absolute;
-    left: 0; right: 0; bottom: -1px;
+    left: 4px; right: 0; bottom: 0;
     height: 2px;
     background: linear-gradient(90deg, #3E7CC9 0 50%, #D8323F 50% 100%);
     opacity: 0.85;
-    border-radius: 0 0 18px 18px;
 }
 .jumbo-brand {
     font-family: var(--num);
-    font-size: 30px;
-    letter-spacing: 0.12em;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
     color: var(--led);
     text-shadow: 0 0 16px var(--ledglow);
     line-height: 0.92;
@@ -3341,8 +3373,8 @@ html, body, [class*="css"] {
     display: block;
     color: var(--mut);
     font-family: var(--disp);
-    font-weight: 300;
-    letter-spacing: 0.4em;
+    font-weight: 700;
+    letter-spacing: 0.32em;
     font-size: 9px;
 }
 .jumbo-clock {
@@ -3394,14 +3426,11 @@ html, body, [class*="css"] {
 }
 .jumbo-panel {
     border: 1px solid var(--glass-edge);
-    /* Bumped from 14px to match the same generous "squircle" curve
-       every .tile on the normal kiosk pages already uses — see
-       --glass-edge's own comment above. */
-    border-radius: 20px;
+    /* Network Primetime: sharp broadcast-graphic corners, not the old
+       soft "squircle" glass curve — was 20px. */
+    border-radius: 6px;
     background: var(--glass);
-    backdrop-filter: blur(24px) saturate(160%);
-    -webkit-backdrop-filter: blur(24px) saturate(160%);
-    box-shadow: 0 10px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+    box-shadow: 0 10px 32px rgba(0,0,0,0.4);
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -3409,29 +3438,33 @@ html, body, [class*="css"] {
 }
 /* Session request: "how can we improve the experience watching the
    game... feel like its all orchestrated in a sophisticated manner" —
-   the two side panels recede a touch (slightly more transparent glass,
-   slightly dimmer edge) so the featured board (.jumbo-board, styled
-   separately above) reads as the visual hero at a glance, not three
-   equally-weighted boxes. Subtle on purpose — My Teams/Around The
-   Leagues still need to be read clearly, just not compete for
-   attention with the actual live game. */
+   the two side panels recede a touch so the featured board (.jumbo-
+   board, styled separately below) reads as the visual hero at a
+   glance, not three equally-weighted boxes. Was a lighter/more-
+   transparent glass; now that panels are solid (--glass, see its own
+   comment), "recede" means a darker solid shade instead of a dimmer
+   one. Subtle on purpose — My Teams/Around The Leagues still need to
+   be read clearly, just not compete for attention with the actual
+   live game. */
 .jumbo-rail, .jumbo-around {
-    background: rgba(16,22,32,0.52);
+    background: #0B0B0E;
     border-color: rgba(255,255,255,0.07);
 }
 .jumbo-ph {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
-    padding: 12px 18px;
-    border-bottom: 1px solid var(--edge);
+    padding: 11px 18px;
+    background: rgba(255,255,255,0.035);
+    border-bottom: 2px solid var(--led);
     font-family: var(--label);
-    font-size: 13px;
-    letter-spacing: 0.32em;
-    color: var(--led);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    color: var(--bone);
     text-transform: uppercase;
 }
-.jumbo-ph-right { margin-left: auto; letter-spacing: 0.12em; color: var(--mut-2); }
+.jumbo-ph-right { margin-left: auto; letter-spacing: 0.1em; font-weight: 700; color: var(--mut-2); }
 .jumbo-live { color: var(--live); font-weight: 800; animation: jumbo-blink 1.4s infinite; }
 @keyframes jumbo-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
@@ -3586,7 +3619,7 @@ html, body, [class*="css"] {
    pregame/postgame too, not just while a game's actually live. */
 .jumbo-board {
     position: relative;
-    background: rgba(20,27,40,0.74);
+    background: #121218;
     border-color: rgba(255,255,255,0.13);
 }
 .jumbo-board-live {
@@ -3626,29 +3659,70 @@ html, body, [class*="css"] {
     justify-content: center;
     overflow: hidden;
 }
+/* Network Primetime's own centerpiece: two full-height diagonal team-
+   color panels meeting at a seam, with the actual matchup content (VS/
+   countdown/score) floating on a dark plate over the seam — real
+   ESPN/Fox pregame-card DNA. Restructured from the old grid (1fr auto
+   1fr, three plain columns) to a flex row where .jumbo-side itself
+   becomes a colored panel — but the color/clip lives on a ::before
+   pseudo-element behind the real content (logo/name/record), not on
+   .jumbo-side directly, specifically so the diagonal cut can never
+   clip actual content even if the angle or padding ever changes.
+   --side-rgb (pages_jumbotron._side_html's own optional accent_rgb
+   param) is each side's real color — the same away_rgb/home_rgb
+   _board_html already computed for the old ambient wash gradient, now
+   used at full strength instead of a faint 22%-alpha tint. Falls back
+   to a neutral slate if a caller ever leaves it unset (UFC's own hero
+   panel below sets its own two accent colors independently and never
+   touches this rule at all). */
 .jumbo-matchup {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    align-items: center;
-    gap: 8px;
-    padding: 18px 26px 6px;
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    min-height: 236px;
+    overflow: hidden;
 }
-.jumbo-side { display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center; }
+.jumbo-side { flex: 1; position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 20px 16px; text-align: center; }
+.jumbo-side::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(135deg, rgba(var(--side-rgb, 58,64,80), 0.6), rgba(var(--side-rgb, 58,64,80), 0.14));
+}
+.jumbo-side:first-child::before { clip-path: polygon(0 0, 100% 0, 84% 100%, 0 100%); }
+.jumbo-side:last-child::before { clip-path: polygon(16% 0, 100% 0, 100% 100%, 0 100%); }
 .jumbo-side-dim { opacity: 0.55; }
-.jumbo-logobox { width: 132px; height: 132px; display: flex; align-items: center; justify-content: center; }
+.jumbo-logobox { width: 120px; height: 120px; display: flex; align-items: center; justify-content: center; }
 .jumbo-logobox img {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
     filter: drop-shadow(0 5px 18px rgba(0,0,0,0.75));
 }
-.jumbo-tname { font-weight: 600; font-size: 26px; letter-spacing: 0.05em; }
+.jumbo-tname { font-weight: 800; font-size: 25px; letter-spacing: 0.01em; }
 /* NFL possession icon next to the team name (pages_jumbotron.
    _side_html) — session request: "make it more obvious who has the
    ball... a little ball icon next to their name." */
 .jumbo-side-ball { margin-right: 8px; }
-.jumbo-trec { font-size: 13px; font-weight: 300; color: var(--mut); letter-spacing: 0.14em; }
-.jumbo-center { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.jumbo-trec { font-size: 13px; font-weight: 700; color: var(--mut); letter-spacing: 0.1em; }
+/* The floating dark plate over the diagonal seam — hairline borders
+   on both sides read as a real cut card sitting on top of the two
+   color panels, not just empty space between them. */
+.jumbo-center {
+    flex: 0 0 auto;
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 16px 32px;
+    background: rgba(7,7,10,0.9);
+    border-left: 1px solid rgba(255,255,255,0.09);
+    border-right: 1px solid rgba(255,255,255,0.09);
+}
 .jumbo-score { display: flex; align-items: center; gap: 12px; }
 .jumbo-digitbox { display: flex; gap: 6px; }
 /* Plain numerals, not the amber LED-panel look this used to have —
@@ -3657,12 +3731,12 @@ html, body, [class*="css"] {
    numbers." */
 .jumbo-digit {
     font-family: var(--label);
-    font-size: 92px;
+    font-size: 88px;
     line-height: 0.92;
     width: 0.62em;
     text-align: center;
     color: var(--bone);
-    font-weight: 600;
+    font-weight: 800;
 }
 /* Score-change flash (pages_jumbotron._board_html) — session request:
    "are there animations for when the j score" (the original static
@@ -3687,9 +3761,13 @@ html, body, [class*="css"] {
     0% { transform: scale(1.12); text-shadow: 0 0 20px rgba(255,255,255,0.5); }
     100% { transform: scale(1); text-shadow: none; }
 }
-.jumbo-dash { color: var(--edge-hi); font-family: var(--label); font-size: 50px; }
-.jumbo-vs { font-family: var(--num); font-size: 26px; letter-spacing: 0.4em; color: var(--mut-2); padding-left: 0.4em; }
-.jumbo-countdown { font-family: var(--label); font-size: 96px; color: var(--bone); letter-spacing: 0.06em; line-height: 1; }
+.jumbo-dash { color: var(--edge-hi); font-family: var(--label); font-size: 50px; font-weight: 800; }
+.jumbo-vs {
+    font-family: var(--num); font-size: 15px; font-weight: 800; letter-spacing: 0.14em; color: var(--led);
+    width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--led); margin-bottom: 4px;
+}
+.jumbo-countdown { font-family: var(--label); font-size: 88px; font-weight: 800; color: var(--bone); letter-spacing: 0.02em; line-height: 1; }
 /* Session request: "the jays game is delayed can you make it show
    delayed instead of sitting at 0:00" — swaps in for .jumbo-countdown
    once the scheduled start has passed with no live game yet (see
@@ -4532,13 +4610,25 @@ html, body, [class*="css"] {
 .jumbo-ufc-phase-recent-b { color: #5AC8FA; }
 .jumbo-ufc-hero {
     flex: 0 0 auto;
+    position: relative;
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: center;
-    gap: 40px;
-    padding: 18px 20px 8px;
+    gap: 0;
+    padding: 18px 0 8px;
+    overflow: hidden;
 }
-.jumbo-ufc-hero-fighter { flex: 1; text-align: center; min-width: 0; }
+/* Same diagonal-panel-behind-each-side treatment as the team-sport
+   board's own .jumbo-side (see that rule's own comment) — fixed red/
+   blue instead of a real per-fighter color (accent_rgb doesn't apply
+   here; see _ufc_fighter_hero_html's own docstring on why this stays
+   the broadcast-convention corner colors). The color/clip lives on a
+   ::before behind the real content for the same reason as .jumbo-side:
+   the diagonal cut can never clip the actual photo/name/record. */
+.jumbo-ufc-hero-fighter { flex: 1; position: relative; z-index: 1; text-align: center; min-width: 0; padding: 0 20px; }
+.jumbo-ufc-hero-fighter::before { content: ""; position: absolute; inset: 0; z-index: -1; }
+.jumbo-ufc-hero-fighter-a::before { background: linear-gradient(135deg, rgba(255,59,48,0.32), rgba(255,59,48,0.05)); clip-path: polygon(0 0, 100% 0, 82% 100%, 0 100%); }
+.jumbo-ufc-hero-fighter-b::before { background: linear-gradient(225deg, rgba(90,200,250,0.32), rgba(90,200,250,0.05)); clip-path: polygon(18% 0, 100% 0, 100% 100%, 0 100%); }
 /* Fighter photo — session request: "add player photos... make it feel
    more professional." Sized to leave real room for the name/nickname/
    record/method lines still below it in this same fixed-height,
@@ -4584,7 +4674,7 @@ html, body, [class*="css"] {
    bars' own big flanking numbers. */
 .jumbo-ufc-hero-name {
     font-family: var(--disp);
-    font-weight: 600;
+    font-weight: 800;
     font-size: 36px;
     letter-spacing: 0.01em;
     line-height: 1.15;
@@ -4611,7 +4701,15 @@ html, body, [class*="css"] {
     margin-top: 3px;
 }
 .jumbo-ufc-winner .jumbo-ufc-hero-name { color: var(--ok); }
-.jumbo-ufc-hero-mid { flex: 0 0 auto; text-align: center; }
+/* Same floating dark plate over the seam as the team-sport board's
+   own .jumbo-center, for the same reason — reads as a real cut card
+   sitting on top of the two diagonal panels either side of it. */
+.jumbo-ufc-hero-mid {
+    flex: 0 0 auto; position: relative; z-index: 2; text-align: center;
+    padding: 10px 26px; background: rgba(7,7,10,0.9);
+    border-left: 1px solid rgba(255,255,255,0.09); border-right: 1px solid rgba(255,255,255,0.09);
+    display: flex; flex-direction: column; justify-content: center;
+}
 /* Tale of the tape — session request: "make it more obvious... more
    professional," the height/reach/age comparison every real UFC
    broadcast leads with. One compact row (see _ufc_tale_of_tape_html's
