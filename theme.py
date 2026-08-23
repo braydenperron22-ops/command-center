@@ -3950,12 +3950,10 @@ html, body, [class*="css"] {
     display: flex;
     align-items: center;
     gap: 22px;
-    background: rgba(8,11,17,0.65);
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    border: 1px solid var(--glass-edge);
-    border-radius: 18px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
     padding: 16px 26px;
 }
 .jumbo-leader-big-hshot {
@@ -4043,11 +4041,9 @@ html, body, [class*="css"] {
     align-items: center;
     text-align: center;
     gap: 4px;
-    background: rgba(8,11,17,0.65);
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    border: 1px solid var(--glass-edge);
-    border-radius: 18px;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
     padding: 16px 12px;
 }
 /* Best of the 3 (always index 0 — MLB's own list is pre-sorted by
@@ -4908,7 +4904,14 @@ html, body, [class*="css"] {
     font-size: 14px;
 }
 .jumbo-ufc-card-row:last-child { border-bottom: none; }
-.jumbo-ufc-card-row-main { background: rgba(255,179,0,0.06); }
+/* Network Primetime consistency sweep: same hard amber flag as the
+   standings panel's own tracked-team row (border + gradient wash
+   fading right) instead of a flat, even tint, for the main-event row. */
+.jumbo-ufc-card-row-main {
+    background: linear-gradient(90deg, rgba(255,196,0,0.14), rgba(255,196,0,0) 70%);
+    border-left: 3px solid var(--led);
+    padding-left: 13px;
+}
 .jumbo-ufc-card-weight {
     flex: 0 0 120px;
     font-size: 10px;
@@ -5048,13 +5051,13 @@ html, body, [class*="css"] {
    rather than var(--label): this overlay (app.py) renders outside
    .jumbo's own div entirely, so that custom property isn't in scope —
    same reasoning .jumbo-transition-sub below already documented. */
-.jumbo-transition-in { background: #05070C; }
+.jumbo-transition-in { background: #07070A; }
 .jumbo-transition-brand {
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
     font-size: 72px;
     letter-spacing: 0.12em;
-    color: #FFB300;
-    text-shadow: 0 0 30px rgba(255,179,0,0.6), 0 0 4px rgba(255,179,0,0.9);
+    color: #FFC400;
+    text-shadow: 0 0 30px rgba(255,196,0,0.6), 0 0 4px rgba(255,196,0,0.9);
     line-height: 0.9;
     text-align: center;
     animation: jumbo-transition-flicker 1.4s ease-out;
@@ -5087,7 +5090,7 @@ html, body, [class*="css"] {
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
     font-size: 14px;
     letter-spacing: 0.32em;
-    color: #FFB300;
+    color: #FFC400;
     text-transform: uppercase;
     opacity: 0;
     animation: jumbo-transition-sub-in 0.6s ease-out 1s forwards;
@@ -5340,18 +5343,17 @@ html, body, [class*="css"] {
     gap: 10px;
 }
 .st-key-jumbotron_controls div[data-testid="stButton"] button {
-    background: rgba(16,22,32,0.82);
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    border: 1px solid var(--glass-edge);
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.1);
     box-shadow: 0 6px 18px rgba(0,0,0,0.35);
     color: var(--mut);
     font-family: var(--label);
+    font-weight: 700;
     font-size: 12px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     padding: 8px 16px;
-    border-radius: 12px;
+    border-radius: 6px;
     white-space: nowrap;
 }
 .st-key-jumbotron_controls div[data-testid="stButton"] button:hover {
@@ -5390,11 +5392,9 @@ html, body, [class*="css"] {
     display: none;
 }
 .st-key-jumbotron_controls div[data-testid="stNumberInputContainer"] {
-    background: rgba(16,22,32,0.82);
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
-    border: 1px solid var(--glass-edge);
-    border-radius: 12px;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
     box-shadow: 0 6px 18px rgba(0,0,0,0.35);
     width: 84px;
 }
