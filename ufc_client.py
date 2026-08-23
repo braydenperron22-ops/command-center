@@ -26,6 +26,7 @@ round, and time are all confirmed reliable fields; method isn't, so
 it's left out rather than risk inventing it.
 """
 
+import json
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -107,13 +108,37 @@ def _normalize_bout(comp: dict, order: int, is_main_event: bool) -> dict:
     }
 
 
+def _normalize_venue(comp: dict) -> str:
+    """"Golden 1 Center, Sacramento, CA" — session request: "look at
+    other sources... improve the viewing experience," a small real
+    broadcast-style touch (free — already sitting in the same
+    competition object everything else here reads, no extra fetch).
+    "" if ESPN doesn't have a venue for this card yet (confirmed live
+    this can be genuinely absent well before an event, not just a
+    parsing gap)."""
+    venue = comp.get("venue") or {}
+    name = venue.get("fullName")
+    address = venue.get("address") or {}
+    city, state = address.get("city"), address.get("state")
+    if not name:
+        return ""
+    location = ", ".join(part for part in (city, state) if part)
+    return f"{name}, {location}" if location else name
+
+
 def _normalize_event(e: dict) -> dict:
     bouts_raw = e.get("competitions") or []
     last_idx = len(bouts_raw) - 1
     bouts = [_normalize_bout(c, i, i == last_idx) for i, c in enumerate(bouts_raw)]
+    # Same venue for every bout on one card — the main event's own
+    # competition object (bouts_raw[-1], matching how every other
+    # "which bout represents the card" choice here already prefers the
+    # last entry) is as good a place to read it from as any.
+    venue = _normalize_venue(bouts_raw[-1]) if bouts_raw else ""
     return {
         "event_id": e["id"],
         "name": e["name"],
+        "venue": venue,
         "start_time": _to_local(e["date"]),
         "state": _STATE_MAP.get(((e.get("status") or {}).get("type") or {}).get("state"), "upcoming"),
         "bouts": bouts,
@@ -282,6 +307,107 @@ def fetch_bout_stats(event_id: str, bout_id: str, fighter_a_id: str, fighter_b_i
     b = _fighter_stat_line(event_id, bout_id, fighter_b_id)
     result = {"fighter_a": a, "fighter_b": b} if a is not None and b is not None else None
     return sports_client.delayed(f"ufc_stats_{bout_id}", result)
+
+
+# --- Win probability (Polymarket) ---------------------------------------
+# Session request: "look at other sources or other things we can add to
+# improve the viewing experience" -> approved "real win probability."
+# Same no-auth gamma-api.polymarket.com/public-search endpoint
+# prediction_markets_client.py already uses for central-bank and
+# macro-data odds (see that module's own docstring for why no API key
+# is needed) — reused directly here rather than routed through that
+# module, since UFC's match shape (one 2-outcome market per bout,
+# found by a fighter-name search) has nothing in common with that
+# module's own per-bank/per-series lookups.
+UFC_ODDS_SEARCH_URL = "https://gamma-api.polymarket.com/public-search"
+# A pre-fight line barely moves minute to minute, but a LIVE line can
+# swing hard round to round — confirmed live watching a real card this
+# session (a bout opened at 87.5/12.5 pre-fight). 60s is fresh enough to
+# track a real swing without hitting the search endpoint every 5s
+# rerun; sports_client.delayed() below adds the same broadcast-safe lag
+# on top regardless of how fresh the underlying fetch is.
+WIN_PROBABILITY_CACHE_TTL_SECONDS = 60
+
+
+def _match_fighter_index(name: str, outcomes: list[str]) -> int | None:
+    """Which index in a Polymarket outcomes list is `name` (an ESPN
+    fighter display name). Confirmed live against a real card that the
+    two sources' full names are normally identical verbatim (querying
+    "Anthony Hernandez vs Gregory Rodrigues" returned outcomes
+    ["Anthony Hernandez", "Gregory Rodrigues"], exact case match) — tried
+    first. Falls back to a last-name-only match for the rare case where
+    Polymarket's own label differs (a nickname, a suffix, an accent)."""
+    lowered = [o.lower() for o in outcomes]
+    name_l = name.strip().lower()
+    if name_l in lowered:
+        return lowered.index(name_l)
+    last = name_l.split()[-1]
+    for i, o in enumerate(lowered):
+        if last in o:
+            return i
+    return None
+
+
+@st.cache_data(ttl=WIN_PROBABILITY_CACHE_TTL_SECONDS, show_spinner=False)
+def _search_win_probability_raw(query: str) -> list[dict]:
+    fetch_throttle.wait_turn()
+    resp = requests.get(UFC_ODDS_SEARCH_URL, params={"q": query, "limit_per_type": 5}, timeout=10)
+    resp.raise_for_status()
+    return resp.json().get("events") or []
+
+
+_last_good_win_probability: dict[str, dict] = {}
+
+
+def _fetch_win_probability_raw(fighter_a_name: str, fighter_b_name: str, bout_id: str) -> dict | None:
+    # Confirmed live: the full "<fighter a> vs <fighter b>" query
+    # reliably surfaces exactly the right single UFC event even for a
+    # prelim (search is fuzzy text matching generally, but ESPN's own
+    # full display names for both fighters together are specific enough
+    # that nothing else has matched in testing) — a shorter last-name-
+    # only query risked a false match (a same-surnamed non-UFC bout in
+    # another sport's own market came back for "Hernandez vs Rodrigues").
+    query = f"{fighter_a_name} vs {fighter_b_name}"
+    try:
+        events = _search_win_probability_raw(query)
+    except Exception:
+        return _last_good_win_probability.get(bout_id)
+    for event in events:
+        markets = event.get("markets") or []
+        if not markets:
+            continue
+        try:
+            outcomes = json.loads(markets[0].get("outcomes") or "[]")
+            prices = json.loads(markets[0].get("outcomePrices") or "[]")
+        except (ValueError, TypeError):
+            continue
+        if len(outcomes) != 2 or len(prices) != 2:
+            continue
+        idx_a = _match_fighter_index(fighter_a_name, outcomes)
+        idx_b = _match_fighter_index(fighter_b_name, outcomes)
+        if idx_a is None or idx_b is None or idx_a == idx_b:
+            continue
+        try:
+            result = {"prob_a": float(prices[idx_a]), "prob_b": float(prices[idx_b])}
+        except (ValueError, TypeError):
+            continue
+        _last_good_win_probability[bout_id] = result
+        return result
+    return _last_good_win_probability.get(bout_id)
+
+
+def fetch_win_probability(fighter_a_name: str, fighter_b_name: str, bout_id: str) -> dict | None:
+    """{"prob_a", "prob_b"} — real-money implied win probability for this
+    bout from Polymarket. None if no matching market exists yet (a bout
+    added to the card too recently for Polymarket to have listed it) or
+    the fetch fails with nothing cached yet for this bout_id.
+
+    Wrapped through sports_client.delayed() same as fetch_bout_stats
+    above and for the same reason (session precedent covers this too: a
+    line swinging hard toward one fighter mid-fight is exactly as much
+    of a spoiler as a live stat number climbing would be)."""
+    result = _fetch_win_probability_raw(fighter_a_name, fighter_b_name, bout_id)
+    return sports_client.delayed(f"ufc_winprob_{bout_id}", result)
 
 
 @st.cache_data(ttl=LIVE_EVENT_CACHE_TTL_SECONDS, show_spinner=False)

@@ -2534,9 +2534,9 @@ def _ufc_fighter_hero_html(fighter: dict, profile: dict | None, is_winner: bool,
     )
 
 
-def _ufc_tale_of_tape_html(profile_a: dict | None, profile_b: dict | None) -> str:
-    """Height/reach/age, one compact row — session request: "make it
-    more obvious... more professional," the same "tale of the tape"
+def _ufc_tale_of_tape_html(profile_a: dict | None, profile_b: dict | None, win_prob: dict | None = None) -> str:
+    """Height/reach/age(/win%), one compact row — session request: "make
+    it more obvious... more professional," the same "tale of the tape"
     comparison every real UFC broadcast leads with. One line, not three
     stacked rows: .jumbo-ufc-hero-panel is a fixed-height, non-
     scrolling kiosk panel already carrying two photos, two names,
@@ -2545,7 +2545,16 @@ def _ufc_tale_of_tape_html(profile_a: dict | None, profile_b: dict | None) -> st
     its panel's actually-wanted content off-screen) is exactly the
     failure mode staying this compact avoids. "" whenever either
     profile fetch failed — a partial tale of the tape (one side blank)
-    would read as a data error, not an honest gap."""
+    would read as a data error, not an honest gap.
+
+    win_prob (ufc_client.fetch_win_probability) adds a 4th cell — real
+    win probability, session request: "look at other sources... improve
+    the viewing experience." Reuses this same row/cell markup rather
+    than adding new panel height, since the hero panel is already at
+    its real height budget (see this function's own comment above).
+    Omitted (not blank) when no market's been matched yet, same "never
+    show a placeholder for missing data" rule the rest of this cell
+    already follows."""
     if not profile_a or not profile_b:
         return ""
     cells = []
@@ -2558,6 +2567,14 @@ def _ufc_tale_of_tape_html(profile_a: dict | None, profile_b: dict | None) -> st
             f'<span class="jumbo-ufc-tot-a">{html.escape(str(va))}</span>'
             f'<span class="jumbo-ufc-tot-label">{label}</span>'
             f'<span class="jumbo-ufc-tot-b">{html.escape(str(vb))}</span>'
+            f"</div>"
+        )
+    if win_prob and win_prob.get("prob_a") is not None and win_prob.get("prob_b") is not None:
+        cells.append(
+            f'<div class="jumbo-ufc-tot-cell">'
+            f'<span class="jumbo-ufc-tot-a">{round(win_prob["prob_a"] * 100)}%</span>'
+            f'<span class="jumbo-ufc-tot-label">WIN%</span>'
+            f'<span class="jumbo-ufc-tot-b">{round(win_prob["prob_b"] * 100)}%</span>'
             f"</div>"
         )
     return f'<div class="jumbo-ufc-tot">{"".join(cells)}</div>' if cells else ""
@@ -2657,6 +2674,17 @@ def _ufc_board_html(ufc_state: dict, now: datetime) -> str:
     except Exception:
         profile_b = None
 
+    # Real win probability — session request: "look at other sources...
+    # improve the viewing experience" -> approved "real win probability."
+    # Own fetch (Polymarket, not ESPN), same delay treatment as the
+    # live stats above (see ufc_client.fetch_win_probability's own
+    # docstring on why a swinging line is as much of a spoiler as a
+    # live stat number).
+    try:
+        win_prob = ufc_client.fetch_win_probability(a["name"], b["name"], hero["bout_id"])
+    except Exception:
+        win_prob = None
+
     hero_html = (
         f'<div class="jumbo-ufc-hero">'
         f"{_ufc_fighter_hero_html(a, profile_a, a_hl, 'a', a_kd_badge)}"
@@ -2666,7 +2694,7 @@ def _ufc_board_html(ufc_state: dict, now: datetime) -> str:
         f"</div>"
         f"{_ufc_fighter_hero_html(b, profile_b, b_hl, 'b', b_kd_badge)}"
         f"</div>"
-        f"{_ufc_tale_of_tape_html(profile_a, profile_b)}"
+        f"{_ufc_tale_of_tape_html(profile_a, profile_b, win_prob)}"
     )
 
     stats_html = _ufc_stats_html(hero["bout_id"], a, b, stats)
@@ -2681,10 +2709,21 @@ def _ufc_board_html(ufc_state: dict, now: datetime) -> str:
     card_label = "Full Card" + (f" · {page_index + 1}/{page_total}" if page_total > 1 else "")
     card_rows = "".join(_ufc_card_row_html(bout) for bout in page_bouts)
 
+    # Venue — session request: "look at other sources... improve the
+    # viewing experience" -> approved "venue line." Free from the same
+    # scoreboard payload ufc_client._normalize_event already reads (no
+    # extra fetch) — rendered into the existing .jumbo-ph-right slot
+    # (same header row, right-aligned) rather than a new line, so it
+    # costs zero extra height in this already-tight fixed panel (see
+    # _ufc_tale_of_tape_html's own comment on that budget). "" (nothing
+    # rendered) when ESPN hasn't published a venue for this card yet —
+    # confirmed live this can be genuinely absent well before an event.
+    venue_html = f'<span class="jumbo-ph-right">{html.escape(event["venue"])}</span>' if event.get("venue") else ""
+
     return (
         f'<div class="jumbo-grid jumbo-ufc-grid">'
         f'<div class="jumbo-panel jumbo-ufc-hero-panel">'
-        f'<div class="jumbo-ph"><span>{html.escape(event["name"])}</span></div>'
+        f'<div class="jumbo-ph"><span>{html.escape(event["name"])}</span>{venue_html}</div>'
         f"{phase_html}{hero_html}{stats_html}"
         f"</div>"
         f'<div class="jumbo-panel jumbo-ufc-card-panel">'
