@@ -877,7 +877,21 @@ components.html(
         // own comments on why), same shape KIOSK_LEAVE_VOICE_SEL already
         // uses. bar_class is built per-sport (sports-alert-bar-mlb/nhl/
         // nfl), so this lists all three rather than one shared class.
-        "var KIOSK_SPORTS_VOICE_SEL = '.sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl';",
+        //
+        // Session finding (sound-design review): .sports-alert-bar-
+        // goalline (the NFL goal-to-go toast) and .sports-alert-bar-ufc
+        // (the UFC knockdown toast) were never added here when they
+        // were built — both real, visually-urgent red-pulse toasts that
+        // matched NO selector at all (not even the generic gentle-chime
+        // fallback further below), so kioskCheckToastChime's own `el`
+        // stayed null for them and they played zero sound, silently,
+        // since the day each shipped. Same earcon+voice treatment as
+        // the per-sport toasts now — both already carry the exact same
+        // data-summary/data-audio-b64 shape (sports_alerts.render_alert_
+        // bar builds them through the same code path), nothing else to
+        // change for kioskPlaySportsVoice itself to already just work.
+        "var KIOSK_SPORTS_VOICE_SEL = '.sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl, "
+        + ".sports-alert-bar-goalline, .sports-alert-bar-ufc';",
         // Session request: "incorporate emails... important emails to
         // be sent to me via a toast alert." Reuses the plain gentle
         // chime below (kioskPlayChime(false)) rather than its own

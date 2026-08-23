@@ -109,6 +109,9 @@ _baseline_done: dict[str, bool] = {}
 # own docstring for why this resets (rather than staying True for the
 # rest of the game) the moment the situation stops being goal-to-go.
 _nfl_goal_to_go_active: dict[int, bool] = {}
+# Same "fires once per stretch, resets when it clears" shape as
+# _nfl_goal_to_go_active, for the MLB threatening-situation toast below.
+_mlb_threat_active: dict[int, bool] = {}
 
 FLASH_BLUE = (0, 70, 255)  # Blue Jays' own game — a clean, unmistakable blue on a light bulb
 FLASH_RED = (255, 0, 0)  # Canadiens' own game — same red govee_lighting's breaking-news flash already uses
@@ -414,6 +417,29 @@ def _mlb_streak_events(game_id: int, is_home: bool) -> list[dict]:
                 k_streak = []
 
     return sports_client.delayed(f"mlb_alert_streak_{game_id}", events)
+
+
+def _mlb_threat_label(detail: dict) -> str | None:
+    """"Bases loaded"/"Runners on the corners"/None for the current
+    inning state (sports_client.fetch_mlb_live_detail's own "bases"/
+    "outs" fields) — session request: "bases loaded alerts... runners
+    on the corners with no outs... situations where they look
+    threatening to score." Two named situations, not a general run-
+    expectancy model — matches exactly what was asked for rather than
+    inventing extra thresholds. "Corners" is the real baseball term for
+    first + third specifically (the two "corner" bases, as opposed to
+    second) — gated to 0 outs, same boundary named in the request; real
+    run-expectancy tables back that boundary too (corners drops from
+    ~1.8 expected runs at 0 outs to ~1.0 at 1 out, a genuine cliff, not
+    an arbitrary cutoff). Bases loaded has no out-count qualifier in
+    the request and stays meaningfully above average run expectancy
+    even at 2 outs, so it's flagged regardless of outs."""
+    bases = detail.get("bases") or {}
+    if bases.get("first") and bases.get("second") and bases.get("third"):
+        return "Bases loaded"
+    if bases.get("first") and bases.get("third") and not bases.get("second") and detail.get("outs") == 0:
+        return "Runners on the corners"
+    return None
 
 
 @st.cache_data(ttl=LIVE_FEED_CACHE_TTL_SECONDS, show_spinner=False)
@@ -790,6 +816,61 @@ def get_new_alerts(now: datetime) -> list[dict]:
                                 "spoken": f"{league['label'].title()}: {down_text}",
                             }
                         )
+
+            # MLB "threatening to score" toast — session request: "add,
+            # like, bases loaded alerts or... the Jays are looking
+            # threatening or... the Yankees are looking threatening
+            # when they have... bases loaded with no outs or... runners
+            # on the corners with no outs." Same repeat-guard shape as
+            # the NFL goal-to-go block above (fires once per threatening
+            # stretch, resets the moment it clears — _mlb_threat_active),
+            # but unlike that one, fires for BOTH sides: the request
+            # explicitly named both "we're threatening" and "they're
+            # threatening" as wanted, not just our own offense — a
+            # bases-loaded jam is exactly as tense to watch when the
+            # OPPONENT'S at the plate.
+            if league["sport"] == "mlb" and baseline_done:
+                detail = sports_client.fetch_mlb_live_detail(game_id) or {}
+                inning_state = detail.get("inning_state")
+                # Only a real half-inning at bat has a meaningful bases/
+                # outs state worth alerting on — "Middle"/"End" are the
+                # between-innings transition states.
+                threat_label = _mlb_threat_label(detail) if inning_state in ("Top", "Bottom") else None
+                was_threat = _mlb_threat_active.get(game_id, False)
+                _mlb_threat_active[game_id] = threat_label is not None
+                if threat_label and not was_threat:
+                    # Home team bats in the bottom half — combined with
+                    # is_home, the same shortcut _mlb_streak_events'
+                    # own jays_batting_half already uses.
+                    jays_batting = (inning_state == "Bottom") == game["is_home"]
+                    batting_team = league["label"].title() if jays_batting else game["opponent"]
+                    outs = detail.get("outs") or 0
+                    outs_text = "no outs" if outs == 0 else f"{outs} out" if outs == 1 else f"{outs} outs"
+                    # Fresher than game["team_score"]/opp_score (that
+                    # pair is only as fresh as the 5-minute schedule-
+                    # level cache, same staleness sports_client.
+                    # fetch_nfl_situation's own fix addressed for NFL
+                    # earlier this session) — detail's own away_score/
+                    # home_score come from this same live-linescore
+                    # fetch, already paid for above.
+                    team_score = detail.get("home_score") if game["is_home"] else detail.get("away_score")
+                    opp_score = detail.get("away_score") if game["is_home"] else detail.get("home_score")
+                    alerts.append(
+                        {
+                            "kind": "sports",
+                            "type": "mlb_threat",
+                            "sport": league["sport"],
+                            "team_label": league["label"],
+                            "team_logo": status["team_logo"],
+                            "opponent_logo": game["opponent_logo"],
+                            "team_score": team_score,
+                            "opp_score": opp_score,
+                            "description": f"{threat_label}, {outs_text} — {batting_team} threatening to score!",
+                            "flash_color": FLASH_RED,
+                            "spoken": f"{batting_team}: {threat_label}, {outs_text}",
+                        }
+                    )
+
             _baseline_done[baseline_key] = True
 
         elif (
@@ -1055,12 +1136,13 @@ def render_alert_bar(alert: dict) -> None:
     mlb/nhl binary, which is what this was before the Saints) — needs
     a matching `.sports-alert-bar-{sport}` rule in theme.py for every
     sport in _LEAGUES, same convention `.jumbo-hero-{sport}`/
-    `.game-countdown-{sport}` already use elsewhere. A "goal_line" alert
-    (see the NFL-only goal-to-go check above) overrides this per-sport
-    color with a fixed red instead — session request: "fire off a
-    toast and make it red... that'd be so fucking sick" — real urgency
-    should read as red regardless of Saints gold being the sport's own
-    normal color, the same way this app already reserves red for a
+    `.game-countdown-{sport}` already use elsewhere. A "goal_line" or
+    "mlb_threat" alert (see the goal-to-go and threatening-situation
+    checks above) overrides this per-sport color with a fixed red
+    instead — session request: "fire off a toast and make it red...
+    that'd be so fucking sick" — real urgency should read as red
+    regardless of Saints gold being the sport's own normal color, the
+    same way this app already reserves red for a
     genuinely urgent moment elsewhere (storm-phase lighting).
 
     Session report: "the bottom bar goes away... the red headliner...
@@ -1069,8 +1151,14 @@ def render_alert_bar(alert: dict) -> None:
     missing key here used to be able to crash the whole render (caught
     upstream in app.py, but leaving the bottom bar blank for that
     rerun instead of at least showing this alert's other fields)."""
-    is_goal_line = alert.get("type") == "goal_line"
-    bar_class = "sports-alert-bar-goalline" if is_goal_line else f"sports-alert-bar-{alert.get('sport', 'mlb')}"
+    # "sports-alert-bar-goalline" — the fixed urgent-red styling
+    # session request "make it red... that'd be so fucking sick"
+    # originally built for the NFL goal-to-go toast — reused as-is for
+    # the MLB threatening-to-score toast below rather than a new CSS
+    # class: same "about to score" excitement, same real urgency,
+    # nothing sport-specific about the actual styling despite the name.
+    is_scoring_threat = alert.get("type") in ("goal_line", "mlb_threat")
+    bar_class = "sports-alert-bar-goalline" if is_scoring_threat else f"sports-alert-bar-{alert.get('sport', 'mlb')}"
     description = html.escape(alert.get("description", ""))
     suffix = {
         "final": "FINAL",
@@ -1079,6 +1167,7 @@ def render_alert_bar(alert: dict) -> None:
         "start": "LIVE",
         "lead_change": "LEAD CHANGE",
         "goal_line": "GOAL LINE",
+        "mlb_threat": "THREAT",
     }.get(alert.get("type"), "UPDATE")
     label_text = f"{alert.get('team_label', '')} {suffix}"
     has_score = alert.get("team_score") is not None and alert.get("opp_score") is not None
