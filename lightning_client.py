@@ -45,18 +45,29 @@ CACHE_TTL_SECONDS = 5 * 60
 # Session report: "we hit the rate limit on xweather... re-evaluate how
 # to save credits." Root cause wasn't this TTL (already the fastest
 # cadence worth polling at, see above) — it was that the real HTTP call
-# lived behind a bare st.cache_data, which is per-PROCESS memory, not
-# shared. This app's own dev-preview instances point at the same
-# Upstash store as production (see persisted_state.py's own docstring:
-# "a local dev box also pointed at Upstash SHOULD share" a plain cached
-# fact), but never shared THIS one — every local preview session spun
-# up during a working session kept its own independent 5-minute clock,
-# each burning its own real Xweather calls on top of whatever
-# production was already using. Checked here, inside the same
-# st.cache_data-gated function (so this Upstash read is itself already
-# throttled to once per CACHE_TTL_SECONDS per process, not every 5s
-# rerun) — a real Xweather call only fires if the SHARED cache is also
-# actually stale, so N processes now cost the same as one.
+# lived behind a bare st.cache_data, which is per-PROCESS memory: it
+# resets to empty on every process restart, not just every
+# CACHE_TTL_SECONDS. This app auto-deploys on every git push (confirmed
+# live), and this project alone pushes real commits often enough that
+# a bare in-memory cache could plausibly restart-and-refetch far more
+# often than its own 5-minute TTL ever intended — a redeploy 30 seconds
+# after a real fetch used to mean an immediate second real fetch,
+# regardless of how fresh the first one still was. Checked here,
+# inside the same st.cache_data-gated function (so this Upstash read
+# is itself already throttled to once per CACHE_TTL_SECONDS per
+# process, not every 5s rerun) — a real Xweather call now only fires if
+# the SHARED cache is also actually stale, which survives a restart.
+# (Checked live whether local dev-preview testing was ALSO
+# double-dipping into this same shared cache, since persisted_state.py
+# documents that as the intended multi-instance behavior — it isn't:
+# this machine's own .streamlit/secrets.toml has no Upstash credentials
+# configured at all, so local runs fall back to a private local JSON
+# file, confirmed by checking that file directly. If a second Upstash-
+# configured instance (a real second kiosk, or a dev box later given
+# real Upstash credentials) ever runs alongside production, this same
+# fix means it would share the cache too — just not verified as an
+# actual contributor to the rate limit that was hit, only the
+# redeploy-reset mechanism above was.)
 _SHARED_CACHE_KEY = "xweather_lightning_closest"
 
 

@@ -49,16 +49,14 @@ CACHE_TTL_SECONDS = 15 * 60
 DEFAULT_THRESHOLD_MM = 0.1
 
 # Session report: "we hit the rate limit on xweather... re-evaluate how
-# to save credits." Same fix and same reasoning as lightning_client.
-# py's own _SHARED_CACHE_KEY: the real HTTP call used to live behind a
-# bare per-process st.cache_data, so every local dev-preview instance
-# run during a working session kept its own independent clock and
-# burned its own real Xweather calls on top of production's — this
-# app's own persisted_state.py already documents that a local dev box
-# pointed at the same Upstash store SHOULD share a plain cached fact
-# like this one. A real Xweather call now only fires if the SHARED
-# cache (not just this one process's own copy) is actually stale, so N
-# processes cost the same as one.
+# to save credits." Same fix as lightning_client.py's own
+# _SHARED_CACHE_KEY — see that constant's own comment for the full
+# reasoning (verified live: an in-memory st.cache_data resets on every
+# redeploy, not just every CACHE_TTL_SECONDS, and this app auto-deploys
+# on every push; a real second Upstash-configured instance would also
+# now share this cache, though that specifically wasn't confirmed as
+# an actual contributor here — local dev testing on this machine isn't
+# one, it has no Upstash credentials configured at all).
 _SHARED_CACHE_KEY = "xweather_precip_nowcast"
 
 
