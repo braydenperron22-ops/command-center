@@ -21,11 +21,13 @@ other paired client_id/secret in this app already is). Degrades to
 either is missing, rather than erroring.
 """
 
+import time
 from datetime import datetime
 
 import requests
 import streamlit as st
 
+import data_health
 import persisted_state
 from config import WEATHER_LAT, WEATHER_LON
 
@@ -34,10 +36,28 @@ RADIUS_KM = 10
 # Xweather's own standard-tier limit — "closest" only ever looks back 5
 # minutes on the free tier (a longer window needs their paid Enterprise
 # add-on), so there's no real freshness gained by polling faster than
-# that window itself refreshes. At this cadence: 12 calls/hour * 24 *
-# 30 = 8,640/month, comfortably under the free tier's 15,000 with real
-# headroom left over.
+# that window itself refreshes. At this cadence, ONE process running
+# continuously costs 12 calls/hour * 24 * 30 = 8,640/month — see
+# _SHARED_CACHE_KEY's own comment for why the real number used to run
+# well past that.
 CACHE_TTL_SECONDS = 5 * 60
+
+# Session report: "we hit the rate limit on xweather... re-evaluate how
+# to save credits." Root cause wasn't this TTL (already the fastest
+# cadence worth polling at, see above) — it was that the real HTTP call
+# lived behind a bare st.cache_data, which is per-PROCESS memory, not
+# shared. This app's own dev-preview instances point at the same
+# Upstash store as production (see persisted_state.py's own docstring:
+# "a local dev box also pointed at Upstash SHOULD share" a plain cached
+# fact), but never shared THIS one — every local preview session spun
+# up during a working session kept its own independent 5-minute clock,
+# each burning its own real Xweather calls on top of whatever
+# production was already using. Checked here, inside the same
+# st.cache_data-gated function (so this Upstash read is itself already
+# throttled to once per CACHE_TTL_SECONDS per process, not every 5s
+# rerun) — a real Xweather call only fires if the SHARED cache is also
+# actually stale, so N processes now cost the same as one.
+_SHARED_CACHE_KEY = "xweather_lightning_closest"
 
 
 def _configured() -> bool:
@@ -46,6 +66,10 @@ def _configured() -> bool:
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_closest_raw() -> dict | None:
+    cached = persisted_state.load(_SHARED_CACHE_KEY, None)
+    if isinstance(cached, dict) and "at" in cached and time.time() - cached["at"] < CACHE_TTL_SECONDS:
+        data_health.record_success("lightning")
+        return cached.get("value")
     resp = requests.get(
         LIGHTNING_URL,
         params={
@@ -66,7 +90,10 @@ def _fetch_closest_raw() -> dict | None:
         timeout=10,
     )
     resp.raise_for_status()
-    return resp.json()
+    value = resp.json()
+    persisted_state.save(_SHARED_CACHE_KEY, {"at": time.time(), "value": value})
+    data_health.record_success("lightning")
+    return value
 
 
 def _closest_strike_within_radius() -> dict | None:

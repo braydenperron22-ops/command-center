@@ -8,17 +8,21 @@ Reuses the exact same XWEATHER_CLIENT_ID/XWEATHER_CLIENT_SECRET
 lightning_client.py already needs — one Xweather account, one shared
 15,000-calls/month free-tier budget, so the two modules' own cadences
 have to be sized together, not independently:
-  lightning_client.py: 5-minute cache -> 8,640 calls/month
-  this module:        10-minute cache -> 4,320 calls/month
-  combined:                              12,960 calls/month
-— comfortably under 15,000 with ~2,000/month of real headroom left for
-API hiccups, local testing, and whatever else ends up on this same
-account later. A shorter TTL here would read fresher, but the
-underlying nowcast model itself doesn't update on a sub-10-minute
-cadence anyway (matches RainViewer's own old past-radar refresh rate,
-and Pirate Weather's HRRR-derived nowcast — see the session's own
-research — steps in 15-minute increments), so there's no real signal
-being traded away, only budget being spent for no reason.
+  lightning_client.py: 5-minute cache  -> 8,640 calls/month
+  this module:        15-minute cache -> 2,880 calls/month
+  combined:                              11,520 calls/month
+— under 15,000 with ~3,480/month of real headroom, PER RUNNING PROCESS
+— see _SHARED_CACHE_KEY's own comment below for why that per-process
+qualifier used to be the actual problem, regardless of how generous
+this budget math looked on paper. Session report: "we hit the rate
+limit on xweather... re-evaluate how to save credits" — this module's
+own TTL widened from 10 to 15 minutes as part of that (a straight
+1/3 cut with zero real freshness lost: the underlying nowcast model
+itself doesn't update on a sub-15-minute cadence anyway — matches
+RainViewer's own old past-radar refresh rate, and Pirate Weather's
+HRRR-derived nowcast, per the session's own research at the time —
+so the old 10-minute cache was already polling faster than the data
+underneath it ever actually changed).
 
 Session report, once XWEATHER_CLIENT_ID/SECRET were actually added to
 secrets.toml: "the rain nowcast feature... isn't populating when rain
@@ -30,17 +34,32 @@ once the real credentials were in place: a real 200/success response,
 minutely_forecast() end to end.
 """
 
+import time
 from datetime import datetime, timedelta
 
 import requests
 import streamlit as st
 
+import data_health
 import persisted_state
 from config import WEATHER_LAT, WEATHER_LON
 
 CONDITIONS_URL = "https://data.api.xweather.com/conditions/closest"
-CACHE_TTL_SECONDS = 10 * 60
+CACHE_TTL_SECONDS = 15 * 60
 DEFAULT_THRESHOLD_MM = 0.1
+
+# Session report: "we hit the rate limit on xweather... re-evaluate how
+# to save credits." Same fix and same reasoning as lightning_client.
+# py's own _SHARED_CACHE_KEY: the real HTTP call used to live behind a
+# bare per-process st.cache_data, so every local dev-preview instance
+# run during a working session kept its own independent clock and
+# burned its own real Xweather calls on top of production's — this
+# app's own persisted_state.py already documents that a local dev box
+# pointed at the same Upstash store SHOULD share a plain cached fact
+# like this one. A real Xweather call now only fires if the SHARED
+# cache (not just this one process's own copy) is actually stale, so N
+# processes cost the same as one.
+_SHARED_CACHE_KEY = "xweather_precip_nowcast"
 
 
 def _configured() -> bool:
@@ -49,6 +68,10 @@ def _configured() -> bool:
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_minutely_raw() -> dict | None:
+    cached = persisted_state.load(_SHARED_CACHE_KEY, None)
+    if isinstance(cached, dict) and "at" in cached and time.time() - cached["at"] < CACHE_TTL_SECONDS:
+        data_health.record_success("precip_nowcast")
+        return cached.get("value")
     resp = requests.get(
         CONDITIONS_URL,
         params={
@@ -60,7 +83,10 @@ def _fetch_minutely_raw() -> dict | None:
         timeout=10,
     )
     resp.raise_for_status()
-    return resp.json()
+    value = resp.json()
+    persisted_state.save(_SHARED_CACHE_KEY, {"at": time.time(), "value": value})
+    data_health.record_success("precip_nowcast")
+    return value
 
 
 def minutely_forecast() -> list[dict] | None:

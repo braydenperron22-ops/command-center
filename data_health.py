@@ -89,6 +89,17 @@ THRESHOLDS_SECONDS = {
     # than riding on "portfolio"'s. Same ~once/day real sync cadence
     # underneath, so the same 36h threshold.
     "portfolio_activity": 36 * 60 * 60,
+    # Session report: "we hit the rate limit on xweather... re-evaluate
+    # how to save credits" — neither of Xweather's two features had any
+    # data_health coverage at all before that session, so a real outage
+    # (a genuine account-level rate-limit block, not just "no lightning
+    # nearby right now" — that's still a real success, see record_
+    # success's own docstring) could have gone on unnoticed the same
+    # way. 3h matches "weather"'s own multiplier above: generous over
+    # the real ~5/15-minute refresh cadence, still same-day if it's
+    # actually down.
+    "lightning": 3 * 60 * 60,
+    "precip_nowcast": 3 * 60 * 60,
 }
 
 LABELS = {
@@ -103,6 +114,8 @@ LABELS = {
     "gas_price": "Gas price",
     "weather_trends": "Weather trends",
     "portfolio_activity": "Portfolio activity",
+    "lightning": "Lightning (Xweather)",
+    "precip_nowcast": "Rain nowcast (Xweather)",
 }
 
 
