@@ -1302,8 +1302,22 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     # something the user asked for specifically, just the same
     # protection every other external/generated string here already
     # gets).
+    # Session report: "the morning brief is still mentioning Tuesday...
+    # give it the day of the week every day so it doesn't mess up." The
+    # cache-staleness check above (see _ai_headline_and_body's own
+    # comment) already stops a stale cross-day AI response from ever
+    # being SHOWN — the actual root cause that session — but this adds
+    # a second, independent layer on top of it: a real dateline computed
+    # fresh from `now` on every single render() call, never cached,
+    # never AI-written, so the correct day is always visibly on the
+    # card regardless of anything upstream (a transient Gemini failure,
+    # a stale cache, a future bug in that whole pipeline this hasn't
+    # anticipated). Same %A, %B %-d format the jumbotron's own
+    # .jumbo-dateline already uses elsewhere in this app.
+    dateline = now.strftime("%A, %B %-d").upper()
     st.markdown(
-        f'<div class="morning-briefing"><div class="morning-headline">{html.escape(headline)}</div>'
+        f'<div class="morning-briefing"><div class="morning-date">{html.escape(dateline)}</div>'
+        f'<div class="morning-headline">{html.escape(headline)}</div>'
         f'<div class="morning-body">{html.escape(body)}</div></div>',
         unsafe_allow_html=True,
     )

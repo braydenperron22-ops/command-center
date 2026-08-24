@@ -88,6 +88,23 @@ html, body, [class*="css"] {
     margin-bottom: 0.8rem;
 }
 
+/* Session report: "the morning brief is still mentioning Tuesday...
+   give it the day of the week every day so it doesn't mess up." A
+   real, always-fresh dateline (morning_briefing.render's own
+   now.strftime call, never cached or AI-written) sitting above the
+   headline — a permanent, cache-independent anchor for which day this
+   card is actually for, regardless of anything happening upstream in
+   the AI/cache pipeline below it. Quiet and small on purpose: this is
+   metadata confirming the card is current, not something competing
+   with the headline/body for attention. */
+.morning-date {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    color: #8E8E93;
+    margin: 0 0 0.35rem;
+}
+
 /* Small uppercase tag rather than a big banner — the body below is the
    actual star of the card now (see its own comment); this is a label
    for it, not competing prose. Same accent red the old .morning-stats
