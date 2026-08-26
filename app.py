@@ -2780,8 +2780,27 @@ except Exception:
 # commute block above — a bug here shouldn't take down real breaking-
 # news alerts, and this needs to run before that block so a fresh
 # scoring play is picked up in this same rerun.
+#
+# Session request: "dig even deeper... where you might be cutting
+# corners." Measured live on a cold cache: 4.68s — this calls fetch_
+# status() for all three tracked leagues in a row (Jays/Habs/Saints,
+# each its own real schedule fetch), the exact same "one slow source
+# blocks the whole rerun" shape fetch_throttle.run_bounded's own
+# docstring already documents for Portfolio/Conflicts/etc. (14s, 13s —
+# this was simply never measured/caught at the same time as those).
+# _toast_budget_start now starts here (moved up from its old spot
+# right before the warm_cache() roster below) so this shares that same
+# pool — worst case, this rerun's whole background-fetch budget is
+# still capped at BUDGET_SECONDS total, not 4.68s from this call alone
+# on top of whatever else is cold. default=[] matches "nothing new
+# this rerun" — the exact same shape a genuinely quiet check already
+# returns, and run_bounded's own docstring covers why a call still
+# running past budget doesn't lose real state, just this rerun's toast.
+_toast_budget_start = time.time()
 try:
-    new_alerts.extend(sports_alerts.get_new_alerts(now))
+    new_alerts.extend(
+        fetch_throttle.run_bounded("sports_alerts_new", lambda: sports_alerts.get_new_alerts(now), _toast_budget_start, default=[])
+    )
 except Exception:
     pass
 
@@ -2848,8 +2867,21 @@ except Exception:
 # (email_client.py, IMAP + an app password — see its own docstring),
 # same isolation reasoning as every other block here: a Gmail hiccup
 # never takes down breaking news/weather/sports.
+#
+# Session request: "dig even deeper... where you might be cutting
+# corners." Measured live on a cold cache: 4.73s, a real IMAP round-
+# trip — same fix and same reasoning as sports_alerts.get_new_alerts
+# just above (see its own comment): shares the same _toast_budget_start
+# pool rather than getting its own, so the whole loop's worst case
+# stays bounded to one shared ceiling no matter how many of these are
+# cold in the same rerun. Distinct from email_client.warm_daily_feed
+# below (already run_bounded) — that one warms a separate cache for
+# the Email page itself; this is the toast-specific "new important
+# mail" check, its own slow path that had never been measured before.
 try:
-    new_alerts.extend(email_client.get_new_alerts(now))
+    new_alerts.extend(
+        fetch_throttle.run_bounded("email_alerts_new", lambda: email_client.get_new_alerts(now), _toast_budget_start, default=[])
+    )
 except Exception:
     pass
 
@@ -2914,8 +2946,12 @@ except Exception:
 # fetch_throttle.run_bounded — see that function's own docstring for
 # why a plain unbounded call isn't enough on its own (a single slow
 # source, e.g. Portfolio's ~14s cold, can still block the whole loop
-# even with nothing else running).
-_toast_budget_start = time.time()
+# even with nothing else running). Reuses the SAME _toast_budget_start
+# set further up (right before sports_alerts.get_new_alerts, see that
+# call's own comment) rather than starting a fresh clock here — the
+# two confirmed-slow get_new_alerts checks and these six warm_cache
+# calls are all drawing from one unified ceiling for the whole rerun's
+# background-fetch time, not two separate budgets stacked back to back.
 fetch_throttle.run_bounded("portfolio_warm", portfolio_client.warm_cache, _toast_budget_start)
 fetch_throttle.run_bounded("predictions_warm", prediction_markets_client.warm_data_series_cache, _toast_budget_start)
 fetch_throttle.run_bounded("market_internals_warm", market_internals.warm_cache, _toast_budget_start)
