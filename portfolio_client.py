@@ -568,14 +568,34 @@ def fetch_activities(limit: int = 8) -> list[dict] | None:
     apart from money just moving between Brayden's own tracked
     accounts — callers that care about genuine spending specifically
     (vs. a raw activity log) should check it rather than treating
-    every WITHDRAWAL as money actually leaving."""
+    every WITHDRAWAL as money actually leaving.
+
+    Live bug, session report: "I can't see the... section with the
+    total balance... the transaction log is too long." _last_good_
+    activities (what cached_activities() reads) was storing the FULL
+    unsliced list here regardless of `limit` — harmless-looking with
+    ~4-5 tracked accounts; today's move from Automated Investing to
+    Self-Directed doubled the tracked account count to 8 (see fetch_
+    positions's own docstring for the live count), each good for up to
+    _ACTIVITY_LIMIT_PER_ACCOUNT=20 — confirmed live, ~170 real rows
+    rendering onto a fixed-height kiosk screen (.block-container's own
+    comment on 1080px viewports covers why that pushes earlier content
+    off the top rather than just growing the page).
+
+    Caches the FULL list (not `limit`-sliced) precisely because two
+    genuinely different callers share this one cache through different
+    `limit`s — morning_briefing.py wants 60 for real AI trend context,
+    pages_portfolio.py wants far fewer to actually fit the kiosk
+    screen — and whichever call happened to run last in a given rerun
+    would otherwise silently overwrite the other's slice. See cached_
+    activities()'s own `limit` param for the page-safe read path."""
     global _last_good_activities
     try:
         activities = _fetch_activities_raw()
     except Exception:
-        return _last_good_activities
+        return (_last_good_activities or [])[:limit]
     if activities is None:
-        return _last_good_activities
+        return (_last_good_activities or [])[:limit]
     activities.sort(key=lambda a: a["date"], reverse=True)
     _last_good_activities = activities
     # A separate SnapTrade endpoint from fetch_portfolio's own balance
@@ -637,8 +657,15 @@ def cached_value_history() -> list[float] | None:
     return _last_good_value_history
 
 
-def cached_activities() -> list[dict] | None:
-    return _last_good_activities
+def cached_activities(limit: int = 8) -> list[dict] | None:
+    """The most recent `limit` activities from the full cached list —
+    see fetch_activities's own docstring for why this slices at read
+    time instead of trusting whatever limit the last fetch_activities()
+    caller happened to pass. Default of 8 (not fetch_activities's own
+    unbounded default) is the kiosk-safe row count for pages_
+    portfolio.py's fixed-height RECENT ACTIVITY tile — confirmed live
+    against a real 1080px kiosk viewport with today's account count."""
+    return (_last_good_activities or [])[:limit]
 
 
 # Session request, the same day the account moved from Automated
@@ -753,5 +780,9 @@ def cached_positions() -> dict[str, list[dict]] | None:
 def warm_cache() -> None:
     fetch_changes()
     fetch_value_history(days=180)
-    fetch_activities(limit=14)
+    # No `limit` here — this call's only job is priming _last_good_
+    # activities with the full list (see fetch_activities's own
+    # docstring); the actual per-caller row count is decided at read
+    # time by cached_activities's own `limit`.
+    fetch_activities()
     fetch_positions()
