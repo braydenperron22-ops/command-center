@@ -139,6 +139,38 @@ def _activity_row(activity: dict, today_local) -> str:
     )
 
 
+def _holding_row(position: dict) -> str:
+    symbol = html.escape(position["symbol"])
+    description = position.get("description")
+    detail = f" · {html.escape(description)}" if description else ""
+    units = position["units"]
+    units_label = f"{units:,.4f}".rstrip("0").rstrip(".") if units % 1 else f"{units:,.0f}"
+    market_value = position.get("market_value")
+    open_pnl = position.get("open_pnl")
+    if market_value is not None:
+        value_html = f'<span class="market-metric-value" style="{_METRIC_VALUE_STYLE}">${market_value:,.2f}</span>'
+        if open_pnl is not None:
+            pnl_class = "market-up" if open_pnl >= 0 else "market-down"
+            pnl_sign = "+" if open_pnl >= 0 else ""
+            value_html += (
+                f' <span class="market-metric-sub {pnl_class}" style="opacity:0.85;">'
+                f'({pnl_sign}${abs(open_pnl):,.2f})</span>'
+            )
+    else:
+        # A real position with no live price yet — session context: a
+        # brand-new self-directed account's first trade can show up in
+        # get_user_account_positions before SnapTrade has a fresh quote
+        # for it. units alone (not a fabricated "$0.00") so this never
+        # reads as the position being worthless.
+        value_html = f'<span class="market-metric-value" style="{_METRIC_VALUE_STYLE}">—</span>'
+    return (
+        f'<div class="market-metric">'
+        f'<span class="market-metric-label" style="{_METRIC_LABEL_STYLE}">{symbol}{detail} · {units_label} sh</span>'
+        f'{value_html}'
+        f'</div>'
+    )
+
+
 def render() -> None:
     st.markdown('<div class="page-title page-title-portfolio">My Portfolio</div>', unsafe_allow_html=True)
 
@@ -257,6 +289,28 @@ def render() -> None:
             f'</div>',
             unsafe_allow_html=True,
         )
+
+        # Session request the day the account moved from Automated
+        # Investing to Self-Directed: "you should be able to see their
+        # holdings later today when it goes through." No key at all for
+        # an account holding only cash (see portfolio_client.fetch_
+        # positions's own docstring) — the whole tile stays absent
+        # rather than rendering empty, same "if there's nothing, don't
+        # take up screen space" treatment as RECENT ACTIVITY below.
+        positions = portfolio_client.cached_positions()
+        if positions:
+            holdings_html = "".join(
+                f'<div class="market-metric-label" style="opacity:0.7; margin-top:0.4rem;">{html.escape(name)}</div>'
+                + "".join(_holding_row(p) for p in held)
+                for name, held in positions.items()
+            )
+            st.markdown(
+                f'<div class="tile">'
+                f'<div class="tile-label">HOLDINGS</div>'
+                f"{holdings_html}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
     with activity_col:
         # PORTFOLIO_INVESTMENT/WRITE_OFF/FEE rows already filtered out

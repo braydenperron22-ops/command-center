@@ -89,6 +89,12 @@ THRESHOLDS_SECONDS = {
     # than riding on "portfolio"'s. Same ~once/day real sync cadence
     # underneath, so the same 36h threshold.
     "portfolio_activity": 36 * 60 * 60,
+    # portfolio_client.fetch_positions — same reasoning and same real
+    # sync cadence as "portfolio_activity" just above, its own key so a
+    # break here (the holdings list going stale/empty) doesn't hide
+    # behind "portfolio" itself still looking healthy off the balance
+    # call alone.
+    "portfolio_positions": 36 * 60 * 60,
     # Session report: "we hit the rate limit on xweather... re-evaluate
     # how to save credits" — neither of Xweather's two features had any
     # data_health coverage at all before that session, so a real outage
@@ -114,6 +120,7 @@ LABELS = {
     "gas_price": "Gas price",
     "weather_trends": "Weather trends",
     "portfolio_activity": "Portfolio activity",
+    "portfolio_positions": "Portfolio holdings",
     "lightning": "Lightning (Xweather)",
     "precip_nowcast": "Rain nowcast (Xweather)",
 }

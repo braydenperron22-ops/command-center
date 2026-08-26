@@ -641,7 +641,117 @@ def cached_activities() -> list[dict] | None:
     return _last_good_activities
 
 
+# Session request, the same day the account moved from Automated
+# Investing to Self-Directed within each of TFSA/RRSP/FHSA: "you should
+# be able to see their holdings later today when it goes through." No
+# per-security breakdown existed anywhere on this page before — only
+# the aggregate balance total and the activity feed's own buy/sell
+# lines. get_user_account_positions is SnapTrade's own SDK method for
+# this (confirmed live: flagged "deprecated" in its warning log but
+# still the one that actually returns data — get_user_holdings, the
+# non-deprecated sibling, returned a real 410 Gone for this account).
+#
+# Iterates every account ID grouped under a tracked display name (not
+# just one hardcoded ID per name) for the same reason fetch_portfolio's
+# own grouping does — Wealthsimple represents an account restructuring
+# as a SECOND SnapTrade sub-account sharing the exact same name (see
+# _fetch_history_by_account's own docstring for the first time this
+# bit), confirmed live again today: TFSA/RRSP/FHSA each currently have
+# both an old (closed, $0, CUSTOM_PORTFOLIO_*) and new (open,
+# SELF_DIRECTED_*) sub-account under the identical name.
+#
+# Skips any account with a zero/missing balance (same filter fetch_
+# portfolio's own grouping loop already applies) BEFORE calling
+# get_user_account_positions on it, rather than calling it for every
+# same-named account and discarding empty results afterward — checked
+# live, this account alone currently has 23 sub-accounts across the 4
+# tracked names once every past restructuring's dead $0 leftovers are
+# counted (12 of those under "PERSONAL" alone), and a real SnapTrade
+# response header seen during this same investigation
+# (X-RateLimit-Account-Limit: 10, X-RateLimit-Account-Reset: 60) makes
+# querying all 23 on every warm_cache() call a real risk, not just
+# wasted calls, for a feature where a zero-balance account holding a
+# real position is already an edge case rare enough not to trade a
+# rate-limit exhaustion risk against.
+_last_good_positions: dict[str, list[dict]] | None = None
+
+
+@st.cache_data(ttl=15 * 60, show_spinner=False)
+def _fetch_positions_raw() -> dict[str, list[dict]] | None:
+    client = _client()
+    user_id = st.secrets.get("SNAPTRADE_USER_ID")
+    user_secret = st.secrets.get("SNAPTRADE_USER_SECRET")
+    if client is None or not user_id or not user_secret:
+        return None
+
+    accounts = client.account_information.list_user_accounts(user_id=user_id, user_secret=user_secret).body
+    by_name: dict[str, list[dict]] = {}
+    for acct in accounts:
+        display_name = ACCOUNT_DISPLAY_NAMES.get(acct.get("name"))
+        if display_name is None:
+            continue
+        balance = (acct.get("balance") or {}).get("total")
+        if not balance or not balance.get("amount"):
+            continue
+        try:
+            resp = client.account_information.get_user_account_positions(
+                user_id=user_id, user_secret=user_secret, account_id=acct["id"]
+            )
+        except Exception:
+            continue
+        for pos in resp.body or []:
+            units = pos.get("units")
+            # cash_equivalent positions (a money-market/cash "position"
+            # some brokerages report alongside real holdings) aren't
+            # what "holdings" means here — the balance tile above
+            # already covers cash. units is None/0 for a fully-closed-
+            # out position some APIs still list with zero size; neither
+            # is a real current holding worth a row.
+            if pos.get("cash_equivalent") or not units:
+                continue
+            symbol_info = (pos.get("symbol") or {}).get("symbol") or {}
+            symbol = symbol_info.get("symbol") or symbol_info.get("raw_symbol")
+            if not symbol:
+                continue
+            price = pos.get("price")
+            by_name.setdefault(display_name, []).append(
+                {
+                    "symbol": symbol,
+                    "description": symbol_info.get("description"),
+                    "units": float(units),
+                    "price": float(price) if price is not None else None,
+                    "market_value": float(units) * float(price) if price is not None else None,
+                    "average_purchase_price": pos.get("average_purchase_price"),
+                    "open_pnl": pos.get("open_pnl"),
+                }
+            )
+    return by_name or None
+
+
+def fetch_positions() -> dict[str, list[dict]] | None:
+    """{display_name -> [{"symbol", "description", "units", "price",
+    "market_value", "average_purchase_price", "open_pnl"}, ...]} for
+    every tracked account that currently holds real securities (an
+    account holding only cash, or none at all, simply has no key here —
+    never a key mapped to an empty list). Same last-successful-fetch
+    fallback as every other public function in this module."""
+    global _last_good_positions
+    try:
+        result = _fetch_positions_raw()
+    except Exception:
+        return _last_good_positions
+    if result is not None:
+        _last_good_positions = result
+        data_health.record_success("portfolio_positions")
+    return result if result is not None else _last_good_positions
+
+
+def cached_positions() -> dict[str, list[dict]] | None:
+    return _last_good_positions
+
+
 def warm_cache() -> None:
     fetch_changes()
     fetch_value_history(days=180)
     fetch_activities(limit=14)
+    fetch_positions()
