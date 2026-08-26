@@ -3641,7 +3641,14 @@ html, body, [class*="css"] {
    it (this control sits at the LEFT edge) — the featured board and
    Around The Leagues columns never reached down that far in the same
    photo. */
-.jumbo-rail-col { display: flex; flex-direction: column; gap: 7px; min-height: 0; padding-bottom: 150px; }
+/* padding-bottom sized to the controls' own real current footprint
+   (button/input row now scaled down to ~7px/11px text, well under
+   their pre-scale size) plus real margin, not the original estimate —
+   confirmed live, that original 150px was eating into the standings
+   panel's own share of this column's height (session report: real TV
+   photo, "standings are cut off"), more than the now-smaller controls
+   actually need cleared. */
+.jumbo-rail-col { display: flex; flex-direction: column; gap: 7px; min-height: 0; padding-bottom: 120px; }
 .jumbo-rail-col .jumbo-rail { flex: 0 0 auto; }
 .jumbo-rail-col .jumbo-standings-panel { flex: 1; min-height: 0; }
 
@@ -3765,7 +3772,17 @@ html, body, [class*="css"] {
     position: relative;
     display: flex;
     align-items: stretch;
-    min-height: 146px;
+    /* Session report with a real TV photo: "featured is cut off at the
+       top." The straight 0.62 scale-down (146px, from an original
+       236px) cut this tighter than the surrounding board's other
+       stacked sections (win probability bar, current matchup) needed
+       to still fit — with overflow:hidden right on this box and a
+       fixed overall board height above it, a min-height flex-shrunk
+       below what a real (occasionally 2-line-wrapping) team name plus
+       logo actually needs gets its own top clipped instead of just
+       growing. More headroom than the blanket scale-down gave it,
+       still well under the original. */
+    min-height: 190px;
     overflow: hidden;
 }
 .jumbo-side { flex: 1; position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 12px 16px; text-align: center; }
