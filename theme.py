@@ -28,7 +28,22 @@ CSS = """
 .block-container {
     padding-top: 1.8rem;
     padding-bottom: 4.6rem;
-    max-width: 1450px;
+    /* Session request: "we have a bigger new display now... 1920 by
+       1080... reformat every single element to fit into this frame."
+       1450px was tuned for a smaller/narrower screen than this kiosk
+       actually has now — confirmed live at a real 1920px viewport,
+       every non-jumbotron page sat in a visibly narrow center column
+       with ~235px of flatly empty margin on each side. 1800px keeps a
+       small deliberate margin (60px each side at 1920px, matching
+       .top-alert-bar's own inset) rather than corner-to-corner, same
+       reasoning .block-container:has(.jumbo)'s own max-width:100%
+       comment already established for the jumbotron ("right for
+       tiles, wrong for a full-bleed scoreboard") — plain tiles
+       shouldn't press against the bezel the way a broadcast board
+       can. Individual pages still need their own pass to actually use
+       the extra room (bigger cards/type, not just wider gaps) — this
+       is the shared floor every one of them now has to work with. */
+    max-width: 1800px;
     min-height: calc(100vh - 4.6rem) !important;
     display: flex !important;
     flex-direction: column !important;
