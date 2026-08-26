@@ -1022,6 +1022,7 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
     without relying on the model's own restraint to make it true."""
     facts = "; ".join(facts_list)
     weekday = now.strftime("%A")
+    today_date = now.strftime("%B %-d, %Y")
     history_block = _recent_history_block(now)
     history_section = (
         f"Recent days for context (oldest first, not including today):\n{history_block}\n\n"
@@ -1127,6 +1128,16 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
         "work shift landing on a weekend, say) — don't force it in; naming a DIFFERENT day for a "
         "real reason (an upcoming shift, an event later this week) is fine and unaffected by this — "
         "this rule is only about which weekday you use when you mean today itself.\n\n"
+        f"Today's real full date is {today_date} — session report, live: a past response named "
+        "\"Saturday, September 2nd\" as today when the real date was nowhere close to that; September "
+        "2nd genuinely was a Saturday, just in 2023, years before this conversation is happening — a "
+        "stray fact pulled from general knowledge instead of grounded in anything actually given "
+        "here. Never state a specific calendar date (a month and day number, with or without a year) "
+        "anywhere in this response unless that exact date appears somewhere in the real data above or "
+        "below — no reaching into your own general knowledge of calendars/history/any other year for "
+        "one, even one that sounds plausible. A weekday name alone (\"Wednesday\", \"this Saturday\") "
+        "is fine under the rule just above; it's a full date specifically (\"September 2nd\", \"the "
+        "23rd\") that must trace back to real given data or be left out entirely.\n\n"
         "Never add or invent a fact beyond the weekday, the background, the long-term notes/recent-"
         "days record, the upcoming holidays, the upcoming season change, the environmental trend "
         "data above, and the raw data below. Always write numbers as actual digits, never spelled "
