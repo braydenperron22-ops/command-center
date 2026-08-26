@@ -141,6 +141,277 @@ theme.inject()
 # it keeps working after Streamlit tears the picker's markup down and
 # rebuilds it every 5s rerun, same reasoning as binding keydown on
 # `document` above rather than on any one element.
+
+# Live countdown ticker — global (not page-scoped) because every timer
+# element on this dashboard (the jumbotron's pregame countdown, the
+# commute reminder's "leave in" headline, the Sports page's "first
+# pitch in" badge) needs the same fix: a server-rendered digit only
+# ever updates once per 5s rerun, so it visibly jumps in 5s steps
+# instead of actually ticking (session feedback on the jumbotron
+# countdown: bring seconds back but "uncorrelated to the sync up of
+# the whole system" — then, "make that logic work for all the timer
+# elements... specifically the big red leave in timer"). Same
+# injected-into-the-parent-document technique as the hotkey listener
+# above, same duplicate-guard reasoning. Any page can opt an element in
+# just by giving it class="live-countdown" plus:
+#   data-target-ms   required — the target instant, real UTC epoch ms
+#   data-format       "clock" (H:MM:SS, default) or "words" (e.g. "1h 26m"/"45 min")
+#   data-template     optional wrapper with a "{}" placeholder for the ticking token (default "{}")
+#   data-zero-text    optional full replacement text once the target's passed (e.g. "Leave now")
+#   data-intensity    optional — escalating urgency tiers (intensity-calm through intensity-overdue,
+#                     see theme.py's .leave-headline rules) toggled on the closest .leave-headline
+#                     ancestor. Session request: "make the leave in timer chill and it progressively
+#                     gets more intense... the closer we are to the leave time." Only elements that
+#                     set this attribute are touched — the jumbotron/sports countdowns sharing this
+#                     same ticker don't set it, so they're unaffected.
+# Re-queries .live-countdown fresh every tick rather than caching
+# element references, so it keeps finding the right nodes even though
+# Streamlit replaces them underneath it on its own 5s cycle.
+
+# Radar page frame animation (pages_radar.py/radar_client.py) — session
+# request: "make the radar nice and big... reinstate the radar page."
+# Every real radar frame is a genuine, already-loaded <img> stacked
+# full-bleed on the others (see .weather-radar-frame-img, theme.py);
+# this just toggles which one is opacity:1 on a timer, so "animating"
+# never re-fetches anything or touches Streamlit's own rerun cycle at
+# all. Same inject-into-the-parent-document/duplicate-guard shape as
+# every other kiosk-* script here — survives Streamlit tearing this
+# components.html iframe down and rebuilding it every 5s rerun, and
+# simply does nothing on any other page (no .weather-radar-frame-img
+# elements to find there).
+
+# Radar frame dynamic sizing — session request: "makes the radar much,
+# much, much bigger... you should be able to see it all." A static CSS
+# vh budget (theme.py's own .weather-radar-frame-large, several rounds
+# of live-tested history on that class's own comment) kept running into
+# the same wall no matter how it was tuned: the header above this tile
+# isn't a fixed height — it grows and shrinks with the morning-briefing
+# sentence's real length, an active weather alert, how many hero badges
+# are flagged right now — so any single static value is either too
+# small on the header's short days or overlapping the fixed bottom
+# ticker on its long ones. Confirmed live across several real reruns:
+# the SAME 60vh value measured comfortably clear of the header in one
+# check and 75px into the ticker in another, just from the header's own
+# content changing between them, nothing to do with viewport size.
+#
+# Measuring the real remaining space at runtime instead, the same way
+# this app already does for the live-countdown ticker/toast dedup
+# above — the one thing a static injected stylesheet genuinely can't
+# do (this file has said as much in theme.py's own comments for a
+# while) but a persistent script can. RADAR_OVERHEAD_PX is the tile's
+# own non-frame chrome (padding + credit line + the gap under the
+# frame) — near-constant regardless of the frame's own current size,
+# so it only needs measuring once per tick, not solved for.
+
+# Jumbotron win-probability bar (pages_jumbotron._win_probability_html)
+# — session request: "can you make the win probability bar update
+# smoother instead of jumping." theme.py's own .jumbo-wp-seg already
+# carries `transition: width 1s ease`, but that alone can't animate
+# anything here: Streamlit re-renders the whole markdown block from
+# scratch every rerun, so each .jumbo-wp-seg is a brand new DOM node
+# every time with the new width already baked into its inline style —
+# not an existing element whose width property just changed, which is
+# the only thing a CSS transition can actually animate. Tracked by
+# data-wp-key (stable per game+side — the DOM node itself isn't) in a
+# plain JS object that survives the churn the same way the countdown
+# ticker's own state does, so a genuine change gets a real old->new
+# animation: snap instantly back to the last real percentage (no
+# transition), force a reflow, then let the CSS transition carry it
+# forward to the new one. A first sighting or an unchanged percentage
+# just sets the width directly, no animation to fake.
+
+# Session request: "how can we improve the experience watching the game
+# on the jumbotron... everything to feel good and seamless and like
+# its all orchestrated" — a general-purpose version of the win-
+# probability smoother just above, for every OTHER jumbotron element
+# that currently just pops to its new value/state on each rerun (same
+# root cause: Streamlit re-renders the whole markdown block from
+# scratch, so there's never an existing DOM node for a CSS transition
+# to animate from). Any element opts in with two data attributes —
+# data-fade-slot (a stable logical identity for "this one spot," e.g.
+# "matchup-batter" or "lineup-current-Blue Jays" — NOT the DOM node,
+# which is new every time) and data-fade-value (whatever value means
+# "this is genuinely the same thing as last rerun" — a player id, a
+# play description, an inning+half string) — rather than each feature
+# needing its own bespoke smoother script the way the win-probability
+# bar has. A first sighting of a slot, or an unchanged value, sets
+# nothing (already rendered correctly, nothing to animate); a genuine
+# change snaps opacity to 0, forces a reflow, then transitions to 1 —
+# same reflow-then-transition trick as kiosk-wp-smoother, opacity
+# instead of width since these are appear/replace moments, not a
+# continuous bar. 0.45s cubic-bezier(.2,.8,.2,1) matches this board's
+# own existing card fade-in convention (.jumbo-around-fade-a/-b in
+# theme.py) rather than introducing a new easing feel.
+
+# Session request: "make it so all the red headlines within the last 2
+# hours cycle at the top of the screen with a cool animation when it
+# swaps" (headline_rotation.py) — same reflow-then-restart-animation
+# trick as kiosk-jumbo-fade just above, toggling a CSS class
+# (.rotation-swap-in, theme.py) instead of directly manipulating
+# opacity, since the swap-in keyframe needs to coexist with the
+# critical tier's own separate continuous pulse animation rather than
+# replace it (see theme.py's own comment on why that rules out setting
+# el.style.animation directly). Only ever one .headline-rotation
+# element on the page at a time, so this tracks a single last-seen
+# value rather than kiosk-jumbo-fade's per-slot map.
+
+# Connection watchdog — session report: "why is my dashboard stuck at
+# 12:48pm" while the real time was 7:29pm, ~7 hours stale. Confirmed
+# not a code bug: a fresh instance of the exact same deployed code
+# ticked correctly, every requests.get/post call in this app already
+# has an explicit timeout, and a plain browser refresh fixed it
+# instantly — meaning the Python process itself was fine the whole
+# time, but this kiosk's own long-lived browser tab had silently lost
+# its Streamlit WebSocket connection and never reconnected on its own.
+# st_autorefresh (above) can't rescue this: its own rerun trigger rides
+# that exact same connection, so once it's dead, the "every 5s" tick
+# just stops firing right along with everything else, with nothing on
+# screen ever indicating it. This is a plain browser-level timer,
+# deliberately NOT going through Streamlit/the WebSocket at all — a
+# full hard reload re-establishes a genuinely fresh connection from
+# scratch, so even a silent, otherwise-invisible disconnect can never
+# leave the kiosk frozen for more than one interval.
+#
+# Interval briefly tightened to 5 minutes the same evening, after a
+# second, related incident: a live game staying stuck on stale pregame
+# data ("the game has started but the jumbotron hasnt picked it up")
+# that only resolved once a completely separate browser session loaded
+# the app. But a reload is a real, visible event on a kiosk (a brief
+# flash, any in-progress animation resetting) — 5 minutes traded away
+# too much of that for not enough benefit, and turned into its own
+# complaint: "why does the board refresh so often." Settled back at 60
+# minutes: "an hour, if the board tenses up itll be fixed within the
+# hour is good" — an occasional rare safety net, not something meant
+# to be regularly visible.
+
+# Bottom ticker — session report: "this dashboard is really heavy...
+# the bottom bar[ is] a little janky on the old laptop." Same root
+# cause class as the win-probability bar above (a plain markdown re-emit
+# recreating the DOM node every rerun, restarting whatever animation it
+# carries). A twin fix used to sit right above this one for the live
+# radar loop GIF — removed along with the whole Radar page at the
+# user's own request ("get rid of radar and replace it with hourly
+# weather data"), taking its own now-dead persistence script with it.
+# ticker.render_html() is one plain st.markdown call, so Streamlit replaces
+# its whole .ticker-bar > .ticker-track > .ticker-content tree from
+# scratch on every ~5s rerun — and .ticker-track carries a 55-second
+# CSS scroll animation (animation: ticker-scroll, theme.py), which a
+# browser always restarts from 0% the instant a NEW element gets that
+# animation, even with identical content. The scroll never got more
+# than a few seconds into its own 55s cycle before snapping back to
+# the start — on a fast machine that reads as a barely-perceptible
+# stutter; on weaker hardware, forcing that same restart (a style
+# recalc across dozens of ticker-item spans, easily 40+ once every
+# live stat source is duplicated for the seamless loop) is real,
+# regular jank.
+#
+# Same fix shape as the radar loop: a persistent .ticker-bar clone
+# living as a direct child of <body>, entirely outside Streamlit's own
+# churn, so its .ticker-track element is never recreated and its
+# animation just keeps running uninterrupted. Only .ticker-track's
+# innerHTML gets resynced (and only when it's actually changed — a
+# real stat ticking, not every 5s regardless), never the track element
+# itself; .ticker-bar's own CSS is already position:fixed with no
+# dependency on where it sits in the DOM, so — unlike the radar frame —
+# this doesn't need any manual position-tracking against the (now-
+# hidden) real one.
+#
+# Bug found from a session report ("what happened to my toast alerts?
+# and my bottom bar"): the clone keeps class="ticker-bar" (only its id
+# differs), so the very first time the REAL ticker-bar goes away for a
+# real reason — a news/weather/sports toast or the jumbotron leave-
+# ticker taking over this same slot, both of which skip calling
+# ticker.render_html() entirely for that rerun — the plain
+# `document.querySelector('.ticker-bar')` below matched the PERSISTENT
+# CLONE ITSELF instead of finding nothing. That aliased `real` to the
+# clone, and the final `real.style.display = 'none'` line hid the
+# clone permanently — nothing else in this script ever un-hides it, so
+# once any toast fired even once, the ticker was gone for the rest of
+# the session, reload required. `:not(#kiosk-ticker-persistent)`
+# excludes the clone from that lookup so a genuinely-absent real ticker
+# correctly falls into the `if (!real)` branch instead.
+#
+# Second bug, found the same session, reproduced live on a real page
+# (internals): the clone can inherit a stale `display:none` at the
+# exact moment it's cloned — a real timing window right at a toast-to-
+# ticker transition (real gets hidden as the toast begins, and if the
+# very next real ticker-bar Streamlit creates once the toast clears
+# happens to still carry that same stale inline style at the instant
+# this observer callback catches it and clones it, `persistent`
+# permanently inherits `display:none` too, with nothing else in this
+# script ever explicitly un-hiding it afterward — confirmed live: manually
+# forcing `persistent.style.display = 'block'` fixed it permanently, proving
+# nothing was actively re-hiding it, it just had no path back to visible on
+# its own). `persistent.style.display = ''` right after cloning clears
+# any inherited inline override unconditionally, so the clone always
+# starts from a clean, CSS-default (visible) state regardless of
+# whatever `real` happened to look like at the exact clone moment.
+
+# Toast chime + client-side reveal overlay — session request: "add
+# chimes for important news or severe weather alerts or leave in
+# notifications... without needing an autoclicker to keep the screen
+# engaged. Also add client side animations for the toast bar because we
+# had to get rid of them because they were causing complications."
+#
+# The original toast-bar animation (news.render_alert_bar's own
+# docstring has the full story) stretched a label into view via a CSS
+# animation whose own timing was recomputed from `elapsed` every 5s
+# Streamlit rerun — real complexity purpose-built around exact
+# assumptions of how Streamlit patches this element, and it broke:
+# "I'm still not getting any Toast alerts... it might be running in a
+# refresh window... causing it to instantly die." Removed entirely
+# rather than fixed at the time. This is a genuinely different design,
+# not a repeat of that one: the toast bar itself renders in its final
+# state immediately, same as it does today, with zero Streamlit-timed
+# animation state of its own to ever get stuck in. Everything below —
+# the chime and the reveal — is a client-side script watching the
+# ALREADY-persisted toast slot (kioskPersistTicker/TOAST_SEL above) via
+# the same MutationObserver pattern, entirely independent of Streamlit's
+# own rerun cadence: it fires once, the moment this script's own DOM
+# read notices genuinely new toast content (not on every 5s rerun that
+# just re-renders the SAME still-active toast), and its animation is a
+# fixed-duration CSS transition set once in JS, never recomputed against
+# `elapsed` the way the old one was.
+#
+# Chime-worthy is a deliberate subset, not every toast this app fires:
+# "important news" -> real breaking news only (.news-alert-bar), not
+# routine .news-alert-bar-market; "severe weather" -> the genuinely
+# severe tiers (extreme/warning), not every advisory-level watch/
+# statement; "leave in notifications" -> the commute alert and the
+# jumbotron's own leave-ticker. Two loudness tiers (a 3-note chime for
+# the most urgent bracket, a softer 2-note one for the rest) rather
+# than one flat sound for everything.
+#
+# Audio autoplay: browsers block JS-triggered sound without a prior user
+# gesture on that page — this script still calls play() the instant a
+# real chime-worthy toast appears, but on a kiosk that's never clicked
+# at all, the browser may keep the AudioContext silently suspended
+# forever with no error surfaced here. That's a real, one-time browser
+# setting to fix (chrome://settings/content/sound -> add this
+# dashboard's own URL to "Allowed to play sound," or launch the kiosk
+# browser itself with --autoplay-policy=no-user-gesture-required) — not
+# something any script running inside the page can grant itself, and
+# not the same thing as an autoclicker: a one-time setting survives
+# every future reboot/reload on its own, nothing has to keep running.
+# Session request: "make this a little lighter and more consistent
+# and stable... limit the amount of issues that arise." All ten
+# persistent kiosk scripts above used to be ten SEPARATE components.
+# html() calls — ten separate iframes, each one individually torn
+# down and rebuilt by Streamlit every single 5-second rerun (see
+# kiosk-hotkeys' own comment above on why that teardown/rebuild
+# cycle happens at all). None of the ten ever depended on Python-
+# side dynamic content (each one's own <script> body is a fixed
+# literal string, confirmed by grepping this whole file for any
+# f-string variant of these calls — there isn't one), and each
+# already scopes its own state inside its own `(function () {...})()`
+# IIFE with its own unique doc.getElementById guard, so merging
+# them into shared iframe carries zero collision risk. Consolidated
+# into one call — one iframe torn down and rebuilt per rerun instead
+# of ten — for a kiosk tab that's meant to stay open for days at a
+# time without ever reloading (see kiosk-reload-watchdog's own
+# comment above on that exact failure mode), that 10x cut in DOM
+# churn every 5 seconds is real, compounding stability headroom,
+# not a cosmetic tidy-up.
 components.html(
     """
     <script>
@@ -195,39 +466,7 @@ components.html(
       ].join('\\n');
       doc.head.appendChild(s);
     })();
-    </script>
-    """,
-    height=0,
-)
 
-# Live countdown ticker — global (not page-scoped) because every timer
-# element on this dashboard (the jumbotron's pregame countdown, the
-# commute reminder's "leave in" headline, the Sports page's "first
-# pitch in" badge) needs the same fix: a server-rendered digit only
-# ever updates once per 5s rerun, so it visibly jumps in 5s steps
-# instead of actually ticking (session feedback on the jumbotron
-# countdown: bring seconds back but "uncorrelated to the sync up of
-# the whole system" — then, "make that logic work for all the timer
-# elements... specifically the big red leave in timer"). Same
-# injected-into-the-parent-document technique as the hotkey listener
-# above, same duplicate-guard reasoning. Any page can opt an element in
-# just by giving it class="live-countdown" plus:
-#   data-target-ms   required — the target instant, real UTC epoch ms
-#   data-format       "clock" (H:MM:SS, default) or "words" (e.g. "1h 26m"/"45 min")
-#   data-template     optional wrapper with a "{}" placeholder for the ticking token (default "{}")
-#   data-zero-text    optional full replacement text once the target's passed (e.g. "Leave now")
-#   data-intensity    optional — escalating urgency tiers (intensity-calm through intensity-overdue,
-#                     see theme.py's .leave-headline rules) toggled on the closest .leave-headline
-#                     ancestor. Session request: "make the leave in timer chill and it progressively
-#                     gets more intense... the closer we are to the leave time." Only elements that
-#                     set this attribute are touched — the jumbotron/sports countdowns sharing this
-#                     same ticker don't set it, so they're unaffected.
-# Re-queries .live-countdown fresh every tick rather than caching
-# element references, so it keeps finding the right nodes even though
-# Streamlit replaces them underneath it on its own 5s cycle.
-components.html(
-    """
-    <script>
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('kiosk-countdown-ticker')) return;
@@ -292,25 +531,7 @@ components.html(
       ].join('\\n');
       doc.head.appendChild(s);
     })();
-    </script>
-    """,
-    height=0,
-)
 
-# Radar page frame animation (pages_radar.py/radar_client.py) — session
-# request: "make the radar nice and big... reinstate the radar page."
-# Every real radar frame is a genuine, already-loaded <img> stacked
-# full-bleed on the others (see .weather-radar-frame-img, theme.py);
-# this just toggles which one is opacity:1 on a timer, so "animating"
-# never re-fetches anything or touches Streamlit's own rerun cycle at
-# all. Same inject-into-the-parent-document/duplicate-guard shape as
-# every other kiosk-* script here — survives Streamlit tearing this
-# components.html iframe down and rebuilding it every 5s rerun, and
-# simply does nothing on any other page (no .weather-radar-frame-img
-# elements to find there).
-components.html(
-    """
-    <script>
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('kiosk-radar-anim')) return;
@@ -354,36 +575,7 @@ components.html(
       ].join('\\n');
       doc.head.appendChild(s);
     })();
-    </script>
-    """,
-    height=0,
-)
 
-# Radar frame dynamic sizing — session request: "makes the radar much,
-# much, much bigger... you should be able to see it all." A static CSS
-# vh budget (theme.py's own .weather-radar-frame-large, several rounds
-# of live-tested history on that class's own comment) kept running into
-# the same wall no matter how it was tuned: the header above this tile
-# isn't a fixed height — it grows and shrinks with the morning-briefing
-# sentence's real length, an active weather alert, how many hero badges
-# are flagged right now — so any single static value is either too
-# small on the header's short days or overlapping the fixed bottom
-# ticker on its long ones. Confirmed live across several real reruns:
-# the SAME 60vh value measured comfortably clear of the header in one
-# check and 75px into the ticker in another, just from the header's own
-# content changing between them, nothing to do with viewport size.
-#
-# Measuring the real remaining space at runtime instead, the same way
-# this app already does for the live-countdown ticker/toast dedup
-# above — the one thing a static injected stylesheet genuinely can't
-# do (this file has said as much in theme.py's own comments for a
-# while) but a persistent script can. RADAR_OVERHEAD_PX is the tile's
-# own non-frame chrome (padding + credit line + the gap under the
-# frame) — near-constant regardless of the frame's own current size,
-# so it only needs measuring once per tick, not solved for.
-components.html(
-    """
-    <script>
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('kiosk-radar-size')) return;
@@ -413,30 +605,7 @@ components.html(
       ].join('\\n');
       doc.head.appendChild(s);
     })();
-    </script>
-    """,
-    height=0,
-)
 
-# Jumbotron win-probability bar (pages_jumbotron._win_probability_html)
-# — session request: "can you make the win probability bar update
-# smoother instead of jumping." theme.py's own .jumbo-wp-seg already
-# carries `transition: width 1s ease`, but that alone can't animate
-# anything here: Streamlit re-renders the whole markdown block from
-# scratch every rerun, so each .jumbo-wp-seg is a brand new DOM node
-# every time with the new width already baked into its inline style —
-# not an existing element whose width property just changed, which is
-# the only thing a CSS transition can actually animate. Tracked by
-# data-wp-key (stable per game+side — the DOM node itself isn't) in a
-# plain JS object that survives the churn the same way the countdown
-# ticker's own state does, so a genuine change gets a real old->new
-# animation: snap instantly back to the last real percentage (no
-# transition), force a reflow, then let the CSS transition carry it
-# forward to the new one. A first sighting or an unchanged percentage
-# just sets the width directly, no animation to fake.
-components.html(
-    """
-    <script>
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('kiosk-wp-smoother')) return;
@@ -469,36 +638,7 @@ components.html(
       ].join('\\n');
       doc.head.appendChild(s);
     })();
-    </script>
-    """,
-    height=0,
-)
 
-# Session request: "how can we improve the experience watching the game
-# on the jumbotron... everything to feel good and seamless and like
-# its all orchestrated" — a general-purpose version of the win-
-# probability smoother just above, for every OTHER jumbotron element
-# that currently just pops to its new value/state on each rerun (same
-# root cause: Streamlit re-renders the whole markdown block from
-# scratch, so there's never an existing DOM node for a CSS transition
-# to animate from). Any element opts in with two data attributes —
-# data-fade-slot (a stable logical identity for "this one spot," e.g.
-# "matchup-batter" or "lineup-current-Blue Jays" — NOT the DOM node,
-# which is new every time) and data-fade-value (whatever value means
-# "this is genuinely the same thing as last rerun" — a player id, a
-# play description, an inning+half string) — rather than each feature
-# needing its own bespoke smoother script the way the win-probability
-# bar has. A first sighting of a slot, or an unchanged value, sets
-# nothing (already rendered correctly, nothing to animate); a genuine
-# change snaps opacity to 0, forces a reflow, then transitions to 1 —
-# same reflow-then-transition trick as kiosk-wp-smoother, opacity
-# instead of width since these are appear/replace moments, not a
-# continuous bar. 0.45s cubic-bezier(.2,.8,.2,1) matches this board's
-# own existing card fade-in convention (.jumbo-around-fade-a/-b in
-# theme.py) rather than introducing a new easing feel.
-components.html(
-    """
-    <script>
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('kiosk-jumbo-fade')) return;
@@ -532,25 +672,7 @@ components.html(
       ].join('\\n');
       doc.head.appendChild(s);
     })();
-    </script>
-    """,
-    height=0,
-)
 
-# Session request: "make it so all the red headlines within the last 2
-# hours cycle at the top of the screen with a cool animation when it
-# swaps" (headline_rotation.py) — same reflow-then-restart-animation
-# trick as kiosk-jumbo-fade just above, toggling a CSS class
-# (.rotation-swap-in, theme.py) instead of directly manipulating
-# opacity, since the swap-in keyframe needs to coexist with the
-# critical tier's own separate continuous pulse animation rather than
-# replace it (see theme.py's own comment on why that rules out setting
-# el.style.animation directly). Only ever one .headline-rotation
-# element on the page at a time, so this tracks a single last-seen
-# value rather than kiosk-jumbo-fade's per-slot map.
-components.html(
-    """
-    <script>
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('kiosk-headline-rotation-swap')) return;
@@ -579,42 +701,7 @@ components.html(
       ].join('\\n');
       doc.head.appendChild(s);
     })();
-    </script>
-    """,
-    height=0,
-)
 
-# Connection watchdog — session report: "why is my dashboard stuck at
-# 12:48pm" while the real time was 7:29pm, ~7 hours stale. Confirmed
-# not a code bug: a fresh instance of the exact same deployed code
-# ticked correctly, every requests.get/post call in this app already
-# has an explicit timeout, and a plain browser refresh fixed it
-# instantly — meaning the Python process itself was fine the whole
-# time, but this kiosk's own long-lived browser tab had silently lost
-# its Streamlit WebSocket connection and never reconnected on its own.
-# st_autorefresh (above) can't rescue this: its own rerun trigger rides
-# that exact same connection, so once it's dead, the "every 5s" tick
-# just stops firing right along with everything else, with nothing on
-# screen ever indicating it. This is a plain browser-level timer,
-# deliberately NOT going through Streamlit/the WebSocket at all — a
-# full hard reload re-establishes a genuinely fresh connection from
-# scratch, so even a silent, otherwise-invisible disconnect can never
-# leave the kiosk frozen for more than one interval.
-#
-# Interval briefly tightened to 5 minutes the same evening, after a
-# second, related incident: a live game staying stuck on stale pregame
-# data ("the game has started but the jumbotron hasnt picked it up")
-# that only resolved once a completely separate browser session loaded
-# the app. But a reload is a real, visible event on a kiosk (a brief
-# flash, any in-progress animation resetting) — 5 minutes traded away
-# too much of that for not enough benefit, and turned into its own
-# complaint: "why does the board refresh so often." Settled back at 60
-# minutes: "an hour, if the board tenses up itll be fixed within the
-# hour is good" — an occasional rare safety net, not something meant
-# to be regularly visible.
-components.html(
-    """
-    <script>
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('kiosk-reload-watchdog')) return;
@@ -627,76 +714,7 @@ components.html(
       ].join('\\n');
       doc.head.appendChild(s);
     })();
-    </script>
-    """,
-    height=0,
-)
 
-# Bottom ticker — session report: "this dashboard is really heavy...
-# the bottom bar[ is] a little janky on the old laptop." Same root
-# cause class as the win-probability bar above (a plain markdown re-emit
-# recreating the DOM node every rerun, restarting whatever animation it
-# carries). A twin fix used to sit right above this one for the live
-# radar loop GIF — removed along with the whole Radar page at the
-# user's own request ("get rid of radar and replace it with hourly
-# weather data"), taking its own now-dead persistence script with it.
-# ticker.render_html() is one plain st.markdown call, so Streamlit replaces
-# its whole .ticker-bar > .ticker-track > .ticker-content tree from
-# scratch on every ~5s rerun — and .ticker-track carries a 55-second
-# CSS scroll animation (animation: ticker-scroll, theme.py), which a
-# browser always restarts from 0% the instant a NEW element gets that
-# animation, even with identical content. The scroll never got more
-# than a few seconds into its own 55s cycle before snapping back to
-# the start — on a fast machine that reads as a barely-perceptible
-# stutter; on weaker hardware, forcing that same restart (a style
-# recalc across dozens of ticker-item spans, easily 40+ once every
-# live stat source is duplicated for the seamless loop) is real,
-# regular jank.
-#
-# Same fix shape as the radar loop: a persistent .ticker-bar clone
-# living as a direct child of <body>, entirely outside Streamlit's own
-# churn, so its .ticker-track element is never recreated and its
-# animation just keeps running uninterrupted. Only .ticker-track's
-# innerHTML gets resynced (and only when it's actually changed — a
-# real stat ticking, not every 5s regardless), never the track element
-# itself; .ticker-bar's own CSS is already position:fixed with no
-# dependency on where it sits in the DOM, so — unlike the radar frame —
-# this doesn't need any manual position-tracking against the (now-
-# hidden) real one.
-#
-# Bug found from a session report ("what happened to my toast alerts?
-# and my bottom bar"): the clone keeps class="ticker-bar" (only its id
-# differs), so the very first time the REAL ticker-bar goes away for a
-# real reason — a news/weather/sports toast or the jumbotron leave-
-# ticker taking over this same slot, both of which skip calling
-# ticker.render_html() entirely for that rerun — the plain
-# `document.querySelector('.ticker-bar')` below matched the PERSISTENT
-# CLONE ITSELF instead of finding nothing. That aliased `real` to the
-# clone, and the final `real.style.display = 'none'` line hid the
-# clone permanently — nothing else in this script ever un-hides it, so
-# once any toast fired even once, the ticker was gone for the rest of
-# the session, reload required. `:not(#kiosk-ticker-persistent)`
-# excludes the clone from that lookup so a genuinely-absent real ticker
-# correctly falls into the `if (!real)` branch instead.
-#
-# Second bug, found the same session, reproduced live on a real page
-# (internals): the clone can inherit a stale `display:none` at the
-# exact moment it's cloned — a real timing window right at a toast-to-
-# ticker transition (real gets hidden as the toast begins, and if the
-# very next real ticker-bar Streamlit creates once the toast clears
-# happens to still carry that same stale inline style at the instant
-# this observer callback catches it and clones it, `persistent`
-# permanently inherits `display:none` too, with nothing else in this
-# script ever explicitly un-hiding it afterward — confirmed live: manually
-# forcing `persistent.style.display = 'block'` fixed it permanently, proving
-# nothing was actively re-hiding it, it just had no path back to visible on
-# its own). `persistent.style.display = ''` right after cloning clears
-# any inherited inline override unconditionally, so the clone always
-# starts from a clean, CSS-default (visible) state regardless of
-# whatever `real` happened to look like at the exact clone moment.
-components.html(
-    """
-    <script>
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('kiosk-ticker-persist')) return;
@@ -770,60 +788,7 @@ components.html(
       ].join('\\n');
       doc.head.appendChild(s);
     })();
-    </script>
-    """,
-    height=0,
-)
 
-# Toast chime + client-side reveal overlay — session request: "add
-# chimes for important news or severe weather alerts or leave in
-# notifications... without needing an autoclicker to keep the screen
-# engaged. Also add client side animations for the toast bar because we
-# had to get rid of them because they were causing complications."
-#
-# The original toast-bar animation (news.render_alert_bar's own
-# docstring has the full story) stretched a label into view via a CSS
-# animation whose own timing was recomputed from `elapsed` every 5s
-# Streamlit rerun — real complexity purpose-built around exact
-# assumptions of how Streamlit patches this element, and it broke:
-# "I'm still not getting any Toast alerts... it might be running in a
-# refresh window... causing it to instantly die." Removed entirely
-# rather than fixed at the time. This is a genuinely different design,
-# not a repeat of that one: the toast bar itself renders in its final
-# state immediately, same as it does today, with zero Streamlit-timed
-# animation state of its own to ever get stuck in. Everything below —
-# the chime and the reveal — is a client-side script watching the
-# ALREADY-persisted toast slot (kioskPersistTicker/TOAST_SEL above) via
-# the same MutationObserver pattern, entirely independent of Streamlit's
-# own rerun cadence: it fires once, the moment this script's own DOM
-# read notices genuinely new toast content (not on every 5s rerun that
-# just re-renders the SAME still-active toast), and its animation is a
-# fixed-duration CSS transition set once in JS, never recomputed against
-# `elapsed` the way the old one was.
-#
-# Chime-worthy is a deliberate subset, not every toast this app fires:
-# "important news" -> real breaking news only (.news-alert-bar), not
-# routine .news-alert-bar-market; "severe weather" -> the genuinely
-# severe tiers (extreme/warning), not every advisory-level watch/
-# statement; "leave in notifications" -> the commute alert and the
-# jumbotron's own leave-ticker. Two loudness tiers (a 3-note chime for
-# the most urgent bracket, a softer 2-note one for the rest) rather
-# than one flat sound for everything.
-#
-# Audio autoplay: browsers block JS-triggered sound without a prior user
-# gesture on that page — this script still calls play() the instant a
-# real chime-worthy toast appears, but on a kiosk that's never clicked
-# at all, the browser may keep the AudioContext silently suspended
-# forever with no error surfaced here. That's a real, one-time browser
-# setting to fix (chrome://settings/content/sound -> add this
-# dashboard's own URL to "Allowed to play sound," or launch the kiosk
-# browser itself with --autoplay-policy=no-user-gesture-required) — not
-# something any script running inside the page can grant itself, and
-# not the same thing as an autoclicker: a one-time setting survives
-# every future reboot/reload on its own, nothing has to keep running.
-components.html(
-    """
-    <script>
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('kiosk-toast-chime')) return;
