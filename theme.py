@@ -3394,7 +3394,7 @@ html, body, [class*="css"] {
 }
 .jumbo-brand {
     font-family: var(--num);
-    font-size: 26px;
+    font-size: 22px;
     font-weight: 800;
     letter-spacing: 0.06em;
     color: var(--led);
@@ -3407,7 +3407,7 @@ html, body, [class*="css"] {
     font-family: var(--disp);
     font-weight: 700;
     letter-spacing: 0.32em;
-    font-size: 9px;
+    font-size: 8px;
 }
 .jumbo-clock {
     /* Session feedback: "make the big numbers the same font as the
@@ -3419,13 +3419,13 @@ html, body, [class*="css"] {
        relying on inheritance so it's clear at a glance this element is
        the same font on purpose, not by accident. */
     font-family: var(--label);
-    font-size: 36px;
+    font-size: 31px;
     letter-spacing: 0.05em;
     line-height: 1;
 }
-.jumbo-clock em { font-style: normal; font-size: 16px; color: var(--mut); margin-left: 5px; }
+.jumbo-clock em { font-style: normal; font-size: 14px; color: var(--mut); margin-left: 5px; }
 .jumbo-dateline {
-    font-size: 11px;
+    font-size: 9px;
     font-weight: 300;
     color: var(--mut);
     letter-spacing: 0.2em;
@@ -3442,8 +3442,8 @@ html, body, [class*="css"] {
     backdrop-filter: blur(24px) saturate(160%);
     -webkit-backdrop-filter: blur(24px) saturate(160%);
 }
-.jumbo-wx-temp { font-family: var(--label); font-size: 26px; line-height: 1; }
-.jumbo-wx-loc { font-size: 9px; font-weight: 300; color: var(--mut); letter-spacing: 0.24em; }
+.jumbo-wx-temp { font-family: var(--label); font-size: 22px; line-height: 1; }
+.jumbo-wx-loc { font-size: 8px; font-weight: 300; color: var(--mut); letter-spacing: 0.24em; }
 
 .jumbo-grid {
     flex: 1;
@@ -3490,7 +3490,7 @@ html, body, [class*="css"] {
     background: rgba(255,255,255,0.035);
     border-bottom: 2px solid var(--led);
     font-family: var(--label);
-    font-size: 12px;
+    font-size: 10px;
     font-weight: 800;
     letter-spacing: 0.2em;
     color: var(--bone);
@@ -3554,9 +3554,9 @@ html, body, [class*="css"] {
     background: rgba(255,255,255,0.08); border-radius: 10px;
 }
 .jumbo-hero-id { min-width: 0; white-space: nowrap; }
-.jumbo-hero-name { font-weight: 800; font-size: 23px; letter-spacing: 0.01em; line-height: 1.1; white-space: nowrap; }
+.jumbo-hero-name { font-weight: 800; font-size: 20px; letter-spacing: 0.01em; line-height: 1.1; white-space: nowrap; }
 .jumbo-hero-div {
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 300;
     color: var(--mut);
     letter-spacing: 0.14em;
@@ -3572,10 +3572,10 @@ html, body, [class*="css"] {
    not routine muted text. */
 .jumbo-hero-odds { color: var(--tc); font-weight: 600; letter-spacing: 0.08em; }
 .jumbo-hero-rec { margin-left: auto; text-align: right; flex: 0 0 auto; padding-left: 10px; position: relative; z-index: 1; }
-.jumbo-hero-rec-v { font-family: var(--label); font-weight: 800; font-size: 28px; line-height: 1; white-space: nowrap; }
-.jumbo-hero-rec-l { font-size: 9px; font-weight: 700; color: var(--mut-2); letter-spacing: 0.26em; white-space: nowrap; }
+.jumbo-hero-rec-v { font-family: var(--label); font-weight: 800; font-size: 24px; line-height: 1; white-space: nowrap; }
+.jumbo-hero-rec-l { font-size: 8px; font-weight: 700; color: var(--mut-2); letter-spacing: 0.26em; white-space: nowrap; }
 .jumbo-form { display: flex; gap: 6px; align-items: center; margin-top: 9px; position: relative; z-index: 1; }  /* was 13px — see .jumbo-rail-col's own comment */
-.jumbo-form-label { font-size: 11px; font-weight: 700; color: var(--mut-2); letter-spacing: 0.2em; margin-right: 3px; }
+.jumbo-form-label { font-size: 9px; font-weight: 700; color: var(--mut-2); letter-spacing: 0.2em; margin-right: 3px; }
 .jumbo-form i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 .jumbo-form-w { background: var(--ok); box-shadow: 0 0 6px rgba(50,213,131,0.5); }
 .jumbo-form-l { background: rgba(255,69,58,0.35); border: 1px solid rgba(255,69,58,0.5); }
@@ -3592,7 +3592,7 @@ html, body, [class*="css"] {
     background: rgba(0,0,0,0.4);
     padding: 9px 15px;
     font-family: var(--label);
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
     color: var(--mut);
     line-height: 1.6;
@@ -3600,21 +3600,21 @@ html, body, [class*="css"] {
     z-index: 1;
 }
 .jumbo-gameline b { color: var(--bone); font-weight: 600; }
-.jumbo-gl-score { color: var(--led); font-weight: 800; font-size: 19px; }
-.jumbo-gl-cd { font-family: var(--label); color: var(--bone); font-size: 24px; letter-spacing: 0.08em; margin-left: 10px; }
+.jumbo-gl-score { color: var(--led); font-weight: 800; font-size: 16px; }
+.jumbo-gl-cd { font-family: var(--label); color: var(--bone); font-size: 20px; letter-spacing: 0.08em; margin-left: 10px; }
 /* Same "delayed instead of stuck at 0:00" fix as .jumbo-countdown-
    delayed above, sized for this compact rail chip instead of the big
    featured board. */
-.jumbo-gl-cd-delayed { color: #FF9F0A; font-size: 18px; }
+.jumbo-gl-cd-delayed { color: #FF9F0A; font-size: 15px; }
 .jumbo-w { color: var(--ok); }
 .jumbo-l { color: var(--live); }
-.jumbo-offseason { border-style: dashed; color: var(--mut-2); letter-spacing: 0.28em; font-size: 13px; }
+.jumbo-offseason { border-style: dashed; color: var(--mut-2); letter-spacing: 0.28em; font-size: 11px; }
 /* Session request: "for the teams that aren't currently in season,
    can we have a little countdown on their team bar" — replaces the
    plain "OFFSEASON" text with a real sentence ("Preseason opener Aug
    15 · in 20 days"), which .jumbo-offseason's own 0.28em letter-
    spacing (fine for one all-caps word) would badly reflow. */
-.jumbo-offseason-countdown { letter-spacing: 0.02em; font-size: 14px; text-align: left; }
+.jumbo-offseason-countdown { letter-spacing: 0.02em; font-size: 12px; text-align: left; }
 .jumbo-hero-live .jumbo-gameline { border-color: rgba(255,69,58,0.45); box-shadow: 0 0 16px rgba(255,69,58,0.1); }
 /* My Teams + Division Standings share the left column as two stacked
    panels — session request moved standings out of each hero card into
@@ -3647,7 +3647,7 @@ html, body, [class*="css"] {
     background: #0B0B0E;
     overflow: hidden;
     font-family: var(--label);
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 600;
 }
 .jumbo-standings-row {
@@ -3776,12 +3776,12 @@ html, body, [class*="css"] {
     object-fit: contain;
     filter: drop-shadow(0 5px 18px rgba(0,0,0,0.75));
 }
-.jumbo-tname { font-weight: 800; font-size: 25px; letter-spacing: 0.01em; }
+.jumbo-tname { font-weight: 800; font-size: 21px; letter-spacing: 0.01em; }
 /* NFL possession icon next to the team name (pages_jumbotron.
    _side_html) — session request: "make it more obvious who has the
    ball... a little ball icon next to their name." */
 .jumbo-side-ball { margin-right: 8px; }
-.jumbo-trec { font-size: 13px; font-weight: 700; color: var(--mut); letter-spacing: 0.1em; }
+.jumbo-trec { font-size: 11px; font-weight: 700; color: var(--mut); letter-spacing: 0.1em; }
 /* The floating dark plate over the diagonal seam — hairline borders
    on both sides read as a real cut card sitting on top of the two
    color panels, not just empty space between them. */
@@ -3807,7 +3807,7 @@ html, body, [class*="css"] {
    numbers." */
 .jumbo-digit {
     font-family: var(--label);
-    font-size: 88px;
+    font-size: 75px;
     line-height: 0.92;
     width: 0.62em;
     text-align: center;
@@ -3837,13 +3837,13 @@ html, body, [class*="css"] {
     0% { transform: scale(1.12); text-shadow: 0 0 20px rgba(255,255,255,0.5); }
     100% { transform: scale(1); text-shadow: none; }
 }
-.jumbo-dash { color: var(--edge-hi); font-family: var(--label); font-size: 50px; font-weight: 800; }
+.jumbo-dash { color: var(--edge-hi); font-family: var(--label); font-size: 42px; font-weight: 800; }
 .jumbo-vs {
-    font-family: var(--num); font-size: 15px; font-weight: 800; letter-spacing: 0.14em; color: var(--led);
+    font-family: var(--num); font-size: 13px; font-weight: 800; letter-spacing: 0.14em; color: var(--led);
     width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
     border: 2px solid var(--led); margin-bottom: 4px;
 }
-.jumbo-countdown { font-family: var(--label); font-size: 88px; font-weight: 800; color: var(--bone); letter-spacing: 0.02em; line-height: 1; }
+.jumbo-countdown { font-family: var(--label); font-size: 75px; font-weight: 800; color: var(--bone); letter-spacing: 0.02em; line-height: 1; }
 /* Session request: "the jays game is delayed can you make it show
    delayed instead of sitting at 0:00" — swaps in for .jumbo-countdown
    once the scheduled start has passed with no live game yet (see
@@ -3856,7 +3856,7 @@ html, body, [class*="css"] {
    established "something needs attention" color elsewhere. */
 .jumbo-countdown-delayed {
     font-family: var(--disp);
-    font-size: 34px;
+    font-size: 29px;
     font-weight: 700;
     color: #FF9F0A;
     letter-spacing: 0.04em;
@@ -3864,10 +3864,10 @@ html, body, [class*="css"] {
     text-align: center;
     max-width: 320px;
 }
-.jumbo-cd-label { font-size: 10px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.4em; }
+.jumbo-cd-label { font-size: 8px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.4em; }
 .jumbo-final-badge {
     font-family: var(--num);
-    font-size: 16px;
+    font-size: 14px;
     letter-spacing: 0.4em;
     color: #0A0D12;
     background: var(--led);
@@ -3889,21 +3889,21 @@ html, body, [class*="css"] {
        treats its other big numbers. */
     text-align: center;
     font-family: var(--label);
-    font-size: 34px;
+    font-size: 29px;
     letter-spacing: 0.05em;
     padding: 14px 26px 18px;
     line-height: 1.7;
 }
-.jumbo-situ-hot { color: var(--led); font-weight: 700; margin-right: 20px; font-size: 38px; }
+.jumbo-situ-hot { color: var(--led); font-weight: 700; margin-right: 20px; font-size: 32px; }
 .jumbo-dim { color: var(--mut-2); }
-.jumbo-clockbig { font-family: var(--label); font-size: 30px; color: var(--bone); letter-spacing: 0.06em; }
+.jumbo-clockbig { font-family: var(--label); font-size: 26px; color: var(--bone); letter-spacing: 0.06em; }
 /* Pregame venue/weather + probable starters (pages_jumbotron.
    _pregame_extra_html) — session request, all free data off the same
    feed already used for scoring plays. */
 .jumbo-pregame-venue {
     text-align: center;
     font-family: var(--label);
-    font-size: 13px;
+    font-size: 11px;
     color: var(--mut);
     letter-spacing: 0.03em;
     padding: 2px 26px 4px;
@@ -3914,11 +3914,11 @@ html, body, [class*="css"] {
     gap: 40px;
     padding: 6px 0 10px;
     font-family: var(--label);
-    font-size: 13px;
+    font-size: 11px;
 }
-.jumbo-probables b { color: var(--bone); font-weight: 700; font-size: 15px; }
+.jumbo-probables b { color: var(--bone); font-weight: 700; font-size: 13px; }
 .jumbo-probables-label {
-    font-size: 9px;
+    font-size: 8px;
     letter-spacing: 0.26em;
     color: var(--mut-2);
     display: block;
@@ -3936,7 +3936,7 @@ html, body, [class*="css"] {
 .jumbo-wp { padding: 12px 36px 8px; }
 .jumbo-wp-title {
     text-align: center;
-    font-size: 11px;
+    font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.4em;
     color: var(--mut-2);
@@ -3945,7 +3945,7 @@ html, body, [class*="css"] {
 .jumbo-wp-row { display: flex; align-items: center; gap: 16px; }
 .jumbo-wp-pct {
     font-family: var(--label);
-    font-size: 34px;
+    font-size: 29px;
     font-weight: 700;
     flex: 0 0 auto;
     min-width: 78px;
@@ -3964,7 +3964,7 @@ html, body, [class*="css"] {
     display: flex;
     justify-content: space-between;
     font-family: var(--label);
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 700;
     color: var(--bone);
     margin-top: 8px;
@@ -4000,7 +4000,7 @@ html, body, [class*="css"] {
 .jumbo-leader-big-col { min-width: 0; }
 .jumbo-leader-big-stat {
     font-family: var(--label);
-    font-size: 52px;
+    font-size: 44px;
     line-height: 1;
     color: var(--bone);
     letter-spacing: 0.03em;
@@ -4008,7 +4008,7 @@ html, body, [class*="css"] {
 }
 .jumbo-leader-big-cat {
     font-family: var(--label);
-    font-size: 13px;
+    font-size: 11px;
     letter-spacing: 0.2em;
     color: var(--led);
     text-transform: uppercase;
@@ -4016,7 +4016,7 @@ html, body, [class*="css"] {
     font-weight: 700;
 }
 .jumbo-leader-big-who {
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 400;
     color: var(--bone);
     margin-top: 4px;
@@ -4041,7 +4041,7 @@ html, body, [class*="css"] {
     margin-left: 4px;
     border-left: 1px solid var(--edge);
     font-family: var(--label);
-    font-size: 13px;
+    font-size: 11px;
 }
 .jumbo-leader-name-item {
     display: flex;
@@ -4107,7 +4107,7 @@ html, body, [class*="css"] {
 }
 .jumbo-top3-name {
     font-family: var(--label);
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 700;
     color: var(--bone);
     white-space: nowrap;
@@ -4116,14 +4116,14 @@ html, body, [class*="css"] {
     max-width: 100%;
 }
 .jumbo-top3-role {
-    font-size: 10px;
+    font-size: 8px;
     font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--mut-2);
 }
 .jumbo-top3-summary {
-    font-size: 13px;
+    font-size: 11px;
     color: var(--mut);
     white-space: nowrap;
     overflow: hidden;
@@ -4131,9 +4131,9 @@ html, body, [class*="css"] {
     max-width: 100%;
 }
 .jumbo-top3-score { margin-top: 6px; display: flex; flex-direction: column; align-items: center; }
-.jumbo-top3-score-num { font-family: var(--label); font-size: 34px; line-height: 1; color: var(--bone); font-variant-numeric: tabular-nums; }
+.jumbo-top3-score-num { font-family: var(--label); font-size: 29px; line-height: 1; color: var(--bone); font-variant-numeric: tabular-nums; }
 .jumbo-top3-card-best .jumbo-top3-score-num { color: var(--led); }
-.jumbo-top3-score-label { font-size: 9px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--mut-2); margin-top: 2px; }
+.jumbo-top3-score-label { font-size: 8px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--mut-2); margin-top: 2px; }
 /* Current batter/pitcher, live-game replacement for the Top Performers
    card — session request: "during the game can you make the top
    performers tab show current pitcher and batter and their stats use
@@ -4160,7 +4160,7 @@ html, body, [class*="css"] {
 }
 .jumbo-live-matchup-tag {
     font-family: var(--label);
-    font-size: 13px;
+    font-size: 11px;
     letter-spacing: 0.18em;
     color: var(--led);
     font-weight: 700;
@@ -4177,7 +4177,7 @@ html, body, [class*="css"] {
        deliberately sized/weighted on its own, not just inheriting
        whatever the board's default happens to be. */
     font-family: var(--label);
-    font-size: 21px;
+    font-size: 18px;
     font-weight: 600;
     color: var(--bone);
     max-width: 100%;
@@ -4200,7 +4200,7 @@ html, body, [class*="css"] {
        weight steps and tabular figures, reads far slimmer for a stat
        number like this — and is what --num itself resolves to now too. */
     font-family: var(--label);
-    font-size: 32px;
+    font-size: 27px;
     font-weight: 600;
     color: var(--bone);
     line-height: 1.1;
@@ -4245,7 +4245,7 @@ html, body, [class*="css"] {
 }
 .jumbo-live-matchup-stat-label {
     font-family: var(--label);
-    font-size: 12px;
+    font-size: 10px;
     letter-spacing: 0.2em;
     color: var(--led);
     font-weight: 700;
@@ -4262,14 +4262,14 @@ html, body, [class*="css"] {
 .jumbo-live-matchup-line {
     margin-top: 6px;
     font-family: var(--label);
-    font-size: 13px;
+    font-size: 11px;
     color: var(--mut);
     text-align: center;
     white-space: nowrap;
 }
 .jumbo-live-matchup-vs {
     font-family: var(--label);
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 700;
     color: var(--mut-2);
     letter-spacing: 0.1em;
@@ -4286,7 +4286,7 @@ html, body, [class*="css"] {
 .jumbo-pitch-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px 6px; max-width: 120px; }
 .jumbo-pitch-chip {
     font-family: var(--label);
-    font-size: 11px;
+    font-size: 9px;
     font-weight: 600;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -4368,7 +4368,7 @@ html, body, [class*="css"] {
 .jumbo-nfl-redzone-badge {
     display: inline-block;
     font-family: var(--num);
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 700;
     letter-spacing: 0.3em;
     color: #0A0D12;
@@ -4385,7 +4385,7 @@ html, body, [class*="css"] {
     font-weight: 700;
     letter-spacing: 0.08em;
     margin-left: 22px;
-    font-size: 22px;
+    font-size: 19px;
 }
 .jumbo-possession-ball { margin-right: 6px; }
 .jumbo-possession-us { color: var(--led); }
@@ -4393,7 +4393,7 @@ html, body, [class*="css"] {
 .jumbo-nfl-timeouts {
     display: inline-block;
     font-family: var(--label);
-    font-size: 18px;
+    font-size: 15px;
     color: var(--mut-2);
     margin-left: 22px;
     letter-spacing: 0.04em;
@@ -4433,7 +4433,7 @@ html, body, [class*="css"] {
 .jumbo-lineup-header .jumbo-lineup-name,
 .jumbo-lineup-header .jumbo-lineup-pos,
 .jumbo-lineup-header .jumbo-lineup-ops {
-    font-size: 11px;
+    font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.08em;
     color: var(--mut-2);
@@ -4444,7 +4444,7 @@ html, body, [class*="css"] {
     gap: 10px;
     padding: 7px 0;
     font-family: var(--label);
-    font-size: 22px;
+    font-size: 19px;
     border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 .jumbo-lineup-row:last-child { border-bottom: none; }
@@ -4472,7 +4472,7 @@ html, body, [class*="css"] {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.jumbo-lineup-pos { flex: 0 0 36px; color: var(--bone); font-size: 15px; text-align: center; }
+.jumbo-lineup-pos { flex: 0 0 36px; color: var(--bone); font-size: 13px; text-align: center; }
 /* Today's-game hit line ("1/2", "0/4"), session request: "add the
    results from the at bat in the lineup... gives meaningful context."
    Not tier-colored like OPS below — this is a per-game line score, not
@@ -4483,7 +4483,7 @@ html, body, [class*="css"] {
 .jumbo-lineup-gameline {
     flex: 0 0 46px;
     color: var(--bone);
-    font-size: 16px;
+    font-size: 14px;
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
@@ -4534,7 +4534,7 @@ html, body, [class*="css"] {
 .jumbo-lineup-headtext { flex: 1; min-width: 0; }
 .jumbo-lineup-teamname {
     font-family: var(--label);
-    font-size: 18px;
+    font-size: 15px;
     font-weight: 800;
     color: var(--bone);
     white-space: nowrap;
@@ -4543,7 +4543,7 @@ html, body, [class*="css"] {
 }
 .jumbo-lineup-atbat {
     font-family: var(--label);
-    font-size: 11px;
+    font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.12em;
     text-transform: uppercase;
@@ -4611,7 +4611,7 @@ html, body, [class*="css"] {
    right below it, so this reads as one more panel in the same stack,
    not a visually distinct callout competing for attention. */
 .jumbo-blurb { border-top: 1px solid var(--edge); padding: 12px 26px 16px; }
-.jumbo-blurb-text { font-size: 15px; line-height: 1.5; color: var(--bone); }
+.jumbo-blurb-text { font-size: 13px; line-height: 1.5; color: var(--bone); }
 
 /* Last-play strip under the Current Matchup card — session request:
    "add a play badge that shows the last play from the live game feed
@@ -4639,14 +4639,14 @@ html, body, [class*="css"] {
 }
 .jumbo-lastplay-tally {
     font-family: var(--label);
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 700;
     color: var(--bone);
     letter-spacing: 0.05em;
 }
 .jumbo-lastplay-desc {
     font-family: var(--label);
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--mut-2);
     line-height: 1.4;
@@ -4686,7 +4686,7 @@ html, body, [class*="css"] {
     flex: 0 0 auto;
     text-align: center;
     font-family: var(--num);
-    font-size: 22px;
+    font-size: 19px;
     letter-spacing: 0.1em;
     color: var(--mut);
     padding: 10px 0 0;
@@ -4770,7 +4770,7 @@ html, body, [class*="css"] {
 .jumbo-ufc-hero-name {
     font-family: var(--disp);
     font-weight: 800;
-    font-size: 36px;
+    font-size: 31px;
     letter-spacing: 0.01em;
     line-height: 1.15;
 }
@@ -4778,19 +4778,19 @@ html, body, [class*="css"] {
     font-family: var(--disp);
     font-style: italic;
     font-weight: 400;
-    font-size: 16px;
+    font-size: 14px;
     color: var(--mut);
     margin-top: 2px;
 }
 .jumbo-ufc-hero-record {
     font-family: var(--num);
-    font-size: 20px;
+    font-size: 17px;
     color: var(--mut);
     margin-top: 8px;
 }
 .jumbo-ufc-hero-method {
     font-family: var(--label);
-    font-size: 12px;
+    font-size: 10px;
     letter-spacing: 0.08em;
     color: var(--mut-2);
     margin-top: 3px;
@@ -4823,18 +4823,18 @@ html, body, [class*="css"] {
     align-items: baseline;
     gap: 6px;
     font-family: var(--num);
-    font-size: 16px;
+    font-size: 14px;
 }
 .jumbo-ufc-tot-a { color: #FF3B30; font-weight: 700; }
 .jumbo-ufc-tot-b { color: #5AC8FA; font-weight: 700; }
 .jumbo-ufc-tot-label {
     font-family: var(--label);
-    font-size: 11px;
+    font-size: 9px;
     letter-spacing: 0.15em;
     color: var(--mut-2);
 }
 .jumbo-ufc-hero-weight {
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 300;
     letter-spacing: 0.2em;
     color: var(--mut-2);
@@ -4842,7 +4842,7 @@ html, body, [class*="css"] {
 }
 .jumbo-ufc-hero-vs {
     font-family: var(--num);
-    font-size: 40px;
+    font-size: 34px;
     color: var(--led);
     text-shadow: 0 0 16px var(--ledglow);
     margin-top: 10px;
@@ -4858,7 +4858,7 @@ html, body, [class*="css"] {
     padding: 2px 8px;
     border-radius: 6px;
     font-family: var(--label);
-    font-size: 12px;
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.05em;
     color: #0A0D12;
@@ -4889,7 +4889,7 @@ html, body, [class*="css"] {
 .jumbo-ufc-stat-row {}
 .jumbo-ufc-stat-title {
     text-align: center;
-    font-size: 11px;
+    font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.35em;
     color: var(--mut-2);
@@ -4898,7 +4898,7 @@ html, body, [class*="css"] {
 .jumbo-ufc-stat-line { display: flex; align-items: center; gap: 14px; }
 .jumbo-ufc-stat-value {
     font-family: var(--label);
-    font-size: 22px;
+    font-size: 19px;
     font-weight: 700;
     flex: 0 0 auto;
     min-width: 64px;
@@ -4919,7 +4919,7 @@ html, body, [class*="css"] {
     display: flex;
     justify-content: space-between;
     font-family: var(--label);
-    font-size: 11px;
+    font-size: 9px;
     font-weight: 700;
     color: var(--mut);
     margin-top: 4px;
@@ -4933,7 +4933,7 @@ html, body, [class*="css"] {
     padding: 9px 16px;
     border-bottom: 1px solid var(--glass-edge);
     font-family: var(--label);
-    font-size: 14px;
+    font-size: 12px;
 }
 .jumbo-ufc-card-row:last-child { border-bottom: none; }
 /* Network Primetime consistency sweep: same hard amber flag as the
@@ -4946,7 +4946,7 @@ html, body, [class*="css"] {
 }
 .jumbo-ufc-card-weight {
     flex: 0 0 120px;
-    font-size: 10px;
+    font-size: 8px;
     font-weight: 300;
     letter-spacing: 0.12em;
     color: var(--mut-2);
@@ -4954,8 +4954,8 @@ html, body, [class*="css"] {
 }
 .jumbo-ufc-card-fighter { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .jumbo-ufc-card-fighter.jumbo-ufc-winner { color: var(--ok); font-weight: 600; }
-.jumbo-ufc-card-vs { flex: 0 0 auto; color: var(--mut-2); font-size: 11px; }
-.jumbo-ufc-card-status { flex: 0 0 160px; text-align: right; font-family: var(--num); font-size: 13px; color: var(--mut); }
+.jumbo-ufc-card-vs { flex: 0 0 auto; color: var(--mut-2); font-size: 9px; }
+.jumbo-ufc-card-status { flex: 0 0 160px; text-align: right; font-family: var(--num); font-size: 11px; color: var(--mut); }
 .jumbo-ufc-live { color: var(--live); }
 .jumbo-ufc-final { color: var(--mut); }
 .jumbo-ufc-upcoming { color: var(--mut-2); }
@@ -4977,7 +4977,7 @@ html, body, [class*="css"] {
 .jumbo-around-league {
     font-family: var(--label);
     font-weight: 800;
-    font-size: 11px;
+    font-size: 9px;
     letter-spacing: 0.2em;
     color: var(--mut-2);
     text-transform: uppercase;
@@ -5005,15 +5005,15 @@ html, body, [class*="css"] {
 .jumbo-mini-teams { flex: 1; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .jumbo-mini-team { display: flex; align-items: center; gap: 10px; }
 .jumbo-mini-team img { width: 34px; height: 34px; padding: 4px; box-sizing: border-box; object-fit: contain; flex: 0 0 auto; background: rgba(255,255,255,0.08); border-radius: 7px; }
-.jumbo-mini-abbr { font-size: 21px; font-weight: 800; color: var(--mut); letter-spacing: 0.04em; }
-.jumbo-mini-record { font-size: 12px; font-weight: 700; color: var(--mut-2); letter-spacing: 0.02em; }
-.jumbo-mini-score { margin-left: auto; font-family: var(--label); font-weight: 800; font-size: 30px; line-height: 1; color: var(--bone); }
+.jumbo-mini-abbr { font-size: 18px; font-weight: 800; color: var(--mut); letter-spacing: 0.04em; }
+.jumbo-mini-record { font-size: 10px; font-weight: 700; color: var(--mut-2); letter-spacing: 0.02em; }
+.jumbo-mini-score { margin-left: auto; font-family: var(--label); font-weight: 800; font-size: 26px; line-height: 1; color: var(--bone); }
 /* Session request: bring back the standout-performer line (see
    scores_client.game_leader) that used to show on the regular
    rotation's own Scores page. */
 .jumbo-mini-leader {
     font-family: var(--label);
-    font-size: 13px;
+    font-size: 11px;
     color: var(--led);
     letter-spacing: 0.01em;
     margin-top: 3px;
@@ -5024,7 +5024,7 @@ html, body, [class*="css"] {
 .jumbo-mini-leader-stat { color: var(--bone); font-weight: 700; }
 .jumbo-mini-status {
     font-family: var(--label);
-    font-size: 14px;
+    font-size: 12px;
     color: var(--mut-2);
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -5086,7 +5086,7 @@ html, body, [class*="css"] {
 .jumbo-transition-in { background: #07070A; }
 .jumbo-transition-brand {
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
-    font-size: 72px;
+    font-size: 61px;
     letter-spacing: 0.12em;
     color: #FFC400;
     text-shadow: 0 0 30px rgba(255,196,0,0.6), 0 0 4px rgba(255,196,0,0.9);
@@ -5099,7 +5099,7 @@ html, body, [class*="css"] {
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
     font-weight: 300;
     letter-spacing: 0.5em;
-    font-size: 16px;
+    font-size: 14px;
     color: #7E8898;
     margin-top: 8px;
 }
@@ -5120,7 +5120,7 @@ html, body, [class*="css"] {
        outside .jumbo's own div entirely, so that custom property isn't
        in scope. Same font stack it now points to, just spelled out. */
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
-    font-size: 14px;
+    font-size: 12px;
     letter-spacing: 0.32em;
     color: #FFC400;
     text-transform: uppercase;
@@ -5137,7 +5137,7 @@ html, body, [class*="css"] {
 .jumbo-transition-out { background: rgba(5,7,12,0.97); }
 .jumbo-transition-brand-normal {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
-    font-size: 40px;
+    font-size: 34px;
     font-weight: 700;
     letter-spacing: -0.01em;
     color: #F5F5F7;
@@ -5145,7 +5145,7 @@ html, body, [class*="css"] {
 }
 .jumbo-transition-sub-normal {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
-    font-size: 15px;
+    font-size: 13px;
     color: #8E8E93;
     opacity: 0;
     animation: jumbo-transition-sub-in 0.6s ease-out 0.5s forwards;
@@ -5211,20 +5211,20 @@ html, body, [class*="css"] {
 .jumbo-otc-inner { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 1440px; min-height: 0; }
 .jumbo-otc-title {
     font-family: var(--label);
-    font-size: 20px;
+    font-size: 17px;
     letter-spacing: 0.32em;
     color: var(--led);
     text-transform: uppercase;
     font-weight: 700;
 }
-.jumbo-otc-sub { font-family: var(--label); font-size: 30px; font-weight: 700; color: var(--bone); margin-top: 8px; }
+.jumbo-otc-sub { font-family: var(--label); font-size: 26px; font-weight: 700; color: var(--bone); margin-top: 8px; }
 .jumbo-otc-timer-block { display: flex; flex-direction: column; align-items: center; margin: 16px 0 26px; }
-.jumbo-otc-timer { font-family: var(--label); font-size: 54px; font-weight: 700; color: var(--bone); line-height: 1.1; }
-.jumbo-otc-timer-label { font-family: var(--label); font-size: 13px; letter-spacing: 0.22em; color: var(--led); text-transform: uppercase; font-weight: 700; margin-top: 4px; }
+.jumbo-otc-timer { font-family: var(--label); font-size: 46px; font-weight: 700; color: var(--bone); line-height: 1.1; }
+.jumbo-otc-timer-label { font-family: var(--label); font-size: 11px; letter-spacing: 0.22em; color: var(--led); text-transform: uppercase; font-weight: 700; margin-top: 4px; }
 .jumbo-otc-league {
     grid-column: 1 / -1;
     font-family: var(--label);
-    font-size: 14px;
+    font-size: 12px;
     letter-spacing: 0.24em;
     color: var(--led);
     text-transform: uppercase;
@@ -5252,11 +5252,11 @@ html, body, [class*="css"] {
     min-height: 0;
 }
 .jumbo-otc-grid .jumbo-mini { padding: 14px 20px; border-radius: 8px; }
-.jumbo-otc-grid .jumbo-mini-abbr { font-size: 30px; }
-.jumbo-otc-grid .jumbo-mini-score { font-size: 46px; }
+.jumbo-otc-grid .jumbo-mini-abbr { font-size: 26px; }
+.jumbo-otc-grid .jumbo-mini-score { font-size: 39px; }
 .jumbo-otc-grid .jumbo-mini-team img { width: 44px; height: 44px; }
-.jumbo-otc-grid .jumbo-mini-status { font-size: 17px; }
-.jumbo-otc-grid .jumbo-mini-leader { font-size: 15px; }
+.jumbo-otc-grid .jumbo-mini-status { font-size: 14px; }
+.jumbo-otc-grid .jumbo-mini-leader { font-size: 13px; }
 
 /* Full-screen play-result announcement — session request: "add an
    animation that takes up the screen after every play. Single,
@@ -5294,7 +5294,7 @@ html, body, [class*="css"] {
 }
 .jumbo-play-text {
     font-family: var(--label);
-    font-size: 96px;
+    font-size: 82px;
     letter-spacing: 0.08em;
     text-align: center;
     line-height: 1.05;
@@ -5381,7 +5381,7 @@ html, body, [class*="css"] {
     color: var(--mut);
     font-family: var(--label);
     font-weight: 700;
-    font-size: 12px;
+    font-size: 10px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     padding: 8px 16px;
@@ -5399,13 +5399,13 @@ html, body, [class*="css"] {
 .st-key-jumbotron_delay_minus div[data-testid="stButton"] button,
 .st-key-jumbotron_delay_plus div[data-testid="stButton"] button {
     padding: 14px 22px;
-    font-size: 20px;
+    font-size: 17px;
     font-weight: 700;
     line-height: 1;
 }
 .jumbo-delay-label {
     font-family: var(--label);
-    font-size: 12px;
+    font-size: 10px;
     letter-spacing: 0.08em;
     color: var(--mut);
     white-space: nowrap;
@@ -5434,7 +5434,7 @@ html, body, [class*="css"] {
     background: transparent;
     color: var(--bone);
     font-family: var(--label);
-    font-size: 18px;
+    font-size: 15px;
     font-weight: 700;
     text-align: center;
     padding: 12px 6px;
