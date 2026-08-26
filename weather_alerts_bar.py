@@ -208,6 +208,44 @@ MAX_SEEN_ALERTS = 200
 _seen_alert_keys: dict = dict(persisted_state.load_per_instance("weather_seen_alerts", {}))
 
 
+def _friendly_headline(title: str) -> str:
+    """A short, natural-sounding rewrite of EC's own raw alert title —
+    session request: "rephrase a special weather alert... it's just
+    this yellow advisory fog North bay, powassan, mattawa, which isn't
+    fun," then, on a first pass that read too much like the spoken
+    summary below: "I don't want you to write a paragraph. I want a
+    simpler, more conversational alert." One short sentence, not a
+    rewrite of the full bulletin — distinct from _spoken_summary's own
+    groq_client.generate call just above, which deliberately DOES
+    produce a flowing paragraph, but only for Piper to read aloud, never
+    for the screen.
+
+    Only the DISPLAYED words change — every caller keeps computing
+    severity/tier/storm-phase/hazard-rank off the real, unrewritten
+    `alert["title"]` (see this module's own _severity/_tier/_is_severe_
+    hazard/_selection_score), never off this function's return value,
+    so a rewrite that happens to drop or reword "warning"/"watch" can
+    never silently change how urgent this looks or behaves.
+
+    Cached by groq_client.generate's own exact-prompt-text caching
+    (see its own docstring) — the raw title stays identical across
+    every ~5s rerun for as long as the same alert stays active, so this
+    only ever pays for a real call once per genuinely new alert
+    issuance, not every rerun. Falls back to the raw title unchanged on
+    any AI outage/rate limit, same as every other AI-optional path in
+    this app — a real hazard worded plainly beats no banner at all."""
+    rewritten = groq_client.generate(
+        "Rewrite this Environment Canada weather alert title as one short, casual sentence a person would "
+        "actually say out loud to a friend — not a formal bulletin, not a paragraph. Keep the real hazard "
+        "and location. Under 12 words. Reply with only the sentence, nothing else.\n\n" + title,
+        temperature=0.6,
+        max_output_tokens=80,
+        account="primary",
+        reasoning_effort="low",
+    )
+    return rewritten or title
+
+
 def get_new_alerts(now: datetime) -> list[dict]:
     """New weather alerts since the last check — {"kind": "weather",
     "severity", "label", "headline"}, the toast queue's own generic
@@ -249,7 +287,7 @@ def get_new_alerts(now: datetime) -> list[dict]:
         _seen_alert_keys.pop(next(iter(_seen_alert_keys)))
     persisted_state.save_per_instance("weather_seen_alerts", _seen_alert_keys)
     severity = _severity(alert["title"])
-    headline = alert["title"]
+    headline = _friendly_headline(alert["title"])
     phase_info = ec_storm_timing.storm_phase(now, alert["title"], severity)
     if phase_info is not None:
         clock = phase_info["target"].astimezone(ZoneInfo(TIMEZONE)).strftime("%I:%M %p").lstrip("0")
@@ -582,7 +620,7 @@ def weather_statement_candidate(weather: dict | None) -> dict | None:
     alerts = _combined_alerts()
     if alerts:
         alert = max(alerts, key=_selection_score)
-        text = alert["title"]
+        text = _friendly_headline(alert["title"])
         if len(alerts) > 1:
             text += f" (+{len(alerts) - 1} more alert{'s' if len(alerts) > 2 else ''})"
         rotation_class = _SEVERITY_TO_ROTATION_CLASS[_severity(alert["title"])]
