@@ -5492,6 +5492,90 @@ html, body, [class*="css"] {
     padding: 12px 6px;
 }
 
+/* ============ NIGHT MODE (night_mode.py) ============
+   Session request: "get rid of the smart plug generation... replace
+   [it] by a designated night mode where the display goes dark, and
+   it's used as like a nightstand display... clock, weather...
+   minimalist... make the colors friendly on the eyes... as little
+   blue light as possible." Deliberately its own small, self-contained
+   palette rather than reusing this app's normal --bone/--mut greys or
+   any accent blue (#0A84FF, used all over the daytime UI) — those are
+   exactly the cool/bright tones that make a 3am glance actually wake
+   you up. Every color below is a dim warm amber/copper instead, nothing
+   reaching full brightness, closer to a red-light flashlight or an old
+   LED alarm clock than to the rest of this kiosk. */
+.night-mode {
+    position: fixed;
+    inset: 0;
+    /* Highest z-index anywhere in this app (jumbotron's own session
+       controls are the previous ceiling at 9999) — a deliberate safety
+       net, not just a display gate in app.py: night mode is meant to be
+       the one thing on screen, and this guarantees it visually wins
+       over any toast/ticker/badge that still tries to render
+       underneath rather than relying on every single one of those
+       being individually suppressed correctly. */
+    z-index: 10000;
+    background: #000000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.2rem;
+}
+.night-clock {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 13rem;
+    font-weight: 300;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: #B8703A;
+    font-variant-numeric: tabular-nums;
+}
+.night-ampm {
+    font-size: 3rem;
+    font-weight: 400;
+    margin-left: 0.8rem;
+    color: #7A4A26;
+    vertical-align: middle;
+}
+.night-date {
+    font-size: 1.7rem;
+    font-weight: 400;
+    color: #6B4224;
+    letter-spacing: 0.02em;
+}
+.night-weather {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin-top: 0.8rem;
+    color: #6B4224;
+}
+.night-weather-icon {
+    width: 2.2rem;
+    height: 2.2rem;
+    display: flex;
+    color: #8F5A2C;
+}
+.night-weather-icon svg {
+    width: 100%;
+    height: 100%;
+}
+.night-weather-temp {
+    font-size: 2rem;
+    font-weight: 500;
+    color: #A8622E;
+    font-variant-numeric: tabular-nums;
+}
+.night-weather-cond {
+    font-size: 1.4rem;
+}
+.night-weather-low {
+    font-size: 1.4rem;
+    padding-left: 0.9rem;
+    border-left: 1px solid #3A2412;
+}
+
 /* Phone breakpoint. Everything above this point is untouched at any
    width above it (including the kiosk monitor, always far wider) —
    nothing in this block redefines a rule, it only adds overrides that

@@ -1100,17 +1100,23 @@ def takeover_preview_state() -> dict | None:
     return None
 
 
-def plug_should_stay_on(takeover: dict | None) -> bool:
-    """True while the monitor's smart plug should be held on regardless
-    of the normal daylight window — session request: "the smart plug
-    can't turn off if there's a live game... after the game is over the
-    setup can sleep." Originally just "game state == live", which cut
-    the plug the instant a game went final — session correction: "the
-    second the end of game recap happened the smart plug turned off...
-    shouldn't have happened for at least 5 mins." Now rides the exact
-    same postgame hold the jumbotron's own recap uses (phase
-    "postgame", TAKEOVER_POSTGAME_MINUTES — comfortably more than 5),
-    rather than reverting the instant state flips to "final".
+def game_holds_screen_awake(takeover: dict | None) -> bool:
+    """True while a live/recent game should keep the screen in its
+    normal, fully-active state regardless of the overnight schedule —
+    originally the trigger for the monitor's own smart plug ("the smart
+    plug can't turn off if there's a live game... after the game is
+    over the setup can sleep"), now repurposed for the same reasoning
+    behind night_mode.py's own trigger once the plug itself was removed
+    (a display that's physically always on doesn't need a plug held
+    open, but still shouldn't drop into the dim nightstand view mid-
+    game). Originally just "game state == live", which cut the plug (now:
+    entered night mode) the instant a game went final — session
+    correction: "the second the end of game recap happened the smart
+    plug turned off... shouldn't have happened for at least 5 mins."
+    Now rides the exact same postgame hold the jumbotron's own recap
+    uses (phase "postgame", TAKEOVER_POSTGAME_MINUTES — comfortably
+    more than 5), rather than reverting the instant state flips to
+    "final".
 
     Takes the same takeover_state() dict app.py already computes each
     rerun, rather than re-deriving live status itself — that dict is

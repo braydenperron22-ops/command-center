@@ -256,10 +256,15 @@ MARKET_INSTRUMENTS_ALWAYS = [
     {"key": "oil", "label": "Crude Oil", "symbol": "CL=F"},
 ]
 
-# Govee smart-home devices (bedroom light + plug). Identifiers only — not
-# secret on their own, control still requires GOVEE_API_KEY in
-# .streamlit/secrets.toml. Pulled from the account's own device list via
-# the Govee API, which uses a different (longer) device-id format than
-# the MAC address printed on the device itself.
+# Govee smart-home bedroom light. Identifier only — not secret on its
+# own, control still requires GOVEE_API_KEY in .streamlit/secrets.toml.
+# Pulled from the account's own device list via the Govee API, which
+# uses a different (longer) device-id format than the MAC address
+# printed on the device itself.
+#
+# A GOVEE_PLUG entry used to live here too, for a smart plug that cut
+# power to the monitor overnight — removed (session request: "get rid
+# of the smart plug generation... replace [it] by a designated night
+# mode," once the physical setup moved to a display meant to stay
+# powered on; see night_mode.py's own module docstring).
 GOVEE_LIGHT = {"sku": "H6167", "device": "0C:1A:D4:39:C1:86:02:47"}
-GOVEE_PLUG = {"sku": "H5080", "device": "1A:82:5C:E7:53:93:A5:56"}

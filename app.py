@@ -34,6 +34,7 @@ import market_volatility_alert
 import market_yf_client
 import morning_briefing
 import news
+import night_mode
 import pages_conflicts
 import pages_email
 import pages_home
@@ -1563,8 +1564,10 @@ _jumbotron_active = page == "jumbotron" and (_takeover is not None or _ufc_takeo
 # device, not per-session, and it should track "is a Jays/Habs game
 # actually live/in its takeover window right now" regardless of which
 # page any particular connected session (kiosk, a phone checking the
-# score) happens to be routed to. sync_plug already gets this right via
-# plug_should_stay_on(_takeover) below; sync_lights was wrongly wired
+# score) happens to be routed to. night_mode's own trigger already
+# gets this right via game_holds_screen_awake(_takeover) below (this
+# app-wide device concern used to be sync_plug's own job, before the
+# plug was removed); sync_lights was wrongly wired
 # to page-gated _jumbotron_active instead — session report: "my gov
 # lights are completely off... all over the place tonight" while the
 # Jays game was genuinely live, traced to exactly this: any session not
@@ -1577,6 +1580,43 @@ if not _jumbotron_active and page == "jumbotron":
     # Nothing to show (no game at all, e.g. both leagues in the
     # offseason) — fall back rather than rendering an empty board.
     page, _, _ = _scheduled_page(_rotation_epoch)
+
+# Night mode — session request: "because this is on a regular display
+# now and not a monitor... get rid of the smart plug generation...
+# replace [it] by a designated night mode where the display goes dark,
+# and it's used as like a nightstand display." Replaces govee_lighting.
+# sync_plug (used to cut power to the monitor on this exact schedule —
+# see night_mode.py's own module docstring for the full story); the
+# physical Govee LIGHT automation is untouched ("the lights can stay").
+#
+# Same trigger shape sync_plug always had — a fixed 9:30pm-4:30am
+# window, overridden by a live/recent game, an active leave-timer
+# countdown, or a storm — computed here (early, before any page
+# renders) rather than near the end of the script the way the plug's
+# own side-effect call used to sit, since this decides what actually
+# shows on screen this rerun rather than firing a fire-and-forget
+# device command afterward.
+try:
+    game_live = sports_alerts.game_holds_screen_awake(_takeover)
+except Exception:
+    game_live = False
+try:
+    _night_mode_leave_active = commute_reminder.leave_headline_active(now)
+except Exception:
+    _night_mode_leave_active = False
+try:
+    _night_mode_storm_active = weather_alerts_bar.current_storm_phase(now) is not None
+except Exception:
+    _night_mode_storm_active = False
+_night_mode_day_start = now.replace(hour=4, minute=30, second=0, microsecond=0)
+_night_mode_day_end = now.replace(hour=21, minute=30, second=0, microsecond=0)
+_night_mode_active = (
+    not _jumbotron_active
+    and not game_live
+    and not _night_mode_leave_active
+    and not _night_mode_storm_active
+    and not (_night_mode_day_start <= now < _night_mode_day_end)
+)
 
 # Transition overlay — session feedback: the hard cut between the
 # everyday dashboard and the jumbotron "feels dystopian," worth a real
@@ -1745,7 +1785,7 @@ st.markdown(
 # animation-name always forces a real restart even on the same node,
 # which makes the freshly computed delay actually take effect each
 # time, while the browser still tweens smoothly in between reruns.
-if _requested_page not in PAGES and not _jumbotron_active and page != "maintenance":
+if _requested_page not in PAGES and not _jumbotron_active and not _night_mode_active and page != "maintenance":
     _, _rotation_elapsed, _rotation_page_seconds = _scheduled_page(_rotation_epoch)
     st.session_state["_rotation_bar_tick"] = st.session_state.get("_rotation_bar_tick", 0) + 1
     _bar_variant = "a" if st.session_state["_rotation_bar_tick"] % 2 == 0 else "b"
@@ -1844,16 +1884,10 @@ try:
 except Exception:
     severe_weather_active = False
 
-# Session request: "make it so the screen cannot turn off if there's a
-# live game — after the game is over the setup can sleep," later
-# corrected to also hold through the postgame recap (see
-# sports_alerts.plug_should_stay_on's own docstring). Reuses _takeover
-# — already nulled above by the manual End Session dismiss check — so
-# that's the one case this doesn't hold through, same as the request.
-try:
-    game_live = sports_alerts.plug_should_stay_on(_takeover)
-except Exception:
-    game_live = False
+# game_live already computed above (see the night-mode trigger block
+# right after _jumbotron_active) — same value, same reasoning
+# (sports_alerts.game_holds_screen_awake's own docstring), no need to
+# recompute it a second time here.
 
 # Session request: staying fully bright (or even just less-dim) for an
 # entire severe stint or rain approach — which can run for hours — was
@@ -1923,7 +1957,7 @@ try:
     # base theme's own backgroundColor is already solid black, so
     # simply not painting a sky over it gives the jumbotron exactly the
     # always-dark background it wants for free.
-    if not _jumbotron_active:
+    if not _jumbotron_active and not _night_mode_active:
         st.markdown(
             sky_style(category, phase, bg_fade_from, bg_blend, now, weather_temp_extreme),
             unsafe_allow_html=True,
@@ -1959,9 +1993,11 @@ try:
     #
     # A live game does NOT get an exemption here — session correction:
     # "the screen is allowed to dim," the actual ask was keeping the
-    # smart plug powering the monitor from cutting out overnight (see
-    # govee_lighting.sync_plug's own game_live param), a separate thing
-    # from this dim overlay.
+    # monitor's own smart plug from cutting power overnight (see
+    # night_mode.py's own trigger, game_live's replacement use now that
+    # the plug itself is gone), a separate thing from this dim overlay
+    # — this overlay only even applies when night_mode ISN'T active in
+    # the first place (game_live suppresses both).
     if quiet_hours and not weather_wake_recent:
         night_dim = 1.0
     elif severe_weather_active:
@@ -2482,7 +2518,7 @@ if weather:
 # alerts_bar.render_storm_headline/render, news.render_top_alert_bar) —
 # see headline_rotation.py's own module docstring for the full story.
 try:
-    if not _jumbotron_active:
+    if not _jumbotron_active and not _night_mode_active:
         _weather_alert_shown = headline_rotation.render(now, weather)
 except Exception:
     pass
@@ -2492,7 +2528,7 @@ except Exception:
 # get ready to go timers" (see sports_alerts.render_game_countdown).
 # Skipped during a takeover: the jumbotron's own board carries a far
 # bigger countdown for the exact same game, and two would just compete.
-if not _jumbotron_active:
+if not _jumbotron_active and not _night_mode_active:
     try:
         sports_alerts.render_game_countdown(now)
     except Exception:
@@ -2523,7 +2559,7 @@ except Exception:
 # list and what each one actually means. Page-independent like the
 # pinned headlines above; suppressed during a takeover for the same
 # reason they are.
-if not _jumbotron_active:
+if not _jumbotron_active and not _night_mode_active:
     try:
         _ai_rows_html = "".join(
             f"""<div class="ai-status-row">
@@ -2537,8 +2573,9 @@ if not _jumbotron_active:
         pass
 
 # The jumbotron brings its own marquee (clock, date, weather), so the
-# standard hero row would just be a duplicate stacked above it.
-if not _jumbotron_active:
+# standard hero row would just be a duplicate stacked above it. Same
+# reasoning for night mode — night_mode.py brings its own clock/weather.
+if not _jumbotron_active and not _night_mode_active:
     # Reserves the real vertical space the unified headline-rotation
     # slot occupies (theme.py's .headline-rotation, fixed at top:18px)
     # so the clock/weather row renders below it instead of underneath
@@ -2578,7 +2615,7 @@ try:
     data_health.notify_stale(_stale_sources)
 except Exception:
     pass
-if _stale_sources and not _jumbotron_active:
+if _stale_sources and not _jumbotron_active and not _night_mode_active:
     _stale_tint = "rgba(255,105,97,0.22)"
     _stale_bg = f"linear-gradient({_stale_tint}, {_stale_tint}), rgba(12,12,16,0.72)"
     _stale_badges = "".join(
@@ -2594,8 +2631,9 @@ if _stale_sources and not _jumbotron_active:
 # leave headline for the same prime spot above the clock. Suppressed
 # during a takeover along with the rest of the standard chrome — a
 # morning-routine summary has no business on a live scoreboard, and
-# takeovers only ever happen at game time anyway.
-if not _jumbotron_active:
+# takeovers only ever happen at game time anyway. Same for night mode
+# — a morning-routine summary has no business on the nightstand clock.
+if not _jumbotron_active and not _night_mode_active:
     try:
         morning_briefing.render(now, weather, air_quality)
     except Exception:
@@ -2695,7 +2733,12 @@ except Exception:
     market_intraday_pct = None
 
 with st.container(key="page_body"):
-    if page == "home":
+    if _night_mode_active:
+        # Independent of `page` — night mode is a screen MODE, not a
+        # rotation page, so it overrides whatever page would otherwise
+        # be showing rather than being one more entry in this chain.
+        _safe_render(night_mode.render, now, weather, category, phase)
+    elif page == "home":
         if not FRED_API_KEY:
             # Themed to match the rest of the app rather than Streamlit's
             # default red alert box, which would otherwise be the one
@@ -3043,7 +3086,15 @@ def _render_bottom_ticker(readings: dict) -> None:
     reset to None with nothing else rendered that rerun — the bottom
     strip going fully blank instead of falling back to this same
     ticker the way an empty alert queue naturally does. Factored out
-    so both paths can call it."""
+    so both paths can call it.
+
+    Skips itself entirely during night mode — a scrolling market/stats
+    ticker is exactly the kind of busy, bright content the nightstand
+    view is meant to not have. night_mode.py's own overlay would visually
+    cover it either way (see its z-index's own comment), but no reason
+    to build the markup at all when nothing will show it."""
+    if _night_mode_active:
+        return
     stats = []
     try:
         stats.extend(ticker.build_market_stat_items())
@@ -3249,29 +3300,9 @@ try:
         phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
         aqi_for_lights, category, score_flash, _game_takeover_live, storm_phase_name,
     )
-    try:
-        leave_timer_active = commute_reminder.leave_headline_active(now)
-    except Exception:
-        leave_timer_active = False
-    # Session report: "I think we have it tied up to the sunset/
-    # sunrise thing right now... instead of having it turn off at a
-    # different time every day, make it go into dim night mode at nine
-    # PM and have it fully turn off at... nine thirty... and turn the
-    # monitor on at four thirty AM." sync_plug's own on/off window used
-    # to be real civil-twilight first_light/last_light (see its own
-    # docstring, now updated) — a fixed daily schedule instead, same
-    # same-day [on, off) window shape that check already expects, so
-    # nothing about the override logic below it (game_live/leave_timer_
-    # active/storm_active/the off-grace buffer) needed to change at all.
-    plug_on_at = now.replace(hour=4, minute=30, second=0, microsecond=0)
-    plug_off_at = now.replace(hour=21, minute=30, second=0, microsecond=0)
-    govee_lighting.sync_plug(
-        now,
-        plug_on_at,
-        plug_off_at,
-        game_live,
-        leave_timer_active,
-        storm_phase_name is not None,
-    )
+    # sync_plug used to run here (a fixed 4:30am/9:30pm on/off window
+    # for the monitor's own smart plug) — removed along with the plug
+    # itself; see night_mode.py's own module docstring and the trigger
+    # computed right after _jumbotron_active above for what replaced it.
 except Exception:
     pass
