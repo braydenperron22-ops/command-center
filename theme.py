@@ -25,6 +25,72 @@ CSS = """
     opacity: 1 !important;
     transition: none !important;
 }
+
+/* Global animation/transition kill switch. Session request: "remove
+   quite literally all of the animations. I feel like it slows the
+   boot up time, and it's making my dashboard really unstable." This
+   file had ~35 separate @keyframes (toast pulses, headline swap-ins,
+   jumbotron score flashes/transitions, weather-alert shakes, etc.) —
+   rather than hunt down and delete every individual `animation:`/
+   `transition:` declaration across a 5700+ line stylesheet (a real
+   risk of a stray edit breaking a brace somewhere in there), one
+   maximum-specificity-safe override kills every single one at once:
+   `!important` on the universal selector beats any non-!important
+   rule regardless of source order, and only loses to another
+   `!important` rule with higher selector specificity — which is
+   exactly how the two deliberate exceptions right below are re-
+   enabled. This also reaches the few places (kiosk-wp-smoother/
+   kiosk-jumbo-fade used to, before this session removed them outright
+   — see app.py's own comment where they used to live) that set
+   `el.style.transition` directly via JS: an inline style with no
+   `!important` still loses to an external stylesheet rule that has
+   one.
+
+   Two exceptions, kept on purpose because they're the actual CONTENT
+   of their page, not decorative chrome — killing them wouldn't make
+   the dashboard calmer, it would make a whole feature stop working:
+   .ticker-track's scroll (the bottom ticker's entire reason to exist
+   is that it moves) and .weather-radar-frame-img's crossfade (the
+   Radar page's whole point is showing recent motion; the frames are
+   already-loaded static images cycled by app.py's kiosk-radar-anim
+   script, so the "animation" here is genuinely the data, not polish).
+   Everything else — every pulse, glow, fade-in, swap-in, shake, and
+   page/jumbotron transition — is gone. */
+* {
+    animation: none !important;
+    transition: none !important;
+}
+.ticker-track {
+    animation: ticker-scroll 55s linear infinite !important;
+}
+.weather-radar-frame-img {
+    transition: opacity 0.35s ease !important;
+}
+
+/* Five full-screen/curtain-style elements relied on an `animation:
+   ... forwards` to ever REACH their correct resting appearance — their
+   own base (non-keyframe) rule never set opacity/visibility itself,
+   trusting the animation's own final keyframe to land there via fill-
+   mode. The blanket kill switch above has no idea what any keyframe's
+   end state was, so without this, each one would freeze at the
+   browser's plain default (opacity:1, visible) instead — for the three
+   full-screen curtains below (jumbo-transition/page-transition-curtain/
+   jumbo-play-overlay, all position:fixed;inset:0 with a real
+   background), that's not a cosmetic miss, it's the ENTIRE DASHBOARD
+   permanently hidden behind an opaque overlay the instant any one of
+   them ever triggers once — exactly the kind of thing that reads as
+   "unstable" if shipped without checking. Declared directly here
+   instead of trying to preserve just enough of the original animation
+   to land correctly (e.g. a near-zero duration) — simpler to reason
+   about and impossible to get subtly wrong. */
+.jumbo-transition, .page-transition-curtain, .jumbo-play-overlay {
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+.jumbo-transition-sub, .jumbo-transition-sub-normal {
+    opacity: 1 !important;
+}
+
 .block-container {
     padding-top: 1.8rem;
     padding-bottom: 4.6rem;

@@ -607,101 +607,23 @@ components.html(
       doc.head.appendChild(s);
     })();
 
-    (function () {
-      var doc = window.parent.document;
-      if (doc.getElementById('kiosk-wp-smoother')) return;
-      var s = doc.createElement('script');
-      s.id = 'kiosk-wp-smoother';
-      s.textContent = [
-        "window.kioskWpState = window.kioskWpState || {};",
-        "function kioskSmoothWp(el) {",
-        "  var key = el.getAttribute('data-wp-key');",
-        "  var newPct = parseFloat(el.getAttribute('data-wp-pct'));",
-        "  if (!key || isNaN(newPct)) return;",
-        "  var lastPct = window.kioskWpState[key];",
-        "  if (lastPct === undefined || lastPct === newPct) {",
-        "    el.style.transition = 'none';",
-        "    el.style.width = newPct + '%';",
-        "  } else {",
-        "    el.style.transition = 'none';",
-        "    el.style.width = lastPct + '%';",
-        "    void el.offsetHeight;",
-        "    el.style.transition = '';",
-        "    el.style.width = newPct + '%';",
-        "  }",
-        "  window.kioskWpState[key] = newPct;",
-        "}",
-        "function kioskSmoothWpAll() {",
-        "  document.querySelectorAll('.jumbo-wp-seg').forEach(kioskSmoothWp);",
-        "}",
-        "kioskSmoothWpAll();",
-        "new MutationObserver(kioskSmoothWpAll).observe(document.body, {childList: true, subtree: true});",
-      ].join('\\n');
-      doc.head.appendChild(s);
-    })();
-
-    (function () {
-      var doc = window.parent.document;
-      if (doc.getElementById('kiosk-jumbo-fade')) return;
-      var s = doc.createElement('script');
-      s.id = 'kiosk-jumbo-fade';
-      s.textContent = [
-        "window.kioskFadeState = window.kioskFadeState || {};",
-        "function kioskApplyFadeIn(el) {",
-        "  var slot = el.getAttribute('data-fade-slot');",
-        "  var value = el.getAttribute('data-fade-value');",
-        "  if (!slot || value === null) return;",
-        "  var last = window.kioskFadeState[slot];",
-        "  if (last === undefined) {",
-        "    window.kioskFadeState[slot] = value;",
-        "    return;",
-        "  }",
-        "  if (last !== value) {",
-        "    window.kioskFadeState[slot] = value;",
-        "    el.style.transition = 'none';",
-        "    el.style.opacity = '0';",
-        "    void el.offsetHeight;",
-        "    el.style.transition = 'opacity 0.45s cubic-bezier(.2,.8,.2,1)';",
-        "    el.style.opacity = '1';",
-        "  }",
-        "}",
-        "function kioskApplyFadeInAll() {",
-        "  document.querySelectorAll('[data-fade-slot]').forEach(kioskApplyFadeIn);",
-        "}",
-        "kioskApplyFadeInAll();",
-        "new MutationObserver(kioskApplyFadeInAll).observe(document.body, {childList: true, subtree: true});",
-      ].join('\\n');
-      doc.head.appendChild(s);
-    })();
-
-    (function () {
-      var doc = window.parent.document;
-      if (doc.getElementById('kiosk-headline-rotation-swap')) return;
-      var s = doc.createElement('script');
-      s.id = 'kiosk-headline-rotation-swap';
-      s.textContent = [
-        "window.kioskHeadlineRotationValue = undefined;",
-        "function kioskApplyHeadlineRotationSwap() {",
-        "  var el = document.querySelector('.headline-rotation');",
-        "  if (!el) { window.kioskHeadlineRotationValue = undefined; return; }",
-        "  var value = el.getAttribute('data-rotate-value');",
-        "  var last = window.kioskHeadlineRotationValue;",
-        "  if (last === undefined) {",
-        "    window.kioskHeadlineRotationValue = value;",
-        "    return;",
-        "  }",
-        "  if (last !== value) {",
-        "    window.kioskHeadlineRotationValue = value;",
-        "    el.classList.remove('rotation-swap-in');",
-        "    void el.offsetHeight;",
-        "    el.classList.add('rotation-swap-in');",
-        "  }",
-        "}",
-        "kioskApplyHeadlineRotationSwap();",
-        "new MutationObserver(kioskApplyHeadlineRotationSwap).observe(document.body, {childList: true, subtree: true});",
-      ].join('\\n');
-      doc.head.appendChild(s);
-    })();
+    // kiosk-wp-smoother, kiosk-jumbo-fade, and kiosk-headline-rotation-
+    // swap used to live here — each one's entire job was driving a
+    // decorative transition/fade/swap animation (win-probability bar
+    // width, jumbotron value fade-in, headline swap) on top of content
+    // that was already being set correctly via plain server-rendered
+    // HTML either way. Session request: "remove quite literally all of
+    // the animations... it's making my dashboard really unstable."
+    // Removed outright rather than just neutralized via CSS, since each
+    // one's whole reason to exist was the animation — leaving them in
+    // place would mean three MutationObservers still watching every DOM
+    // mutation in the entire document for a visual effect that no
+    // longer plays (see theme.py's global animation/transition kill
+    // switch for where those effects actually got turned off). The
+    // underlying values (win-probability %, jumbotron content,
+    // headline text) all still render correctly without these — they
+    // were never the thing making the numbers/text right, only the
+    // thing making the change to them smooth.
 
     (function () {
       var doc = window.parent.document;
