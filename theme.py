@@ -3795,8 +3795,22 @@ html, body, [class*="css"] {
        own min-height for a genuinely bigger, more filled-out matchup
        card — paired with .jumbo-board-body's own justify-content
        change below spreading the remaining space between all 3
-       sections instead of leaving it as one lump top/bottom. */
-    min-height: 320px;
+       sections instead of leaving it as one lump top/bottom.
+
+       Session follow-up: "current matchup... shift it up... can't see
+       the batter's OPS or sometimes the pitcher's full line because
+       it's cut off." Confirmed live with real getBoundingClientRect
+       measurements: 320px left .jumbo-leaders (Current Matchup) only
+       288px of its own 383px real content height to work with — a
+       95px shortfall that overflow:hidden silently ate off the
+       bottom, splitting the OPS stat across the clip line and hiding
+       the pitcher's line entirely. Pulled down to 210px (below the
+       236px this was before any of this round's changes) to free up
+       a real 110px — the measured 95px deficit plus genuine margin
+       ("shift it up by a decent chunk"), not just barely closing the
+       gap. A less-filled matchup card is the right trade against real
+       stats being cut off. */
+    min-height: 210px;
     overflow: hidden;
 }
 .jumbo-side { flex: 1; position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 20px 16px; text-align: center; }
