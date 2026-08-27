@@ -1932,7 +1932,12 @@ weather_wake_recent = weather_worth_waking_for and (
 # Background/scenery rendering never touches the network (weather is
 # already fetched above), but this whole block still runs before any page
 # content — wrapped so a bug here can't blank the entire dashboard, only
-# lose the decorative background for that one render.
+# lose the decorative background for that one render. night_dim defaults
+# here, outside the try, so it's always defined even if something above
+# the real assignment below throws — night_mode.render() and
+# govee_lighting.sync_lights's own night gate both need this variable
+# in scope later in the script regardless.
+night_dim = 0.0
 try:
     # The sky fade is computed here (not left to a CSS transition, which
     # can't survive this app's 1-second autorefresh — confirmed it snaps
@@ -2737,7 +2742,11 @@ with st.container(key="page_body"):
         # Independent of `page` — night mode is a screen MODE, not a
         # rotation page, so it overrides whatever page would otherwise
         # be showing rather than being one more entry in this chain.
-        _safe_render(night_mode.render, now, weather, category, phase)
+        # night_dim (computed above, same value/formula as the regular
+        # dashboard's own sleep overlay) is passed through so night mode
+        # is dimmed to the same degree — see night_mode.render's own
+        # `dim` param docstring for why this was invisible before.
+        _safe_render(night_mode.render, now, weather, category, phase, night_dim)
     elif page == "home":
         if not FRED_API_KEY:
             # Themed to match the rest of the app rather than Streamlit's
@@ -3299,6 +3308,7 @@ try:
     govee_lighting.sync_lights(
         phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
         aqi_for_lights, category, score_flash, _game_takeover_live, storm_phase_name,
+        night_mode_active=_night_mode_active,
     )
     # sync_plug used to run here (a fixed 4:30am/9:30pm on/off window
     # for the monitor's own smart plug) — removed along with the plug

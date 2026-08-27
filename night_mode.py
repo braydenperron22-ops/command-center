@@ -29,7 +29,18 @@ import streamlit as st
 from icons import icon_for, label_for
 
 
-def render(now: datetime, weather: dict | None, category: str, phase: str) -> None:
+def render(now: datetime, weather: dict | None, category: str, phase: str, dim: float = 0.0) -> None:
+    """`dim` is app.py's own `night_dim` (0.0-1.0) — the exact same
+    value the regular dashboard's own sleep overlay uses. Session
+    report: "dim the display to the same extent that it's dimmed
+    overnight normally." That regular overlay is a separate, unrelated
+    fixed div at z-index:20 — this view's own z-index:10000 (deliberately
+    the highest in the app, see its own CSS comment) sits ON TOP of it,
+    so the existing overlay was rendering underneath night mode the
+    whole time, doing nothing visible. Reapplied here, inside this
+    view's own stacking context, with the identical *0.82 multiplier
+    so the two are genuinely the same darkness, not just similarly
+    dark by coincidence."""
     time_str = now.strftime("%-I:%M").lstrip("0") or "12:00"
     ampm = now.strftime("%p")
     date_str = now.strftime("%A, %B %-d")
@@ -54,11 +65,17 @@ def render(now: datetime, weather: dict | None, category: str, phase: str) -> No
             f"</div>"
         )
 
+    overlay_html = ""
+    if dim > 0:
+        overlay_alpha = dim * 0.82
+        overlay_html = f'<div class="night-mode-overlay" style="background:rgba(0,0,0,{overlay_alpha:.3f});"></div>'
+
     st.markdown(
         f'<div class="night-mode">'
         f'<div class="night-clock">{time_str}<span class="night-ampm">{ampm}</span></div>'
         f'<div class="night-date">{date_str}</div>'
         f"{weather_html}"
+        f"{overlay_html}"
         f"</div>",
         unsafe_allow_html=True,
     )

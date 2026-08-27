@@ -5553,6 +5553,18 @@ html, body, [class*="css"] {
     justify-content: center;
     gap: 1.2rem;
 }
+/* Session report: "dim the display to the same extent that it's
+   dimmed overnight normally." app.py's own regular sleep-dim overlay
+   sits at z-index:20, well under .night-mode's own 10000, so it was
+   rendering completely hidden underneath this view the whole time —
+   see night_mode.render()'s own `dim` param for the fix. position:
+   absolute (not fixed) since .night-mode itself is already the fixed,
+   full-viewport containing block this needs to cover. */
+.night-mode-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
 .night-clock {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
     font-size: 13rem;

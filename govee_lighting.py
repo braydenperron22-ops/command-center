@@ -350,6 +350,7 @@ def sync_lights(
     score_flash: tuple[float, tuple[int, int, int]] | None = None,
     jumbotron_active: bool = False,
     storm_phase: str | None = None,
+    night_mode_active: bool = False,
 ) -> None:
     """Call once per rerun. Light follows the exact same sunset/sunrise
     pattern as the plug — off at night, no exceptions. Every override
@@ -453,6 +454,20 @@ def sync_lights(
     actually on screen — no longer gated on `phase == "night"` either,
     since the point is "a game is on," not "a game is on AND it's
     already dark."
+
+    `night_mode_active` — session report, live: "the lights are on
+    right now. They're dim, but they're still on" while night_mode.py's
+    nightstand display was already up. The night-off gate just below
+    used to check only real astronomical `phase == "night"`
+    (scenery.phase_for, tied to actual sunrise/sunset), completely
+    decoupled from night_mode's own fixed 9:30pm-4:30am schedule — so
+    there's a real window (a late sunset in summer, e.g.) where night
+    mode is already on screen but astronomical phase hasn't reached
+    "night" yet, and the light stayed on. app.py passes its own
+    `_night_mode_active` here so the light's off gate now fires on
+    EITHER real night OR night mode being up, whichever comes first —
+    still fully overridden by jumbotron_active/score_flash/storm_phase
+    above, same as the existing phase=="night" gate always was.
     """
     if not st.secrets.get("GOVEE_API_KEY"):
         return
@@ -501,7 +516,7 @@ def sync_lights(
         _apply_color(FLASH_RED)
         _apply_brightness_immediate(STORM_HERE_BRIGHTNESS)
         return
-    if phase == "night" and not jumbotron_active:
+    if (phase == "night" or night_mode_active) and not jumbotron_active:
         _apply_power(False)
         return
     if not _apply_power(True):
