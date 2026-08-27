@@ -3623,9 +3623,22 @@ html, body, [class*="css"] {
    needed, since --tc (each sport's real accent color, already set per
    .jumbo-hero-{sport} below) was already available to read from. */
 .jumbo-hero {
-    /* Was 20px 20px 22px — trimmed for a third team (the Saints) now
-       routinely sharing this rail; see .jumbo-rail-col's own comment. */
-    padding: 13px 20px 14px 22px;
+    /* Was 20px 20px 22px, then 13px 20px 14px 22px for a third team
+       (the Saints) — trimmed again for a real live report: "the
+       standings are cut off right now. It's in the pregame phase, and
+       we're having the same issue as in the game phase." Root cause,
+       confirmed via getBoundingClientRect: a 4th card (UFC) was added
+       to this rail after that Saints-era fix and never re-verified
+       against it — measured live at 614.97px for 4 cards (NHL/MLB/NFL/
+       UFC), leaving Division Standings only 124px (vs. the ~229-254px
+       it had after this session's own earlier batting-order-side
+       fixes) with a real 5-team MLB division's rows already clipped by
+       81px. This shares the exact same .jumbo-rail-col budget the
+       batting order rail competes with during a LIVE game — see that
+       section's own comments — just via a different rail content
+       (My Teams instead of Batting Order) that was never part of
+       those fixes. */
+    padding: 9px 20px 10px 22px;
     border-bottom: 1px solid rgba(30,38,52,0.55);
     position: relative;
     overflow: hidden;
@@ -3660,12 +3673,15 @@ html, body, [class*="css"] {
    these are transparent-background SVGs, so this reads as a real
    broadcast team-card badge instead of a logo floating on bare panel. */
 .jumbo-hero-head img {
-    width: 58px; height: 58px; padding: 6px; box-sizing: border-box;
+    /* 58px -> 50px, same "standings cut off in pregame" pass as
+       .jumbo-hero's own padding trim just above — the head row's
+       height is logo-driven on every card that has one. */
+    width: 50px; height: 50px; padding: 5px; box-sizing: border-box;
     object-fit: contain; flex: 0 0 auto;
     background: rgba(255,255,255,0.08); border-radius: 10px;
 }
 .jumbo-hero-id { min-width: 0; white-space: nowrap; }
-.jumbo-hero-name { font-weight: 800; font-size: 23px; letter-spacing: 0.01em; line-height: 1.1; white-space: nowrap; }
+.jumbo-hero-name { font-weight: 800; font-size: 21px; letter-spacing: 0.01em; line-height: 1.1; white-space: nowrap; }
 .jumbo-hero-div {
     font-size: 13px;
     font-weight: 300;
@@ -3685,28 +3701,30 @@ html, body, [class*="css"] {
 .jumbo-hero-rec { margin-left: auto; text-align: right; flex: 0 0 auto; padding-left: 10px; position: relative; z-index: 1; }
 .jumbo-hero-rec-v { font-family: var(--label); font-weight: 800; font-size: 28px; line-height: 1; white-space: nowrap; }
 .jumbo-hero-rec-l { font-size: 9px; font-weight: 700; color: var(--mut-2); letter-spacing: 0.26em; white-space: nowrap; }
-.jumbo-form { display: flex; gap: 6px; align-items: center; margin-top: 9px; position: relative; z-index: 1; }  /* was 13px — see .jumbo-rail-col's own comment */
+.jumbo-form { display: flex; gap: 6px; align-items: center; margin-top: 6px; position: relative; z-index: 1; }  /* was 13px, then 9px — see .jumbo-rail-col's own comment */
 .jumbo-form-label { font-size: 11px; font-weight: 700; color: var(--mut-2); letter-spacing: 0.2em; margin-right: 3px; }
 .jumbo-form i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 .jumbo-form-w { background: var(--ok); box-shadow: 0 0 6px rgba(50,213,131,0.5); }
 .jumbo-form-l { background: rgba(255,69,58,0.35); border: 1px solid rgba(255,69,58,0.5); }
 .jumbo-gameline {
-    /* margin-top/padding trimmed from 14px/12px 15px — see
-       .jumbo-rail-col's own comment on why this rail got tighter.
-       Solid "ticket stub" plate now, not blurred glass (see --glass's
-       own comment on the wider token change this follows) — border-
-       radius pulled in from 14px to match the rest of this reskin's
-       sharper, less-rounded broadcast-panel language. */
-    margin-top: 9px;
+    /* margin-top/padding trimmed from 14px/12px 15px, then 9px/9px 15px
+       — see .jumbo-rail-col's own comment on why this rail got tighter
+       (most recently: a 4th "My Teams" card, UFC, pushing Division
+       Standings down to 124px live). Solid "ticket stub" plate now,
+       not blurred glass (see --glass's own comment on the wider token
+       change this follows) — border-radius pulled in from 14px to
+       match the rest of this reskin's sharper, less-rounded broadcast-
+       panel language. */
+    margin-top: 6px;
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 5px;
     background: rgba(0,0,0,0.4);
-    padding: 9px 15px;
+    padding: 6px 15px;
     font-family: var(--label);
     font-size: 16px;
     font-weight: 600;
     color: var(--mut);
-    line-height: 1.6;
+    line-height: 1.4;
     position: relative;
     z-index: 1;
 }
