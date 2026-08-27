@@ -3676,8 +3676,17 @@ html, body, [class*="css"] {
 .jumbo-standings-row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 9px 14px;
+    gap: 8px;
+    /* Session report: "standings are only showing the top 4 teams in
+       each div" — confirmed live, an NHL division (8 teams) only had
+       184px to work with at 41px/row (~4.5 rows). Compacted padding
+       and .jumbo-standings-logo (below) together bring a row down to
+       roughly half that, paired with a second small trim to the
+       batting order rail above it (see .jumbo-lineup-row's own
+       comment) freeing a bit more real height too — between the two,
+       a full 8-team division should fit with real margin, not just
+       barely. */
+    padding: 4px 14px;
     border-bottom: 1px solid rgba(255,255,255,0.05);
     color: var(--mut);
 }
@@ -3695,7 +3704,7 @@ html, body, [class*="css"] {
     padding-left: 11px;
 }
 .jumbo-standings-rank { flex: 0 0 18px; color: var(--mut-2); font-weight: 700; }
-.jumbo-standings-logo { width: 22px; height: 22px; border-radius: 5px; object-fit: contain; flex: 0 0 auto; background: rgba(255,255,255,0.08); }
+.jumbo-standings-logo { width: 17px; height: 17px; border-radius: 5px; object-fit: contain; flex: 0 0 auto; background: rgba(255,255,255,0.08); }
 .jumbo-standings-team { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jumbo-standings-record { flex: 0 0 auto; font-weight: 700; }
 .jumbo-standings-extra { flex: 0 0 40px; text-align: right; color: var(--mut-2); }
@@ -4506,9 +4515,17 @@ html, body, [class*="css"] {
        Trimmed padding/font here rather than touching anything outside
        this one rail, so standings gets a real, meaningfully bigger
        share without shrinking anything else on the page. */
-    padding: 5px 0;
+    /* Session follow-up: "standings are only showing the top 4 teams in
+       each div" — NHL divisions run 8 teams, still more than fit even
+       after the first rail/standings rebalance above. A second, smaller
+       trim here (padding/font again) plus a real compact on the
+       standings row itself (see .jumbo-standings-row's own comment)
+       rather than another big cut to this rail alone — splitting the
+       space between both instead of squeezing batting order further
+       than it can take. */
+    padding: 3px 0;
     font-family: var(--label);
-    font-size: 18px;
+    font-size: 16px;
     border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 .jumbo-lineup-row:last-child { border-bottom: none; }
@@ -4588,15 +4605,15 @@ html, body, [class*="css"] {
 .jumbo-lineup-head {
     /* Same rail-vs-standings space rebalance as .jumbo-lineup-row's
        own comment — trimmed padding/margin here too. */
-    position: relative; display: flex; align-items: center; gap: 10px;
-    padding: 7px 4px 7px 8px; margin-bottom: 6px; overflow: hidden;
+    position: relative; display: flex; align-items: center; gap: 8px;
+    padding: 5px 4px 5px 8px; margin-bottom: 4px; overflow: hidden;
 }
 .jumbo-lineup-head::before {
     content: ""; position: absolute; inset: 0; z-index: -1;
     background: linear-gradient(100deg, rgba(var(--side-rgb, 46,59,84), 0.4), rgba(var(--side-rgb, 46,59,84), 0.05) 80%);
     clip-path: polygon(0 0, 92% 0, 100% 100%, 0 100%);
 }
-.jumbo-lineup-logo { width: 38px; height: 38px; padding: 4px; box-sizing: border-box; object-fit: contain; flex: 0 0 auto; background: rgba(255,255,255,0.1); border-radius: 9px; }
+.jumbo-lineup-logo { width: 32px; height: 32px; padding: 3px; box-sizing: border-box; object-fit: contain; flex: 0 0 auto; background: rgba(255,255,255,0.1); border-radius: 9px; }
 .jumbo-lineup-headtext { flex: 1; min-width: 0; }
 .jumbo-lineup-teamname {
     font-family: var(--label);
