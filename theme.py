@@ -47,7 +47,48 @@ CSS = """
     min-height: calc(100vh - 4.6rem) !important;
     display: flex !important;
     flex-direction: column !important;
-    justify-content: center !important;
+    /* Session report: "in the mornings I cannot see time, I cannot see
+       weather, the morning brief is cut off sometimes... make sure we
+       anchor it to the highest point." This was `center` from day one —
+       already diagnosed as the root cause of a related bug once before
+       (see .leave-headline's own comment above: a long morning brief
+       pushes total content past one viewport's height, and centering
+       then pushes the excess out equally above AND below the fold,
+       taking the clock/weather/hero row with it on the top side). That
+       older fix routed the red-headline banners around the problem with
+       position:fixed instead of ever touching the actual cause — this
+       finally does. flex-start means any overflow now only ever falls
+       off the BOTTOM (predictable, and the least-important content by
+       page order), never the top. Mobile already runs flex-start (see
+       its own media query below) for the same reason, just never
+       ported back to desktop/kiosk until now. */
+    justify-content: flex-start !important;
+}
+
+/* Same report, second half: "this new display is not technically as
+   tall... make it so we scale everything down a little bit." Confirmed
+   with the user first (still the real 1920x1080 TV, just less usable
+   height in practice — browser chrome/taskbar eating into the real
+   1080px, not a different panel) rather than guessing a screen size —
+   see this session's own jumbotron saga for how expensive that guess
+   was to get wrong. `zoom` (not `transform: scale`, which doesn't
+   affect layout flow or reflow fixed-position descendants the same
+   way) uniformly shrinks every px/rem measurement inside — fonts,
+   padding, tile sizes — without a page-by-page rewrite, matching how a
+   Chromium kiosk browser (Brave, confirmed) already behaves under real
+   page zoom. Scoped to width > 640px so this never doubles up with the
+   phone breakpoint above, which already has its own separate, unrelated
+   sizing. Stepped rather than one cutoff since the actual deficit here
+   is a browser-chrome/taskbar nibble, not a fixed known number — each
+   step is deliberately modest. */
+@media (min-width: 641px) and (max-height: 1040px) {
+    .block-container { zoom: 0.94; }
+}
+@media (min-width: 641px) and (max-height: 950px) {
+    .block-container { zoom: 0.86; }
+}
+@media (min-width: 641px) and (max-height: 850px) {
+    .block-container { zoom: 0.78; }
 }
 
 .block-container > div {
