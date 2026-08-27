@@ -59,6 +59,7 @@ import air_quality_client
 import calendar_client
 import commute_client
 import commute_reminder
+import cpp_payment_dates
 import ec_alerts
 import email_client
 import fuel_price_client
@@ -464,6 +465,37 @@ def _household_clause(now: datetime) -> tuple[int, str] | None:
                     direction = "jumped" if change > 0 else "dropped"
                     return 2, f"gas price {direction} {abs(change):.1f}¢ to {gas['price']:.1f}¢/L overnight"
                 return 2, f"gas price {gas['price']:.1f}¢/L (above average, eco driving recommended)"
+    return None
+
+
+def _cpp_clause(now: datetime) -> tuple[int, str] | None:
+    """Session request: "does the AI know when it's CPP day? This is a
+    very important thing... it means I'm gonna have a crazy day at
+    work today." Own clause, deliberately separate from
+    _household_clause above rather than another branch inside it —
+    that function only ever returns ONE fact (payday today outranks
+    everything else in it), which would silently swallow this one on
+    the very kind of day this most needs to fire: today (2026-08-27)
+    is genuinely both a payday AND a CPP day at once (see
+    cpp_payment_dates.py's real published schedule), so a shared slot
+    would mean the AI never even sees this fact today of all days.
+    Same real Service Canada dates and today/tomorrow priority shape
+    as the hero badge (app.py) that inspired this — "flag pension days
+    so i know when the branch will be a zoo" is that badge's own
+    framing, carried into the fact text itself here (not left for the
+    AI to infer) since "busy branch" is the actual real-world
+    consequence the user cares about, not the payment itself. Priority
+    6 for today — same tier as payday-today, since this is just as
+    real and actionable for how the user's actual day goes, arguably
+    more so (it changes what today AT WORK looks like, not just a bank
+    balance)."""
+    cpp = cpp_payment_dates.next_payment_date(now.date())
+    if not cpp:
+        return None
+    if cpp["days_until"] == 0:
+        return 6, "CPP/OAS payment day today — pension deposits land, expect the branch to be a zoo"
+    if cpp["days_until"] == 1:
+        return 3, "CPP/OAS payment day tomorrow — brace for a busy branch"
     return None
 
 
@@ -1237,6 +1269,7 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         ("agenda", _agenda_clause, (now,)),
         ("email", _email_clause, (now,)),
         ("household", _household_clause, (now,)),
+        ("cpp", _cpp_clause, (now,)),
         ("markets", _markets_clause, (now,)),
         ("portfolio", _portfolio_clause, (now,)),
         ("game_today", _game_today_clause, (now,)),
