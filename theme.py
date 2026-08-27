@@ -3332,7 +3332,11 @@ html, body, [class*="css"] {
    instead of breaking. */
 .block-container:has(.jumbo) {
     max-width: 100% !important;
-    padding-top: 0.4rem !important;
+    /* Session report on the real TV (post zoom-fix): "slightly cut off
+       at the top, just the slightest little bit." 0.4rem (~6px) left
+       almost no real margin above the marquee — bumped for genuine
+       breathing room against the physical screen edge. */
+    padding-top: 1rem !important;
     padding-left: 1.1rem !important;
     padding-right: 1.1rem !important;
     justify-content: flex-start !important;
@@ -3751,7 +3755,13 @@ html, body, [class*="css"] {
     min-height: 0;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    /* Was center — with 901px of real height available and this
+       section's own content (matchup + win probability + current
+       matchup) not needing all of it, centering left one lump gap
+       below everything instead of spreading it out. space-evenly
+       distributes it between/around all 3 sections instead — see
+       .jumbo-matchup's own comment for the full story. */
+    justify-content: space-evenly;
     overflow: hidden;
 }
 /* Network Primetime's own centerpiece: two full-height diagonal team-
@@ -3774,7 +3784,19 @@ html, body, [class*="css"] {
     position: relative;
     display: flex;
     align-items: stretch;
-    min-height: 236px;
+    /* Session report on the real TV: "there's a gap between the bottom
+       of the featured tab and the ticker bar... take up some of that
+       space." Confirmed live: .jumbo-board's own panel already
+       stretches to its full 901px grid-row height (matches the other
+       two columns exactly) — the gap was unfilled space INSIDE it,
+       since .jumbo-board-body's justify-content:center only centers
+       its 3 stacked sections (this one, the win-probability bar,
+       current matchup) rather than growing them. Bumped this section's
+       own min-height for a genuinely bigger, more filled-out matchup
+       card — paired with .jumbo-board-body's own justify-content
+       change below spreading the remaining space between all 3
+       sections instead of leaving it as one lump top/bottom. */
+    min-height: 320px;
     overflow: hidden;
 }
 .jumbo-side { flex: 1; position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 20px 16px; text-align: center; }
@@ -4460,10 +4482,19 @@ html, body, [class*="css"] {
 .jumbo-lineup-row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 7px 0;
+    gap: 8px;
+    /* Session report on the real TV: "the standings are cut off to
+       just two teams... shrink the batting order or bring it up a
+       little." Confirmed live: batting order's own 9 rows + header
+       were taking 612px of the rail column's 751px real budget,
+       leaving only 127px (~2 rows) for standings below it — the two
+       sections share one column and compete for the same space.
+       Trimmed padding/font here rather than touching anything outside
+       this one rail, so standings gets a real, meaningfully bigger
+       share without shrinking anything else on the page. */
+    padding: 5px 0;
     font-family: var(--label);
-    font-size: 22px;
+    font-size: 18px;
     border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 .jumbo-lineup-row:last-child { border-bottom: none; }
@@ -4541,15 +4572,17 @@ html, body, [class*="css"] {
    sided cut, since this is one team's own header strip, not a
    matchup. */
 .jumbo-lineup-head {
-    position: relative; display: flex; align-items: center; gap: 12px;
-    padding: 10px 4px 10px 10px; margin-bottom: 8px; overflow: hidden;
+    /* Same rail-vs-standings space rebalance as .jumbo-lineup-row's
+       own comment — trimmed padding/margin here too. */
+    position: relative; display: flex; align-items: center; gap: 10px;
+    padding: 7px 4px 7px 8px; margin-bottom: 6px; overflow: hidden;
 }
 .jumbo-lineup-head::before {
     content: ""; position: absolute; inset: 0; z-index: -1;
     background: linear-gradient(100deg, rgba(var(--side-rgb, 46,59,84), 0.4), rgba(var(--side-rgb, 46,59,84), 0.05) 80%);
     clip-path: polygon(0 0, 92% 0, 100% 100%, 0 100%);
 }
-.jumbo-lineup-logo { width: 44px; height: 44px; padding: 5px; box-sizing: border-box; object-fit: contain; flex: 0 0 auto; background: rgba(255,255,255,0.1); border-radius: 9px; }
+.jumbo-lineup-logo { width: 38px; height: 38px; padding: 4px; box-sizing: border-box; object-fit: contain; flex: 0 0 auto; background: rgba(255,255,255,0.1); border-radius: 9px; }
 .jumbo-lineup-headtext { flex: 1; min-width: 0; }
 .jumbo-lineup-teamname {
     font-family: var(--label);
