@@ -71,14 +71,27 @@ import ntfy_client
 import payday_schedule
 import persisted_state
 import portfolio_client
+import precip_nowcast_client
 import road_conditions
 import road_conditions_511
 import seasons_client
 import sports_client
+import td_quarter_schedule
 import waste_schedule
 import weather_records_client
 import wildfire_client
-from config import AQI_SHOW_THRESHOLD, COMMUTE_DESTINATION, TIMEZONE, USER_FIRST_NAME, USER_PROFILE, WEATHER_LAT, WEATHER_LON
+from config import (
+    AQI_SHOW_THRESHOLD,
+    COMMUTE_DESTINATION,
+    FEELS_LIKE_DIVERGENCE_THRESHOLD_C,
+    TIMEZONE,
+    UV_HIGH_THRESHOLD,
+    USER_FIRST_NAME,
+    USER_PROFILE,
+    WEATHER_LAT,
+    WEATHER_LON,
+    WIND_GUST_SHOW_THRESHOLD_KMH,
+)
 
 MORNING_WINDOW_START_HOUR = 5
 MORNING_WINDOW_END_HOUR = 10
@@ -228,6 +241,111 @@ def _air_clause(now: datetime, air_quality: dict | None) -> tuple[int, str] | No
     if wildfire is not None:
         return 8, f"air quality index {aqi_level} (elevated), likely wildfire smoke ~{wildfire['distance_km']:.0f}km away"
     return 5, f"air quality index {aqi_level} (elevated)"
+
+
+# Session request: "make sure that the morning brief AI can see all of
+# the hero badges that are live." Audited every extras.append(...) in
+# app.py's own hero-row badge builder against this file's clause
+# registry — UV, feels-like, wind gusts, the weather-record badge, the
+# TD quarter badge, and the rain nowcast badge all had a real live
+# on-screen badge with NOTHING feeding the equivalent fact to the AI,
+# same class of gap as the CPP-day one fixed earlier this same day.
+# (Garbage/payday/holiday/season/black-ice/511/AQI+wildfire were
+# already covered — see _household_clause, holidays_client.
+# holiday_clause, seasons_client.season_clause, _road_ice_clause, and
+# _air_clause above.) Each below reuses the exact same threshold
+# constants and, where practical, wording close to its own badge so
+# the two can never quietly disagree about whether something's
+# actually happening. Kept as separate clauses rather than folded into
+# _weather_clause, same reasoning as _cpp_clause's own docstring: a
+# single wild-weather day can genuinely trigger several of these at
+# once (high UV AND strong gusts AND a near-record temp are not
+# mutually exclusive), and a shared single-return slot would silently
+# drop all but one of them exactly on the day that matters most.
+
+
+def _uv_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
+    uv = weather.get("uv_index")
+    if uv is None or uv <= UV_HIGH_THRESHOLD:
+        return None
+    return 5, f"UV index {uv:.0f} (high) — sun protection actually matters today"
+
+
+def _feels_like_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
+    temp = weather.get("temp_c")
+    feels_like = weather.get("feels_like_c")
+    if temp is None or feels_like is None:
+        return None
+    diff = feels_like - temp
+    if abs(diff) < FEELS_LIKE_DIVERGENCE_THRESHOLD_C:
+        return None
+    direction = "colder" if diff < 0 else "warmer"
+    return 4, f"feels like {feels_like:.0f}°C, noticeably {direction} than the actual {temp:.0f}°C"
+
+
+def _wind_gust_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
+    gust = weather.get("wind_gust_kmh")
+    if gust is None or gust < WIND_GUST_SHOW_THRESHOLD_KMH:
+        return None
+    return 5, f"wind gusts up to {gust:.0f} km/h — strong enough to notice outside"
+
+
+def _weather_record_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
+    record = weather_records_client.record_context(weather.get("temp_c"))
+    if record is None:
+        return None
+    exceeded = (
+        (record["kind"] == "high" and record["value"] >= record["record"])
+        or (record["kind"] == "low" and record["value"] <= record["record"])
+    )
+    label = "a genuine record" if exceeded else "close to the record"
+    return 4, (
+        f"today's {record['kind']} is {label} for this date since {weather_records_client.ARCHIVE_START_YEAR} "
+        f"(previous: {record['record']:.0f}° in {record['year']})"
+    )
+
+
+def _nowcast_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
+    """Distinct from _precip_clause above — that one reads the regular
+    hourly/daily forecast (weather.rain_at/precip_chance); this reads
+    precip_nowcast_client's own minute-resolution radar-nowcast feed,
+    the same source the hero badge's "Rain in 12 min"/"Rain now"/
+    "Clearing in 8 min" actually uses. A genuinely different, more
+    time-sensitive signal — worth its own fact rather than assuming the
+    hourly forecast already covers it, same "prefer the real live
+    source over the coarser one" reasoning _road_ice_clause's own
+    docstring already documents for 511 vs. the temp/precip inference."""
+    try:
+        nowcast = precip_nowcast_client.minutely_forecast()
+    except Exception:
+        nowcast = None
+    if not nowcast:
+        return None
+    starting = precip_nowcast_client.rain_starting_in_minutes(nowcast)
+    ending = precip_nowcast_client.rain_ending_in_minutes(nowcast)
+    if starting is not None:
+        when = "starting now" if starting == 0 else f"starting in {starting} min"
+        return 7, f"rain nowcast: {when}"
+    if ending is not None:
+        when = "clearing now" if ending == 0 else f"clearing in {ending} min"
+        return 7, f"rain nowcast: {when}"
+    if nowcast[0]["precip_rate_mm"] >= precip_nowcast_client.DEFAULT_THRESHOLD_MM:
+        return 7, "rain nowcast: raining right now"
+    return None
+
+
+def _td_quarter_clause(now: datetime) -> tuple[int, str] | None:
+    """Session request behind the badge itself: "let me know when we
+    hit a new quarter which means my sales reset" — same real TD fiscal
+    quarters (Nov/Feb/May/Aug), same today/tomorrow shape as
+    _cpp_clause, own clause for the same reason: it can coincide with
+    payday/CPP and none of them should have to fight over one slot."""
+    quarter = td_quarter_schedule.next_quarter_start(now.date())
+    if quarter["days_until"] == 0:
+        return 6, "new TD fiscal quarter starts today — sales targets reset"
+    if quarter["days_until"] == 1:
+        return 3, "new TD fiscal quarter starts tomorrow — sales targets reset"
+    return None
 
 
 def _is_work_day(now: datetime) -> bool:
@@ -1263,13 +1381,19 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         ("alert", _alert_clause, (now,)),
         ("weather", _weather_clause, (now, weather)),
         ("precip", _precip_clause, (now, weather)),
+        ("nowcast", _nowcast_clause, (now, weather)),
         ("road_ice", _road_ice_clause, (now, weather)),
         ("air", _air_clause, (now, air_quality)),
+        ("uv", _uv_clause, (now, weather)),
+        ("feels_like", _feels_like_clause, (now, weather)),
+        ("wind_gust", _wind_gust_clause, (now, weather)),
+        ("weather_record", _weather_record_clause, (now, weather)),
         ("commute", _commute_clause, (now,)),
         ("agenda", _agenda_clause, (now,)),
         ("email", _email_clause, (now,)),
         ("household", _household_clause, (now,)),
         ("cpp", _cpp_clause, (now,)),
+        ("td_quarter", _td_quarter_clause, (now,)),
         ("markets", _markets_clause, (now,)),
         ("portfolio", _portfolio_clause, (now,)),
         ("game_today", _game_today_clause, (now,)),
