@@ -603,7 +603,26 @@ def render_alert_bar(alert: dict) -> None:
     # get_storm_proximity_alerts milestone toasts below don't carry
     # these keys at all, same "absent, not empty" convention as
     # "summary" above.
-    countdown_html = ""
+    #
+    # Session report: "it's still going twice... there's also a div
+    # error on it" — a literal, visible "</div>" text fragment showing
+    # up on screen. This span used to be conditionally OMITTED entirely
+    # (an empty string) when there's no countdown, meaning this bar's
+    # own real child-element COUNT varied — 3 children for a get_new_
+    # alerts toast (with the badge), only 2 for a get_storm_proximity_
+    # alerts milestone toast (without it) — while both toast KINDS
+    # render through this exact same call, landing at the exact same
+    # script position/DOM slot across reruns (toast_queue.py's own
+    # dispatch, app.py). Streamlit's own patching for a repeated
+    # st.markdown(unsafe_allow_html=True) at one script position isn't
+    # a plain full-string replace — confirmed live, going from a
+    # countdown-bearing render to a non-countdown one left a stray
+    # trailing "</div>" as real, visible text. Always rendering the
+    # span now (empty content, hidden via CSS when there's nothing to
+    # show) keeps the real structure — 3 children, always — identical
+    # across every render regardless of countdown presence, which is
+    # the actual fix: nothing here EVER changes shape between renders
+    # anymore for Streamlit's own diffing to trip over.
     countdown_target_ms = alert.get("countdown_target_ms")
     countdown_verb = alert.get("countdown_verb")
     if countdown_target_ms and countdown_verb:
@@ -611,6 +630,8 @@ def render_alert_bar(alert: dict) -> None:
             f'<span class="weather-alert-countdown live-countdown" data-target-ms="{countdown_target_ms}" '
             f'data-format="clock" data-template="{countdown_verb} in {{}}">{countdown_verb} soon</span>'
         )
+    else:
+        countdown_html = '<span class="weather-alert-countdown weather-alert-countdown-empty"></span>'
     st.markdown(
         f"""<div class="{bar_class}" data-summary="{summary}"{audio_attr} data-severe="{severe_attr}"{silent_attr}>
             <span class="news-breaking-label">{label}</span>

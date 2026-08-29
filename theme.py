@@ -1453,6 +1453,19 @@ html, body, [class*="css"] {
     padding: 0.3rem 0.9rem;
     white-space: nowrap;
 }
+/* Session report: "there's also a div error on it" — render_alert_bar
+   (weather_alerts_bar.py) now always renders this span, even with
+   nothing to show, so its real markup structure never changes shape
+   between a countdown-bearing render and a plain one (that variable
+   structure, not this rule, was the actual bug — see that function's
+   own comment). Collapsed to nothing visible/no layout footprint when
+   empty, same practical effect the old fully-omitted version had. */
+.weather-alert-countdown-empty {
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    min-width: 0;
+}
 
 /* Persistent top banner: holds the latest red (important) headline for
    up to TOP_ALERT_HOLD_SECONDS, or until the next one replaces it.
