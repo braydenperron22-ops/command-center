@@ -365,23 +365,22 @@ def _neutral_situation_html(status_text: str | None) -> str:
 _NFL_ORDINALS = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
 
 
-def _nfl_situation(match: dict | None) -> dict:
-    """{"status", "situation", "competitors"} pulled once from ESPN's
-    own scoreboard competition object (match["competition"] — see
-    _nfl_situation_html's own note on the match/competition wrapper
-    convention this app uses throughout). {} if `match` itself is
-    None. Split out from _nfl_situation_html so _side_html's own
-    possession icon (rendered separately, in the matchup header above
-    the situation strip) and the strip itself can share one read
-    instead of each re-deriving it."""
-    if not match:
-        return {}
-    competition = match.get("competition") or {}
-    return {
-        "status": competition.get("status") or {},
-        "situation": competition.get("situation") or {},
-        "competitors": competition.get("competitors") or [],
-    }
+def _nfl_situation(game_id) -> dict:
+    """{"status", "situation", "competitors"}, or {} if this game_id
+    isn't on today's scoreboard. Split out from _nfl_situation_html so
+    _side_html's own possession icon (rendered separately, in the
+    matchup header above the situation strip) and the strip itself can
+    share one read instead of each re-deriving it.
+
+    sports_client.fetch_nfl_competition, NOT the match/_espn_match_for
+    wrapper every other NFL panel on this board reads from — session
+    report: "why is the NFL on the jumbotron screen not, like, live...
+    it just stays frozen." That match-based path shares scores_client's
+    5-MINUTE schedule-lookup cache; this one shares this app's own
+    NFL-specific 5-second live cache instead, matching what _mlb_
+    situation_html/_nhl_situation_html were already built on (see
+    fetch_nfl_competition's own docstring for the full story)."""
+    return sports_client.fetch_nfl_competition(game_id) or {}
 
 
 def _nfl_possession_home(situation: dict, competitors: list[dict]) -> bool | None:
@@ -416,38 +415,34 @@ def _nfl_yards_out(situation: dict, possession_home: bool | None) -> int | None:
     return yard_line if not possession_home else (100 - yard_line)
 
 
-def _nfl_situation_html(match: dict | None, game: dict) -> str:
+def _nfl_situation_html(game: dict) -> str:
     """Quarter + game clock, down & distance (as "yards out" from the
     end zone rather than raw field position — see _nfl_yards_out),
     live possession, red zone, and timeouts remaining — pulled from
-    ESPN's own scoreboard "situation" object, which this app was
-    already fetching (find_espn_competition -> the scoreboard raw
-    event, same object _win_probability_html/_top_performers_html
-    already use via _espn_match_for, so this costs nothing extra) but
-    barely reading at first: only down/distance were parsed originally,
-    with no possession/red-zone/timeouts/yards-out at all — flagged at
-    the time as "built during the NFL offseason, never confirmed
-    against a real live game." First live game (Rams @ Saints,
+    ESPN's own scoreboard "situation" object via sports_client.fetch_
+    nfl_competition (see _nfl_situation's own docstring for why that's
+    a fast, NFL-specific 5s cache now rather than the slow, match-based
+    one this used to read from). First live game (Rams @ Saints,
     2026-08-22) confirmed the fuller shape live: downDistanceText,
     possession, isRedZone, home/awayTimeouts, yardLine all populate
     exactly as ESPN's own docs suggest.
 
-    `match` is _espn_match_for's own {"event_id","competition","sport",
-    "league"} wrapper, not the raw ESPN competition object directly —
-    same convention _win_probability_html/leaders_with_headshots
-    already use (they read match["competition"]/match["sport"] etc.
-    themselves rather than expecting an already-unwrapped dict). Live
-    bug, first deploy: this function skipped that unwrap and read
+    Live bug, first deploy of the original match-based version: this
+    function used to skip unwrapping match["competition"] and read
     straight off `match`, so every field silently came back empty in
     the real render path — confirmed nothing showed at all ("I also
     can't see time, and downs, and quarter, and anything," reported
     even after a separate, real overflow bug in the same commit was
     also fixed) despite a passing unit test, because that test had
     manually pre-unwrapped match["competition"] before calling this,
-    masking the exact mismatch the real call site hits."""
-    if not match:
+    masking the exact mismatch the real call site hit. Moot now that
+    there's no `match`/wrapper to unwrap in the first place, but kept
+    here as a reminder of why this function's own inputs are worth
+    double-checking against a real live game before trusting a passing
+    test alone."""
+    data = _nfl_situation(game["game_id"])
+    if not data:
         return ""
-    data = _nfl_situation(match)
     status = data["status"]
     period = status.get("period")
     clock = status.get("displayClock")
@@ -1934,9 +1929,9 @@ def _board_html(state: dict, now: datetime) -> str:
                 # matchup header below can use the same read — session
                 # request: "make it more obvious who has the ball... a
                 # little ball icon next to their name."
-                nfl_data = _nfl_situation(match)
+                nfl_data = _nfl_situation(game["game_id"])
                 nfl_possession_home = _nfl_possession_home(nfl_data["situation"], nfl_data["competitors"])
-                situation = _nfl_situation_html(match, game)
+                situation = _nfl_situation_html(game)
         else:
             situation = ""
         blurb_html = ""

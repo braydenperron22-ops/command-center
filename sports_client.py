@@ -1179,6 +1179,43 @@ def fetch_nfl_situation(game_id) -> dict | None:
     return None
 
 
+def fetch_nfl_competition(game_id) -> dict | None:
+    """{"status", "situation", "competitors"} for this game_id — same
+    fast (5s) scoreboard cache as fetch_nfl_live_detail/fetch_nfl_
+    situation above, just the fuller shape pages_jumbotron._nfl_
+    situation actually needs (adds competitors, for matching live
+    possession against home/away) in one lookup instead of stitching
+    together two separate calls that each re-scan the same events list.
+
+    Session report: "why is the NFL on the jumbotron screen not, like,
+    live... it just stays frozen until my [browser's own] refresh."
+    Root cause: pages_jumbotron._nfl_situation_html was pulling from
+    _espn_match_for/scores_client.find_espn_competition instead of this
+    module's own fast NFL cache — that path shares scores_client.py's
+    GAME_CACHE_TTL_SECONDS (5 MINUTES, tuned for a schedule lookup, not
+    a live situation strip), so the quarter/clock/down-distance display
+    only ever advanced once every 5 minutes of real time, reading as
+    "frozen" for anyone actually watching. MLB/NHL's own situation
+    strips (_mlb_situation_html/_nhl_situation_html) never had this bug
+    — they were already built on fetch_mlb_live_detail/fetch_nhl_live_
+    detail, this module's own 5s-cached paths; NFL was the one sport
+    still on the slow one."""
+    try:
+        events = _fetch_nfl_scoreboard_raw()
+    except Exception:
+        return None
+    for e in events:
+        if e.get("id") != str(game_id):
+            continue
+        comp = (e.get("competitions") or [{}])[0]
+        return {
+            "status": comp.get("status") or {},
+            "situation": comp.get("situation") or {},
+            "competitors": comp.get("competitors") or [],
+        }
+    return None
+
+
 def fetch_nfl_next_game() -> dict | None:
     """{"start_time", "opponent", "level"} for the Saints' very next
     scheduled game (see fetch_mlb_next_game's own docstring for why
