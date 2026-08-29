@@ -4368,9 +4368,13 @@ html, body, [class*="css"] {
     /* 30px/140px measured live at only 5.1px of real clearance once
        the tag/headline/statline rows landed (more fixed content above
        the storyline text than the previous stat-grid version had) —
-       pulled back for real margin, same discipline as every other
-       size on this exact card. */
-    padding: 22px 30px;
+       pulled back once already; the matchup-history follow-up's own
+       longer real storyline text (2 full sentences weaving in vs-
+       opponent/venue context) measured back down to 3.9px on a real
+       card, so pulled back again here for a real safety margin rather
+       than the exact minimum, same discipline as every other size on
+       this exact card. */
+    padding: 16px 30px;
 }
 .jumbo-storyline-photowrap { flex: 0 0 auto; width: 124px; height: 124px; }
 .jumbo-storyline-photo {
@@ -4414,15 +4418,24 @@ html, body, [class*="css"] {
     font-weight: 800;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    padding: 5px 14px;
+    padding: 4px 14px;
     border-radius: 20px;
-    margin-bottom: 10px;
+    margin-bottom: 6px;
 }
 .jumbo-storyline-tag-hot { color: #FF5A1F; background: rgba(255,90,31,0.16); border: 1px solid rgba(255,90,31,0.4); }
 .jumbo-storyline-tag-cold { color: var(--led); background: rgba(255,179,0,0.16); border: 1px solid rgba(255,179,0,0.4); }
 .jumbo-storyline-tag-career { color: #BF5AF2; background: rgba(191,90,242,0.16); border: 1px solid rgba(191,90,242,0.4); }
 .jumbo-storyline-tag-callup { color: #32D74B; background: rgba(50,215,75,0.16); border: 1px solid rgba(50,215,75,0.4); }
 .jumbo-storyline-tag-injury { color: #3DD9FF; background: rgba(61,217,255,0.16); border: 1px solid rgba(61,217,255,0.4); }
+/* Session follow-up: "matchup- and history-aware... a new tag type
+   'VS OPPONENT' or 'SERIES MATCHUP' with a dedicated color accent
+   (e.g. Teal/Cyan)." True teal (#30D5C8) rather than reusing -injury's
+   own icy cyan-blue (#3DD9FF) directly above — this app already has
+   an established teal for "its own distinct signal, not a shade of an
+   existing one" (see app.py's holiday hero badge, same real hex) —
+   close enough to satisfy "teal/cyan" while staying visually distinct
+   from the injury tag it'd otherwise sit right next to on this card. */
+.jumbo-storyline-tag-matchup { color: #30D5C8; background: rgba(48,213,200,0.16); border: 1px solid rgba(48,213,200,0.4); }
 .jumbo-storyline-tag-default { color: var(--bone); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25); }
 .jumbo-storyline-headline {
     font-family: var(--label);
@@ -4472,7 +4485,7 @@ html, body, [class*="css"] {
     font-size: 17px;
     line-height: 1.5;
     color: var(--mut);
-    margin-top: 14px;
+    margin-top: 10px;
     /* Real wrapped multi-line text, capped so one long AI response
        still can't blow this card's own height and starve the board's
        other sections — the exact class of bug this board's own

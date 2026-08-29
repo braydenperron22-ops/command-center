@@ -481,3 +481,95 @@ def career_trajectory(sport: str, league: str, athlete_id) -> dict | None:
                 "career_best_year": career_best_year,
             }
     return best_candidate
+
+
+# Session follow-up: "matchup- and history-aware... season head-to-head
+# records... individual batter vs pitcher or batter vs opponent team
+# splits... venue/situational stats." Same site.web.api.espn.com host
+# as gamelog/stats above — .../athletes/{id}/splits, confirmed live
+# for a real MLB batter (George Springer), a real MLB pitcher (Dylan
+# Cease — 0.69 ERA / 17 K in 13 IP across 2 real starts vs Seattle,
+# genuinely dramatic real data) and spot-checked for NHL. Real
+# categories confirmed present: byOpponent (per-opponent-team splits —
+# this season's real at-bats/starts against that specific team, often
+# a small sample, which is why _prompt below is told to name the
+# sample size rather than let a hot 4-AB split read as a big trend),
+# byArena (real venue-specific career splits — includes tonight's
+# actual ballpark when the player has played there), byBreakdown
+# (includes real Home/Away splits). Individual batter-vs-THIS-EXACT-
+# PITCHER splits are a real, separate, MLB-only data source already
+# in this app (sports_client._fetch_mlb_vs_pitcher_raw, MLB Stats
+# API's own "vsPlayer" split) — NOT wired in here, since it needs MLB
+# Stats API's own player ids, a different id space than the ESPN ids
+# this module works in throughout, and has no NHL/NFL equivalent; the
+# user's own spec said "where available," and team-level opponent
+# splits (this module) are the real, available, cross-sport answer.
+PLAYER_SPLITS_CACHE_TTL_SECONDS = 12 * 60 * 60  # same slow-moving cadence as career stats
+
+
+def _fetch_splits_raw(sport: str, league: str, athlete_id) -> dict:
+    def _do():
+        fetch_throttle.wait_turn()
+        resp = requests.get(f"{PLAYER_STATS_BASE.format(sport=sport, league=league, athlete_id=athlete_id)}/splits", timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+
+    return _persisted_fetch(f"splits_{sport}_{league}_{athlete_id}", PLAYER_SPLITS_CACHE_TTL_SECONDS, _do)
+
+
+def _find_split(splits: list[dict], name_hint: str) -> dict | None:
+    """Fuzzy match by real display name — ESPN's own byOpponent/byArena
+    entries aren't perfectly consistent about a "vs " prefix (confirmed
+    live: some real entries are "Seattle Mariners", others "vs Buffalo
+    Sabres"), so this checks the hint as a substring either direction
+    rather than requiring an exact string match."""
+    hint = name_hint.lower()
+    for s in splits:
+        display = (s.get("displayName") or "").lower()
+        if display and (hint in display or display in hint):
+            return s
+    return None
+
+
+def _split_stats(labels: list[str], split: dict | None) -> dict[str, str]:
+    if not split:
+        return {}
+    stats = split.get("stats") or []
+    return {label: stats[i] for i, label in enumerate(labels) if i < len(stats) and stats[i] not in (None, "-", "")}
+
+
+def _named_split(sport: str, league: str, athlete_id, category_name: str, name_hint: str) -> dict[str, str]:
+    try:
+        data = _fetch_splits_raw(sport, league, athlete_id)
+    except Exception:
+        return {}
+    labels = data.get("labels") or []
+    category = next((c for c in data.get("splitCategories") or [] if c.get("name") == category_name), None)
+    if not category:
+        return {}
+    return _split_stats(labels, _find_split(category.get("splits") or [], name_hint))
+
+
+def opponent_split(sport: str, league: str, athlete_id, opponent_name: str) -> dict[str, str]:
+    """This player's REAL stats against `opponent_name` specifically —
+    {label: value}, {} if ESPN has no real split for this exact
+    opponent (a real, common case — many pairs simply haven't played
+    much this season) or the fetch fails. Often a genuinely small
+    sample (a handful of at-bats/one start) — real either way, but the
+    caller/prompt should say so rather than let a hot small sample read
+    as an established trend."""
+    return _named_split(sport, league, athlete_id, "byOpponent", opponent_name)
+
+
+def venue_split(sport: str, league: str, athlete_id, venue_name: str) -> dict[str, str]:
+    """This player's REAL career stats at `venue_name` specifically —
+    {label: value}, {} if ESPN has no byArena category for this sport
+    (confirmed live: NHL doesn't carry one) or no real split for this
+    exact venue (never played there, or not enough of a sample for
+    ESPN to report)."""
+    return _named_split(sport, league, athlete_id, "byArena", venue_name)
+
+
+def home_away_split(sport: str, league: str, athlete_id, is_home: bool) -> dict[str, str]:
+    """This player's REAL Home or Away season split — {label: value}."""
+    return _named_split(sport, league, athlete_id, "byBreakdown", "Home" if is_home else "Away")
