@@ -1537,58 +1537,111 @@ now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
 # jumbotron is deliberately NOT in PAGES (it never joins the rotation);
 # this is the only thing that ever selects it, and it releases on its
 # own once takeover_state stops returning a phase.
-try:
-    _takeover = sports_alerts.takeover_state(now)
-except Exception:
-    _takeover = None
+#
+# Session follow-up: "75 seconds is a long time... is there a way to
+# have it dynamically sorted so that the things that take longer
+# refresh when they need to." Extracted from being computed inline
+# once per outer rerun into its own function so it can ALSO be called
+# from _jumbotron_fragment below on a much faster, independent cadence
+# — one shared resolver (this function), two callers at two different
+# freshness requirements, rather than duplicating the real precedence/
+# dismiss/fallback rules in two places. The OUTER script (this call,
+# right below) still only needs this at the outer ~75s cadence — page
+# ROUTING and the dim/lights/toast-skip decisions everywhere else in
+# this file that derive from _jumbotron_active don't need to be any
+# fresher than that (TAKEOVER_LEAD_MINUTES is a 60-minute-wide window,
+# so up to ~75-120s of lag before the whole-page auto-switch happens is
+# negligible). Only the BOARD'S OWN live content (score, inning, status
+# — the one thing that actually wants to feel alive) needed to be
+# faster, which is what the fragment is for.
+def _resolve_takeover(now: datetime, jumbotron_requested: bool) -> tuple[dict | None, dict | None]:
+    """Real takeover state for right now — (_takeover, _ufc_takeover).
+    Manual "End Session" button (pages_jumbotron.render(), bottom-right
+    of the board) — session request: "make an end session button...
+    that closes out the game session therefore closing the jumbotron
+    which turns on the dimming and turns off the govee lights."
+    Suppresses the automatic takeover for this specific game_id only
+    (pregame/live/postgame all share the same id, so ending it mid-game
+    also skips that game's own postgame recap — the point is "I'm done
+    watching," not "skip to the next phase"); a different game later,
+    even the same team's next one, isn't affected.
 
-# Manual "End Session" button (pages_jumbotron.render(), bottom-right of
-# the board) — session request: "make an end session button... that
-# closes out the game session therefore closing the jumbotron which
-# turns on the dimming and turns off the govee lights." Suppresses the
-# automatic takeover for this specific game_id only (pregame/live/
-# postgame all share the same id, so ending it mid-game also skips that
-# game's own postgame recap — the point is "I'm done watching," not
-# "skip to the next phase"); a different game later, even the same
-# team's next one, isn't affected. Nulling _takeover itself here (before
-# every routing/dim/light decision below derives from it) means nothing
-# downstream needs its own separate check — an explicit ?page=jumbotron
-# or the J-hotkey still overrides this and shows the board on demand,
-# same as they already do when there's no real takeover at all (see the
-# takeover_preview_state() fallback just below).
-if _takeover and _takeover["game"]["game_id"] == st.session_state.get("jumbotron_dismissed_game_id"):
-    _takeover = None
+    UFC coverage — session request: "add UFC to the jumbotron... auto
+    rotation between fights coverage starts at 5pm every saturday, only
+    will not be shown on main if habs are playing. otherwise let it
+    run," corrected right after: "jays should take priority too." Kept
+    fully separate from _takeover (see ufc_client.py's own docstring on
+    why a fight card needed a genuinely different data shape/takeover
+    concept, not a config tweak to the existing one) — the exception
+    originally excluded Saints/NFL specifically (UFC would still take
+    the screen over a live Saints game), a narrower rule than "nhl"/
+    "mlb" simply predating NFL coverage on the jumbotron at all.
+    Session correction, live during the Saints' own first game watched
+    on the kiosk: "I would rather watch the NFL than the UFC right
+    now" — nfl gets the same live-game priority Habs/Jays already had.
 
-# UFC coverage — session request: "add UFC to the jumbotron... auto
-# rotation between fights coverage starts at 5pm every saturday, only
-# will not be shown on main if habs are playing. otherwise let it
-# run," corrected right after: "jays should take priority too." Kept
-# fully separate from `_takeover` above (see ufc_client.py's own
-# docstring on why a fight card needed a genuinely different data
-# shape/takeover concept, not a config tweak to the existing one) —
-# the exception originally excluded Saints/NFL specifically (UFC would
-# still take the screen over a live Saints game), a narrower rule
-# than "nhl"/"mlb" simply predating NFL coverage on the jumbotron at
-# all. Session correction, live during the Saints' own first game
-# watched on the kiosk: "I would rather watch the NFL than the UFC
-# right now" — nfl now gets the same live-game priority Habs/Jays
-# already had.
-try:
-    _ufc_takeover = ufc_client.takeover_state(now)
-except Exception:
-    _ufc_takeover = None
-if _ufc_takeover is not None and _takeover and _takeover["league"]["sport"] in ("nhl", "mlb", "nfl") and _takeover["phase"] == "live":
-    _ufc_takeover = None
+    `jumbotron_requested`: True for an explicit ?page=jumbotron (a
+    manual preview from a phone, for a day with no game in its window
+    — falls back to whatever game is nearest so the board can actually
+    be looked at outside a real takeover) and, unconditionally, for
+    every call from inside the fragment (by the time that's called,
+    the outer script has already committed to showing this page one
+    way or another, same reasoning as the explicit query param)."""
+    try:
+        takeover = sports_alerts.takeover_state(now)
+    except Exception:
+        takeover = None
+    if takeover and takeover["game"]["game_id"] == st.session_state.get("jumbotron_dismissed_game_id"):
+        takeover = None
+    try:
+        ufc_takeover = ufc_client.takeover_state(now)
+    except Exception:
+        ufc_takeover = None
+    if ufc_takeover is not None and takeover and takeover["league"]["sport"] in ("nhl", "mlb", "nfl") and takeover["phase"] == "live":
+        ufc_takeover = None
+    if jumbotron_requested:
+        takeover = takeover or sports_alerts.takeover_preview_state()
+    return takeover, ufc_takeover
+
+
+@st.fragment(run_every="5s")
+def _jumbotron_fragment(now: datetime, weather: dict | None) -> None:
+    """The jumbotron board's own live content — score, inning/status,
+    countdown — refreshed independently every 5s, regardless of the
+    outer script's own ~75s st_autorefresh cadence. Cheap on almost
+    every tick: sports_client.fetch_jays()/etc (called inside
+    takeover_state) already have their own st.cache_data TTLs, so a 5s
+    fragment tick is a cache hit the overwhelming majority of the time
+    — the real network fetch still only happens as often as each
+    source's own TTL dictates, same as before this existed. This is
+    "check the already-cached state more often," not "fetch more
+    often," which is exactly why it doesn't cost real performance.
+    `weather` is passed in from the outer (~75s-stale) scope on
+    purpose — temperature/conditions don't need faster refresh, no
+    reason to re-fetch it every 5s just because this does.
+
+    If a takeover organically ends while the user is still sitting on
+    this page, this can keep firing for up to one more outer-rerun
+    cycle (≤75s) before the outer script stops calling it at all —
+    pages_jumbotron.render already has to handle "no active takeover"
+    gracefully (the same preview-fallback path _resolve_takeover's own
+    jumbotron_requested=True already exercises here), so this just
+    degrades to that existing behavior, not a new failure mode."""
+    _takeover, _ufc_takeover = _resolve_takeover(now, True)
+    _safe_render(pages_jumbotron.render, now, _takeover, weather, _ufc_takeover)
+
 
 _requested_page = None
 try:
     _requested_page = st.query_params.get("page")
+except Exception:
+    pass
+
+_takeover, _ufc_takeover = _resolve_takeover(now, _requested_page == "jumbotron")
+
+try:
     if _requested_page == "jumbotron":
-        # Manual preview from a phone, for a day with no game in its
-        # window — falls back to whatever game is nearest so the board
-        # can actually be looked at outside a real takeover.
         page = "jumbotron"
-        _takeover = _takeover or sports_alerts.takeover_preview_state()
     elif _requested_page == "maintenance":
         # Not part of PAGES (config.py) — deliberately excluded from
         # the normal rotation, same "hidden unless asked for" treatment
@@ -2859,7 +2912,7 @@ with st.container(key="page_body"):
     elif page == "radar":
         _safe_render(pages_radar.render)
     elif page == "jumbotron":
-        _safe_render(pages_jumbotron.render, now, _takeover, weather, _ufc_takeover)
+        _jumbotron_fragment(now, weather)
     elif page == "sports":
         _safe_render(pages_sports.render)
     elif page == "scores":
