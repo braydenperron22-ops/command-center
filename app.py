@@ -7,7 +7,6 @@ see PAGES in config.py and each page's own routing comments below for
 how they're reached instead (an automatic takeover / the J and D
 hotkeys)."""
 
-import hashlib
 import html
 import time
 from datetime import datetime
@@ -1338,140 +1337,6 @@ components.html(
         "new MutationObserver(kioskCheckToastChime).observe(document.body, {childList: true, subtree: true, characterData: true});",
         "kioskAudioKeepAlive();",
         "setInterval(kioskAudioKeepAlive, KIOSK_AUDIO_KEEPALIVE_MS);",
-      ].join('\\n');
-      doc.head.appendChild(s);
-    })();
-
-    (function () {
-      var doc = window.parent.document;
-      if (doc.getElementById('kiosk-toast-queue')) return;
-      var s = doc.createElement('script');
-      s.id = 'kiosk-toast-queue';
-      s.textContent = [
-        // Session request 2026-08-29: "make all of the toast alerts
-        // client side... so that they actually only show for their
-        // intended time... preload and set them up in order... cool
-        // animations." Root cause: the OLD dispatch decided "is this
-        // toast still within its window" via a server-side elapsed-
-        // since-shown_at check, re-evaluated only once per st_
-        // autorefresh rerun — accurate at the original 5s interval,
-        // not the 75s one this app now uses (today's own freeze-fix
-        // session), so a 30-second toast visibly sat on screen until
-        // the next 75s rerun happened to notice it was overdue.
-        //
-        // app.py's _stage_client_toasts renders every new alert into
-        // its own hidden st.container(key=f"toast_stage_{hash}") —
-        // reusing each type's existing render_alert_bar/render_bar
-        // output completely unchanged — the instant a real, new alert
-        // exists, well ahead of when this script actually reveals it.
-        // This script owns everything about WHEN and how long each one
-        // is shown: scans for newly-staged wrappers (MutationObserver,
-        // same pattern kiosk-toast-chime above already uses), queues
-        // them in the order the server already sorted them
-        // (_alert_priority, unchanged), and reveals them one at a time
-        // for a real client-timed KIOSK_TOAST_DURATION_MS — accurate
-        // regardless of the server's own rerun cadence.
-        //
-        // Explicitly toggles bar.style.display (not just the wrapper's
-        // own CSS-driven default-hide, theme.py) between 'none' and ''
-        // — kioskCheckToastChime's own existing guard above
-        // (`el.style.display === 'none'`) checks the BAR's inline
-        // style specifically, not a computed/CSS value, so a staged-
-        // but-not-yet-revealed bar has to actually carry that inline
-        // 'none' or the chime/voice would fire the instant an alert is
-        // staged (found live while building this) instead of when it's
-        // genuinely revealed. kioskCheckToastChime() is called
-        // explicitly right after reveal for the same reason
-        // kioskPersistTicker/kioskCheckToastChime both already need
-        // explicit calls elsewhere in this file: the shared
-        // MutationObserver config below has no `attributes: true`, so
-        // a pure style/class change alone never re-triggers it.
-        //
-        // Deliberately does NOT touch toast_queue.py/current_alert —
-        // that still exists, unchanged, solely driving the Govee light
-        // flash at whatever precision the server's own rerun cadence
-        // allows (see app.py's own comment there); this is the
-        // visual/audio path only.
-        "var KIOSK_TOAST_BAR_SEL = '.news-alert-bar, .news-alert-bar-market, .commute-alert-bar, .email-alert-bar, ' +",
-        "  '.sports-alert-bar-mlb, .sports-alert-bar-nhl, .sports-alert-bar-nfl, ' +",
-        "  '.weather-alert-bar-extreme, .weather-alert-bar-warning, .weather-alert-bar-warning-moderate, ' +",
-        "  '.weather-alert-bar-watch, .weather-alert-bar-statement';",
-        "var KIOSK_TOAST_DURATION_MS = 30000;",
-        "var KIOSK_TOAST_EXIT_MS = 250;",
-        "var kioskToastPending = [];",
-        "var kioskToastShowing = false;",
-        // MAX_BURST_ALERTS (config.py) is 6 — 6 * 30s each is well over
-        // one 75s rerun cycle, so a real burst can easily still be
-        // sitting in this JS queue by the time the NEXT rerun happens.
-        // That next rerun's own new_alerts naturally won't include an
-        // already-consumed one-shot alert anymore, so Streamlit's own
-        // reconciliation removes its now-unused st.container(key=...)
-        // from the DOM — a live reference to that node, kept queued,
-        // would silently point at a detached element the instant that
-        // happens. Captured as a plain HTML string instead, the moment
-        // it's first seen, into a queue that's fully independent of
-        // anything Streamlit renders again later — same reasoning
-        // kioskPersistTicker (above) already applies to the ticker for
-        // a similar reason (that one's about the scroll animation
-        // restarting on a reused node, not disappearing outright, but
-        // the fix shape — clone once into a script-owned node — is the
-        // same idea).
-        "function kioskGetToastLiveContainer() {",
-        "  var el = document.getElementById('kiosk-toast-live');",
-        "  if (!el) {",
-        "    el = document.createElement('div');",
-        "    el.id = 'kiosk-toast-live';",
-        "    document.body.appendChild(el);",
-        "  }",
-        "  return el;",
-        "}",
-        "function kioskScanToastStage() {",
-        "  var wrappers = document.querySelectorAll('[class*=st-key-toast_stage_]');",
-        "  for (var i = 0; i < wrappers.length; i++) {",
-        "    var w = wrappers[i];",
-        "    if (w.getAttribute('data-toast-queued') === '1') continue;",
-        "    var bar = w.querySelector(KIOSK_TOAST_BAR_SEL);",
-        "    if (!bar) continue;",
-        "    w.setAttribute('data-toast-queued', '1');",
-        // Hide the ORIGINAL bar's own inline style (not just the
-        // wrapper's external CSS class) BEFORE capturing outerHTML —
-        // kioskCheckToastChime's existing guard (above) checks the
-        // bar's inline el.style.display specifically, and its own
-        // MutationObserver would otherwise find this newly-staged-but-
-        // not-yet-revealed bar and treat it as already visible,
-        // chiming the instant it's staged instead of when it's
-        // actually shown (confirmed live while building this). The
-        // captured HTML carries that display:none with it — the reveal
-        // step below explicitly clears it on the fresh clone.
-        "    bar.style.display = 'none';",
-        "    kioskToastPending.push(bar.outerHTML);",
-        "    w.style.display = 'none';",
-        "  }",
-        "  kioskAdvanceToastQueue();",
-        "}",
-        "function kioskAdvanceToastQueue() {",
-        "  if (kioskToastShowing || kioskToastPending.length === 0) return;",
-        "  var html = kioskToastPending.shift();",
-        "  var live = kioskGetToastLiveContainer();",
-        "  live.innerHTML = html;",
-        "  var bar = live.querySelector(KIOSK_TOAST_BAR_SEL);",
-        "  if (!bar) { kioskAdvanceToastQueue(); return; }",
-        "  bar.style.display = '';",
-        "  kioskToastShowing = true;",
-        "  bar.classList.add('toast-reveal-anim');",
-        "  kioskCheckToastChime();",
-        "  setTimeout(function () {",
-        "    bar.classList.remove('toast-reveal-anim');",
-        "    bar.classList.add('toast-dismiss-anim');",
-        "    setTimeout(function () {",
-        "      live.innerHTML = '';",
-        "      kioskToastShowing = false;",
-        "      kioskAdvanceToastQueue();",
-        "    }, KIOSK_TOAST_EXIT_MS);",
-        "  }, KIOSK_TOAST_DURATION_MS);",
-        "}",
-        "kioskScanToastStage();",
-        "new MutationObserver(kioskScanToastStage).observe(document.body, {childList: true, subtree: true});",
       ].join('\\n');
       doc.head.appendChild(s);
     })();
@@ -3213,73 +3078,6 @@ def _alert_priority(alert: dict) -> int:
     return 10
 
 
-def _stage_client_toasts(alerts: list[dict]) -> None:
-    """Session request 2026-08-29: "make all of the toast alerts client
-    side... so that they actually only show for their intended time...
-    preload and set them up in order... cool animations." Root cause:
-    the OLD toast dispatch decided "is this still within its window" via
-    a server-side elapsed-since-shown_at check (toast_queue.py),
-    re-evaluated only once per st_autorefresh rerun — accurate at the
-    original 5s interval, not the 75s one this app now uses (today's
-    own freeze-fix session), so a 30-second toast visibly sat on screen
-    until the next 75s rerun happened to notice it was overdue.
-
-    Renders each already-sorted, already-capped alert in `alerts` (same
-    _alert_priority sort and MAX_BURST_ALERTS trim the old dispatch
-    always did) into its own hidden st.container(key=f"toast_stage_
-    {hash}") — same st-key-* mechanism this app already uses elsewhere
-    (.st-key-jumbotron_controls, theme.py) — reusing each type's
-    EXISTING render_alert_bar/render_bar output completely unchanged
-    (news.py/sports_alerts.py/weather_alerts_bar.py/email_client.py/
-    commute_reminder.py — zero edits to any of them). The persistent
-    kiosk-toast-queue script (app.py's merged components.html() call)
-    owns everything about WHEN and how long each one actually shows —
-    this function's only job is handing it fresh, real, correctly-
-    ordered material once each, hidden until that script reveals it.
-
-    The key is hashed from the same id-or-headline identity each
-    source's own get_new_alerts() already uses for its own dedup, so
-    even a stale rerun re-sending an already-queued alert lands back on
-    the SAME DOM node (Streamlit's own key-based diffing) rather than
-    staging a visible duplicate.
-
-    Deliberately does NOT touch toast_queue.py/current_alert — that
-    still exists, unchanged, solely to drive the Govee light flash
-    (breaking_elapsed/score_flash below) at whatever precision the
-    server's own rerun cadence allows; this is the visual/audio path
-    only."""
-    for alert in alerts:
-        raw_key = str(alert.get("id") or alert.get("headline") or alert)
-        safe_key = "toast_stage_" + hashlib.md5(raw_key.encode()).hexdigest()[:16]
-        with st.container(key=safe_key):
-            try:
-                kind = alert.get("kind")
-                if kind == "commute":
-                    commute_reminder.render_bar(alert)
-                elif kind == "sports":
-                    sports_alerts.render_alert_bar(alert)
-                elif kind == "weather":
-                    weather_alerts_bar.render_alert_bar(alert)
-                elif kind == "email":
-                    email_client.render_alert_bar(alert)
-                else:
-                    news.render_alert_bar(alert)
-            except Exception as toast_stage_exc:
-                import traceback
-
-                print(f"TOAST STAGE FAILED: {kind} alert {alert!r}")
-                traceback.print_exc()
-                persisted_state.save(
-                    "toast_render_error",
-                    {
-                        "at": time.time(),
-                        "kind": kind or "news",
-                        "headline": alert.get("headline"),
-                        "error": f"{type(toast_stage_exc).__name__}: {toast_stage_exc}",
-                    },
-                )
-
-
 def _render_bottom_ticker(readings: dict) -> None:
     """A pure live-stat ticker (session request: "remove the dates for
     data... just not [as] informational and as good as the other
@@ -3372,14 +3170,8 @@ try:
         news_only = [a for a in new_alerts if _alert_priority(a) == 10]
         keep_news = news_only[overflow:] if overflow < len(news_only) else []
         new_alerts = [a for a in new_alerts if _alert_priority(a) < 10] + keep_news
-
-    # Govee lights ONLY from here — toast_queue.py's own elapsed-since-
-    # shown_at check is exactly as accurate as the server's own rerun
-    # cadence (fine at the original 5s interval, not the 75s one this
-    # app now uses), which is a real, pre-existing, OUT-OF-SCOPE
-    # characteristic of the physical light flash — see _stage_client_
-    # toasts's own docstring for the visual/audio path this replaced.
     toast_queue.extend(new_alerts)
+
     now_ts = time.time()
     current_alert = toast_queue.current(now_ts)
     if current_alert:
@@ -3388,17 +3180,64 @@ try:
             toast_queue.advance()
             current_alert, elapsed = None, None
 
-    # Visual/audio toasts: staged into hidden per-alert containers for
-    # kiosk-toast-queue (persistent JS, merged components.html() call
-    # above) to queue and reveal itself with real client-side timing —
-    # see _stage_client_toasts's own docstring for the full story.
-    _stage_client_toasts(new_alerts)
+    if current_alert:
+        # Session report: "I'm still not getting any Toast alerts... get
+        # rid of the animation... do what you gotta do." The old intro
+        # animation needed a per-rerun a/b variant toggle (Streamlit
+        # reuses the same bottom-bar DOM node across reruns, and
+        # changing animation-name each render was the only way to force
+        # a genuine restart rather than reusing an already-completed
+        # instance) — removed entirely along with the animation itself
+        # (see news.render_alert_bar's own docstring), so there's no
+        # rerun-timing state left here to manage at all.
+        #
+        # Session report: "the GoVi lights are going red... but the
+        # toast is not there... I get the alert, but I don't get the
+        # toast notification." The Govee block below reads this same
+        # current_alert/elapsed pair to decide whether to flash red —
+        # a genuinely separate code path from the actual st.markdown
+        # call here. Before this, a render failure inside any one of
+        # these four dispatch calls fell through to the single bare
+        # `except Exception: pass` around this whole block (see below),
+        # which left current_alert already assigned to a real, truthy
+        # alert — so the light still fired for it even though the
+        # toast HTML never actually rendered that rerun. Wrapping the
+        # dispatch itself, resetting current_alert to None on failure,
+        # and logging what broke (instead of swallowing it silently)
+        # means the light can no longer show red for a toast that
+        # didn't actually appear, and the next real failure leaves an
+        # actual trace instead of vanishing without one.
+        try:
+            if current_alert.get("kind") == "commute":
+                commute_reminder.render_bar(current_alert)
+            elif current_alert.get("kind") == "sports":
+                sports_alerts.render_alert_bar(current_alert)
+            elif current_alert.get("kind") == "weather":
+                weather_alerts_bar.render_alert_bar(current_alert)
+            elif current_alert.get("kind") == "email":
+                email_client.render_alert_bar(current_alert)
+            else:
+                news.render_alert_bar(current_alert)
+        except Exception as toast_render_exc:
+            import traceback
 
-    # Base bottom-bar content now renders every rerun, unconditionally —
-    # toasts are a client-timed overlay on top of it (z-index, theme.py),
-    # not a competing server-side branch the way the old current_alert
-    # dispatch was.
-    if _jumbotron_active and commute_reminder.leave_headline_active(now):
+            print(f"TOAST RENDER FAILED: {current_alert.get('kind', 'news')} alert {current_alert!r}")
+            traceback.print_exc()
+            persisted_state.save(
+                "toast_render_error",
+                {
+                    "at": now_ts,
+                    "kind": current_alert.get("kind", "news"),
+                    "headline": current_alert.get("headline"),
+                    "error": f"{type(toast_render_exc).__name__}: {toast_render_exc}",
+                },
+            )
+            current_alert, elapsed = None, None
+            # Falls back to the ticker rather than leaving the bottom
+            # strip fully blank for this rerun — see _render_bottom_
+            # ticker's own docstring for the session report this fixes.
+            _render_bottom_ticker(readings)
+    elif _jumbotron_active and commute_reminder.leave_headline_active(now):
         # Session report: a golf tee time's leave-in window landing
         # during a Jays game — "that space is crucial for the
         # jumbotron... replace the bottom scroll bar with a timer...
@@ -3409,9 +3248,10 @@ try:
         # commitment during game time only ever showed up as scattered
         # milestone toasts, not something continuously visible. Same
         # slot as the market ticker below (position/z-index match
-        # exactly, see .jumbo-leave-ticker in theme.py) — a real toast
-        # still covers it the instant one's revealed, same as it
-        # already covers the market ticker.
+        # exactly, see .jumbo-leave-ticker in theme.py), so this branch
+        # only ever runs when current_alert is empty — a real toast
+        # still covers it the instant one fires, same as it already
+        # covers the market ticker.
         commute_reminder.render_ticker_leave_bar(now)
     else:
         _render_bottom_ticker(readings)
