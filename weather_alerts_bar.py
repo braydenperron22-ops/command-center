@@ -613,13 +613,36 @@ def current_storm_phase(now: datetime) -> dict | None:
 # feature. One shared list for both phases, not two: "leaving" never
 # has more than LEAVING_TAIL_MINUTES (30) left by construction, so the
 # 120/90/60/45 milestones simply never fire for it — nothing extra to
-# special-case. Keyed per alert id (not persisted — a restart just
-# resets a repeating reminder's progress once, acceptable here unlike
-# get_new_alerts's own persisted one-shot dedup) so a brand new storm
-# always gets a fresh full run of milestones rather than inheriting
-# whatever's left of a previous, unrelated alert's.
+# special-case.
+#
+# Session report: "the toast alerts for the storm are being double
+# pushed... back to back... echo effect." This used to be plain
+# in-memory state, deliberately not persisted, on the assumption a
+# restart resetting a repeating reminder's progress was rare and
+# low-stakes ("acceptable... resets a repeating reminder's progress
+# once"). That assumption didn't hold up: this app now gets restarted
+# routinely (dev iterations, and watchdog_kiosk.sh can restart it
+# automatically too — see project_kiosk_watchdog), and a real storm's
+# own "leaving" phase can span many hours of reissues — any restart
+# during that window forgot every milestone already shown, so the very
+# next server rerun could re-fire whatever milestone was already due,
+# sounding exactly like an echo (same headline, same voice line, played
+# again). Persisted the same way get_new_alerts's own _seen_alert_keys
+# already is — per-instance (a second kiosk/dev box sharing this same
+# Upstash store should track its OWN progress, not silently inherit
+# another instance's), with the same MAX_SEEN_ALERTS-style pruning so
+# this doesn't grow unbounded across many storms over time.
+MAX_SEEN_STORM_ALERTS = 50
 STORM_MILESTONES_MINUTES = [120, 90, 60, 45, 30, 20, 15, 10, 5, 3, 0]
-_storm_milestones_shown: dict[str, set[int]] = {}
+_storm_milestones_shown: dict[str, set[int]] = {
+    k: set(v) for k, v in persisted_state.load_per_instance("weather_storm_milestones_shown", {}).items()
+}
+
+
+def _save_storm_milestones_shown() -> None:
+    persisted_state.save_per_instance(
+        "weather_storm_milestones_shown", {k: sorted(v) for k, v in _storm_milestones_shown.items()}
+    )
 
 
 def _due_storm_milestone(minutes_remaining: float, shown: set[int]) -> int | None:
@@ -760,6 +783,9 @@ def get_storm_proximity_alerts(now: datetime) -> list[dict]:
     if milestone is None:
         return []
     shown.add(milestone)
+    if len(_storm_milestones_shown) > MAX_SEEN_STORM_ALERTS:
+        _storm_milestones_shown.pop(next(iter(_storm_milestones_shown)))
+    _save_storm_milestones_shown()
     approaching = phase_info["phase"] == "approaching"
     if milestone == 0:
         headline = f"{alert['title']} — {'arriving' if approaching else 'clearing'} now"
