@@ -26,6 +26,7 @@ import evening_briefing
 import govee_lighting
 import groq_client
 import headline_rotation
+import heartbeat
 import holidays_client
 import lightning_client
 import local_news_client
@@ -1740,7 +1741,29 @@ if _requested_page not in PAGES and not _jumbotron_active and not _night_mode_ac
 # intro animation, which is brief and rare; a bit less smooth there is
 # a clearly better trade than the app crash-looping and burning through
 # every external API's rate limit on each cold restart.
-st_autorefresh(interval=5000, key="clock_tick")
+
+# Session incident 2026-08-29: "it only freezes sometimes but the
+# freeze is persistent through refreshes." Instrumented every rerun
+# end-to-end (heartbeat.py + temporary per-section timing checkpoints,
+# see git history for this commit) and measured a REAL full rerun
+# taking 25-60s under this Mac's current real conditions (chronic
+# memory pressure — confirmed live, ~1.9GB already swapped out of 8GB
+# total even at idle — plus several individually-slow sections:
+# pages_home.fetch_readings' outer loop isn't itself cached even
+# though its own inner fetch is, the pre-dispatch prologue, and the
+# post-dispatch epilogue each independently cost several real seconds).
+# With the old 5000ms interval, st_autorefresh's own rerun-cancellation
+# was firing a NEW rerun and killing the in-flight one every 5s, so NO
+# rerun could ever reach the end of the script — a genuine, permanent,
+# self-cancelling death spiral, not a transient blip: every refresh
+# just added another doomed attempt on top, which is exactly why
+# refreshing never fixed it. 45s comfortably clears the real measured
+# worst case so reruns can actually finish; the underlying per-section
+# slowness (FRED readings foremost) is still real and worth a follow-up
+# pass to bring this back down closer to the original 5s cadence.
+# (45s was tried first and wasn't safe — a real cold-start run measured
+# 70s live, right in this same investigation.)
+st_autorefresh(interval=75000, key="clock_tick")
 
 try:
     weather = fetch_weather()
@@ -3238,3 +3261,15 @@ try:
     # computed right after _jumbotron_active above for what replaced it.
 except Exception:
     pass
+
+# Literal last statement in the script, on purpose — see heartbeat.py's
+# own docstring. Session report: "it only freezes sometimes but the
+# freeze is persistent through refreshes" — launchd's KeepAlive only
+# restarts com.brayden.commandcenter if the process actually exits, so
+# a wedged-but-still-alive process (this Mac's own real memory
+# pressure stalling it, or a genuine deadlock) never gets noticed or
+# recovered on its own. watchdog_kiosk.sh checks this file's age
+# externally and force-restarts the service if a rerun hasn't
+# completed recently — deliberately placed after every other block in
+# this file so a stuck rerun genuinely never reaches it.
+heartbeat.beat()
