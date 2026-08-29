@@ -42,6 +42,23 @@ import persisted_state
 TRANSACTIONS_URL = "https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/transactions"
 NEWS_URL = "https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/news"
 CORE_API_BASE = "https://sports.core.api.espn.com/v2/sports/{sport}/leagues/{league}"
+# Session follow-up: "deeper statistical context — Hot Streaks, Cold
+# Streaks, Career-High/Career-Best Years, and Fall-Off/Regressive
+# Seasons." A different ESPN host from everything above (site.web.
+# api.espn.com — sports_client.py already has one precedent using this
+# same host, for playoff-odds standings) — confirmed live against 3
+# real players (George Springer/MLB, Kirby Dach/NHL, Zach Wilson/NFL):
+# .../athletes/{id}/gamelog returns real game-by-game logs (newest
+# category and newest event first within it — confirmed against
+# Springer's own real box score, a 4-for-4/1-HR game matched exactly),
+# and .../athletes/{id}/stats returns real season-by-season history
+# INCLUDING the current in-progress season, several years back. The
+# category NAME differs by sport/position (MLB: "career-batting"/
+# "career-pitching"; NHL: the player's own position name, e.g.
+# "center"; NFL: "passing"/"rushing"/etc.) — not hardcoded here, this
+# module just reads whichever category ESPN lists first for that
+# player, which is consistently their own primary stat line.
+PLAYER_STATS_BASE = "https://site.web.api.espn.com/apis/common/v3/sports/{sport}/{league}/athletes/{athlete_id}"
 
 TRANSACTIONS_CACHE_TTL_SECONDS = 30 * 60  # dated prose entries, doesn't need to be fresher than this
 NEWS_CACHE_TTL_SECONDS = 30 * 60
@@ -238,7 +255,7 @@ def fetch_league_leaders(
     sport: str, league: str, categories: list[str], year: int | None = None, top_n: int = 5
 ) -> dict[str, list[dict]]:
     """Real league-wide statistical leaders, resolved to real names —
-    {category: [{"name", "team_abbr", "value", "display"}]}, ordered
+    {category: [{"name", "id", "team_abbr", "value", "display"}]}, ordered
     same as ESPN's own list (already rank order). Confirmed live: MLB
     home runs (Kyle Schwarber 40, Matt Olson 37...), NHL points
     (Connor McDavid 138...), NFL passing yards. Each ESPN leader entry
@@ -278,6 +295,7 @@ def fetch_league_leaders(
             entries.append(
                 {
                     "name": name,
+                    "id": athlete.get("id"),
                     "team_abbr": team.get("abbreviation", ""),
                     "value": leader.get("value"),
                     "display": leader.get("displayValue"),
@@ -286,3 +304,180 @@ def fetch_league_leaders(
         if entries:
             out[cat] = entries
     return out
+
+
+GAMELOG_CACHE_TTL_SECONDS = 30 * 60  # a player's last game changes at most once a day
+CAREER_STATS_CACHE_TTL_SECONDS = 12 * 60 * 60  # season-to-date totals move slowly, once a game at most
+
+# Rate/percentage columns a gamelog's own stats array carries as a
+# CUMULATIVE season-to-date value as of that game, not that game's own
+# isolated number (confirmed live: George Springer's own AVG/OBP/SLG/
+# OPS columns tick upward game to game, matching a running total, while
+# his AB/H/HR/RBI columns matched his real single-game box score
+# exactly) — summing these across a "last N games" window would
+# produce a meaningless number, so recent_game_trend below skips them
+# entirely rather than silently reporting something wrong. Matched by
+# a simple heuristic (any label containing one of these substrings)
+# since the exact label spelling drifts by sport (AVG/OBP/SLG/OPS for
+# batters, ERA/CMP%/QBR/RTG for pitchers and QBs, SPCT for skaters).
+_RATE_LABEL_HINTS = ("AVG", "OBP", "SLG", "OPS", "ERA", "PCT", "RTG", "QBR", "%")
+
+# Real "more is better" marquee counting stats, checked in this order
+# — career_trajectory takes whichever of these the player's own stats
+# actually carry, prioritizing the first (most sport-typical) match.
+# Deliberately excludes anything where a higher number isn't
+# unambiguously good regardless of position (INT thrown, sacks
+# allowed) or where "better" means LOWER (ERA, GAA) — those would need
+# their own inverted comparison this first pass doesn't attempt yet.
+_TRAJECTORY_STAT_LABELS = ["HR", "RBI", "OPS", "AVG", "SO", "W", "SV", "PTS", "G", "A", "YDS", "TD"]
+# AVG/OPS (and any other rate stat that sneaks into the list above)
+# compare directly rather than getting prorated by games played — a
+# .300 average 50 games in is already directly comparable to a full
+# season's .300, unlike a counting stat.
+_TRAJECTORY_RATE_LABELS = {"AVG", "OPS", "OBP", "SLG"}
+_FULL_SEASON_GAMES = {"mlb": 162, "nhl": 82, "nfl": 17}
+MIN_GAMES_FOR_PACE = 8  # too early in any of the 3 seasons' own length for a "pace" to mean anything below this
+
+
+def _fetch_gamelog_raw(sport: str, league: str, athlete_id) -> dict:
+    def _do():
+        fetch_throttle.wait_turn()
+        resp = requests.get(f"{PLAYER_STATS_BASE.format(sport=sport, league=league, athlete_id=athlete_id)}/gamelog", timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+
+    return _persisted_fetch(f"gamelog_{sport}_{league}_{athlete_id}", GAMELOG_CACHE_TTL_SECONDS, _do)
+
+
+def _fetch_career_stats_raw(sport: str, league: str, athlete_id) -> dict:
+    def _do():
+        fetch_throttle.wait_turn()
+        resp = requests.get(f"{PLAYER_STATS_BASE.format(sport=sport, league=league, athlete_id=athlete_id)}/stats", timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+
+    return _persisted_fetch(f"career_stats_{sport}_{league}_{athlete_id}", CAREER_STATS_CACHE_TTL_SECONDS, _do)
+
+
+def _safe_float(raw) -> float | None:
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def recent_game_trend(sport: str, league: str, athlete_id, n_games: int = 10) -> dict | None:
+    """Real last-N-games aggregate for this athlete — {"games", "stats":
+    {label: value}}, summing each game's own real counting stats (see
+    _RATE_LABEL_HINTS's own comment on why the cumulative rate columns
+    are skipped rather than summed) and deriving a real AVG from summed
+    AB/H when both are present — the one rate stat genuinely worth
+    reporting for a window like this, computed honestly instead of
+    read off a column that doesn't actually represent it. None on any
+    fetch failure, or if this player genuinely has fewer than n_games
+    played yet this season — a "last 10 games" claim backed by only 3
+    real games would be misleading, not helpful, same "never show a
+    stat that isn't real" rule as everywhere else in this app."""
+    try:
+        data = _fetch_gamelog_raw(sport, league, athlete_id)
+    except Exception:
+        return None
+    labels = data.get("labels") or []
+    season_types = data.get("seasonTypes") or []
+    if not season_types or not labels:
+        return None
+    events = []
+    for cat in season_types[0].get("categories") or []:
+        events.extend(cat.get("events") or [])
+    if len(events) < n_games:
+        return None
+    window = events[:n_games]  # confirmed live: newest event first, both across categories and within one
+
+    sums: dict[str, float] = {}
+    for ev in window:
+        stats = ev.get("stats") or []
+        for i, label in enumerate(labels):
+            if i >= len(stats) or any(hint in label.upper() for hint in _RATE_LABEL_HINTS):
+                continue
+            value = _safe_float(stats[i])
+            if value is not None:
+                sums[label] = sums.get(label, 0) + value
+
+    if not sums:
+        return None
+    stats_out: dict[str, str] = {
+        label: (str(int(total)) if total == int(total) else f"{total:g}") for label, total in sums.items()
+    }
+    if "AB" in sums and "H" in sums and sums["AB"]:
+        stats_out["AVG"] = f"{sums['H'] / sums['AB']:.3f}".lstrip("0")
+    return {"games": n_games, "stats": stats_out}
+
+
+def career_trajectory(sport: str, league: str, athlete_id) -> dict | None:
+    """Whether this season's real pace is a genuine career year or a
+    real fall-off against this player's own past seasons — {"label",
+    "direction": "career_year"|"fall_off", "current_pace" (or current
+    value for a rate stat), "games_played", "career_best",
+    "career_best_year"}. None whenever there's nothing real to report:
+    no multi-season history at all (a rookie — see MIN_GAMES_FOR_PACE's
+    own comment), too early in the current season for a pace to mean
+    anything, or the player's real pace simply isn't notable either
+    way (most players, most seasons) — a normal season correctly
+    produces nothing here, never a forced verdict."""
+    try:
+        data = _fetch_career_stats_raw(sport, league, athlete_id)
+    except Exception:
+        return None
+    categories = data.get("categories") or []
+    if not categories:
+        return None
+    labels = categories[0].get("labels") or []
+    seasons = categories[0].get("statistics") or []
+    if len(seasons) < 2:
+        return None
+    current, past = seasons[-1], seasons[:-1]
+
+    def _val(season: dict, label: str) -> float | None:
+        if label not in labels:
+            return None
+        idx = labels.index(label)
+        stats = season.get("stats") or []
+        return _safe_float(stats[idx]) if idx < len(stats) else None
+
+    games_played = _val(current, "GP")
+    if not games_played or games_played < MIN_GAMES_FOR_PACE:
+        return None
+    full_season = _FULL_SEASON_GAMES.get(league, 82)
+
+    best_candidate, best_ratio_delta = None, 0.0
+    for label in _TRAJECTORY_STAT_LABELS:
+        current_val = _val(current, label)
+        if current_val is None:
+            continue
+        past_vals = [(v, (s.get("season") or {}).get("year")) for s in past if (v := _val(s, label)) is not None]
+        if not past_vals:
+            continue
+        career_best_val, career_best_year = max(past_vals, key=lambda t: t[0])
+        if career_best_val <= 0:
+            continue
+        is_rate = label in _TRAJECTORY_RATE_LABELS
+        pace = current_val if is_rate else (current_val / games_played * full_season)
+        ratio = pace / career_best_val
+        if ratio >= 1.05:
+            direction = "career_year"
+        elif ratio <= 0.7:
+            direction = "fall_off"
+        else:
+            continue
+        ratio_delta = abs(ratio - 1)
+        if ratio_delta > best_ratio_delta:
+            best_ratio_delta = ratio_delta
+            best_candidate = {
+                "label": label,
+                "direction": direction,
+                "current_pace": round(pace, 3) if is_rate else round(pace),
+                "games_played": int(games_played),
+                "career_best": career_best_val,
+                "career_best_year": career_best_year,
+            }
+    return best_candidate

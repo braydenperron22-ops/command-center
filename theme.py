@@ -4365,11 +4365,16 @@ html, body, [class*="css"] {
        content height, re-measured live at each step rather than
        guessed, same discipline this exact board's height-budget
        history already required twice before. */
-    padding: 30px 32px;
+    /* 30px/140px measured live at only 5.1px of real clearance once
+       the tag/headline/statline rows landed (more fixed content above
+       the storyline text than the previous stat-grid version had) —
+       pulled back for real margin, same discipline as every other
+       size on this exact card. */
+    padding: 22px 30px;
 }
-.jumbo-storyline-photowrap { flex: 0 0 auto; width: 140px; height: 140px; }
+.jumbo-storyline-photowrap { flex: 0 0 auto; width: 124px; height: 124px; }
 .jumbo-storyline-photo {
-    width: 140px; height: 140px;
+    width: 124px; height: 124px;
     border-radius: 50%;
     object-fit: cover;
     object-position: top;
@@ -4386,51 +4391,82 @@ html, body, [class*="css"] {
     align-items: center;
     justify-content: center;
     font-family: var(--label);
-    font-size: 48px;
+    font-size: 42px;
     font-weight: 700;
     color: var(--mut-2);
 }
 .jumbo-storyline-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.jumbo-storyline-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
-.jumbo-storyline-id { min-width: 0; }
-.jumbo-storyline-name {
+/* Second follow-up (Lead UI/UX Designer + Sports Broadcast Producer
+   brief): "tag: 2-3 words, high-energy uppercase... distinct badge
+   coloring for streak/trend tags (vibrant accent for HOT HAND vs.
+   caution/gold for BOUNCE-BACK WATCH)... headline: one bold statement
+   ... prominent typography... high contrast." Tag pill + bold
+   headline + a single high-impact stat line replace the old role +
+   multi-stat grid — pregame_storylines._tag_category classifies
+   whatever real tag text the AI wrote (a keyword match, not a
+   separate field the AI could get out of sync with its own tag) into
+   one of these 5 real color buckets. */
+.jumbo-storyline-tag {
+    display: inline-block;
+    align-self: flex-start;
     font-family: var(--label);
-    font-size: 32px;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 5px 14px;
+    border-radius: 20px;
+    margin-bottom: 10px;
+}
+.jumbo-storyline-tag-hot { color: #FF5A1F; background: rgba(255,90,31,0.16); border: 1px solid rgba(255,90,31,0.4); }
+.jumbo-storyline-tag-cold { color: var(--led); background: rgba(255,179,0,0.16); border: 1px solid rgba(255,179,0,0.4); }
+.jumbo-storyline-tag-career { color: #BF5AF2; background: rgba(191,90,242,0.16); border: 1px solid rgba(191,90,242,0.4); }
+.jumbo-storyline-tag-callup { color: #32D74B; background: rgba(50,215,75,0.16); border: 1px solid rgba(50,215,75,0.4); }
+.jumbo-storyline-tag-injury { color: #3DD9FF; background: rgba(61,217,255,0.16); border: 1px solid rgba(61,217,255,0.4); }
+.jumbo-storyline-tag-default { color: var(--bone); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25); }
+.jumbo-storyline-headline {
+    font-family: var(--label);
+    font-size: 30px;
     font-weight: 700;
     color: var(--bone);
+    line-height: 1.15;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 100%;
 }
-.jumbo-storyline-role {
-    font-size: 14px;
+.jumbo-storyline-name {
+    font-size: 15px;
     font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--led);
-    margin-top: 5px;
-}
-/* Session follow-up: "their actual stats" — a real stat grid (2-4
-   labeled values the AI pulled straight from the same material it
-   wrote the storyline from) instead of one flattened sentence. */
-.jumbo-storyline-stats { display: flex; gap: 32px; flex: 0 0 auto; padding-top: 2px; }
-.jumbo-storyline-stat-block { display: flex; flex-direction: column; align-items: center; }
-.jumbo-storyline-stat-value {
-    font-family: var(--label);
-    font-size: 38px;
-    font-weight: 600;
-    color: var(--bone);
-    line-height: 1.1;
-    font-variant-numeric: tabular-nums;
-}
-.jumbo-storyline-stat-label {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--led);
+    letter-spacing: 0.06em;
+    color: var(--mut);
     margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+.jumbo-storyline-statline {
+    /* Stat-line reads as a real broadcast lower-third figure — the
+       app's own numeral face (--label, already the "stencil/sports"
+       stand-in this whole board uses for every big number — see
+       .jumbo-live-matchup-stat's own comment on why a squat display
+       font read as a bold-faking blob at this weight) at real size,
+       not buried in body copy. */
+    font-family: var(--label);
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--led);
+    margin-top: 8px;
+    font-variant-numeric: tabular-nums;
+    /* Kept to one line on purpose (same fixed-height reasoning as
+       .jumbo-storyline-headline/-name above it) — a long real stat
+       phrase truncates rather than wrapping and pushing the card's
+       own height past its measured margin. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
 }
 .jumbo-storyline-text {
     font-size: 17px;

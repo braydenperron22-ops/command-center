@@ -598,14 +598,20 @@ def _storyline_cards_html(sport: str, game: dict, team_label: str, match: dict |
     function actually runs, well after the whole module has loaded.
 
     Session follow-up: "big... take up the whole bottom part... one
-    card at a time... their actual stats... look professional." One
-    full-width horizontal card now (photo, name/role, a real stat
-    grid, storyline) instead of 3 small ones sharing the row — same
-    big-number/small-caption stat-block language _current_matchup_html's
-    own broadcast-style card already uses (.jumbo-live-matchup-stat/
-    -label), reused here as its own .jumbo-storyline-stat-* set since
-    this card's overall shape (horizontal, one wide row) differs from
-    that one's (vertical, two narrow columns)."""
+    card at a time... look professional." One full-width horizontal
+    card (photo, name, a colored tag/headline/stat-line, storyline)
+    instead of 3 small ones sharing the row.
+
+    Second follow-up (Lead UI/UX Designer + Sports Broadcast Producer
+    brief): "team color accents... distinct badge coloring for streak/
+    trend tags... prominent typography." The card's own background
+    tint now uses this sport's real fixed accent — _TEAM_COLOR_RGB
+    already IS "Royal Blue for Blue Jays, Crimson for Habs, Gold for
+    Saints" (existing infrastructure, not new), reused directly rather
+    than re-deriving team colors a second way. The tag badge's color
+    comes from pregame_storylines._tag_category's own keyword
+    classification (hot/cold/career/callup/injury/default) — see
+    theme.py's own .jumbo-storyline-tag-* rules for what each maps to."""
     our_name = _TEAM_FULL_NAME[sport]
     away_name = our_name if not game["is_home"] else game["opponent"]
     home_name = game["opponent"] if not game["is_home"] else our_name
@@ -629,23 +635,26 @@ def _storyline_cards_html(sport: str, game: dict, team_label: str, match: dict |
         # broken image or a misleadingly-wrong team's logo.
         initial = html.escape(c["name"][:1].upper()) if c["name"] else "?"
         photo_html = f'<div class="jumbo-storyline-photo jumbo-storyline-photo-blank">{initial}</div>'
-    role_html = f'<div class="jumbo-storyline-role">{html.escape(c["role"])}</div>' if c.get("role") else ""
-    stat_blocks = "".join(
-        f'<div class="jumbo-storyline-stat-block">'
-        f'<div class="jumbo-storyline-stat-value">{html.escape(s["value"])}</div>'
-        f'<div class="jumbo-storyline-stat-label">{html.escape(s["label"])}</div>'
-        f"</div>"
-        for s in c.get("stats") or []
+    tag_html = (
+        f'<div class="jumbo-storyline-tag jumbo-storyline-tag-{html.escape(c.get("tag_category", "default"))}">'
+        f'{html.escape(c["tag"])}</div>'
+        if c.get("tag")
+        else ""
     )
-    stats_html = f'<div class="jumbo-storyline-stats">{stat_blocks}</div>' if stat_blocks else ""
+    headline_html = f'<div class="jumbo-storyline-headline">{html.escape(c["headline"])}</div>' if c.get("headline") else ""
+    stat_html = f'<div class="jumbo-storyline-statline">{html.escape(c["stat_line"])}</div>' if c.get("stat_line") else ""
+    team_rgb = _TEAM_COLOR_RGB.get(sport, (255, 179, 0))
+    card_style = (
+        f"background: linear-gradient(115deg, rgba({team_rgb[0]},{team_rgb[1]},{team_rgb[2]},0.22), "
+        f"rgba(0,0,0,0.4) 65%);"
+    )
     card_parts = [
-        f'<div class="jumbo-storyline-card">'
+        f'<div class="jumbo-storyline-card" style="{card_style}">'
         f'<div class="jumbo-storyline-photowrap">{photo_html}</div>'
         f'<div class="jumbo-storyline-main">'
-        f'<div class="jumbo-storyline-header">'
-        f'<div class="jumbo-storyline-id"><div class="jumbo-storyline-name">{html.escape(c["name"])}</div>{role_html}</div>'
-        f"{stats_html}"
-        f"</div>"
+        f"{tag_html}{headline_html}"
+        f'<div class="jumbo-storyline-name">{html.escape(c["name"])}</div>'
+        f"{stat_html}"
         f'<div class="jumbo-storyline-text">{html.escape(c["storyline"])}</div>'
         f"</div>"
         f"</div>"

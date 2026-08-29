@@ -25,12 +25,25 @@ already uses (strip code fences, skip malformed individual entries
 rather than failing the whole batch).
 
 Data sources: espn_extras.py (transactions, team news, league-wide
-leaders — all 3 confirmed live against real Jays/Habs/Saints data
-while planning this, none used anywhere else in this app before now)
-plus scores_client.fetch_summary/leaders_with_headshots (already used
-by game_blurb.py — injuries, game-day roster/boxscore, records,
-venue/odds, and this specific game's own stat leaders with real
-headshots).
+leaders, and — session follow-up, a Lead UI/UX Designer + Sports
+Broadcast Producer brief adding "Hot Streaks, Cold Streaks, Career-
+High/Career-Best Years, Fall-Off Seasons" — real per-game logs and
+season-by-season career history, confirmed live against real players
+in all 3 sports while planning this, none used anywhere else in this
+app before now) plus scores_client.fetch_summary/leaders_with_headshots
+(already used by game_blurb.py — injuries, game-day roster/boxscore,
+records, venue/odds, and this specific game's own stat leaders with
+real headshots).
+
+Card shape (see _prompt/_parse): {"type", "name", "tag" (a short
+punchy category like "HOT HAND"/"CAREER HIGH"/"THE CALL-UP" — see
+_tag_category's own docstring for how this maps to a real color),
+"headline" (one bold statement), "stat_line" (one real high-impact
+metric as a phrase, not a number), "storyline", "photo"}. The Angle
+Priority Matrix (recent action > streaks/volatility > career/macro
+trends) and a "selective framing" rule are both baked into the prompt
+itself — a streak or career-trajectory angle is never forced onto a
+card just because the data exists for that player.
 
 Every card's photo is either a REAL ESPN headshot (matched back to the
 same structured data fed to the prompt — leaders_with_headshots/
@@ -42,6 +55,7 @@ invented or broken image, matching this app's "never fake what isn't
 real" rule everywhere else."""
 
 import json
+import re
 
 import espn_extras
 import groq_client
@@ -50,6 +64,13 @@ import scores_client
 import sports_client
 
 MAX_CARDS = 15
+# Session follow-up: "deeper statistical context — Hot Streaks, Cold
+# Streaks, Career-High/Career-Best Years, and Fall-Off/Regressive
+# Seasons." Bounds how many players get the extra 2 real ESPN calls
+# each (gamelog + career stats) — game_leaders is typically 6-8 real
+# entries already (this specific game's own real stat leaders), a
+# reasonable, real-data-driven cap rather than an arbitrary one.
+MAX_TREND_LOOKUPS = 8
 # Same shared "chatgpt" Groq account/budget pages_conflicts.py's own
 # gpt-oss-120b call already runs on — identical constants, not
 # independently re-tuned, since both features draw from the same real
@@ -87,25 +108,88 @@ def _remember(key: str, cards: list[dict]) -> None:
     persisted_state.save("pregame_storylines_cache", _cache)
 
 
+# ESPN's own headshot CDN path is /players/full/{id}.{ext} across
+# every sport confirmed this session (MLB/NHL/NFL) — real athlete ids
+# were never exposed by scores_client.leaders_with_headshots/fetch_
+# summary's own injuries shape, but they're sitting right there in
+# every headshot URL those already return, so pulling the id back out
+# is simpler than threading a new field through 2 other modules for
+# a value they already effectively carry.
+_HEADSHOT_ID_RE = re.compile(r"/players/full/(\d+)\.")
+
+
+def _athlete_id_from_headshot(url: str | None) -> str | None:
+    if not url:
+        return None
+    m = _HEADSHOT_ID_RE.search(url)
+    return m.group(1) if m else None
+
+
+def _clean_leader_name(who: str) -> str:
+    """scores_client.leaders_with_headshots's own "who" field is
+    "{name} · {team abbr}" (see that function's own f-string) — real
+    bug, caught live: _photo_lookup used to key its dict off this
+    exact string including the " · SEA" suffix, but the AI's own
+    "name" output (correctly just the player's name, per the prompt's
+    own instruction) never had that suffix, so every single game-
+    leader-sourced card silently missed its real photo despite one
+    being available. Stripped once here and reused everywhere this
+    module reads a leader's name, so the material block, the trend
+    lookups, and the photo dict all agree on the same clean string."""
+    return who.split(" · ")[0].strip() if who else who
+
+
+def _gather_trends(sport_key: str, game_leaders: list[dict]) -> list[dict]:
+    """Real recent-form (last 10 games) and career-pace (this season
+    vs. this player's own past seasons) context for tonight's actual
+    matchup leaders specifically — see espn_extras.recent_game_trend/
+    career_trajectory's own docstrings for exactly how each is
+    computed and why. Scoped to game_leaders (real players IN tonight's
+    game) rather than league_leaders (real players who mostly aren't)
+    — a hot/cold streak or career-year storyline only means something
+    tied to a player who's actually playing tonight. [] whenever
+    nothing here has an id to look up (see _athlete_id_from_headshot's
+    own comment) or neither function found anything real to report —
+    most players, most nights, correctly produce nothing."""
+    out = []
+    for leader in game_leaders[:MAX_TREND_LOOKUPS]:
+        aid = _athlete_id_from_headshot(leader.get("hshot"))
+        if not aid:
+            continue
+        meta = _SPORT_META[sport_key]
+        try:
+            recent = espn_extras.recent_game_trend(meta["sport"], meta["league"], aid)
+            trajectory = espn_extras.career_trajectory(meta["sport"], meta["league"], aid)
+        except Exception:
+            continue
+        if recent or trajectory:
+            out.append({"name": _clean_leader_name(leader.get("who")), "recent": recent, "trajectory": trajectory})
+    return out
+
+
 def _gather_material(sport_key: str, match: dict | None) -> dict:
     """Every real fact this feature draws from, gathered once per call
     — transactions/news/league-leaders from espn_extras (this module's
     own new data), plus whatever match/fetch_summary already has
     (injuries, this game's own leaders w/ headshots, records, venue,
-    odds — the exact same source game_blurb.py's blurb already reads).
+    odds — the exact same source game_blurb.py's blurb already reads),
+    plus (session follow-up) real recent-form/career-pace trends for
+    tonight's own matchup leaders (see _gather_trends's own docstring).
     {} fields throughout rather than raising — a thin payload on a
     quiet day just means fewer real cards, never a crash (same
     graceful-degradation rule every other AI-context builder in this
     app already follows)."""
     meta = _SPORT_META[sport_key]
     summary = scores_client.fetch_summary(match) if match else {}
+    game_leaders = scores_client.leaders_with_headshots(match) if match else []
     return {
         "transactions": espn_extras.fetch_transactions(meta["sport"], meta["league"], meta["team_id"]),
         "news": espn_extras.fetch_team_news(meta["sport"], meta["league"], meta["team_id"]),
         "league_leaders": espn_extras.fetch_league_leaders(meta["sport"], meta["league"], [meta["leader_cat"]]),
-        "game_leaders": scores_client.leaders_with_headshots(match) if match else [],
+        "game_leaders": game_leaders,
         "injuries": summary.get("injuries") or [],
         "competition": (match or {}).get("competition") or {},
+        "trends": _gather_trends(sport_key, game_leaders),
     }
 
 
@@ -123,7 +207,16 @@ def _photo_lookup(material: dict) -> dict[str, str]:
     for leader in material["game_leaders"]:
         who, hshot = leader.get("who"), leader.get("hshot")
         if who and hshot:
+            # Registered under both the raw "{name} · {abbr}" string
+            # (scores_client.leaders_with_headshots's own format, kept
+            # in the material text below for real team-context value)
+            # and the cleaned bare name — the prompt tells the AI to
+            # use the name "as it appears," but a reasoning model
+            # reasonably strips the " · TEAM" suffix as metadata
+            # anyway (confirmed live), so this matches either way
+            # rather than depending on which one it picks.
             photos[who.lower()] = hshot
+            photos[_clean_leader_name(who).lower()] = hshot
     for block in material["injuries"]:
         for inj in block.get("injuries") or []:
             athlete = inj.get("athlete") or {}
@@ -192,54 +285,118 @@ def _material_block(material: dict) -> str:
         name, record = (c.get("team") or {}).get("displayName"), scores_client.team_record(c)
         if name and record:
             lines.append(f"{name} record: {record}")
+    # Session follow-up: "deeper statistical context — Hot Streaks,
+    # Cold Streaks, Career-High/Career-Best Years, and Fall-Off/
+    # Regressive Seasons." Real, computed (not AI-invented) recent-form
+    # and career-pace numbers for tonight's own matchup leaders — see
+    # _gather_trends's own docstring for exactly what's real here and
+    # what it's scoped to.
+    if material["trends"]:
+        lines.append(
+            "Real computed recent-form and career-trajectory data for specific players in tonight's game "
+            "(from actual game logs and season-by-season history, not estimated):"
+        )
+        for t in material["trends"]:
+            parts = []
+            if t["recent"]:
+                stat_bits = ", ".join(f"{v} {k}" for k, v in t["recent"]["stats"].items())
+                parts.append(f"last {t['recent']['games']} games: {stat_bits}")
+            if t["trajectory"]:
+                tr = t["trajectory"]
+                word = "a genuine career year" if tr["direction"] == "career_year" else "a real fall-off"
+                pace_word = "value" if tr["label"] in ("AVG", "OPS", "OBP", "SLG") else "pace"
+                parts.append(
+                    f"{tr['label']} {pace_word} {tr['current_pace']} this season ({tr['games_played']} games) vs. "
+                    f"career-best {tr['career_best']} in {tr['career_best_year']} — {word}"
+                )
+            if parts:
+                lines.append(f"- {t['name']}: " + "; ".join(parts))
     return "\n".join(lines)
 
 
 def _prompt(team_label: str, away_name: str, home_name: str, opponent: str, material: dict) -> str:
     block = _material_block(material)
     return (
-        f"You're building a pregame warm-up show for {team_label} vs {opponent} ({away_name} at {home_name}), "
-        f"the same kind of thing a real broadcast does before puck drop/first pitch/kickoff — a set of real "
-        f"storylines and players to watch, not a dry recap.\n\n"
+        f"You are a Lead Sports Broadcast Producer building a pregame warm-up show for {team_label} vs "
+        f"{opponent} ({away_name} at {home_name}) — the same kind of thing a real broadcast does before "
+        f"puck drop/first pitch/kickoff, a set of real storylines and players to watch, not a dry recap.\n\n"
         f"Below are real facts pulled straight from ESPN — recent roster moves, team news, league-wide "
-        f"stat leaders, tonight's own matchup leaders, and injuries. Use ONLY what's actually listed — "
-        f"never invent a transaction, stat, injury, or storyline that isn't in this material. If a fact "
-        f"below describes something genuinely notable (a call-up making a debut, a trade, a player leading "
-        f"the league in something, a real hot or cold streak, a return from injury), that's exactly the "
-        f"kind of thing to turn into a card — routine roster paperwork with nothing interesting about it "
-        f"doesn't need its own card. IMPORTANT: the league-wide leaders section lists players from around "
-        f"the whole league for context/comparison — most of them are NOT on {away_name} or {home_name} and "
-        f"are not playing tonight. Check each player's own team abbreviation before writing about them; "
-        f"never say or imply someone is playing in, affecting, or facing off in tonight's game unless "
-        f"their team abbreviation actually matches {away_name} or {home_name}.\n\n"
+        f"stat leaders, tonight's own matchup leaders, injuries, and (for some of tonight's own players) "
+        f"real computed recent-form and career-trajectory numbers. Use ONLY what's actually listed — never "
+        f"invent a transaction, stat, streak, career comparison, injury, or storyline that isn't in this "
+        f"material. IMPORTANT: the league-wide leaders section lists players from around the whole league "
+        f"for context/comparison — most of them are NOT on {away_name} or {home_name} and are not playing "
+        f"tonight. Check each player's own team abbreviation before writing about them; never say or imply "
+        f"someone is playing in, affecting, or facing off in tonight's game unless their team abbreviation "
+        f"actually matches {away_name} or {home_name}.\n\n"
         f"{block}\n\n"
+        f"ANGLE PRIORITY — when material supports more than one true angle for the same player, prefer in "
+        f"this order: (1) high-impact/recent action — a recall, a debut, a major reinstatement, a late "
+        f"lineup change; (2) performance volatility — a real hot streak (5+ games of real production) or a "
+        f"pronounced slump; (3) macro milestones — a real career-high pace or a real fall-off against this "
+        f"player's own career benchmarks. SELECTIVE FRAMING — do NOT force a streak or career-trajectory "
+        f"angle onto every card just because the data exists for that player; only use it when it's "
+        f"genuinely the most compelling real angle for tonight. A card doesn't need a streak/trajectory "
+        f"angle at all if a call-up, trade, or injury-return story is the stronger real one.\n\n"
         f"Produce up to {MAX_CARDS} cards, fewer if the material above doesn't genuinely support more — "
         f"never pad with generic filler to hit the number. Each card is EITHER about one specific player "
         f"(a real name from the material above) OR one team-level stat (our team or {opponent}). This is a "
-        f"full-screen broadcast graphic, one card on screen at a time — give it real weight, like a "
-        f"professional pregame show lower-third, not a caption. For each card give:\n"
+        f"full-screen broadcast graphic, one card on screen at a time — give it real stadium-grade weight, "
+        f"like a professional pregame show lower-third, not a caption. For each card give:\n"
         f'- "type": "player" or "team"\n'
         f'- "name": the exact real name (player\'s real name, or the team\'s real display name) as it '
         f"appears in the material above — this is used to look up a real photo, so it must match exactly\n"
-        f'- "role": a short real descriptor (position + context, e.g. "RHP · Recalled from AAA", or blank '
-        f'for a team card)\n'
-        f'- "stats": 2-4 REAL individual NUMBERS from the material as separate {{"label", "value"}} pairs — '
-        f'"value" is always a short number/figure (a stat like 2.35, a record like "66-70", a percentage), '
-        f'"label" is a short all-caps-style caption for it (e.g. [{{"label": "ERA", "value": "2.35"}}, '
-        f'{{"label": "K", "value": "12"}}, {{"label": "STARTS", "value": "3"}}] or, for a league leader\'s '
-        f'full stat line, pick out the 2-4 that matter most rather than cramming everything in). This is '
-        f"NOT the place for a player name, an injury status, or any other non-numeric fact — those belong "
-        f'in "role" or "storyline" instead, never as a "stats" value. Never invent a stat that isn\'t in '
-        f"the material — fewer real stats beats a made-up one, and it's fine to leave stats empty for a "
-        f"card whose real material is a name/status/headline rather than a number (e.g. an injury-return "
-        f"or call-up card with no numeric stat line to show yet).\n"
-        f'- "storyline": 2-3 sentences, broadcast pregame-show voice, explaining why this is worth '
-        f"watching tonight — this has real room now, use it, don't pad it thin\n\n"
+        f'- "tag": 2-3 words MAX, high-energy uppercase, the category of storyline this is — e.g. '
+        f'"HOT HAND", "COLD STREAK", "BOUNCE-BACK WATCH", "CAREER HIGH", "FALL-OFF WATCH", "THE CALL-UP", '
+        f'"TRADE ACQUISITION", "BACK FROM INJURY", "MATCHUP LEADER". Pick whichever real category actually '
+        f"fits this card's material — don't force one of these examples if a better 2-3 word tag fits the "
+        f"real story better.\n"
+        f'- "headline": one bold, punchy statement, 4-7 words, real broadcast-graphic energy (not a full '
+        f'sentence, no ending period) — e.g. "Locked In At The Plate", "Making His NHL Debut Tonight"\n'
+        f'- "stat_line": ONE real high-impact metric, as a short punchy phrase, not a bare number — e.g. '
+        f'"8 HRs In Last 12 Games", "Pacing For 35 HR (Career Best)", "0-For-14 At The Plate", "Recalled '
+        f'From Buffalo (AAA)". Pull this from the real material above; never invent a figure that isn\'t '
+        f"there. If there's genuinely no single number worth leading with (e.g. a pure call-up/trade story "
+        f'with no stat line yet), a short real status phrase is fine instead (e.g. "First MLB Call-Up").\n'
+        f'- "storyline": EXACTLY 1 or 2 sentences, punchy and analytical, connecting this player/team\'s '
+        f"real current form or trajectory directly to tonight's matchup — not a generic bio.\n\n"
         f'Respond with ONLY a JSON array, no markdown fences, no other text, in exactly this shape:\n'
-        f'[{{"type": "player", "name": "CJ Van Eyk", "role": "RHP · Recalled from AAA", '
-        f'"stats": [{{"label": "ERA", "value": "2.35"}}, {{"label": "STARTS", "value": "3"}}], '
+        f'[{{"type": "player", "name": "CJ Van Eyk", "tag": "THE CALL-UP", '
+        f'"headline": "Fresh Arm Joins The Bullpen", "stat_line": "Recalled From Buffalo (AAA)", '
         f'"storyline": "..."}}]'
     )
+
+
+# Session follow-up's own tag examples ("HOT HAND" vs "BOUNCE-BACK
+# WATCH") each imply a real color meaning — kept as a keyword
+# classifier over whatever free-text tag the AI actually wrote, rather
+# than a separate enum field the AI would have to keep in sync with
+# its own "tag" text (one field to get right, not two that could
+# disagree). Order matters: checked top to bottom, first match wins.
+_TAG_CATEGORY_KEYWORDS = [
+    # "cold" checked BEFORE "hot" — real bug, caught live: "COLD
+    # STREAK" contains the substring "STREAK", one of hot's own
+    # keywords, so checking hot first miscategorized a real cold-
+    # streak tag with the hot (wrong) color. "HOT"-family tags never
+    # contain "COLD", so this order has no equivalent reverse collision.
+    ("cold", ("COLD", "SLUMP", "BOUNCE", "REGRESS", "FALL-OFF", "FALL OFF", "COOL")),
+    ("hot", ("HOT", "STREAK", "SURGE", "ROLL")),
+    ("career", ("CAREER", "MILESTONE", "BEST", "RECORD")),
+    ("callup", ("CALL-UP", "CALLUP", "DEBUT", "RECALL", "TRADE", "ACQUISITION", "SIGNING")),
+    ("injury", ("INJURY", "IL", "RETURN", "REINSTATED", "ACTIVATED")),
+]
+
+
+def _tag_category(tag: str) -> str:
+    """Which of a small set of real color categories this tag belongs
+    to, by keyword — "hot"/"cold"/"career"/"callup"/"injury"/"default".
+    Pure presentation grouping (see theme.py's own .jumbo-storyline-tag-*
+    classes) — never changes what's actually shown, only its color."""
+    upper = tag.upper()
+    for category, keywords in _TAG_CATEGORY_KEYWORDS:
+        if any(kw in upper for kw in keywords):
+            return category
+    return "default"
 
 
 def _parse(raw_text: str, photos: dict[str, str], logos: dict[str, str]) -> list[dict] | None:
@@ -264,15 +421,9 @@ def _parse(raw_text: str, photos: dict[str, str], logos: dict[str, str]) -> list
             continue
         if card_type not in ("player", "team") or not name or not storyline:
             continue
-        role = str(item.get("role") or "").strip()
-        stats = []
-        for s in (item.get("stats") or [])[:4]:
-            try:
-                label, value = str(s["label"]).strip(), str(s["value"]).strip()
-            except (KeyError, TypeError):
-                continue
-            if label and value:
-                stats.append({"label": label, "value": value})
+        tag = str(item.get("tag") or "").strip().upper()
+        headline = str(item.get("headline") or "").strip()
+        stat_line = str(item.get("stat_line") or "").strip()
         # Real headshot if this exact name matched a structured source
         # (leaders_with_headshots/injuries), or a real team logo if the
         # name itself IS one of today's two teams (a team-level card,
@@ -290,8 +441,10 @@ def _parse(raw_text: str, photos: dict[str, str], logos: dict[str, str]) -> list
             {
                 "type": card_type,
                 "name": name,
-                "role": role,
-                "stats": stats,
+                "tag": tag,
+                "tag_category": _tag_category(tag) if tag else "default",
+                "headline": headline,
+                "stat_line": stat_line,
                 "storyline": storyline,
                 "photo": photo,
             }
