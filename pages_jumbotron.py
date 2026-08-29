@@ -565,8 +565,15 @@ def _pregame_extra_html(sport: str, game_id: int) -> str:
     return ""
 
 
-_STORYLINE_ROTATE_SECONDS = 10
-_STORYLINE_CARDS_PER_SET = 3
+# Session follow-up: "the cards should be big and take up the whole
+# bottom part of the featured board and only show one card at a time
+# and make them show a little bit longer... make it look professional."
+# One full-width card instead of 3 side by side (was
+# _STORYLINE_CARDS_PER_SET=3/10s) — the same int(now_ts // N) %
+# len(...) rotation, just a page size of 1 and a longer hold so there's
+# real time to actually read each one.
+_STORYLINE_ROTATE_SECONDS = 22
+_STORYLINE_CARDS_PER_SET = 1
 
 
 def _storyline_cards_html(sport: str, game: dict, team_label: str, match: dict | None, now_ts: float) -> str:
@@ -588,7 +595,17 @@ def _storyline_cards_html(sport: str, game: dict, team_label: str, match: dict |
     _around_html already use, no new mechanism. _TEAM_FULL_NAME is
     defined further down this file (see that dict's own comment) —
     fine to reference here since Python only resolves it when this
-    function actually runs, well after the whole module has loaded."""
+    function actually runs, well after the whole module has loaded.
+
+    Session follow-up: "big... take up the whole bottom part... one
+    card at a time... their actual stats... look professional." One
+    full-width horizontal card now (photo, name/role, a real stat
+    grid, storyline) instead of 3 small ones sharing the row — same
+    big-number/small-caption stat-block language _current_matchup_html's
+    own broadcast-style card already uses (.jumbo-live-matchup-stat/
+    -label), reused here as its own .jumbo-storyline-stat-* set since
+    this card's overall shape (horizontal, one wide row) differs from
+    that one's (vertical, two narrow columns)."""
     our_name = _TEAM_FULL_NAME[sport]
     away_name = our_name if not game["is_home"] else game["opponent"]
     home_name = game["opponent"] if not game["is_home"] else our_name
@@ -598,39 +615,46 @@ def _storyline_cards_html(sport: str, game: dict, team_label: str, match: dict |
     if not cards:
         return ""
 
-    page_size = _STORYLINE_CARDS_PER_SET
-    pages = [cards[i : i + page_size] for i in range(0, len(cards), page_size)]
-    index = int(now_ts // _STORYLINE_ROTATE_SECONDS) % len(pages)
-    page = pages[index]
+    index = int(now_ts // _STORYLINE_ROTATE_SECONDS) % len(cards)
+    c = cards[index]
 
-    card_parts = []
-    for c in page:
-        if c.get("photo"):
-            photo_html = f'<img class="jumbo-storyline-photo" src="{html.escape(c["photo"])}" />'
-        else:
-            # No real photo for this card's subject (see pregame_
-            # storylines._parse's own docstring on when this happens —
-            # most often a transaction-sourced storyline; ESPN's own
-            # feed there is plain prose with no athlete id to look up
-            # a headshot from) — a plain initial circle instead of a
-            # broken image or a misleadingly-wrong team's logo.
-            initial = html.escape(c["name"][:1].upper()) if c["name"] else "?"
-            photo_html = f'<div class="jumbo-storyline-photo jumbo-storyline-photo-blank">{initial}</div>'
-        role_html = f'<div class="jumbo-storyline-role">{html.escape(c["role"])}</div>' if c.get("role") else ""
-        stat_html = f'<div class="jumbo-storyline-stat">{html.escape(c["stat_line"])}</div>' if c.get("stat_line") else ""
-        card_parts.append(
-            f'<div class="jumbo-storyline-card">'
-            f'<div class="jumbo-storyline-photowrap">{photo_html}</div>'
-            f'<div class="jumbo-storyline-name">{html.escape(c["name"])}</div>'
-            f"{role_html}{stat_html}"
-            f'<div class="jumbo-storyline-text">{html.escape(c["storyline"])}</div>'
-            f"</div>"
-        )
+    if c.get("photo"):
+        photo_html = f'<img class="jumbo-storyline-photo" src="{html.escape(c["photo"])}" />'
+    else:
+        # No real photo for this card's subject (see pregame_
+        # storylines._parse's own docstring on when this happens —
+        # most often a transaction-sourced storyline; ESPN's own
+        # feed there is plain prose with no athlete id to look up
+        # a headshot from) — a plain initial circle instead of a
+        # broken image or a misleadingly-wrong team's logo.
+        initial = html.escape(c["name"][:1].upper()) if c["name"] else "?"
+        photo_html = f'<div class="jumbo-storyline-photo jumbo-storyline-photo-blank">{initial}</div>'
+    role_html = f'<div class="jumbo-storyline-role">{html.escape(c["role"])}</div>' if c.get("role") else ""
+    stat_blocks = "".join(
+        f'<div class="jumbo-storyline-stat-block">'
+        f'<div class="jumbo-storyline-stat-value">{html.escape(s["value"])}</div>'
+        f'<div class="jumbo-storyline-stat-label">{html.escape(s["label"])}</div>'
+        f"</div>"
+        for s in c.get("stats") or []
+    )
+    stats_html = f'<div class="jumbo-storyline-stats">{stat_blocks}</div>' if stat_blocks else ""
+    card_parts = [
+        f'<div class="jumbo-storyline-card">'
+        f'<div class="jumbo-storyline-photowrap">{photo_html}</div>'
+        f'<div class="jumbo-storyline-main">'
+        f'<div class="jumbo-storyline-header">'
+        f'<div class="jumbo-storyline-id"><div class="jumbo-storyline-name">{html.escape(c["name"])}</div>{role_html}</div>'
+        f"{stats_html}"
+        f"</div>"
+        f'<div class="jumbo-storyline-text">{html.escape(c["storyline"])}</div>'
+        f"</div>"
+        f"</div>"
+    ]
     dots_html = ""
-    if len(pages) > 1:
+    if len(cards) > 1:
         dots = "".join(
             f'<span class="jumbo-storyline-dot{" jumbo-storyline-dot-active" if i == index else ""}"></span>'
-            for i in range(len(pages))
+            for i in range(len(cards))
         )
         dots_html = f'<div class="jumbo-storyline-dots">{dots}</div>'
     return f'<div class="jumbo-storyline-cards">{"".join(card_parts)}</div>{dots_html}'

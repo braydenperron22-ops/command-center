@@ -166,7 +166,12 @@ def _material_block(material: dict) -> str:
         for n in material["news"]:
             lines.append(f"- {n['headline']}" + (f" — {n['description']}" if n["description"] else ""))
     for cat, entries in material["league_leaders"].items():
-        lines.append(f"League-wide {cat} leaders right now:")
+        # Explicit "NOT necessarily in tonight's game" framing — real
+        # bug, caught live: without this, the AI wrote a storyline for
+        # Matt Olson (Atlanta) claiming "the Mariners will lean on his
+        # bat," inventing a roster spot he doesn't have just because he
+        # was listed near this game's own material.
+        lines.append(f"League-wide {cat} leaders right now (these players are NOT necessarily on either team playing tonight — check the team abbreviation before implying someone is in this game):")
         for e in entries:
             lines.append(f"- {e['name']} ({e['team_abbr']}): {e['display']}")
     if material["game_leaders"]:
@@ -202,24 +207,38 @@ def _prompt(team_label: str, away_name: str, home_name: str, opponent: str, mate
         f"below describes something genuinely notable (a call-up making a debut, a trade, a player leading "
         f"the league in something, a real hot or cold streak, a return from injury), that's exactly the "
         f"kind of thing to turn into a card — routine roster paperwork with nothing interesting about it "
-        f"doesn't need its own card.\n\n"
+        f"doesn't need its own card. IMPORTANT: the league-wide leaders section lists players from around "
+        f"the whole league for context/comparison — most of them are NOT on {away_name} or {home_name} and "
+        f"are not playing tonight. Check each player's own team abbreviation before writing about them; "
+        f"never say or imply someone is playing in, affecting, or facing off in tonight's game unless "
+        f"their team abbreviation actually matches {away_name} or {home_name}.\n\n"
         f"{block}\n\n"
         f"Produce up to {MAX_CARDS} cards, fewer if the material above doesn't genuinely support more — "
         f"never pad with generic filler to hit the number. Each card is EITHER about one specific player "
-        f"(a real name from the material above) OR one team-level stat (our team or {opponent}). For each "
-        f"card give:\n"
+        f"(a real name from the material above) OR one team-level stat (our team or {opponent}). This is a "
+        f"full-screen broadcast graphic, one card on screen at a time — give it real weight, like a "
+        f"professional pregame show lower-third, not a caption. For each card give:\n"
         f'- "type": "player" or "team"\n'
         f'- "name": the exact real name (player\'s real name, or the team\'s real display name) as it '
         f"appears in the material above — this is used to look up a real photo, so it must match exactly\n"
         f'- "role": a short real descriptor (position + context, e.g. "RHP · Recalled from AAA", or blank '
         f'for a team card)\n'
-        f'- "stat_line": one real stat or fact from the material (e.g. "2.35 ERA, 12 K in 3 AAA starts", '
-        f'or "40 HR — leads MLB")\n'
-        f'- "storyline": 1-2 sentences, broadcast pregame-show voice, explaining why this is worth '
-        f"watching tonight\n\n"
+        f'- "stats": 2-4 REAL individual NUMBERS from the material as separate {{"label", "value"}} pairs — '
+        f'"value" is always a short number/figure (a stat like 2.35, a record like "66-70", a percentage), '
+        f'"label" is a short all-caps-style caption for it (e.g. [{{"label": "ERA", "value": "2.35"}}, '
+        f'{{"label": "K", "value": "12"}}, {{"label": "STARTS", "value": "3"}}] or, for a league leader\'s '
+        f'full stat line, pick out the 2-4 that matter most rather than cramming everything in). This is '
+        f"NOT the place for a player name, an injury status, or any other non-numeric fact — those belong "
+        f'in "role" or "storyline" instead, never as a "stats" value. Never invent a stat that isn\'t in '
+        f"the material — fewer real stats beats a made-up one, and it's fine to leave stats empty for a "
+        f"card whose real material is a name/status/headline rather than a number (e.g. an injury-return "
+        f"or call-up card with no numeric stat line to show yet).\n"
+        f'- "storyline": 2-3 sentences, broadcast pregame-show voice, explaining why this is worth '
+        f"watching tonight — this has real room now, use it, don't pad it thin\n\n"
         f'Respond with ONLY a JSON array, no markdown fences, no other text, in exactly this shape:\n'
         f'[{{"type": "player", "name": "CJ Van Eyk", "role": "RHP · Recalled from AAA", '
-        f'"stat_line": "2.35 ERA in 3 AAA starts", "storyline": "..."}}]'
+        f'"stats": [{{"label": "ERA", "value": "2.35"}}, {{"label": "STARTS", "value": "3"}}], '
+        f'"storyline": "..."}}]'
     )
 
 
@@ -246,7 +265,14 @@ def _parse(raw_text: str, photos: dict[str, str], logos: dict[str, str]) -> list
         if card_type not in ("player", "team") or not name or not storyline:
             continue
         role = str(item.get("role") or "").strip()
-        stat_line = str(item.get("stat_line") or "").strip()
+        stats = []
+        for s in (item.get("stats") or [])[:4]:
+            try:
+                label, value = str(s["label"]).strip(), str(s["value"]).strip()
+            except (KeyError, TypeError):
+                continue
+            if label and value:
+                stats.append({"label": label, "value": value})
         # Real headshot if this exact name matched a structured source
         # (leaders_with_headshots/injuries), or a real team logo if the
         # name itself IS one of today's two teams (a team-level card,
@@ -265,7 +291,7 @@ def _parse(raw_text: str, photos: dict[str, str], logos: dict[str, str]) -> list
                 "type": card_type,
                 "name": name,
                 "role": role,
-                "stat_line": stat_line,
+                "stats": stats,
                 "storyline": storyline,
                 "photo": photo,
             }
