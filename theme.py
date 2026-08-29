@@ -4323,6 +4323,109 @@ html, body, [class*="css"] {
 .jumbo-top3-score-num { font-family: var(--label); font-size: 34px; line-height: 1; color: var(--bone); font-variant-numeric: tabular-nums; }
 .jumbo-top3-card-best .jumbo-top3-score-num { color: var(--led); }
 .jumbo-top3-score-label { font-size: 9px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--mut-2); margin-top: 2px; }
+/* Pregame warm-up show — session request: "make it almost like a
+   show, like a pregame show," replacing the pregame board's plain AI
+   Preview blurb and season-stat-leaders card with a rotating set of
+   real player/team storyline cards (see pages_jumbotron._storyline_
+   cards_html/pregame_storylines.py for the data story — real
+   transactions/news/league-leaders/injuries fed to an AI that's
+   forbidden from inventing anything not in them). Same photo-circle +
+   dark-card visual language as .jumbo-top3-card above (postgame's "3
+   best players") but taller, with real wrapped multi-line storyline
+   text below instead of a single-line ellipsis summary — this is
+   meant to be read, not just skimmed. Sizes here are a first pass,
+   not yet measured against the real space this replaces (blurb_html +
+   leaders_html's combined slot inside .jumbo-board-body's own fixed
+   budget) — see this session's own jumbotron-height-budget history
+   (.jumbo-matchup/.jumbo-leaders starving each other, twice) before
+   trusting these numbers without a live getBoundingClientRect check. */
+.jumbo-storyline-cards { display: flex; gap: 16px; }
+.jumbo-storyline-card {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 6px;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    /* Confirmed live: with 14px/56px this board's own space-evenly
+       layout (.jumbo-board-body) left a big flat gap above these
+       cards instead of the "take up a good chunk of the place" the
+       session request asked for — sized up so the real content fills
+       more of what's actually available, verified against the real
+       901px board height, not guessed. 22px measured live at just
+       3.9px of clearance above .jumbo-board-body's own real bottom
+       edge (983px) — too close given how many real bugs this exact
+       board's shared height budget has already produced this session
+       (see .jumbo-matchup's own comment history); pulled back to 18px
+       for real margin instead of the exact minimum. */
+    padding: 18px 16px;
+}
+.jumbo-storyline-photowrap { width: 68px; height: 68px; margin-bottom: 2px; }
+.jumbo-storyline-photo {
+    width: 68px; height: 68px;
+    border-radius: 50%;
+    object-fit: cover;
+    object-position: top;
+    background: #141A25;
+    border: 2px solid var(--edge);
+}
+/* No real headshot available for this card's subject (see pages_
+   jumbotron._storyline_cards_html's own comment on when this
+   happens — most often a transaction-sourced storyline) — an initial
+   letter on a plain dark circle rather than a broken image or a
+   misleadingly-wrong team's logo. */
+.jumbo-storyline-photo-blank {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--label);
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--mut-2);
+}
+.jumbo-storyline-name {
+    font-family: var(--label);
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--bone);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+.jumbo-storyline-role {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--mut-2);
+}
+.jumbo-storyline-stat {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--led);
+}
+.jumbo-storyline-text {
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--mut);
+    margin-top: 4px;
+    /* Real wrapped multi-line text, capped so one long AI response
+       can't blow this card's own height and starve its siblings —
+       the exact class of bug this board's own height-budget history
+       already produced twice elsewhere this session. */
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.jumbo-storyline-dots { display: flex; justify-content: center; gap: 6px; margin-top: 10px; }
+.jumbo-storyline-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.15); }
+.jumbo-storyline-dot-active { background: var(--led); }
 /* Current batter/pitcher, live-game replacement for the Top Performers
    card — session request: "during the game can you make the top
    performers tab show current pitcher and batter and their stats use

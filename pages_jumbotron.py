@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 import game_blurb
+import pregame_storylines
 import scores_client
 import sports_client
 import ufc_client
@@ -562,6 +563,77 @@ def _pregame_extra_html(sport: str, game_id: int) -> str:
         venue = sports_client.fetch_nhl_venue(game_id)
         return f'<div class="jumbo-pregame-venue">{html.escape(venue)}</div>' if venue else ""
     return ""
+
+
+_STORYLINE_ROTATE_SECONDS = 10
+_STORYLINE_CARDS_PER_SET = 3
+
+
+def _storyline_cards_html(sport: str, game: dict, team_label: str, match: dict | None, now_ts: float) -> str:
+    """Pregame warm-up show — session request: "make it almost like a
+    show, like a pregame show," replacing the plain AI Preview blurb
+    and season-stat-leaders card with real player/team storylines (see
+    pregame_storylines.py's own docstring for the full data story:
+    transactions, team news, league-wide leaders, injuries, this
+    game's own leaders — a call-up making their debut is exactly the
+    kind of thing this surfaces, the real inspiration for this whole
+    feature). "" whenever there's nothing real to build a card from
+    yet — same "just omit it" rule every other optional jumbotron
+    panel already follows.
+
+    Cards are generated ONCE per game_id (pregame_storylines' own
+    persisted, restart-surviving cache) — this function only handles
+    the ALREADY-generated set's rotation, same int(now_ts // N) %
+    len(...) pattern _top_performers_html/_rotating_standings_html/
+    _around_html already use, no new mechanism. _TEAM_FULL_NAME is
+    defined further down this file (see that dict's own comment) —
+    fine to reference here since Python only resolves it when this
+    function actually runs, well after the whole module has loaded."""
+    our_name = _TEAM_FULL_NAME[sport]
+    away_name = our_name if not game["is_home"] else game["opponent"]
+    home_name = game["opponent"] if not game["is_home"] else our_name
+    cards = pregame_storylines.get_storyline_cards(
+        sport, game["game_id"], team_label, away_name, home_name, game["opponent"], match
+    )
+    if not cards:
+        return ""
+
+    page_size = _STORYLINE_CARDS_PER_SET
+    pages = [cards[i : i + page_size] for i in range(0, len(cards), page_size)]
+    index = int(now_ts // _STORYLINE_ROTATE_SECONDS) % len(pages)
+    page = pages[index]
+
+    card_parts = []
+    for c in page:
+        if c.get("photo"):
+            photo_html = f'<img class="jumbo-storyline-photo" src="{html.escape(c["photo"])}" />'
+        else:
+            # No real photo for this card's subject (see pregame_
+            # storylines._parse's own docstring on when this happens —
+            # most often a transaction-sourced storyline; ESPN's own
+            # feed there is plain prose with no athlete id to look up
+            # a headshot from) — a plain initial circle instead of a
+            # broken image or a misleadingly-wrong team's logo.
+            initial = html.escape(c["name"][:1].upper()) if c["name"] else "?"
+            photo_html = f'<div class="jumbo-storyline-photo jumbo-storyline-photo-blank">{initial}</div>'
+        role_html = f'<div class="jumbo-storyline-role">{html.escape(c["role"])}</div>' if c.get("role") else ""
+        stat_html = f'<div class="jumbo-storyline-stat">{html.escape(c["stat_line"])}</div>' if c.get("stat_line") else ""
+        card_parts.append(
+            f'<div class="jumbo-storyline-card">'
+            f'<div class="jumbo-storyline-photowrap">{photo_html}</div>'
+            f'<div class="jumbo-storyline-name">{html.escape(c["name"])}</div>'
+            f"{role_html}{stat_html}"
+            f'<div class="jumbo-storyline-text">{html.escape(c["storyline"])}</div>'
+            f"</div>"
+        )
+    dots_html = ""
+    if len(pages) > 1:
+        dots = "".join(
+            f'<span class="jumbo-storyline-dot{" jumbo-storyline-dot-active" if i == index else ""}"></span>'
+            for i in range(len(pages))
+        )
+        dots_html = f'<div class="jumbo-storyline-dots">{dots}</div>'
+    return f'<div class="jumbo-storyline-cards">{"".join(card_parts)}</div>{dots_html}'
 
 
 def _win_probability_html(sport: str, match: dict | None, away: dict, home: dict) -> str:
@@ -1836,11 +1908,21 @@ def _board_html(state: dict, now: datetime) -> str:
         # pregame board rather than something worth faking.
         if not neutral:
             situation += _pregame_extra_html(sport, game["game_id"])
-        blurb_html = (
-            _blurb_html_neutral(sport, game, postgame=False)
-            if neutral
-            else _blurb_html(sport, game, league["label"].title(), postgame=False, status=status)
-        )
+        # Session request: "a completely new experience... like a
+        # pregame show" — replaces the plain AI Preview blurb AND the
+        # season-stat-leaders card (leaders_html, set above this phase
+        # split) with a rotating set of real player/team storyline
+        # cards. Neutral (semis/finals) games keep the original blurb —
+        # pregame_storylines' own material-gathering is built entirely
+        # around one of OUR 3 tracked teams (espn_extras.fetch_
+        # transactions/fetch_team_news/fetch_league_leaders all take a
+        # specific team id), not a "two teams we have no stake in"
+        # shape the way _blurb_html_neutral already handles.
+        if neutral:
+            blurb_html = _blurb_html_neutral(sport, game, postgame=False)
+        else:
+            blurb_html = ""
+            leaders_html = _storyline_cards_html(sport, game, league["label"].title(), match, time.time())
         # Session request: "can we use money line to get approximate
         # win odds" — ESPN's own live win-probability model is always
         # None pregame (_win_probability_html falls back to the
