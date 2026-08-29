@@ -126,8 +126,25 @@ COUNTDOWN_WINDOW_MINUTES = 60
 # A game's state stays "upcoming" briefly past its scheduled start
 # (delays, ceremonies, the feed just lagging) — keep the headline up as
 # "any minute now" for this long past the scheduled time rather than
-# having it vanish right at the most anticipatory moment.
-COUNTDOWN_GRACE_MINUTES = 15
+# having it vanish right at the most anticipatory moment. Also governs
+# how long takeover_state() below holds the jumbotron open across that
+# same gap — was 15, bumped after a real live case (Jays/Mariners,
+# 2026-08-29): first pitch was scheduled 3:07pm, but the game was
+# genuinely still ESPN's own real "Warmup" detail_state at 3:28pm — 21
+# minutes past scheduled start, already outside the old 15-minute
+# grace window — so takeover_state() returned None and the kiosk
+# dropped out of jumbotron mode mid-warmup, back to normal rotation,
+# for a game that was very much still about to start (confirmed via
+# direct fetch_jays() check: state="upcoming", detail_state="Warmup").
+# User initially suspected an active severe thunderstorm warning was
+# responsible — checked directly, it wasn't (no code path connects EC
+# alert severity to takeover/page state at all; weather alerts only
+# ever add a toast during a takeover, see weather_alerts_bar.py's own
+# module docstring) — this ordinary delayed-first-pitch case was the
+# real, unrelated cause. 45 gives real headroom for a genuine delay
+# without holding a takeover open indefinitely if a game is actually
+# postponed for the day.
+COUNTDOWN_GRACE_MINUTES = 45
 
 # The minimum consecutive-strikeout run worth interrupting the screen
 # for — 2 in a row is routine, 3 is a pitcher genuinely dealing.
