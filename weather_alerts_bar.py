@@ -7,7 +7,6 @@ has anything active for the region."""
 
 import html
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -17,7 +16,7 @@ import ec_storm_timing
 import groq_client
 import kiosk_tts
 import persisted_state
-from config import EXTREME_COLD_THRESHOLD_C, EXTREME_HEAT_THRESHOLD_C, TIMEZONE
+from config import EXTREME_COLD_THRESHOLD_C, EXTREME_HEAT_THRESHOLD_C
 
 # Session request: "how can we make the severe weather alerts a little
 # bit more menacing... they're just on and then talking" — tried a real
@@ -289,16 +288,31 @@ def get_new_alerts(now: datetime) -> list[dict]:
     severity = _severity(alert["title"])
     headline = _friendly_headline(alert["title"])
     phase_info = ec_storm_timing.storm_phase(now, alert["title"], severity)
+    # Session follow-up: "make it so that the clearing [time] number
+    # sits where the leave in section is in the jumbotron" — this used
+    # to just get appended as plain trailing text onto `headline`
+    # ("...Mattawa — clearing by 4:09 PM"), easy to miss buried at the
+    # end of a long sentence. Now a separate countdown_target_ms/
+    # countdown_verb pair instead, so render_alert_bar can render it as
+    # its own live-ticking element (same .live-countdown/data-target-ms
+    # mechanism commute_reminder.render_ticker_leave_bar's "Leave in"
+    # already uses) positioned distinctly rather than lost in the
+    # sentence — a real countdown ("Clearing in 38:12"), not a static
+    # clock-face time, for the same reason "Leave in" counts down
+    # instead of showing a fixed departure time.
+    countdown_target_ms = None
+    countdown_verb = None
     if phase_info is not None:
-        clock = phase_info["target"].astimezone(ZoneInfo(TIMEZONE)).strftime("%I:%M %p").lstrip("0")
-        verb = "arriving around" if phase_info["phase"] == "approaching" else "clearing by"
-        headline = f"{headline} — {verb} {clock}"
+        countdown_target_ms = int(phase_info["target"].timestamp() * 1000)
+        countdown_verb = "Arriving" if phase_info["phase"] == "approaching" else "Clearing"
     return [
         {
             "kind": "weather",
             "severity": severity,
             "label": "Environment Canada",
             "headline": headline,
+            "countdown_target_ms": countdown_target_ms,
+            "countdown_verb": countdown_verb,
             # Session request: "can you make it read the entire alert from
             # EC when its first issued" — see _spoken_summary's own
             # docstring for where this text actually comes from and why.
@@ -470,10 +484,30 @@ def render_alert_bar(alert: dict) -> None:
     # explicitly asks for quiet (lightning, at least for now) skips it,
     # while still getting the same visible slide-in toast.
     silent_attr = ' data-silent="true"' if alert.get("silent", False) else ""
+    # Session follow-up: "make it so that the clearing [time] number
+    # sits where the leave in section is in the jumbotron" — a real
+    # live-ticking countdown (same .live-countdown/data-target-ms
+    # mechanism as commute_reminder.render_ticker_leave_bar's own
+    # "Leave in"), pushed to the right of this bar via
+    # .weather-alert-countdown (theme.py) rather than buried as plain
+    # trailing text at the end of `headline`. Only present when
+    # get_new_alerts actually resolved a storm phase/target — the
+    # get_storm_proximity_alerts milestone toasts below don't carry
+    # these keys at all, same "absent, not empty" convention as
+    # "summary" above.
+    countdown_html = ""
+    countdown_target_ms = alert.get("countdown_target_ms")
+    countdown_verb = alert.get("countdown_verb")
+    if countdown_target_ms and countdown_verb:
+        countdown_html = (
+            f'<span class="weather-alert-countdown live-countdown" data-target-ms="{countdown_target_ms}" '
+            f'data-format="clock" data-template="{countdown_verb} in {{}}">{countdown_verb} soon</span>'
+        )
     st.markdown(
         f"""<div class="{bar_class}" data-summary="{summary}"{audio_attr} data-severe="{severe_attr}"{silent_attr}>
             <span class="news-breaking-label">{label}</span>
             <span class="news-alert-headline">{headline}</span>
+            {countdown_html}
         </div>""",
         unsafe_allow_html=True,
     )

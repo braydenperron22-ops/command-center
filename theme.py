@@ -1432,6 +1432,28 @@ html, body, [class*="css"] {
     animation: toast-pulse-amber 1.6s ease-in-out infinite;
 }
 
+/* Session follow-up: "make it so that the clearing [time] number sits
+   where the leave in section is in the jumbotron" — used to be plain
+   text tacked onto the end of .news-alert-headline's own sentence
+   ("...Mattawa — clearing by 4:09 PM"), easy to miss. This is a real
+   live countdown (.live-countdown, same mechanism as
+   .jumbo-leave-ticker's own "Leave in") pushed to the far right of
+   this bar's flex row via margin-left: auto and given its own
+   pill treatment (echoing .news-alert-tag's pattern) so it reads as
+   its own distinct section — same spot in the layout "Leave in"
+   occupies during a takeover — rather than trailing sentence text. */
+.weather-alert-countdown {
+    flex-shrink: 0;
+    margin-left: auto;
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: #FFFFFF;
+    background: rgba(0,0,0,0.35);
+    border-radius: 10px;
+    padding: 0.3rem 0.9rem;
+    white-space: nowrap;
+}
+
 /* Persistent top banner: holds the latest red (important) headline for
    up to TOP_ALERT_HOLD_SECONDS, or until the next one replaces it.
 
