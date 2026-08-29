@@ -383,6 +383,23 @@ def _spoken_summary(alert: dict) -> str:
     the labels themselves. Rewritten through groq_client.generate (low
     temperature — faithfulness matters far more than creative variety
     here) into one flowing, natural-sounding paragraph, explicitly
+
+    Session follow-up: "shorten up the storm [briefing]... it repeats
+    itself every time there's an update, which is fine... but I would
+    like it to explain the conditions and what's going on and what to
+    watch for... get rid of the parts where it's like blah blah blah to
+    report this... for more information go here... get rid of the
+    links and the written parts." Confirmed live against a real
+    bulletin (a genuine severe thunderstorm warning): every EC bulletin
+    ends with the same shape — generic, not-this-event boilerplate
+    ("Severe thunderstorm warnings are issued when...", "...can produce
+    tornadoes") followed by a "monitor alerts / report severe weather /
+    for more information" footer carrying an email, a hashtag, and a
+    URL, none of which mean anything spoken aloud. The prompt below now
+    explicitly excludes both — a semantic instruction, not a fixed
+    paragraph-count or regex cut, since EC's own bulletin length/
+    structure varies by hazard type; this is intentionally judgment-
+    based the same way the rest of this prompt already is.
     instructed not to add or invent anything beyond what EC actually
     wrote. groq_client.generate already returns None (never raises)
     during its own overnight pause, a tracked game window, or a genuine
@@ -431,10 +448,16 @@ def _spoken_summary(alert: dict) -> str:
     # not a blanket removal of the pause for anything else.
     rewritten = groq_client.generate(
         "Rewrite this Environment Canada weather alert bulletin as a single smooth, natural-sounding "
-        "paragraph meant to be read aloud by a text-to-speech voice. Keep every real fact — hazard, "
-        "timing, impacts, safety guidance — but remove section labels like 'What:'/'When:'/'Additional "
-        "information:' and turn it into flowing spoken sentences. Don't add anything that isn't in the "
-        "original text, and don't editorialize.\n\n" + raw,
+        "paragraph meant to be read aloud by a text-to-speech voice. Keep every real fact SPECIFIC TO "
+        "THIS EVENT — current location, movement, timing, impacts, and any safety guidance for this "
+        "event. Remove section labels like 'What:'/'When:'/'Additional information:'. Also drop "
+        "anything that isn't specific to this event: generic definitions of what this warning type "
+        "means in general (e.g. 'severe thunderstorm warnings are issued when...', 'severe "
+        "thunderstorms can produce tornadoes'), and any closing instructions to keep monitoring "
+        "alerts, report severe weather, or visit a website — including emails, phone numbers, "
+        "hashtags, and URLs, none of which mean anything spoken aloud. Turn what's left into flowing "
+        "spoken sentences. Don't add anything that isn't in the original text, and don't editorialize."
+        "\n\n" + raw,
         temperature=0.3,
         max_output_tokens=400,
         account="primary",
