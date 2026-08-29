@@ -206,6 +206,40 @@ MAX_SEEN_ALERTS = 200
 # commute_reminder.py/prediction_markets_client.py's own toast dedup.
 _seen_alert_keys: dict = dict(persisted_state.load_per_instance("weather_seen_alerts", {}))
 
+# Session report: "it's still going twice... for the severe thunderstorm
+# warning alert thing." get_new_alerts (below, the one-shot "just
+# arrived" toast) and get_storm_proximity_alerts (further down, the
+# repeating countdown) are deliberately separate systems, each
+# individually correct on its own terms — but nothing stopped both from
+# firing for the SAME real alert close together in real time. Confirmed
+# live: a real alert already had 5 proximity milestones recorded while
+# its own one-shot toast still hadn't fired, meaning that one-shot
+# toast was queued to land right on top of whatever milestone had just
+# played, sounding exactly like an echo even though neither system was
+# individually malfunctioning. Shared per-alert cooldown so a toast
+# from EITHER system DEFERS (not permanently skips — nothing here marks
+# _seen_alert_keys/_storm_milestones_shown while on cooldown, so each
+# side just tries again on a later rerun) if the OTHER system already
+# toasted for the same alert recently. 5 minutes is comfortably above
+# the tightest real gap between two consecutive proximity milestones
+# (2 minutes, the 5-to-3 step) so this practically only ever suppresses
+# a genuine same-moment collision with the one-shot toast, not the
+# proximity countdown's own normal cadence against itself.
+WEATHER_TOAST_COOLDOWN_SECONDS = 5 * 60
+_last_weather_toast_at: dict[str, float] = dict(persisted_state.load_per_instance("weather_last_toast_at", {}))
+
+
+def _weather_toast_on_cooldown(key: str, now_ts: float) -> bool:
+    last = _last_weather_toast_at.get(key)
+    return last is not None and now_ts - last < WEATHER_TOAST_COOLDOWN_SECONDS
+
+
+def _mark_weather_toast_fired(key: str, now_ts: float) -> None:
+    _last_weather_toast_at[key] = now_ts
+    if len(_last_weather_toast_at) > MAX_SEEN_ALERTS:
+        _last_weather_toast_at.pop(next(iter(_last_weather_toast_at)))
+    persisted_state.save_per_instance("weather_last_toast_at", _last_weather_toast_at)
+
 
 def _friendly_headline(title: str) -> str:
     """A short, natural-sounding rewrite of EC's own raw alert title —
@@ -281,10 +315,19 @@ def get_new_alerts(now: datetime) -> list[dict]:
     key = alert.get("id") or alert["title"]
     if key in _seen_alert_keys:
         return []
+    now_ts = now.timestamp()
+    if _weather_toast_on_cooldown(key, now_ts):
+        # A proximity-milestone toast for this exact alert already
+        # fired within WEATHER_TOAST_COOLDOWN_SECONDS — defer, don't
+        # mark seen, so this genuinely fires (not gets lost) on a later
+        # rerun once the cooldown clears (see this module's own
+        # _weather_toast_on_cooldown docstring for the full story).
+        return []
     _seen_alert_keys[key] = True
     if len(_seen_alert_keys) > MAX_SEEN_ALERTS:
         _seen_alert_keys.pop(next(iter(_seen_alert_keys)))
     persisted_state.save_per_instance("weather_seen_alerts", _seen_alert_keys)
+    _mark_weather_toast_fired(key, now_ts)
     severity = _severity(alert["title"])
     headline = _friendly_headline(alert["title"])
     phase_info = ec_storm_timing.storm_phase(now, alert["title"], severity)
@@ -782,10 +825,21 @@ def get_storm_proximity_alerts(now: datetime) -> list[dict]:
     milestone = _due_storm_milestone(phase_info["minutes"], shown)
     if milestone is None:
         return []
+    now_ts = now.timestamp()
+    if _weather_toast_on_cooldown(key, now_ts):
+        # The one-shot "new alert" toast for this exact alert already
+        # fired within WEATHER_TOAST_COOLDOWN_SECONDS — defer, don't
+        # mark this milestone shown, so it's genuinely re-evaluated (not
+        # lost) on a later rerun once the cooldown clears — either this
+        # same milestone fires then, or a smaller one does if enough
+        # real time has passed by then, same skip-ahead logic
+        # _due_storm_milestone already uses elsewhere.
+        return []
     shown.add(milestone)
     if len(_storm_milestones_shown) > MAX_SEEN_STORM_ALERTS:
         _storm_milestones_shown.pop(next(iter(_storm_milestones_shown)))
     _save_storm_milestones_shown()
+    _mark_weather_toast_fired(key, now_ts)
     approaching = phase_info["phase"] == "approaching"
     if milestone == 0:
         headline = f"{alert['title']} — {'arriving' if approaching else 'clearing'} now"
