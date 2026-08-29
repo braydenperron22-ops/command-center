@@ -347,6 +347,34 @@ def _strip_spoken_labels(text: str) -> str:
     return text.strip()
 
 
+# Session report, live during a real severe thunderstorm alert (which
+# happened to land at the same time as a real Blue Jays scoring toast):
+# "I'm sorry, I can't read this without the updated weather data" got
+# spoken aloud verbatim. groq_client.generate returned a genuine LLM
+# refusal/confusion response rather than raising — it got a real
+# response back, just not a usable rewrite — so _spoken_summary's own
+# `rewritten or raw` treated it as a successful result and read it
+# straight to Piper. groq_client.generate's own caching only ever skips
+# a genuine FAILURE (an exception, a rate limit, None) — a "successful"
+# call that happens to return refusal text like this still gets
+# cached, so a bad response can keep recurring across calls until the
+# underlying raw bulletin text itself changes. Guarded here (not in
+# groq_client.py) — this is a content-quality check specific to what a
+# rewrite is supposed to look like, not a general failure mode the
+# shared client should try to detect on every caller's behalf.
+_REFUSAL_PREFIXES = ("i'm sorry", "i am sorry", "sorry,", "i can't", "i cannot", "as an ai", "i don't have", "i do not have")
+
+
+def _looks_like_refusal(text: str) -> bool:
+    # Real bug, caught live testing this same fix: the model's actual
+    # refusal opened with a curly apostrophe ("I’m sorry..."), which
+    # a plain "i'm sorry" (straight apostrophe) prefix check silently
+    # missed entirely — normalized here rather than trying to enumerate
+    # every unicode apostrophe variant a model might reach for.
+    stripped = text.strip().lower().replace("’", "'").replace("‘", "'")
+    return any(stripped.startswith(p) for p in _REFUSAL_PREFIXES)
+
+
 def _milestone_spoken_text(title: str, approaching: bool, milestone: int) -> str:
     """Spoken sentence for a storm-proximity milestone toast (get_storm_
     proximity_alerts) — wording matches, verbatim, what app.py's
@@ -424,7 +452,19 @@ def _spoken_summary(alert: dict) -> str:
     decided here, once, server-side."""
     if "id" not in alert:
         return alert.get("summary", "") or f"A new {alert['title'].lower()} is now active in your area."
-    raw = ec_alerts.fetch_full_description() or alert.get("summary", "")
+    # Real bug, caught live (a "SEVERE THUNDERSTORM ENDED" alert whose
+    # report page had already gone empty): this used to fall back to
+    # alert["summary"] here, but for a real EC alert (the "id" branch
+    # above already ruled out AQHI) that's just the ATOM feed's own
+    # "Issued: {time}" stub — not real content, just enough of a
+    # non-empty string to defeat the `if not raw` guard right below and
+    # get sent to the AI rewrite anyway, which then had nothing
+    # substantive to work with and produced a refusal instead of a
+    # rewrite (see _looks_like_refusal below for that same live
+    # incident's other half). No fallback here now — an empty full
+    # description IS the "nothing more specific available" case this
+    # guard exists for.
+    raw = ec_alerts.fetch_full_description()
     if not raw:
         return f"A new {alert['title'].lower()} has just been issued for your area."
     # account="primary"/reasoning_effort="low": see groq_client.
@@ -464,6 +504,8 @@ def _spoken_summary(alert: dict) -> str:
         reasoning_effort="low",
         allow_during_pause=True,
     )
+    if rewritten and _looks_like_refusal(rewritten):
+        rewritten = None
     return _strip_spoken_labels(rewritten or raw)
 
 
