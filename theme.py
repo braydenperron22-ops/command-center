@@ -66,6 +66,29 @@ CSS = """
 .weather-radar-frame-img {
     transition: opacity 0.35s ease !important;
 }
+/* Third scoped exception — session request: "make all of the toast
+   alerts client side... now because they're client side, we can do all
+   the cool animations." The kill switch above was about CSS animations
+   getting RESTARTED by every 5-second rerun (real instability, session
+   request: "remove quite literally all of the animations... it's
+   making my dashboard really unstable") — this is different in kind: a
+   one-shot, JS-class-toggled animation fired once per genuinely new
+   toast by kiosk-toast-queue (app.py's merged components.html() call),
+   never re-triggered by a rerun the way the old ones were. */
+.toast-reveal-anim {
+    animation: toast-slide-in 0.3s cubic-bezier(.2,.8,.2,1) !important;
+}
+.toast-dismiss-anim {
+    animation: toast-slide-out 0.25s ease-in !important;
+}
+@keyframes toast-slide-in {
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+@keyframes toast-slide-out {
+    from { transform: translateY(0); opacity: 1; }
+    to { transform: translateY(100%); opacity: 0; }
+}
 
 /* Five full-screen/curtain-style elements relied on an `animation:
    ... forwards` to ever REACH their correct resting appearance — their
@@ -1116,6 +1139,20 @@ html, body, [class*="css"] {
 @keyframes ticker-scroll {
     from { transform: translateX(0); }
     to { transform: translateX(-50%); }
+}
+
+/* Client-side toast staging (app.py's _stage_client_toasts /
+   kiosk-toast-queue) — each st.container(key=f"toast_stage_{hash}")
+   wraps exactly one real alert bar below (unchanged output from
+   news.render_alert_bar/sports_alerts.render_alert_bar/etc), hidden
+   here by default as a first-paint safety net so nothing flashes
+   visible before the persistent script has a chance to run; the
+   script itself also sets an inline display on the BAR (not just this
+   wrapper) the instant it stages one — see that script's own comment
+   for why kioskCheckToastChime's existing guard needs the inline
+   value specifically, not just this class-based default. */
+[class*=st-key-toast_stage_] {
+    display: none;
 }
 
 /* Breaking-news bar: takes over the same bottom strip as the release
