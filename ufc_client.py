@@ -539,18 +539,29 @@ def current_bout(event: dict) -> dict | None:
 
 # Coverage window — session request: "auto rotation between fights
 # coverage starts at 5pm every saturday, only will not be shown on
-# main if habs are playing. otherwise let it run." A fixed clock-time
-# rule, not sports_alerts.py's own TAKEOVER_LEAD_MINUTES-before-first-
-# bout window: a UFC card doesn't have one clean "start_time" the way
-# a single game does (it spans hours, early prelims through main
-# event), and 5pm is well before even the earliest prelims typically
-# start — real advance notice the same way the other sports' pregame
-# window gives. Deliberately does NOT hold a postgame recap the way
-# sports_alerts.takeover_state does (TAKEOVER_POSTGAME_MINUTES) — the
+# main if habs are playing. otherwise let it run." Originally a fixed
+# clock-time rule (COVERAGE_START_HOUR=17/5pm, now.weekday()==5) rather
+# than sports_alerts.py's own TAKEOVER_LEAD_MINUTES-before-start
+# window, on the reasoning that a UFC card doesn't have one clean
+# "start_time" the way a single game does — but that assumed a typical
+# US-primetime Saturday card. Session follow-up: "UFC events should
+# not be stuck to a strict schedule... this weekend's fight night,
+# because it's in Shanghai, starts at six AM on Saturday... whatever
+# time an event is is when the takeover should start." A real
+# international card can start hours before 5pm ET (or on a different
+# day of the week entirely) — the fixed rule wouldn't have shown this
+# one AT ALL: by 5pm the card would already be long over, event
+# ["state"] already "final". Coverage is now driven by the event's own
+# real start_time (fetch_event_for_date already returns it, straight
+# from ESPN) plus the same lead-time buffer every other sport's
+# pregame countdown gets — whatever hour, whatever day, real data
+# decides it, not an assumption baked into this file. Still
+# deliberately does NOT hold a postgame recap the way sports_alerts.
+# takeover_state does (TAKEOVER_POSTGAME_MINUTES) — the original
 # session request only asked for "upcoming event countdown" and "live
 # fight card, bout-by-bout," not a recap, so coverage simply ends once
 # the card's own state reaches "final".
-COVERAGE_START_HOUR = 17  # 5pm
+TAKEOVER_LEAD_MINUTES = 60  # matches sports_alerts.TAKEOVER_LEAD_MINUTES's own value
 
 
 def takeover_state(now: datetime) -> dict | None:
@@ -559,13 +570,15 @@ def takeover_state(now: datetime) -> dict | None:
     responsible for the one exception the same session request named —
     "will not be shown on main if habs are playing" — this function
     only knows about UFC's own schedule, not the Habs'."""
-    if now.weekday() != 5 or now.hour < COVERAGE_START_HOUR:
-        return None
     event = fetch_event_for_date(now.date())
     if event is None or event["state"] == "final":
         return None
-    phase = "live" if event["state"] == "live" else "countdown"
-    return {"phase": phase, "event": event}
+    if event["state"] == "live":
+        return {"phase": "live", "event": event}
+    minutes_until = (event["start_time"] - now).total_seconds() / 60
+    if minutes_until > TAKEOVER_LEAD_MINUTES:
+        return None
+    return {"phase": "countdown", "event": event}
 
 
 # --- Toast alerts + recent-action ticker (stat-delta based) -------------
@@ -663,13 +676,14 @@ def get_new_alerts(now: datetime) -> list[dict]:
     "ufc", ...}, the exact shape sports_alerts.render_alert_bar already
     renders (reused directly rather than building a parallel toast
     path — see theme.py's own .sports-alert-bar-ufc for the one new
-    thing that shape needed). [] outside the Saturday-5pm+ coverage
-    window (same gate takeover_state uses) or when nothing's changed.
-    Knockdowns specifically, not every stat delta recent_event also
-    tracks — a knockdown is the one moment genuinely worth a toast on
-    its own; the rest is what the jumbotron's own ticker line is for."""
-    if now.weekday() != 5 or now.hour < COVERAGE_START_HOUR:
-        return []
+    thing that shape needed). [] whenever there's no event actually
+    LIVE right now (the check right below, same as takeover_state's
+    own — no separate day/hour gate needed here since a knockdown toast
+    only ever makes sense during a live fight in the first place, not
+    during a pregame countdown) or when nothing's changed. Knockdowns
+    specifically, not every stat delta recent_event also tracks — a
+    knockdown is the one moment genuinely worth a toast on its own; the
+    rest is what the jumbotron's own ticker line is for."""
     event = fetch_event_for_date(now.date())
     if event is None or event["state"] != "live":
         return []
