@@ -2104,26 +2104,6 @@ try:
 except Exception:
     pass
 
-# Fetched once per rerun and reused below to feed the bottom rotating
-# alert bar — get_new_alerts() marks headlines as seen as a side
-# effect, so it must only be called once per script run, REGARDLESS of
-# page — skipping it during a takeover would stall the batch
-# classifier and the seen-headline tracking for as long as the game
-# runs. update_top_alert's own state-tracking/push-dedup also still
-# needs to run unconditionally for the same reason; only the actual
-# on-screen render is gated on _jumbotron_active, and that now happens
-# once, jointly with the other 3 "red headline" sources, via
-# headline_rotation.render further down (see its own comment) rather
-# than news.render_top_alert_bar directly here. Wrapped since a bug in
-# this tracking shouldn't stop the clock/hero row and every page below
-# it from rendering.
-new_alerts = []
-try:
-    new_alerts = news.get_new_alerts()
-    news.update_top_alert(new_alerts)
-except Exception:
-    pass
-
 _weather_alert_shown = False
 
 def _hex_to_rgb(h: str) -> tuple[int, int, int]:
@@ -2802,192 +2782,6 @@ with st.container(key="page_body"):
             unsafe_allow_html=True,
         )
 
-# Leave-for-work reminder: drops into the same bottom-bar queue as
-# breaking news (below), rather than a separate UI element — see
-# commute_reminder.py. Wrapped separately from that queue's own
-# try/except so a bug here can't also take down real breaking-news
-# alerts, and appended to new_alerts before that block runs so a
-# freshly-due milestone gets picked up in this same rerun.
-#
-# The phone push for this same milestone lives inside commute_reminder.
-# check() itself now, not here — session report: "I received the leave
-# for work [alert] three times," root-caused to st.session_state being
-# scoped per browser connection (a reconnect resets it, so a dedup
-# built on it fires again from that fresh session's point of view).
-# check()'s own module-level dedup is immune to that; see its docstring.
-try:
-    commute_alert = commute_reminder.check(now)
-    if commute_alert:
-        new_alerts.append(commute_alert)
-except Exception:
-    pass
-
-# Jays/Habs scoring-play alerts: drops into the same bottom-bar queue
-# as breaking news/commute (below) — session request: "every time
-# there's an update in a game have a blue headline come through with a
-# blue govee flash [...] same with the habs but make it red." Wrapped
-# separately from the queue's own try/except, same reasoning as the
-# commute block above — a bug here shouldn't take down real breaking-
-# news alerts, and this needs to run before that block so a fresh
-# scoring play is picked up in this same rerun.
-#
-# Session request: "dig even deeper... where you might be cutting
-# corners." Measured live on a cold cache: 4.68s — this calls fetch_
-# status() for all three tracked leagues in a row (Jays/Habs/Saints,
-# each its own real schedule fetch), the exact same "one slow source
-# blocks the whole rerun" shape fetch_throttle.run_bounded's own
-# docstring already documents for Portfolio/Conflicts/etc. (14s, 13s —
-# this was simply never measured/caught at the same time as those).
-# _toast_budget_start shared with email_alerts_new right below — worst
-# case, these two toast checks' combined background-fetch time this
-# rerun is capped at BUDGET_SECONDS total, not 4.68s from this call
-# alone on top of whatever else is cold. default=[] matches "nothing
-# new this rerun" — the exact same shape a genuinely quiet check
-# already returns, and run_bounded's own docstring covers why a call
-# still running past budget doesn't lose real state, just this rerun's
-# toast. Deliberately its OWN pool, separate from the warm_cache()
-# roster further down (_warm_cache_budget_start, see that block's own
-# comment for the live bug caused by these two once sharing one clock).
-_toast_budget_start = time.time()
-try:
-    new_alerts.extend(
-        fetch_throttle.run_bounded("sports_alerts_new", lambda: sports_alerts.get_new_alerts(now), _toast_budget_start, default=[])
-    )
-except Exception:
-    pass
-
-# EC weather-alert toasts: same queue, same isolation reasoning as the
-# blocks above — session report: "a recent special weather statement
-# just came in but it didnt show as a toast alert." The persistent
-# banner (headline_rotation.render, further down) already covers most
-# pages, but is skipped entirely during a jumbotron takeover, and this
-# toast queue is the one thing that still runs regardless (see
-# weather_alerts_bar.get_new_alerts's own docstring for the full
-# reasoning) — genuinely the only path that guarantees a new alert is
-# never missed just because a game happened to be on screen.
-try:
-    new_alerts.extend(weather_alerts_bar.get_new_alerts(now))
-except Exception:
-    pass
-
-# Storm-proximity toasts: "toast alerts for when the storm gets closer
-# every like 5-10 mins... same thing for when the storm is leaving" —
-# a separate, repeating cadence from the one-shot "new alert" toast
-# right above (see weather_alerts_bar.get_storm_proximity_alerts's own
-# docstring), so it gets its own try/except for the same isolation
-# reasoning as every other block here.
-try:
-    new_alerts.extend(weather_alerts_bar.get_storm_proximity_alerts(now))
-except Exception:
-    pass
-
-# Nearby lightning-strike toasts — session request: "a breaking news
-# alert when there's lightning within... ten kilometers on my
-# location." Own module (Xweather, not Environment Canada — see
-# lightning_client's own docstring on why), same isolation reasoning
-# and "kind": "weather" dispatch as the two blocks above, so a strike
-# rides the exact same top-priority toast lane a real EC warning does.
-try:
-    new_alerts.extend(lightning_client.get_new_alerts(now))
-except Exception:
-    pass
-
-# Rain-nowcast toasts — session request: "did the nowcast from xweather
-# fire this morning at all... build [a real alert]." Own module
-# (precip_nowcast_client.py), same isolation reasoning and "kind":
-# "weather" dispatch as the two blocks above — see that module's own
-# get_new_alerts docstring for why it reuses lightning_client's exact
-# pattern rather than a new toast family of its own.
-try:
-    new_alerts.extend(precip_nowcast_client.get_new_alerts(now))
-except Exception:
-    pass
-
-# Real road-closure toasts — session request: "I want five one one to
-# track all types of road conditions... as well as if there's any
-# closures along my commutes." Own module (road_conditions_511.py,
-# real MTO 511 data, not this app's own inference), same isolation
-# reasoning and "kind": "weather" dispatch as every block here.
-try:
-    new_alerts.extend(road_conditions_511.get_new_alerts(now))
-except Exception:
-    pass
-
-# Important-email toasts — session request: "incorporate emails...
-# important emails to be sent to me via a toast alert, but you need to
-# make sure that they're important, and not crap." Own module
-# (email_client.py, IMAP + an app password — see its own docstring),
-# same isolation reasoning as every other block here: a Gmail hiccup
-# never takes down breaking news/weather/sports.
-#
-# Session request: "dig even deeper... where you might be cutting
-# corners." Measured live on a cold cache: 4.73s, a real IMAP round-
-# trip — same fix and same reasoning as sports_alerts.get_new_alerts
-# just above (see its own comment): shares the same _toast_budget_start
-# pool rather than getting its own, so the whole loop's worst case
-# stays bounded to one shared ceiling no matter how many of these are
-# cold in the same rerun. Distinct from email_client.warm_daily_feed
-# below (already run_bounded) — that one warms a separate cache for
-# the Email page itself; this is the toast-specific "new important
-# mail" check, its own slow path that had never been measured before.
-try:
-    new_alerts.extend(
-        fetch_throttle.run_bounded("email_alerts_new", lambda: email_client.get_new_alerts(now), _toast_budget_start, default=[])
-    )
-except Exception:
-    pass
-
-# Prediction-market rate-odds toasts — session request: "rolling rate
-# odds from polymarket/kalshi... news/toast alert on a big swing." Same
-# isolation reasoning as every other block here: a bug in one bank's
-# check must never take down another's, or real breaking-news alerts.
-# check_for_swing itself already returns None almost every call (see
-# its own docstring) — this only actually produces an alert on a real
-# consensus flip or a large probability move, not every rerun.
-#
-# Session follow-up: "as soon as a contract hits a hundred percent,
-# send us a big toast alert. I want a phone notification... that goes
-# for everything" — check_for_lock_in runs for every bank right
-# alongside check_for_swing, same isolation/None-most-of-the-time
-# shape, own try/except so one bank's lock-in check can't take down
-# another's.
-for _pm_bank in prediction_markets_client.BANKS:
-    try:
-        swing = prediction_markets_client.check_for_swing(_pm_bank)
-        if swing:
-            new_alerts.append(prediction_markets_client.swing_alert(swing))
-    except Exception:
-        pass
-    try:
-        lock_in = prediction_markets_client.check_for_lock_in(_pm_bank)
-        if lock_in:
-            new_alerts.append(prediction_markets_client.lock_in_alert(lock_in))
-    except Exception:
-        pass
-
-# Market-volatility toasts — session request: "take the VIX value,
-# divide it by sixteen, that gives us the expected daily market move
-# in either direction... if the market is trading outside of that
-# band, broadcast it as an alert." Own module (market_volatility_alert.
-# py), same isolation reasoning as every other block here.
-try:
-    new_alerts.extend(market_volatility_alert.get_new_alerts(now))
-except Exception:
-    pass
-
-# UFC knockdown toasts — session follow-up: "how else can we improve
-# the viewing experience... I genuinely want to enjoy watching this."
-# Own module (ufc_client.py), same isolation reasoning as every other
-# block here. Runs unconditionally every rerun regardless of page (a
-# knockdown is worth knowing about even if the kiosk isn't currently
-# showing the UFC takeover) but is a fast no-op almost all the time —
-# get_new_alerts itself gates on the Saturday-5pm+ coverage window and
-# a genuinely live bout before it ever calls fetch_bout_stats.
-try:
-    new_alerts.extend(ufc_client.get_new_alerts(now))
-except Exception:
-    pass
-
 # Cache-warming for pages whose render() used to call a real, possibly-
 # slow fetch directly (Portfolio/Predictions/Market-Internals/Email/
 # Conflicts/Weather-Hourly — each independently confirmed live to block
@@ -3162,158 +2956,311 @@ def _render_bottom_ticker(readings: dict) -> None:
         st.markdown(ticker.render_html(stats), unsafe_allow_html=True)
 
 
-current_alert, elapsed = None, None
-try:
-    new_alerts.sort(key=_alert_priority)
-    if len(new_alerts) > MAX_BURST_ALERTS:
-        overflow = len(new_alerts) - MAX_BURST_ALERTS
-        news_only = [a for a in new_alerts if _alert_priority(a) == 10]
-        keep_news = news_only[overflow:] if overflow < len(news_only) else []
-        new_alerts = [a for a in new_alerts if _alert_priority(a) < 10] + keep_news
-    toast_queue.extend(new_alerts)
-
-    now_ts = time.time()
-    current_alert = toast_queue.current(now_ts)
-    if current_alert:
-        elapsed = now_ts - current_alert["shown_at"]
-        if elapsed > news.TOAST_SECONDS:
-            toast_queue.advance()
-            current_alert, elapsed = None, None
-
-    if current_alert:
-        # Session report: "I'm still not getting any Toast alerts... get
-        # rid of the animation... do what you gotta do." The old intro
-        # animation needed a per-rerun a/b variant toggle (Streamlit
-        # reuses the same bottom-bar DOM node across reruns, and
-        # changing animation-name each render was the only way to force
-        # a genuine restart rather than reusing an already-completed
-        # instance) — removed entirely along with the animation itself
-        # (see news.render_alert_bar's own docstring), so there's no
-        # rerun-timing state left here to manage at all.
-        #
-        # Session report: "the GoVi lights are going red... but the
-        # toast is not there... I get the alert, but I don't get the
-        # toast notification." The Govee block below reads this same
-        # current_alert/elapsed pair to decide whether to flash red —
-        # a genuinely separate code path from the actual st.markdown
-        # call here. Before this, a render failure inside any one of
-        # these four dispatch calls fell through to the single bare
-        # `except Exception: pass` around this whole block (see below),
-        # which left current_alert already assigned to a real, truthy
-        # alert — so the light still fired for it even though the
-        # toast HTML never actually rendered that rerun. Wrapping the
-        # dispatch itself, resetting current_alert to None on failure,
-        # and logging what broke (instead of swallowing it silently)
-        # means the light can no longer show red for a toast that
-        # didn't actually appear, and the next real failure leaves an
-        # actual trace instead of vanishing without one.
-        try:
-            if current_alert.get("kind") == "commute":
-                commute_reminder.render_bar(current_alert)
-            elif current_alert.get("kind") == "sports":
-                sports_alerts.render_alert_bar(current_alert)
-            elif current_alert.get("kind") == "weather":
-                weather_alerts_bar.render_alert_bar(current_alert)
-            elif current_alert.get("kind") == "email":
-                email_client.render_alert_bar(current_alert)
-            else:
-                news.render_alert_bar(current_alert)
-        except Exception as toast_render_exc:
-            import traceback
-
-            print(f"TOAST RENDER FAILED: {current_alert.get('kind', 'news')} alert {current_alert!r}")
-            traceback.print_exc()
-            persisted_state.save(
-                "toast_render_error",
-                {
-                    "at": now_ts,
-                    "kind": current_alert.get("kind", "news"),
-                    "headline": current_alert.get("headline"),
-                    "error": f"{type(toast_render_exc).__name__}: {toast_render_exc}",
-                },
-            )
-            current_alert, elapsed = None, None
-            # Falls back to the ticker rather than leaving the bottom
-            # strip fully blank for this rerun — see _render_bottom_
-            # ticker's own docstring for the session report this fixes.
-            _render_bottom_ticker(readings)
-    elif _jumbotron_active and commute_reminder.leave_headline_active(now):
-        # Session report: a golf tee time's leave-in window landing
-        # during a Jays game — "that space is crucial for the
-        # jumbotron... replace the bottom scroll bar with a timer...
-        # game alerts and breaking news is allowed to trump the timer
-        # but at least its still there." render_leave_headline (the big
-        # red banner) already skips itself entirely during a takeover —
-        # no room for it on that board — so without this, an early
-        # commitment during game time only ever showed up as scattered
-        # milestone toasts, not something continuously visible. Same
-        # slot as the market ticker below (position/z-index match
-        # exactly, see .jumbo-leave-ticker in theme.py), so this branch
-        # only ever runs when current_alert is empty — a real toast
-        # still covers it the instant one fires, same as it already
-        # covers the market ticker.
-        commute_reminder.render_ticker_leave_bar(now)
-    else:
-        _render_bottom_ticker(readings)
-except Exception as _bottom_bar_exc:
-    # Session report: "the bottom bar goes away... the ticker tape
-    # goes away... the red headliner... should be there, but it's
-    # not." This outer catch used to be a bare `except: pass` around
-    # the ENTIRE block above — the queue sort/extend, the elapsed
-    # calc, and the toast/ticker dispatch all shared it, so a failure
-    # anywhere in the shared setup (not just inside one render call,
-    # which has its own try/except above) silently blanked the whole
-    # bottom strip with zero trace. Logged the same way the render-
-    # specific catch above does, and still attempts the ticker as a
-    # last-resort fallback (its own try/except, so a failure there
-    # can't cascade into a second silent blank).
-    import traceback
-
-    print(f"BOTTOM BAR SETUP FAILED: {_bottom_bar_exc!r}")
-    traceback.print_exc()
-    persisted_state.save(
-        "toast_render_error",
-        {"at": time.time(), "kind": "setup", "headline": None, "error": f"{type(_bottom_bar_exc).__name__}: {_bottom_bar_exc}"},
-    )
+def _gather_new_alerts(now: datetime) -> list[dict]:
+    """Every toast-alert source, checked fresh — news, the leave-for-
+    work reminder, Jays/Habs/Saints scoring plays, EC weather alerts
+    (new + storm-proximity), lightning, rain-nowcast, road closures,
+    important email, prediction-market swings/lock-ins, market
+    volatility, and UFC knockdowns. Moved here, verbatim, from where
+    each of these used to sit inline in the outer script (see git
+    history for this commit) so _toast_fragment below can call this
+    fresh on its own fast cadence — session request: "narrow it down...
+    75 seconds is a long time between them," about how long a genuinely
+    new alert could sit undetected. Every source keeps its own
+    try/except exactly as before — one source's bug still can't take
+    down another's, or the toast queue as a whole. Runs unconditionally
+    every fragment tick regardless of which page is showing, same
+    invariant several of these sources' own docstrings already
+    document (news.get_new_alerts's own seen-headline tracking in
+    particular needs this)."""
+    alerts: list[dict] = []
     try:
-        _render_bottom_ticker(readings)
+        alerts = news.get_new_alerts()
+        news.update_top_alert(alerts)
     except Exception:
         pass
 
-# Bedroom Govee light/plug: reactive to the same phase/market/news signals
-# already driving the dashboard's own visuals above. Wrapped like every
-# other side-effect block here — a Govee outage or API hiccup should never
-# affect the dashboard itself.
-try:
-    breaking_elapsed = None
-    if current_alert and current_alert.get("important") and elapsed is not None and elapsed < govee_lighting.FLASH_SECONDS:
-        breaking_elapsed = elapsed
-    score_flash = None
-    if current_alert and current_alert.get("kind") == "sports" and elapsed is not None and elapsed < govee_lighting.FLASH_SECONDS:
-        score_flash = (elapsed, current_alert["flash_color"])
-    aqi_for_lights = air_quality.get("us_aqi") if air_quality else None
-    # Session request: "red govee flashes for when the storm is
-    # approaching... solid red at like 30% for when its here... same
-    # thing for when the storm is leaving," later "it should show at
-    # night" — this one specifically DOES bypass the night gate (see
-    # govee_lighting.sync_lights's own updated docstring), unlike
-    # breaking news, which still fully respects it.
     try:
-        storm_phase_info = weather_alerts_bar.current_storm_phase(now)
+        commute_alert = commute_reminder.check(now)
+        if commute_alert:
+            alerts.append(commute_alert)
     except Exception:
-        storm_phase_info = None
-    storm_phase_name = storm_phase_info["phase"] if storm_phase_info else None
-    govee_lighting.sync_lights(
-        phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
-        aqi_for_lights, category, score_flash, _game_takeover_live, storm_phase_name,
-        night_mode_active=_night_mode_active,
-    )
-    # sync_plug used to run here (a fixed 4:30am/9:30pm on/off window
-    # for the monitor's own smart plug) — removed along with the plug
-    # itself; see night_mode.py's own module docstring and the trigger
-    # computed right after _jumbotron_active above for what replaced it.
-except Exception:
-    pass
+        pass
+
+    # sports_alerts_new and email_alerts_new share one wall-clock
+    # budget (fetch_throttle.run_bounded) — real, measured cold-cache
+    # cost for each (~4.7s, a live fetch_status()/IMAP round trip), so
+    # a cold tick's combined worst case for these two stays bounded to
+    # one shared ceiling rather than stacking. Unchanged from before
+    # this moved — same pool, same reasoning, just running more often.
+    _toast_budget_start = time.time()
+    try:
+        alerts.extend(
+            fetch_throttle.run_bounded("sports_alerts_new", lambda: sports_alerts.get_new_alerts(now), _toast_budget_start, default=[])
+        )
+    except Exception:
+        pass
+
+    try:
+        alerts.extend(weather_alerts_bar.get_new_alerts(now))
+    except Exception:
+        pass
+
+    try:
+        alerts.extend(weather_alerts_bar.get_storm_proximity_alerts(now))
+    except Exception:
+        pass
+
+    try:
+        alerts.extend(lightning_client.get_new_alerts(now))
+    except Exception:
+        pass
+
+    try:
+        alerts.extend(precip_nowcast_client.get_new_alerts(now))
+    except Exception:
+        pass
+
+    try:
+        alerts.extend(road_conditions_511.get_new_alerts(now))
+    except Exception:
+        pass
+
+    try:
+        alerts.extend(
+            fetch_throttle.run_bounded("email_alerts_new", lambda: email_client.get_new_alerts(now), _toast_budget_start, default=[])
+        )
+    except Exception:
+        pass
+
+    for _pm_bank in prediction_markets_client.BANKS:
+        try:
+            swing = prediction_markets_client.check_for_swing(_pm_bank)
+            if swing:
+                alerts.append(prediction_markets_client.swing_alert(swing))
+        except Exception:
+            pass
+        try:
+            lock_in = prediction_markets_client.check_for_lock_in(_pm_bank)
+            if lock_in:
+                alerts.append(prediction_markets_client.lock_in_alert(lock_in))
+        except Exception:
+            pass
+
+    try:
+        alerts.extend(market_volatility_alert.get_new_alerts(now))
+    except Exception:
+        pass
+
+    try:
+        alerts.extend(ufc_client.get_new_alerts(now))
+    except Exception:
+        pass
+
+    return alerts
+
+
+@st.fragment(run_every="10s")
+def _toast_fragment(
+    now: datetime,
+    weather: dict | None,
+    air_quality: dict | None,
+    phase: str,
+    category: str,
+    market_intraday_pct: float | None,
+    _game_takeover_live: bool,
+    _night_mode_active: bool,
+    _jumbotron_active: bool,
+    readings: dict,
+) -> None:
+    """Toast detection + display + the Govee lights that react to them,
+    all on one independent 10s cadence instead of the outer script's
+    own ~75s st_autorefresh — same fix shape as _jumbotron_fragment
+    above (session request there: "75 seconds is a long time"; here:
+    "switch up the refresh time for toast alerts as well... narrow it
+    down"). 10s means a 30s toast (news.TOAST_SECONDS) gets checked
+    ~3 times during its own display window instead of ~0.4 times
+    today, and a genuinely new alert is detected within ~10s instead
+    of up to 75-120s.
+
+    Govee lights are IN this fragment too, not left on the slow outer
+    cycle — real reason, not tidiness: toast_queue is process-wide and
+    single-owner for advance(). If display moved to 10s but lights
+    stayed on a 75s read, a toast that's shown-and-fully-advanced-past
+    between two outer ticks (very possible — a 30s display window sits
+    entirely inside a 75s outer cycle) would never be seen by an outer
+    Govee check at all, silently dropping the light flash for a toast
+    that really did display. This way lights react to exactly the
+    toasts that actually showed, at the same cadence.
+
+    Every non-toast-specific Govee input (weather/air_quality/phase/
+    category/market_intraday_pct/_night_mode_active/_jumbotron_active/
+    readings) is passed in from the outer, ~75s-stale scope on purpose
+    — none of them need sub-75s freshness, only the toast-reactive
+    parts (current_alert/elapsed-derived breaking_elapsed/score_flash)
+    did. Every try/except boundary below — the outer setup catch, the
+    per-kind dispatch catch, the separate Govee catch — is preserved
+    exactly as it was in the outer script; only where this code runs
+    changed, not its own error isolation."""
+    current_alert, elapsed = None, None
+    try:
+        new_alerts = _gather_new_alerts(now)
+        new_alerts.sort(key=_alert_priority)
+        if len(new_alerts) > MAX_BURST_ALERTS:
+            overflow = len(new_alerts) - MAX_BURST_ALERTS
+            news_only = [a for a in new_alerts if _alert_priority(a) == 10]
+            keep_news = news_only[overflow:] if overflow < len(news_only) else []
+            new_alerts = [a for a in new_alerts if _alert_priority(a) < 10] + keep_news
+        toast_queue.extend(new_alerts)
+
+        now_ts = time.time()
+        current_alert = toast_queue.current(now_ts)
+        if current_alert:
+            elapsed = now_ts - current_alert["shown_at"]
+            if elapsed > news.TOAST_SECONDS:
+                toast_queue.advance()
+                current_alert, elapsed = None, None
+
+        if current_alert:
+            # Session report: "I'm still not getting any Toast alerts... get
+            # rid of the animation... do what you gotta do." The old intro
+            # animation needed a per-rerun a/b variant toggle (Streamlit
+            # reuses the same bottom-bar DOM node across reruns, and
+            # changing animation-name each render was the only way to force
+            # a genuine restart rather than reusing an already-completed
+            # instance) — removed entirely along with the animation itself
+            # (see news.render_alert_bar's own docstring), so there's no
+            # rerun-timing state left here to manage at all.
+            #
+            # Session report: "the GoVi lights are going red... but the
+            # toast is not there... I get the alert, but I don't get the
+            # toast notification." The Govee block below reads this same
+            # current_alert/elapsed pair to decide whether to flash red —
+            # a genuinely separate code path from the actual st.markdown
+            # call here. Before this, a render failure inside any one of
+            # these four dispatch calls fell through to the single bare
+            # `except Exception: pass` around this whole block (see below),
+            # which left current_alert already assigned to a real, truthy
+            # alert — so the light still fired for it even though the
+            # toast HTML never actually rendered that rerun. Wrapping the
+            # dispatch itself, resetting current_alert to None on failure,
+            # and logging what broke (instead of swallowing it silently)
+            # means the light can no longer show red for a toast that
+            # didn't actually appear, and the next real failure leaves an
+            # actual trace instead of vanishing without one.
+            try:
+                if current_alert.get("kind") == "commute":
+                    commute_reminder.render_bar(current_alert)
+                elif current_alert.get("kind") == "sports":
+                    sports_alerts.render_alert_bar(current_alert)
+                elif current_alert.get("kind") == "weather":
+                    weather_alerts_bar.render_alert_bar(current_alert)
+                elif current_alert.get("kind") == "email":
+                    email_client.render_alert_bar(current_alert)
+                else:
+                    news.render_alert_bar(current_alert)
+            except Exception as toast_render_exc:
+                import traceback
+
+                print(f"TOAST RENDER FAILED: {current_alert.get('kind', 'news')} alert {current_alert!r}")
+                traceback.print_exc()
+                persisted_state.save(
+                    "toast_render_error",
+                    {
+                        "at": now_ts,
+                        "kind": current_alert.get("kind", "news"),
+                        "headline": current_alert.get("headline"),
+                        "error": f"{type(toast_render_exc).__name__}: {toast_render_exc}",
+                    },
+                )
+                current_alert, elapsed = None, None
+                # Falls back to the ticker rather than leaving the bottom
+                # strip fully blank for this rerun — see _render_bottom_
+                # ticker's own docstring for the session report this fixes.
+                _render_bottom_ticker(readings)
+        elif _jumbotron_active and commute_reminder.leave_headline_active(now):
+            # Session report: a golf tee time's leave-in window landing
+            # during a Jays game — "that space is crucial for the
+            # jumbotron... replace the bottom scroll bar with a timer...
+            # game alerts and breaking news is allowed to trump the timer
+            # but at least its still there." render_leave_headline (the big
+            # red banner) already skips itself entirely during a takeover —
+            # no room for it on that board — so without this, an early
+            # commitment during game time only ever showed up as scattered
+            # milestone toasts, not something continuously visible. Same
+            # slot as the market ticker below (position/z-index match
+            # exactly, see .jumbo-leave-ticker in theme.py), so this branch
+            # only ever runs when current_alert is empty — a real toast
+            # still covers it the instant one fires, same as it already
+            # covers the market ticker.
+            commute_reminder.render_ticker_leave_bar(now)
+        else:
+            _render_bottom_ticker(readings)
+    except Exception as _bottom_bar_exc:
+        # Session report: "the bottom bar goes away... the ticker tape
+        # goes away... the red headliner... should be there, but it's
+        # not." This outer catch used to be a bare `except: pass` around
+        # the ENTIRE block above — the queue sort/extend, the elapsed
+        # calc, and the toast/ticker dispatch all shared it, so a failure
+        # anywhere in the shared setup (not just inside one render call,
+        # which has its own try/except above) silently blanked the whole
+        # bottom strip with zero trace. Logged the same way the render-
+        # specific catch above does, and still attempts the ticker as a
+        # last-resort fallback (its own try/except, so a failure there
+        # can't cascade into a second silent blank).
+        import traceback
+
+        print(f"BOTTOM BAR SETUP FAILED: {_bottom_bar_exc!r}")
+        traceback.print_exc()
+        persisted_state.save(
+            "toast_render_error",
+            {"at": time.time(), "kind": "setup", "headline": None, "error": f"{type(_bottom_bar_exc).__name__}: {_bottom_bar_exc}"},
+        )
+        try:
+            _render_bottom_ticker(readings)
+        except Exception:
+            pass
+
+    # Bedroom Govee light/plug: reactive to the same phase/market/news signals
+    # already driving the dashboard's own visuals above. Wrapped like every
+    # other side-effect block here — a Govee outage or API hiccup should never
+    # affect the dashboard itself.
+    try:
+        breaking_elapsed = None
+        if current_alert and current_alert.get("important") and elapsed is not None and elapsed < govee_lighting.FLASH_SECONDS:
+            breaking_elapsed = elapsed
+        score_flash = None
+        if current_alert and current_alert.get("kind") == "sports" and elapsed is not None and elapsed < govee_lighting.FLASH_SECONDS:
+            score_flash = (elapsed, current_alert["flash_color"])
+        aqi_for_lights = air_quality.get("us_aqi") if air_quality else None
+        # Session request: "red govee flashes for when the storm is
+        # approaching... solid red at like 30% for when its here... same
+        # thing for when the storm is leaving," later "it should show at
+        # night" — this one specifically DOES bypass the night gate (see
+        # govee_lighting.sync_lights's own updated docstring), unlike
+        # breaking news, which still fully respects it.
+        try:
+            storm_phase_info = weather_alerts_bar.current_storm_phase(now)
+        except Exception:
+            storm_phase_info = None
+        storm_phase_name = storm_phase_info["phase"] if storm_phase_info else None
+        govee_lighting.sync_lights(
+            phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
+            aqi_for_lights, category, score_flash, _game_takeover_live, storm_phase_name,
+            night_mode_active=_night_mode_active,
+        )
+        # sync_plug used to run here (a fixed 4:30am/9:30pm on/off window
+        # for the monitor's own smart plug) — removed along with the plug
+        # itself; see night_mode.py's own module docstring and the trigger
+        # computed right after _jumbotron_active above for what replaced it.
+    except Exception:
+        pass
+
+
+_toast_fragment(
+    now, weather, air_quality, phase, category, market_intraday_pct,
+    _game_takeover_live, _night_mode_active, _jumbotron_active, readings,
+)
 
 # Literal last statement in the script, on purpose — see heartbeat.py's
 # own docstring. Session report: "it only freezes sometimes but the
