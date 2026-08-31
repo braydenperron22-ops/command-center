@@ -16,6 +16,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 import air_quality_client
+import aviation_client
 import commute_reminder
 import cpp_payment_dates
 import data_health
@@ -2951,6 +2952,12 @@ def _render_bottom_ticker(readings: dict) -> None:
             stats.append(wildfire_stat)
     except Exception:
         pass
+    try:
+        aviation_stat = ticker.build_aviation_stat_item()
+        if aviation_stat:
+            stats.append(aviation_stat)
+    except Exception:
+        pass
 
     if stats:
         st.markdown(ticker.render_html(stats), unsafe_allow_html=True)
@@ -3054,6 +3061,22 @@ def _gather_new_alerts(now: datetime) -> list[dict]:
 
     try:
         alerts.extend(ufc_client.get_new_alerts(now))
+    except Exception:
+        pass
+
+    # Passive aircraft radar — restored 2026-08-31, see aviation_client.py's
+    # own module docstring for why it was gone (an unrelated batch revert,
+    # not a problem with this source itself). aviation_client's own
+    # st.cache_data(ttl=5min) keeps this cheap on the 10s fragment cadence
+    # most ticks — same "check cached state more often, fetch no more
+    # often" reasoning as every other source here — but a cold-cache
+    # OpenSky/hexdb round trip is real network I/O, so it shares the same
+    # wall-clock budget as sports_alerts_new/email_alerts_new rather than
+    # running unbounded on a fragment that ticks every 10s.
+    try:
+        alerts.extend(
+            fetch_throttle.run_bounded("aviation", lambda: aviation_client.get_new_alerts(now), _toast_budget_start, default=[])
+        )
     except Exception:
         pass
 
