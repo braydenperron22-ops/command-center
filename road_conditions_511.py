@@ -535,6 +535,29 @@ def get_new_alerts(now: datetime) -> list[dict]:
                 "label": type_label.title(),
                 "headline": headline,
                 "summary": f"This is a {type_label}. {_spoken_closure_summary(description)}",
+                # Session request: "add the govee lights for those
+                # alerts." app.py's own toast pipeline already flashes
+                # the bedroom light for any toast with "important": True
+                # (govee_lighting.sync_lights's breaking_alert_elapsed —
+                # the same generic mechanism news.py's real breaking
+                # alerts and prediction_markets_client's rate-flip
+                # swings already use), so this needed no new Govee
+                # plumbing, just opting in. Scoped to a real full
+                # closure only, same severity split as the toast/
+                # headline tiers above — routine construction or
+                # maintenance doesn't need to flash the room the way an
+                # actual closed road does. Only here, not get_status_
+                # updates's own repeat below or get_cleared_alerts — a
+                # light flashing every 15 minutes for "still active"
+                # would be its own kind of annoying, and this app's
+                # night gate already keeps this from ever waking anyone
+                # (breaking_alert_elapsed is checked AFTER govee_
+                # lighting's own night-off gate, same as real breaking
+                # news — deliberately NOT the storm_phase-style
+                # exception that bypasses night, since a road closure
+                # isn't the kind of immediate physical-safety hazard
+                # that scoped exception exists for).
+                "important": bool(e.get("IsFullClosure")),
             }
         )
     if alerts:
