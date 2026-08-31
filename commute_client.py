@@ -22,11 +22,19 @@ from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 ROUTE_URL = "https://api.tomtom.com/routing/1/calculateRoute/{lat1},{lon1}:{lat2},{lon2}/json"
 GEOCODE_URL = "https://api.tomtom.com/search/2/geocode/{query}.json"
 # TomTom's documented category taxonomy for traffic sections — mapped
-# to something readable in place of the bare code. Unverified against
-# a real incident (nothing on the usual commute at the time this was
-# written to test against — 0 delay, so TomTom had nothing to report),
-# so treat this as best-effort: worth checking the real category names
-# next time an actual incident shows up, in case they don't match.
+# to something readable in place of the bare code.
+#
+# Checked against a real incident 2026-08-31 (a genuine Highway 17
+# full closure, confirmed independently via road_conditions_511.py) —
+# this taxonomy DIDN'T match: both of the route's real TRAFFIC sections
+# came back "simpleCategory": "OTHER", not "ROAD_CLOSURE" or "ACCIDENT"
+# the way a closure was assumed to be tagged when this was first
+# written untested. "OTHER" being silently dropped meant a genuinely
+# severe section (one at effectiveSpeedInKmh: 7 — barely moving, both
+# at magnitudeOfDelay: 4) showed up on screen as "no delay" — see
+# _incident_label's own fallback below for the fix, which checks the
+# real magnitude/speed fields instead of trusting the category alone
+# for an "OTHER"-tagged section.
 INCIDENT_CATEGORY_LABELS = {
     "JAM": "heavy traffic",
     "ROAD_WORKS": "road work",
@@ -35,8 +43,19 @@ INCIDENT_CATEGORY_LABELS = {
     "DANGEROUS_CONDITIONS": "dangerous conditions",
     "LANE_RESTRICTION": "lane restriction",
     "NARROW_LANES": "narrow lanes",
-    "OTHER": None,  # too vague on its own to bother showing
+    "OTHER": None,  # only "too vague" when it ALSO shows no real severity — see _incident_label
 }
+# TomTom's magnitudeOfDelay: 0 unknown, 1 minor, 2 moderate, 3 major,
+# 4 undefined — "undefined" is specifically what a section representing
+# an impassable closure looks like (there's no meaningful "how much
+# slower than normal" fraction for a road that can't be driven at all,
+# so TomTom can't grade it 1-3). Confirmed live: both of the real
+# closure's sections above were magnitude 4. >= SEVERE_MAGNITUDE
+# catches major (3) too, not just the undefined case.
+SEVERE_MAGNITUDE = 3
+# Well below any real highway/arterial free-flow speed — confirmed
+# live at 7 km/h on the actual closure's own worst section.
+SEVERE_SPEED_KMH = 20
 # 5 min still only burns ~288 calls/day (11.5% of the free-tier quota)
 # even running unattended 24/7 — 15 min was needlessly conservative and
 # let the shown time lag real conditions by up to a quarter hour.
@@ -56,13 +75,30 @@ def _incident_label(route_data: dict) -> str | None:
     traffic sections, or None if there's nothing notable — TomTom only
     seems to include `sections` at all when there's something to
     report, so an empty/missing list here just means a clean route,
-    not a parsing failure."""
-    categories = {
-        s.get("simpleCategory")
-        for s in route_data.get("sections", [])
-        if s.get("sectionType") == "TRAFFIC" and s.get("simpleCategory")
-    }
-    labels = {INCIDENT_CATEGORY_LABELS.get(c) for c in categories} - {None}
+    not a parsing failure.
+
+    A named category (JAM/ROAD_CLOSURE/etc — see INCIDENT_CATEGORY_
+    LABELS) always wins when TomTom actually provides one. A section
+    tagged "OTHER" — or any category not in that map — still gets a
+    generic "slow traffic" label if its own magnitude/speed fields
+    show something real (see SEVERE_MAGNITUDE/SEVERE_SPEED_KMH above),
+    rather than being silently dropped just for lacking a named
+    category — confirmed live this is exactly what a real closure's
+    own traffic section looks like from TomTom's side."""
+    sections = [s for s in route_data.get("sections", []) if s.get("sectionType") == "TRAFFIC"]
+    labels = set()
+    has_unnamed_severe = False
+    for s in sections:
+        label = INCIDENT_CATEGORY_LABELS.get(s.get("simpleCategory"))
+        if label:
+            labels.add(label)
+            continue
+        magnitude = s.get("magnitudeOfDelay") or 0
+        speed = s.get("effectiveSpeedInKmh")
+        if magnitude >= SEVERE_MAGNITUDE or (speed is not None and speed <= SEVERE_SPEED_KMH):
+            has_unnamed_severe = True
+    if has_unnamed_severe:
+        labels.add("slow traffic")
     if not labels:
         return None
     return ", ".join(sorted(labels))
