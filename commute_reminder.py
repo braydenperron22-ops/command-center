@@ -569,7 +569,23 @@ def _countdown_info(now: datetime) -> tuple[int, str, str, bool] | None:
     up on screen (the unified top-of-screen rotation vs. the jumbotron's
     own compact ticker slot). is_home (_is_home_event) is what lets
     both callers swap "Leave" for "Starts" without each re-deriving it
-    themselves."""
+    themselves.
+
+    Session request: "if there is a detour in effect, I should see a
+    meaningful delay... the leave in timers should be reflective of
+    this." The delay itself already was — _leave_by_for_shift (via
+    _current_shift above) subtracts commute_client.route's own real,
+    live, traffic-aware duration_seconds, which already accounts for
+    whatever detour TomTom's routing engine is actually taking around a
+    closure, not a fixed baseline. What was missing was the WHY: a
+    shifted number with no visible reason looks identical to a slow
+    rush hour. route()'s own already-computed "incident" label (e.g.
+    "road closed" — see commute_client._incident_label) gets appended
+    here so the countdown explains itself. Re-fetches route() rather
+    than threading it through _leave_by_for_shift's own return —
+    st.cache_data (5 min TTL) makes this a cache hit, not a second
+    network call, and keeps _leave_by_for_shift's existing contract
+    (and its other callers, leave_by_time/check()) untouched."""
     current = _current_shift(now)
     if current is None:
         return None
@@ -582,6 +598,10 @@ def _countdown_info(now: datetime) -> tuple[int, str, str, bool] | None:
     is_home = _is_home_event(shift)
     verb = "Starts" if is_home else "Leave"
     text = f"{verb} now" if remaining <= 0 else f"{verb} in {_format_clock(remaining)}"
+    if not is_home:
+        route = commute_client.route(_destination_for_shift(shift))
+        if route and route.get("incident"):
+            text += f" — {route['incident']}"
     return target_ms, tier, text, is_home
 
 

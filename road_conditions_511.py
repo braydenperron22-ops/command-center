@@ -55,6 +55,7 @@ import requests
 import streamlit as st
 
 import fetch_throttle
+import groq_client
 import persisted_state
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
@@ -309,9 +310,63 @@ def closures_near_commute() -> list[dict]:
 # dump a backlog the moment this feature ships" way news.py/
 # email_client.py both already are — a closure already active before
 # this existed isn't a new event.
+#
+# Keys are always str(ID), never the raw int — real bug, caught while
+# building the status-update feature below: persisted_state round-
+# trips through JSON, and JSON object keys are always strings, so an
+# entry added this process's lifetime as an int key (e["ID"] straight
+# off the API) would silently stop matching itself after a restart
+# reloads it back as a string key — the exact same closure would then
+# read as "unseen" again and re-toast. Confirmed by tracing the actual
+# json.dumps/json.loads round trip in persisted_state.py.
 _seen_closure_ids: dict = dict(persisted_state.load_per_instance("road_closure_seen_ids", {}))
 _closure_baseline_done: bool = persisted_state.load_per_instance("road_closure_baseline_done", False)
 MAX_SEEN_CLOSURES = 200
+
+
+def _friendly_closure_headline(description: str) -> str:
+    """A short, natural-sounding rewrite of MTO's own raw closure
+    description — session request: "same conversational style that we
+    have from our weather... severe weather alerts." Same shape as
+    weather_alerts_bar._friendly_headline (own module, not a cross-
+    import — each toast source here owns its own presentation, same
+    convention every other source in this app already follows).
+    Cached by groq_client.generate's own exact-prompt-text caching, so
+    this only pays for a real call once per genuinely new closure, not
+    every rerun. Falls back to the raw description unchanged on any AI
+    outage — a real closure worded plainly beats no toast at all."""
+    rewritten = groq_client.generate(
+        "Rewrite this Ontario 511 road closure description as one short, casual sentence a person would "
+        "actually say out loud to a friend — not a formal traffic bulletin, not a paragraph. Keep the real "
+        "road, direction, location, and reason if one's given. Under 12 words. Reply with only the sentence, "
+        "nothing else.\n\n" + description,
+        temperature=0.6,
+        max_output_tokens=80,
+        account="primary",
+        reasoning_effort="low",
+    )
+    return rewritten or description
+
+
+def _spoken_closure_summary(description: str) -> str:
+    """AI rewrite into a flowing sentence or two for Piper to read
+    aloud — same shape as weather_alerts_bar._spoken_summary, scaled
+    down: MTO's own Description field is already a compact one-liner
+    (not a full multi-section bulletin the way EC's report page is),
+    so there's no boilerplate to strip, just tone to smooth over.
+    Falls back to the raw description unchanged on any AI outage, same
+    reasoning as _friendly_closure_headline above."""
+    rewritten = groq_client.generate(
+        "Rewrite this Ontario 511 road closure description as a single smooth, natural-sounding sentence or "
+        "two meant to be read aloud by a text-to-speech voice. Keep every real fact — which road, which "
+        "direction, the exact location, and the reason if one's given. Don't add anything that isn't in the "
+        "original text, and don't editorialize.\n\n" + description,
+        temperature=0.3,
+        max_output_tokens=150,
+        account="primary",
+        reasoning_effort="low",
+    )
+    return rewritten or description
 
 
 def get_new_alerts(now: datetime) -> list[dict]:
@@ -322,7 +377,21 @@ def get_new_alerts(now: datetime) -> list[dict]:
     render_alert_bar as-is, riding the same top-priority toast lane,
     same styling, same voice treatment, at zero new CSS/JS cost.
     "warning" severity, not "statement" — a closure directly blocking
-    the actual commute is a real hazard, not just background info."""
+    the actual commute is a real hazard, not just background info.
+
+    Session request: "same conversational style that we have from our
+    weather... severe weather alerts" — headline/summary are now AI-
+    rewritten (see _friendly_closure_headline/_spoken_closure_summary
+    above) and both open with a deterministic "This is a road closure"
+    lead-in, same "built in code, not left to the AI prompt" reasoning
+    as weather_alerts_bar's own type prefix (same session, same day) —
+    a should from a prompt isn't the same guarantee as code always
+    prepending it. No Warning/Watch/Advisory/Statement-style variation
+    here (511 doesn't have EC's tier vocabulary for this), so the
+    lead-in is fixed rather than computed. The repeating "still in effect" half
+    of "same style... every time it is updated" lives in
+    get_status_updates below, not here — this function only ever fires
+    once, for a genuinely new closure."""
     global _seen_closure_ids, _closure_baseline_done
     try:
         raw = _fetch_events_raw()
@@ -340,7 +409,7 @@ def get_new_alerts(now: datetime) -> list[dict]:
     # on the first call ever, regardless of what's active right then.
     if not _closure_baseline_done:
         for e in closures:
-            _seen_closure_ids[e["ID"]] = True
+            _seen_closure_ids[str(e["ID"])] = True
         _closure_baseline_done = True
         persisted_state.save_per_instance("road_closure_seen_ids", _seen_closure_ids)
         persisted_state.save_per_instance("road_closure_baseline_done", True)
@@ -351,23 +420,106 @@ def get_new_alerts(now: datetime) -> list[dict]:
 
     alerts = []
     for e in closures:
-        closure_id = e["ID"]
+        closure_id = str(e["ID"])
         if closure_id in _seen_closure_ids:
             continue
         _seen_closure_ids[closure_id] = True
         if len(_seen_closure_ids) > MAX_SEEN_CLOSURES:
             _seen_closure_ids.pop(next(iter(_seen_closure_ids)))
-        roadway = e.get("RoadwayName")
-        headline = f"Hwy {roadway} closed" if roadway else "Road closed near your commute"
+        description = e["Description"].strip()
+        headline = f"Road Closure: {_friendly_closure_headline(description)}"
         alerts.append(
             {
                 "kind": "weather",
                 "severity": "warning",
                 "label": "Road Closure",
                 "headline": headline,
-                "summary": e["Description"].strip(),
+                "summary": f"This is a road closure. {_spoken_closure_summary(description)}",
             }
         )
     if alerts:
         persisted_state.save_per_instance("road_closure_seen_ids", _seen_closure_ids)
+    return alerts
+
+
+# Session request: "I want an update every fifteen minutes. Basically
+# saying this alert is still in effect, but then mute it overnight."
+STATUS_UPDATE_INTERVAL_SECONDS = 15 * 60
+# Same 9:30pm-4:30am window night_mode.py's own screen uses (see
+# app.py's own _night_mode_day_start/_night_mode_day_end) — duplicated
+# here rather than imported since this only needs the two hour/minute
+# boundaries, not any of night_mode's own render state. Only gates the
+# REPEATING "still in effect" ping below — a brand-new closure still
+# announces itself regardless of hour via get_new_alerts above, same
+# "a genuinely new hazard doesn't get silenced by the clock" rule every
+# other weather-kind toast in this app already follows; it's the
+# repeating reminder about something already known that's muted, not
+# the first notice.
+def _muted_overnight(now: datetime) -> bool:
+    start = now.replace(hour=21, minute=30, second=0, microsecond=0)
+    end = now.replace(hour=4, minute=30, second=0, microsecond=0)
+    return now >= start or now < end
+
+
+_last_status_update_at: dict = dict(persisted_state.load_per_instance("road_closure_status_at", {}))
+
+
+def get_status_updates(now: datetime) -> list[dict]:
+    """A repeating "still in effect" ping every STATUS_UPDATE_INTERVAL_
+    SECONDS for as long as a real closure stays active near the
+    commute, muted overnight. Deterministic text, no AI call — there's
+    nothing new to say every 15 minutes beyond "still going," same
+    "don't over-rewrite a repeating ping" restraint weather_alerts_bar.
+    get_storm_proximity_alerts's own milestone toasts already
+    established (that session's own "it repeats itself every time
+    there's an update, which is fine" — the repetition itself is fine,
+    a fresh AI paragraph every 15 minutes for the same fact wouldn't
+    be).
+
+    The first time this function ever sees a given closure, it seeds
+    _last_status_update_at for it WITHOUT firing — get_new_alerts
+    above already announced it; this function's own first real ping
+    should land a genuine 15 minutes later, not immediately alongside
+    the "just detected" toast on the very same tick."""
+    global _last_status_update_at
+    if _muted_overnight(now):
+        return []
+    try:
+        raw = _fetch_events_raw()
+    except Exception:
+        return []
+    closures = _real_closures(raw)
+    if not closures:
+        return []
+
+    now_ts = now.timestamp()
+    alerts = []
+    changed = False
+    for e in closures:
+        closure_id = str(e["ID"])
+        last_at = _last_status_update_at.get(closure_id)
+        if last_at is None:
+            _last_status_update_at[closure_id] = now_ts
+            changed = True
+            continue
+        if (now_ts - last_at) < STATUS_UPDATE_INTERVAL_SECONDS:
+            continue
+        _last_status_update_at[closure_id] = now_ts
+        changed = True
+        description = e["Description"].strip()
+        roadway = e.get("RoadwayName")
+        headline = f"Road Closure updated: Hwy {roadway} still closed" if roadway else "Road Closure updated: still closed"
+        alerts.append(
+            {
+                "kind": "weather",
+                "severity": "warning",
+                "label": "Road Closure",
+                "headline": headline,
+                "summary": f"This road closure has been updated. It's still in effect. {description}",
+            }
+        )
+    if changed:
+        if len(_last_status_update_at) > MAX_SEEN_CLOSURES:
+            _last_status_update_at.pop(next(iter(_last_status_update_at)))
+        persisted_state.save_per_instance("road_closure_status_at", _last_status_update_at)
     return alerts
