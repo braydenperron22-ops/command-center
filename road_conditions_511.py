@@ -321,6 +321,18 @@ def conditions_near_commute() -> list[dict]:
     return out
 
 
+def _readable_roadway(roadway: str | None) -> str | None:
+    """MTO's own RoadwayName already carries its own prefix ("HWY 17",
+    "QEW") — real bug, caught live: code elsewhere blindly prepended
+    its own "Hwy " too, producing "Hwy HWY 17". Normalizes "HWY" to
+    "Highway" (matches the AI-rewritten headline's own style) and
+    leaves anything without that prefix (QEW, a named route) alone —
+    no prefix needed there either."""
+    if not roadway:
+        return None
+    return roadway.replace("HWY", "Highway").strip()
+
+
 def _issue_type_label(e: dict) -> str:
     """The real, deterministic name for what kind of road issue this
     is — session request: "when there's construction, when there's
@@ -609,8 +621,8 @@ def get_status_updates(now: datetime) -> list[dict]:
         changed = True
         description = e["Description"].strip()
         type_label = _issue_type_label(e)
-        roadway = e.get("RoadwayName")
-        headline = f"{type_label.title()} updated: Hwy {roadway}" if roadway else f"{type_label.title()} updated"
+        readable_roadway = _readable_roadway(e.get("RoadwayName"))
+        headline = f"{type_label.title()} updated: {readable_roadway}" if readable_roadway else f"{type_label.title()} updated"
         alerts.append(
             {
                 "kind": "weather",
@@ -662,3 +674,73 @@ def road_closure_headline_candidate(now) -> dict | None:
         text += f" (+{len(issues) - 1} more)"
     rotation_class = "rotation-warning" if issue.get("IsFullClosure") else "rotation-notice"
     return {"text": text, "css_class": rotation_class, "target_ms": None, "template": "{}", "zero_text": None}
+
+
+# Session request: "do i get an alert for when it clears?" — real gap,
+# nothing here caught that before this. Separate persisted tracker from
+# _seen_closure_ids above (that one only ever grows — "have I ever
+# announced this ID," permanent dedup memory) — this one tracks "is
+# this ID CURRENTLY active," shrinking as issues clear, so a real
+# clear is just "an ID that was in this set on the last check and
+# isn't now." Stores a little context (type/roadway) per id, not just
+# a bool, so the "cleared" toast can still say what cleared even though
+# the event itself has already dropped out of the live 511 feed by
+# the time this runs.
+_ACTIVE_IDS_KEY = "road_closure_active_ids"
+_last_known_active: dict = dict(persisted_state.load_per_instance(_ACTIVE_IDS_KEY, {}))
+
+
+def get_cleared_alerts(now) -> list[dict]:
+    """A real toast the moment a previously-active road issue clears —
+    fires once, then it's forgotten (a later, genuinely new issue with
+    a new ID is its own new announcement via get_new_alerts, not
+    treated as this one reopening). Deterministic text, no AI call —
+    "X has cleared" needs no rewriting the way describing a live hazard
+    does. Unmuted overnight on purpose, same as get_new_alerts's own
+    first announcement — this is a one-time, low-volume event, not a
+    repeating nag, so the "mute it overnight" request (get_status_
+    updates's own gate) doesn't apply here the same way.
+
+    Self-baselines for free: on the very first call ever,
+    _last_known_active starts empty, so there's nothing to compare
+    against and cleared_ids is correctly empty too — no explicit
+    baseline flag needed the way the id-based "new" dedup above
+    required one."""
+    global _last_known_active
+    try:
+        raw = _fetch_events_raw()
+    except Exception:
+        return []
+    routes = _commute_routes(now)
+    issues = _real_road_issues(raw, routes)
+    current = {str(e["ID"]): e for e in issues}
+
+    alerts = []
+    changed = False
+    for issue_id in list(_last_known_active):
+        if issue_id in current:
+            continue
+        info = _last_known_active.pop(issue_id)
+        changed = True
+        type_label = info.get("type") or "road alert"
+        readable_roadway = _readable_roadway(info.get("roadway"))
+        headline = f"{type_label.title()} cleared: {readable_roadway}" if readable_roadway else f"{type_label.title()} cleared"
+        where = f" on {readable_roadway}" if readable_roadway else ""
+        alerts.append(
+            {
+                "kind": "weather",
+                "severity": "statement",
+                "label": type_label.title(),
+                "headline": headline,
+                "summary": f"The {type_label}{where} has cleared.",
+            }
+        )
+
+    for issue_id, e in current.items():
+        if issue_id not in _last_known_active:
+            _last_known_active[issue_id] = {"type": _issue_type_label(e), "roadway": e.get("RoadwayName")}
+            changed = True
+
+    if changed:
+        persisted_state.save_per_instance(_ACTIVE_IDS_KEY, _last_known_active)
+    return alerts

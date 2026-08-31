@@ -3043,6 +3043,14 @@ def _gather_new_alerts(now: datetime) -> list[dict]:
     except Exception:
         pass
 
+    # Session request: "do i get an alert for when it clears?" — real
+    # gap, nothing caught this before. Own persisted tracker, own
+    # comparison logic — see get_cleared_alerts's own docstring.
+    try:
+        alerts.extend(road_conditions_511.get_cleared_alerts(now))
+    except Exception:
+        pass
+
     try:
         alerts.extend(
             fetch_throttle.run_bounded("email_alerts_new", lambda: email_client.get_new_alerts(now), _toast_budget_start, default=[])
