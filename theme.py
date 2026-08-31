@@ -46,14 +46,19 @@ CSS = """
    `!important` still loses to an external stylesheet rule that has
    one.
 
-   Two exceptions, kept on purpose because they're the actual CONTENT
+   Three exceptions, kept on purpose because they're the actual CONTENT
    of their page, not decorative chrome — killing them wouldn't make
    the dashboard calmer, it would make a whole feature stop working:
    .ticker-track's scroll (the bottom ticker's entire reason to exist
-   is that it moves) and .weather-radar-frame-img's crossfade (the
+   is that it moves), .weather-radar-frame-img's crossfade (the
    Radar page's whole point is showing recent motion; the frames are
    already-loaded static images cycled by app.py's kiosk-radar-anim
-   script, so the "animation" here is genuinely the data, not polish).
+   script, so the "animation" here is genuinely the data, not polish),
+   and .night-shooting-star's own rare streak (night_mode.py — the one
+   deliberate exception to the whole rest of that view being still and
+   quiet; see its own comment block below for the restart-safe
+   alternating-class trick this needs to actually respect a fresh
+   per-rerun delay, same reasoning as .rotation-timer-fill-a/-b).
    Everything else — every pulse, glow, fade-in, swap-in, shake, and
    page/jumbotron transition — is gone. */
 * {
@@ -65,6 +70,32 @@ CSS = """
 }
 .weather-radar-frame-img {
     transition: opacity 0.35s ease !important;
+}
+.night-shooting-star-a {
+    animation: night-shoot-a 95s linear infinite !important;
+}
+.night-shooting-star-b {
+    animation: night-shoot-b 95s linear infinite !important;
+}
+/* The shorthand above resets animation-delay to 0s (with its own
+   !important — a shorthand's !important covers every sub-property it
+   implicitly sets, not just the ones written out), and the delay
+   can't be fixed inline: confirmed live that Streamlit's markdown
+   rendering drops an inline style attribute WHOLESALE when its value
+   contains `!important`. Real fix, night_mode.py's own side: pass the
+   delay through a plain (non-!important) inline CSS custom property
+   instead — --night-shoot-delay, immune to both problems — and win
+   the cascade with this separate, purely-external longhand, which
+   comes after the shorthand in source order and carries its own
+   !important. */
+.night-shooting-star-a, .night-shooting-star-b {
+    animation-delay: var(--night-shoot-delay, 0s) !important;
+}
+@media (prefers-reduced-motion: reduce) {
+    .night-shooting-star-a, .night-shooting-star-b {
+        animation: none !important;
+        opacity: 0 !important;
+    }
 }
 
 /* Five full-screen/curtain-style elements relied on an `animation:
@@ -5860,18 +5891,24 @@ html, body, [class*="css"] {
     padding: 12px 6px;
 }
 
-/* ============ NIGHT MODE (night_mode.py) ============
-   Session request: "get rid of the smart plug generation... replace
-   [it] by a designated night mode where the display goes dark, and
-   it's used as like a nightstand display... clock, weather...
-   minimalist... make the colors friendly on the eyes... as little
-   blue light as possible." Deliberately its own small, self-contained
-   palette rather than reusing this app's normal --bone/--mut greys or
-   any accent blue (#0A84FF, used all over the daytime UI) — those are
-   exactly the cool/bright tones that make a 3am glance actually wake
-   you up. Every color below is a dim warm amber/copper instead, nothing
-   reaching full brightness, closer to a red-light flashlight or an old
-   LED alarm clock than to the rest of this kiosk. */
+/* ============ NIGHT MODE — "Night Sky" (night_mode.py) ============
+   Original session request: "get rid of the smart plug generation...
+   replace [it] by a designated night mode where the display goes
+   dark, and it's used as like a nightstand display... clock,
+   weather... minimalist... make the colors friendly on the eyes...
+   as little blue light as possible." Redesigned same-app-session,
+   picked from five real mockups: "I like night sky. make it even
+   better." Still its own small, self-contained palette, deliberately
+   separate from this app's normal --bone/--mut greys or any accent
+   blue (#0A84FF used all over the daytime UI) — every color below,
+   including the sky gradient itself, is warm: amber, copper, ember,
+   parchment. No blue is used anywhere in this block, on purpose —
+   that original "as little blue light as possible" instruction is
+   still the one hard constraint a prettier redesign doesn't get to
+   relax. No @import either — see this file's own top-of-file comment
+   on why web fonts were dropped kiosk-wide; the serif here is a real
+   system stack (ui-serif/Iowan Old Style/Palatino/Georgia), not a
+   network request this display can't afford to depend on at 3am. */
 .night-mode {
     position: fixed;
     inset: 0;
@@ -5883,77 +5920,189 @@ html, body, [class*="css"] {
        underneath rather than relying on every single one of those
        being individually suppressed correctly. */
     z-index: 10000;
-    background: #000000;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1.2rem;
+    overflow: hidden;
 }
-/* Session report: "dim the display to the same extent that it's
-   dimmed overnight normally." app.py's own regular sleep-dim overlay
-   sits at z-index:20, well under .night-mode's own 10000, so it was
-   rendering completely hidden underneath this view the whole time —
-   see night_mode.render()'s own `dim` param for the fix. position:
-   absolute (not fixed) since .night-mode itself is already the fixed,
-   full-viewport containing block this needs to cover. */
-.night-mode-overlay {
+/* The night sky itself — a near-imperceptible vertical gradient, not
+   flat black, so the view reads as an actual sky rather than a blank
+   screen with text on it. Deliberately warm-neutral top-to-bottom
+   (charcoal to warm-charcoal), never indigo or blue-black — a
+   thematically "correct" dusk-to-night gradient would normally lean
+   blue at the zenith, but that's exactly the tone this view exists to
+   avoid, so it's spent entirely on warmth instead. */
+.night-mode-sky {
+    background: linear-gradient(180deg, #050403 0%, #070502 55%, #0c0704 100%);
+}
+.night-stars {
     position: absolute;
     inset: 0;
     pointer-events: none;
 }
+.night-star {
+    position: absolute;
+    border-radius: 50%;
+    background: #E8D9C0;
+}
+/* One rare streak per _SHOOTING_STAR_CYCLE_SECONDS (95s — see
+   night_mode.py), not a repeating decorative flourish: a screen next
+   to someone sleeping earns at most an occasional surprise, not
+   motion that keeps drawing the eye. The 95s keyframes below spend
+   ~90% of their length doing nothing (opacity 0, no movement) and the
+   rest on one quick diagonal streak — see this file's own top-of-file
+   kill-switch comment for why this needs its own scoped !important
+   exception, and .rotation-timer-fill-a/-b (same file) for why the
+   class alternates every render rather than the delay alone changing:
+   Streamlit patches this node's style attribute in place across
+   reruns, and mutating animation-delay on an animation already in
+   flight is a no-op per spec — only a genuinely new animation
+   instance (a new class, same keyframes under a different name)
+   actually respects a freshly computed delay. */
+.night-shooting-star {
+    position: absolute;
+    top: 9%;
+    left: 62%;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: linear-gradient(90deg, rgba(232,217,192,0) 0%, #E8D9C0 85%, #FBF3E4 100%);
+    transform-origin: left center;
+    opacity: 0;
+}
+@keyframes night-shoot-a {
+    0%, 60% { opacity: 0; transform: translate(0, 0) rotate(-20deg) scaleX(0.4); }
+    62% { opacity: 1; transform: translate(0, 0) rotate(-20deg) scaleX(1); }
+    72% { opacity: 0; transform: translate(-230px, 135px) rotate(-20deg) scaleX(1); }
+    100% { opacity: 0; transform: translate(-230px, 135px) rotate(-20deg) scaleX(0.4); }
+}
+@keyframes night-shoot-b {
+    /* Identical shape to -a, distinct name only — the point is that
+       alternating the class forces a real restart; the motion itself
+       isn't meant to vary. */
+    0%, 60% { opacity: 0; transform: translate(0, 0) rotate(-20deg) scaleX(0.4); }
+    62% { opacity: 1; transform: translate(0, 0) rotate(-20deg) scaleX(1); }
+    72% { opacity: 0; transform: translate(-230px, 135px) rotate(-20deg) scaleX(1); }
+    100% { opacity: 0; transform: translate(-230px, 135px) rotate(-20deg) scaleX(0.4); }
+}
+.night-horizon {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 9vh;
+    min-height: 64px;
+    opacity: 0.9;
+}
+.night-content {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.6rem;
+}
+/* Real, computed lunar phase — see night_mode.py's own _moon_visual.
+   Two same-size circles: .night-moon is the lit disc (a warm gold
+   radial gradient standing in for sunlit rock), .night-moon-shadow is
+   an identically-sized dark disc translated over it by a JS-free,
+   server-computed inline transform — overflow:hidden on the parent
+   clips it into a real crescent/gibbous silhouette. No transition on
+   the shadow disc on purpose: the phase changes meaningfully maybe
+   once a day, so a hard snap between reruns is correct, not a
+   missing-animation bug. */
+.night-moonwrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.65rem;
+}
+.night-moon {
+    position: relative;
+    width: 4.6rem;
+    height: 4.6rem;
+    border-radius: 50%;
+    overflow: hidden;
+    background: radial-gradient(circle at 35% 32%, #F0C685 0%, #D9A55C 55%, #A9743A 100%);
+    box-shadow: 0 0 26px rgba(217,165,92,0.32), 0 0 3px rgba(217,165,92,0.5);
+}
+.night-moon-shadow {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: #130C06;
+}
+.night-moonlabel {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 0.85rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #7A5A38;
+}
+.night-clockwrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.55rem;
+}
 .night-clock {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
-    font-size: 13rem;
-    font-weight: 300;
+    font-size: 9.5rem;
+    font-weight: 200;
     line-height: 1;
-    letter-spacing: -0.02em;
-    color: #B8703A;
+    letter-spacing: -0.01em;
+    color: #C9873F;
     font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 46px rgba(201,135,63,0.22);
 }
 .night-ampm {
-    font-size: 3rem;
+    font-size: 2.1rem;
     font-weight: 400;
-    margin-left: 0.8rem;
-    color: #7A4A26;
+    margin-left: 0.7rem;
+    color: #8A5A30;
     vertical-align: middle;
 }
 .night-date {
-    font-size: 1.7rem;
+    font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-size: 1.3rem;
     font-weight: 400;
-    color: #6B4224;
-    letter-spacing: 0.02em;
+    font-style: italic;
+    color: #8A6540;
+    letter-spacing: 0.01em;
 }
-.night-weather {
+.night-bottomrow {
     display: flex;
     align-items: center;
-    gap: 0.9rem;
-    margin-top: 0.8rem;
-    color: #6B4224;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 1.15rem;
+    color: #6B4A2C;
 }
-.night-weather-icon {
-    width: 2.2rem;
-    height: 2.2rem;
+.night-weatherline {
     display: flex;
-    color: #8F5A2C;
+    align-items: baseline;
+    gap: 0.35rem;
 }
-.night-weather-icon svg {
-    width: 100%;
-    height: 100%;
-}
-.night-weather-temp {
-    font-size: 2rem;
-    font-weight: 500;
+.night-warm {
+    font-weight: 600;
     color: #A8622E;
     font-variant-numeric: tabular-nums;
 }
-.night-weather-cond {
-    font-size: 1.4rem;
+.night-lowsep {
+    opacity: 0.5;
 }
-.night-weather-low {
-    font-size: 1.4rem;
-    padding-left: 0.9rem;
-    border-left: 1px solid #3A2412;
+.night-sunline {
+    font-size: 0.95rem;
+    color: #5C4128;
+}
+/* Divider only appears between the two — a lone sunrise line (no
+   weather data) or a lone weather line (sunrise calc failed) shouldn't
+   carry a stray pipe with nothing on its other side. */
+.night-bottomrow .night-sunline:not(:first-child) {
+    margin-left: 1.2rem;
+    padding-left: 1.2rem;
+    border-left: 1px solid rgba(122,74,38,0.35);
 }
 
 /* Phone breakpoint. Everything above this point is untouched at any
