@@ -91,6 +91,30 @@ def _tier(title: str) -> str:
     return "statement"
 
 
+def _type_label(title: str) -> str:
+    """The real EC bulletin type — Warning/Watch/Advisory/Statement —
+    for saying the actual type out loud. Deliberately NOT just
+    _tier(title).capitalize(): _tier only distinguishes 3 buckets
+    (warning/watch/"everything else") because that's all its own
+    caller, severity coloring, needs — it folds a real Advisory into
+    the same "statement" bucket as an actual Special Weather Statement.
+    That's the right call for a color tier, but wrong for saying the
+    real type out loud — confirmed live against the actual active
+    alert while building this ("YELLOW ADVISORY - FOG..."), which
+    _tier alone would report as "statement," not the real word EC
+    itself used. Falls back to "Statement" (EC's own generic bulletin
+    name, "Special Weather Statement") only when none of the other
+    three real type words appear at all."""
+    t = title.lower()
+    if "warning" in t:
+        return "Warning"
+    if "watch" in t:
+        return "Watch"
+    if "advisory" in t:
+        return "Advisory"
+    return "Statement"
+
+
 def _hazard_rank(title: str) -> int:
     t = title.lower()
     matches = [rank for hazard, rank in _HAZARD_RANK.items() if hazard in t]
@@ -206,6 +230,30 @@ MAX_SEEN_ALERTS = 200
 # commute_reminder.py/prediction_markets_client.py's own toast dedup.
 _seen_alert_keys: dict = dict(persisted_state.load_per_instance("weather_seen_alerts", {}))
 
+# Session request: "when a special weather statement is issued... it
+# should always say this is a warning/watch/whatever... and every time
+# it is updated, you should say this warning has been updated... this
+# is how it should always always always start." Deliberately a SEPARATE
+# store from _seen_alert_keys above, keyed by TITLE not id: EC issues a
+# new id every time it re-issues/extends an already-active alert (see
+# get_new_alerts's own docstring on why that's what makes a "continued"
+# reissue toast at all), so "have I seen THIS EXACT id before" can never
+# answer "is this genuinely the first time, or a reissue of something
+# already active" — only the title stays stable across a reissue.
+_ANNOUNCED_TITLES_KEY = "weather_announced_titles"
+_announced_titles: dict = dict(persisted_state.load_per_instance(_ANNOUNCED_TITLES_KEY, {}))
+
+
+def _is_update(title: str) -> bool:
+    return title in _announced_titles
+
+
+def _mark_title_announced(title: str) -> None:
+    _announced_titles[title] = True
+    if len(_announced_titles) > MAX_SEEN_ALERTS:
+        _announced_titles.pop(next(iter(_announced_titles)))
+    persisted_state.save_per_instance(_ANNOUNCED_TITLES_KEY, _announced_titles)
+
 # Session report: "it's still going twice... for the severe thunderstorm
 # warning alert thing." get_new_alerts (below, the one-shot "just
 # arrived" toast) and get_storm_proximity_alerts (further down, the
@@ -241,7 +289,7 @@ def _mark_weather_toast_fired(key: str, now_ts: float) -> None:
     persisted_state.save_per_instance("weather_last_toast_at", _last_weather_toast_at)
 
 
-def _friendly_headline(title: str) -> str:
+def _friendly_headline(title: str, type_label: str | None = None, is_update: bool = False) -> str:
     """A short, natural-sounding rewrite of EC's own raw alert title —
     session request: "rephrase a special weather alert... it's just
     this yellow advisory fog North bay, powassan, mattawa, which isn't
@@ -266,7 +314,22 @@ def _friendly_headline(title: str) -> str:
     only ever pays for a real call once per genuinely new alert
     issuance, not every rerun. Falls back to the raw title unchanged on
     any AI outage/rate limit, same as every other AI-optional path in
-    this app — a real hazard worded plainly beats no banner at all."""
+    this app — a real hazard worded plainly beats no banner at all.
+
+    `type_label`/`is_update`, when given, prepend a deterministic
+    "Advisory:"/"Advisory updated:" prefix — session request: "it
+    should always say this is a warning/watch/whatever... this is how
+    it should always always always start." Built in code, not left to
+    the AI rewrite prompt above, on purpose: an AI instruction to
+    "always open with the type" is a should, not a guarantee (this
+    exact class of reliability gap already burned the morning brief's
+    profanity prompt once — see that memory), and "always always
+    always" is exactly the bar a prompt alone can't promise. Optional
+    and defaulted off because this function has a second caller,
+    weather_statement_candidate's own PERSISTENT banner — that one
+    keeps its current unprefixed behavior; the "issued"/"updated"
+    framing is specific to get_new_alerts's one-shot toast moment, not
+    a standing status display."""
     rewritten = groq_client.generate(
         "Rewrite this Environment Canada weather alert title as one short, casual sentence a person would "
         "actually say out loud to a friend — not a formal bulletin, not a paragraph. Keep the real hazard "
@@ -276,7 +339,11 @@ def _friendly_headline(title: str) -> str:
         account="primary",
         reasoning_effort="low",
     )
-    return rewritten or title
+    body = rewritten or title
+    if type_label is None:
+        return body
+    prefix = f"{type_label} updated" if is_update else type_label
+    return f"{prefix}: {body}"
 
 
 def get_new_alerts(now: datetime) -> list[dict]:
@@ -328,8 +395,13 @@ def get_new_alerts(now: datetime) -> list[dict]:
         _seen_alert_keys.pop(next(iter(_seen_alert_keys)))
     persisted_state.save_per_instance("weather_seen_alerts", _seen_alert_keys)
     _mark_weather_toast_fired(key, now_ts)
+    # is_update checked BEFORE marking this title announced below — the
+    # first time a title is ever seen, _is_update must read False.
+    type_label = _type_label(alert["title"])
+    is_update = _is_update(alert["title"])
+    _mark_title_announced(alert["title"])
     severity = _severity(alert["title"])
-    headline = _friendly_headline(alert["title"])
+    headline = _friendly_headline(alert["title"], type_label, is_update)
     phase_info = ec_storm_timing.storm_phase(now, alert["title"], severity)
     # Session follow-up: "make it so that the clearing [time] number
     # sits where the leave in section is in the jumbotron" — this used
@@ -365,7 +437,7 @@ def get_new_alerts(now: datetime) -> list[dict]:
             # out again every few minutes), so their dicts have no
             # "summary" key at all and render_alert_bar's own
             # .get("summary", "") default covers it.
-            "summary": _spoken_summary(alert),
+            "summary": _spoken_summary(alert, type_label, is_update),
             # See _is_severe_hazard's own docstring — a heat/squall/
             # statement-tier alert gets the normal quiet-at-night volume
             # curve, not the never-fully-silent one real storms get.
@@ -434,7 +506,7 @@ def _milestone_spoken_text(title: str, approaching: bool, milestone: int) -> str
     return f"The {lower} is expected to clear in {milestone} minutes."
 
 
-def _spoken_summary(alert: dict) -> str:
+def _spoken_summary(alert: dict, type_label: str, is_update: bool) -> str:
     """The text kioskPlayWeatherAlert (app.py) speaks in full for a
     genuine new alert. Session discovery, live-testing against a real
     active alert: EC's own ATOM <summary> is NOT the real bulletin for a
@@ -492,9 +564,29 @@ def _spoken_summary(alert: dict) -> str:
     audio has to be rendered from SOME text. A plain generic line
     covers that one rare case now, instead of leaving app.py's own JS
     to invent a fallback wrapper — everything about what gets spoken is
-    decided here, once, server-side."""
+    decided here, once, server-side.
+
+    `type_label`/`is_update` (required — this function has exactly one
+    caller, get_new_alerts's own one-shot toast) build a deterministic
+    lead-in sentence — session request: "it should always say this is
+    a warning/watch/whatever... every time it's updated, say this
+    warning has been updated... this is how it should always always
+    always start." Computed once, up front, and prepended to every
+    return path below (including both fallback branches) rather than
+    duplicated per-branch, so "always always always" can't quietly stop
+    being true from a future edit to just one of them. Built in code,
+    not folded into either AI prompt below — see _friendly_headline's
+    own comment on why an instruction isn't the same guarantee as code."""
+    # a/an agreement — caught live: "This is a advisory" (the only one
+    # of _type_label's four possible words that starts with a vowel
+    # sound). A plain first-letter check is safe here specifically
+    # because the input is always one of exactly those four known
+    # words, not general English text.
+    article = "an" if type_label[0].lower() in "aeiou" else "a"
+    lead_in = f"This {type_label.lower()} has been updated." if is_update else f"This is {article} {type_label.lower()}."
     if "id" not in alert:
-        return alert.get("summary", "") or f"A new {alert['title'].lower()} is now active in your area."
+        body = alert.get("summary", "") or f"A new {alert['title'].lower()} is now active in your area."
+        return f"{lead_in} {body}"
     # Real bug, caught live (a "SEVERE THUNDERSTORM ENDED" alert whose
     # report page had already gone empty): this used to fall back to
     # alert["summary"] here, but for a real EC alert (the "id" branch
@@ -509,7 +601,7 @@ def _spoken_summary(alert: dict) -> str:
     # guard exists for.
     raw = ec_alerts.fetch_full_description()
     if not raw:
-        return f"A new {alert['title'].lower()} has just been issued for your area."
+        return f"{lead_in} No further details are available yet."
     # account="primary"/reasoning_effort="low": see groq_client.
     # GROQ_MODEL's own comment on the real Aug 2026 llama-3.3-70b-
     # versatile decommission — this account now runs gpt-oss-120b too
@@ -549,7 +641,7 @@ def _spoken_summary(alert: dict) -> str:
     )
     if rewritten and _looks_like_refusal(rewritten):
         rewritten = None
-    return _strip_spoken_labels(rewritten or raw)
+    return f"{lead_in} {_strip_spoken_labels(rewritten or raw)}"
 
 
 def render_alert_bar(alert: dict) -> None:
