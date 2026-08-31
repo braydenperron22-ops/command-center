@@ -38,6 +38,7 @@ from datetime import datetime
 import streamlit as st
 
 import commute_reminder
+import market_circuit_breaker
 import news
 import persisted_state
 import road_conditions_511
@@ -100,6 +101,13 @@ def _candidates(now: datetime, weather: dict | None) -> dict[str, dict]:
     road_issue = road_conditions_511.road_closure_headline_candidate(now)
     if road_issue is not None:
         out["road_issue"] = road_issue
+    # Session request: "market circuit breaker events... super duper
+    # important if it were to happen." rotation-critical unconditionally
+    # (see market_circuit_breaker.py's own docstring) — same wiring
+    # shape as every other source here.
+    circuit_breaker = market_circuit_breaker.circuit_breaker_headline_candidate(now)
+    if circuit_breaker is not None:
+        out["circuit_breaker"] = circuit_breaker
     top = news.top_alert_candidate()
     if top is not None:
         out["news"] = top

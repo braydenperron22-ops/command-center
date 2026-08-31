@@ -31,6 +31,7 @@ import heartbeat
 import holidays_client
 import lightning_client
 import local_news_client
+import market_circuit_breaker
 import market_internals
 import market_volatility_alert
 import market_yf_client
@@ -3074,6 +3075,15 @@ def _gather_new_alerts(now: datetime) -> list[dict]:
 
     try:
         alerts.extend(market_volatility_alert.get_new_alerts(now))
+    except Exception:
+        pass
+
+    # Session request: "market circuit breaker events... super rare,
+    # but... super duper important if it were to happen." See
+    # market_circuit_breaker.py's own module docstring for the real
+    # NYSE Rule 7.12 thresholds this checks against.
+    try:
+        alerts.extend(market_circuit_breaker.get_new_alerts(now))
     except Exception:
         pass
 
