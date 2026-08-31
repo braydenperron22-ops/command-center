@@ -1,25 +1,35 @@
 """Unified top-of-screen rotation for every "red headline" — the
 leave-in countdown, the storm-proximity countdown, the persistent
-weather-statement banner, and breaking news — replacing the old fixed
-vertical stack (four separate pinned slots, most empty most of the
-time, stacked at fixed offsets whenever more than one happened to be
-active) with one shared slot that cycles through whichever are
-currently active, with a real swap animation instead of everything
-just sitting there permanently reserved.
+weather-statement banner, a road-issue banner, and breaking news —
+replacing the old fixed vertical stack (separate pinned slots, most
+empty most of the time, stacked at fixed offsets whenever more than
+one happened to be active) with one shared slot that cycles through
+whichever are currently active, with a real swap animation instead of
+everything just sitting there permanently reserved.
 
 Session request: "make it so all the red headlines within the last 2
 hours cycle at the top of the screen with a cool animation when it
 swaps, make it hard cached in upstash so refreshes dont reset it." "2
 hours" isn't a new number invented for this — it's the exact same
 TOP_ALERT_HOLD_SECONDS breaking news has always used (news.py's own
-render_top_alert_bar/config.py), now applied uniformly to all four
-sources instead of just the one. The Upstash half is real too: news.
+render_top_alert_bar/config.py), now applied uniformly across every
+source instead of just the one. The Upstash half is real too: news.
 py's own top_alert lived in st.session_state until this same session
 fixed it (see that module's own comment) — the rotation's own position/
 timing state gets the identical treatment here, for the identical
 reason: a page reload must never reset which headline is showing or
 restart its swap timer.
-"""
+
+Follow-up session request: "redesign the top bar... get a clearer
+hierarchy going between what's more important" — a distant "leave in 2
+hours" (calm) used to get the exact same rotation turn and screen time
+as an active road closure (warning), the request's own example. Every
+source already computed a real severity tier for its own color; that
+tier now ALSO drives ordering (most severe shows first — see
+_TIER_PRIORITY) and hold time (more severe, more airtime — see
+_TIER_HOLD_SECONDS), and theme.py's own CSS scales font-size by tier
+too, so the hierarchy reads at a glance, not just eventually via which
+one you happen to catch mid-cycle."""
 
 import html
 import time
@@ -34,11 +44,30 @@ import road_conditions_511
 import weather_alerts_bar
 from config import TOP_ALERT_HOLD_SECONDS
 
-# How long each headline holds the shared slot before swapping to the
-# next one, when more than one is eligible at once. Long enough to
-# actually read a full sentence, short enough that a stack of several
-# active headlines all get seen within a reasonable time.
+# How long a headline holds the shared slot before swapping, when more
+# than one is eligible at once — fallback for a tier not in
+# _TIER_HOLD_SECONDS below (shouldn't happen in practice; every real
+# candidate carries a real rotation-* class).
 SWAP_INTERVAL_SECONDS = 8
+
+# Session request: "redesign the top bar... get a clearer hierarchy
+# going between what's more important" — the request's own example was
+# a distant "leave in 2 hours" (calm) getting the exact same rotation
+# turn and screen time as an active road closure (warning). Every
+# candidate already carries a real, server-computed severity class
+# (calm/notice/warning/critical) — even the leave candidate's own,
+# which _render_candidate below doesn't use for its ON-SCREEN color
+# (that stays client-side, live-ticking from data-target-ms) but which
+# IS a real, freshly-computed tier same as the other 4 sources, via
+# commute_reminder._TIER_TO_ROTATION_CLASS — reused here as the one
+# shared severity signal driving both ordering and hold time, instead
+# of adding a second, parallel priority system.
+_TIER_PRIORITY = {"rotation-critical": 3, "rotation-warning": 2, "rotation-notice": 1, "rotation-calm": 0}
+# More important, more airtime — not just seen first, held longer.
+# Calm/FYI items still get their turn, just briefly; critical gets
+# double a calm item's hold, matching how differently urgent the two
+# actually are.
+_TIER_HOLD_SECONDS = {"rotation-critical": 16, "rotation-warning": 12, "rotation-notice": 8, "rotation-calm": 5}
 
 # Loaded once at import, not re-fetched every rerun — same per-rerun-
 # cost convention as every other persisted dict in this app (news.py's
@@ -119,23 +148,31 @@ def _update_first_seen(now_epoch: float, active_keys: set[str]) -> dict[str, flo
     return _first_seen
 
 
-def _advance_rotation(now_epoch: float, eligible_keys: list[str]) -> str:
+def _hold_seconds(candidates: dict[str, dict], key: str) -> float:
+    return _TIER_HOLD_SECONDS.get(candidates[key]["css_class"], SWAP_INTERVAL_SECONDS)
+
+
+def _advance_rotation(now_epoch: float, eligible_keys: list[str], candidates: dict[str, dict]) -> str:
     """Which key currently holds the shared slot — persisted so a page
     reload picks up exactly where the rotation left off instead of
     restarting at the first item with a fresh swap timer. Restarts
-    fresh (index 0, a new full SWAP_INTERVAL_SECONDS) whenever the
-    eligible SET itself changes shape (something new became eligible,
-    or something aged out) — safer than trying to preserve an index
-    that might no longer even be in range, and simple: the set changing
-    is itself already a real, noticeable moment worth resetting the
-    clock on."""
+    fresh (index 0, a new hold timer sized to THAT item's own tier —
+    see _hold_seconds) whenever the eligible SET itself changes shape
+    (something new became eligible, or something aged out) — safer
+    than trying to preserve an index that might no longer even be in
+    range, and simple: the set changing is itself already a real,
+    noticeable moment worth resetting the clock on. eligible_keys
+    itself already arrives priority-sorted (render()'s own job), so
+    index 0 here is always the most important currently-eligible item —
+    the one that should show first on a fresh rotation."""
     global _rotation_state
     if _rotation_state.get("order") != eligible_keys:
-        _rotation_state = {"order": eligible_keys, "index": 0, "swap_at": now_epoch + SWAP_INTERVAL_SECONDS}
+        _rotation_state = {"order": eligible_keys, "index": 0, "swap_at": now_epoch + _hold_seconds(candidates, eligible_keys[0])}
         persisted_state.save("headline_rotation_state", _rotation_state)
     elif len(eligible_keys) > 1 and now_epoch >= _rotation_state["swap_at"]:
         new_index = (_rotation_state["index"] + 1) % len(eligible_keys)
-        _rotation_state = {"order": eligible_keys, "index": new_index, "swap_at": now_epoch + SWAP_INTERVAL_SECONDS}
+        hold = _hold_seconds(candidates, eligible_keys[new_index])
+        _rotation_state = {"order": eligible_keys, "index": new_index, "swap_at": now_epoch + hold}
         persisted_state.save("headline_rotation_state", _rotation_state)
     return eligible_keys[_rotation_state["index"]]
 
@@ -151,15 +188,18 @@ def render(now: datetime, weather: dict | None) -> bool:
     now_epoch = time.time()
     candidates = _candidates(now, weather)
     first_seen = _update_first_seen(now_epoch, set(candidates))
-    # Oldest-first — a headline that's been waiting longest gets first
-    # turn in a newly-formed rotation, rather than an arbitrary order.
+    # Severity first (see _TIER_PRIORITY — the real hierarchy request),
+    # oldest-within-that-tier as the tiebreak — a headline that's been
+    # waiting longest still gets first turn among equally-important
+    # ones, just no longer outranks something genuinely more urgent
+    # only for having shown up earlier.
     eligible_keys = sorted(
         (key for key in candidates if now_epoch - first_seen[key] <= TOP_ALERT_HOLD_SECONDS),
-        key=lambda k: first_seen[k],
+        key=lambda k: (-_TIER_PRIORITY.get(candidates[k]["css_class"], 0), first_seen[k]),
     )
     if not eligible_keys:
         return False
-    current_key = _advance_rotation(now_epoch, eligible_keys)
+    current_key = _advance_rotation(now_epoch, eligible_keys, candidates)
     _render_candidate(current_key, candidates[current_key])
     return True
 

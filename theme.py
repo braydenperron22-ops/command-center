@@ -2784,19 +2784,43 @@ html, body, [class*="css"] {
     color: #FF6961;
 }
 /* Same 4-color palette .leave-headline's own intensity-* tiers already
-   use — one shared scale across all 4 sources rather than each
-   keeping its own bespoke severity naming, so the swap between sources
-   reads as one consistent system, not 4 different color languages
+   use — one shared scale across every source rather than each keeping
+   its own bespoke severity naming, so the swap between sources reads
+   as one consistent system, not several different color languages
    taking turns. The leave candidate itself never carries one of these
-   (see headline_rotation._render_candidate's own comment) — its color
-   comes from the pre-existing, live-ticking .leave-headline.intensity-*
-   rules below instead. */
-.headline-rotation.rotation-calm { color: #5AC8FA; border-color: rgba(90,200,250,0.2); }
+   for its own ON-SCREEN color (see headline_rotation._render_
+   candidate's own comment) — that stays the pre-existing, live-ticking
+   .leave-headline.intensity-* rules below — but headline_rotation.py's
+   own server-side copy of the SAME tier still drives this element's
+   ordering/hold-time priority even for "leave," so the two systems
+   agree on how urgent it is even though only one of them paints it.
+
+   Session request: "get a clearer hierarchy going between what's more
+   important." Font-size/padding now scale WITH severity too, not just
+   color — the base .headline-rotation rule above is the "notice"
+   size; calm reads smaller (a distant, low-urgency FYI shouldn't
+   command the same visual weight as an active hazard), warning and
+   critical read larger — so the hierarchy is visible in a single
+   glance, not just eventually via which tier you happen to catch
+   mid-rotation. */
+.headline-rotation.rotation-calm {
+    color: #5AC8FA;
+    border-color: rgba(90,200,250,0.2);
+    font-size: 1.6rem;
+    padding: 0.4rem 1.3rem;
+}
 .headline-rotation.rotation-notice { color: #FF9F0A; border-color: rgba(255,159,10,0.22); }
-.headline-rotation.rotation-warning { color: #FF6961; border-color: rgba(255,105,97,0.25); }
+.headline-rotation.rotation-warning {
+    color: #FF6961;
+    border-color: rgba(255,105,97,0.25);
+    font-size: 2.15rem;
+    padding: 0.55rem 1.7rem;
+}
 .headline-rotation.rotation-critical {
     color: #FF453A;
     border-color: rgba(255,69,58,0.3);
+    font-size: 2.3rem;
+    padding: 0.6rem 1.8rem;
     animation: leave-headline-pulse 1.2s ease-in-out infinite;
 }
 /* The one-shot "swap" animation itself — a JS-toggled class
