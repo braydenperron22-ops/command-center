@@ -1447,13 +1447,28 @@ def top_alert_candidate() -> dict | None:
     re-checks the stored headline against a live filter on each call,
     since a keyword-list edit mid-session changing its mind wouldn't
     un-ring the bell anyway, and re-validating would mean a real AI
-    call on every rerun besides."""
+    call on every rerun besides.
+
+    Session report: "breaking news falls into the same category in
+    terms of the color hierarchy as road closures, severe thunderstorms,
+    and market circuit breakers... tone down regular market breaking
+    news." rotation-warning (this app's real-hazard tier — a genuine
+    full closure, an actual Severe Thunderstorm Warning) used to be
+    shared with every AI-classified headline here regardless of
+    category (Fed/BoC, Earnings, Tariffs, Conflict, plain Breaking
+    News — see _AI_VERDICT_LABELS; there's no finer severity gradient
+    among them once classified "important" to preserve), diluting what
+    that tier was actually supposed to mean. Downgraded to rotation-
+    notice — still real, still worth the shared slot and a genuine
+    swap-in, just visually and temporally subordinate (smaller,
+    shorter hold, lower rotation priority — see headline_rotation.py's
+    own _TIER_PRIORITY/_TIER_HOLD_SECONDS) to an actual active hazard."""
     top_alert = _current_top_alert()
     if not top_alert:
         return None
     return {
         "text": top_alert["headline"],
-        "css_class": "rotation-warning",
+        "css_class": "rotation-notice",
         "target_ms": None,
         "template": "{}",
         "zero_text": None,
