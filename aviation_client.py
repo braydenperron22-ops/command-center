@@ -55,8 +55,16 @@ HEXDB_AIRCRAFT_URL = "https://hexdb.io/api/v1/aircraft/{icao24}"
 HEXDB_ROUTE_URL = "https://hexdb.io/api/v1/route/icao/{callsign}"
 
 CACHE_TTL_SECONDS = 5 * 60
-DETECTION_RADIUS_KM = 50  # "the surrounding area" — a genuinely local radar feel, not a whole-province one
-CLOSE_RADIUS_KM = 15  # "particularly close"
+# Session follow-up 2026-08-31: "how big is the radius... I'm thinking
+# like a ten kilometer circle over my house, maybe fifteen." Picked 15.
+# One real radius now, not two — DETECTION_RADIUS_KM (does an aircraft
+# get considered at all) and CLOSE_RADIUS_KM (is it "close" enough to
+# be one of the toast-worthy reasons) are the same number on purpose:
+# the original build had a wider 50km detection ring with a tighter
+# 15km "close" trigger inside it, but that's not what was asked for
+# here — anything inside this one circle should show up, full stop.
+DETECTION_RADIUS_KM = 15
+CLOSE_RADIUS_KM = 15
 LOW_ALTITUDE_FT = 3000
 # Don't re-alert the same airframe while it's still on the same pass
 # through the area (a few consecutive 5-minute polls would otherwise
