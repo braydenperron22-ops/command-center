@@ -111,10 +111,43 @@ def _fetch_route_raw(api_key: str, dest_lat: float, dest_lon: float, record_hist
         lat2=dest_lat, lon2=dest_lon,
     )
     fetch_throttle.wait_turn()
-    resp = requests.get(url, params={"key": api_key, "traffic": "true", "sectionType": "traffic"}, timeout=10)
+    # maxAlternatives/alternativeType=anyRoute — session report: "you
+    # legit cannot get through, it's a closure. tomtom is flat out
+    # lying to me about getting to work in 24 mins." Confirmed against
+    # TomTom's own documentation: the reference route (routes[0], all
+    # this used to ever request) is BY DESIGN routed straight through a
+    # ROAD_CLOSURE incident, with that incident's own time cost
+    # explicitly excluded from the reference route's own summary stats
+    # — not a bug on TomTom's side, a deliberate reference-route
+    # convention that makes its number fiction whenever a real closure
+    # is active. alternativeType="betterRoute" (the mode that would
+    # give a clean "planningReason": "Blockage" flag) needs an existing
+    # route to reconstruct against and 400s on a fresh calculateRoute
+    # call — confirmed live — so "anyRoute" is what's actually usable
+    # here; the severity check below (reusing _incident_label) is what
+    # decides whether an alternative is actually needed.
+    resp = requests.get(
+        url,
+        params={"key": api_key, "traffic": "true", "sectionType": "traffic", "maxAlternatives": 2, "alternativeType": "anyRoute"},
+        timeout=15,
+    )
     resp.raise_for_status()
-    route_data = resp.json()["routes"][0]
-    summary = route_data["summary"]
+    routes = resp.json()["routes"]
+    reference = routes[0]
+    # A real severe section on the reference route (see SEVERE_
+    # MAGNITUDE/SEVERE_SPEED_KMH — this is exactly what a genuine
+    # closure's own TomTom section looks like, confirmed live against
+    # the real Highway 17 closure) means the reference route's own
+    # duration/delay can't be trusted as actually drivable. Switch to
+    # whichever real alternative is fastest — still a real, genuinely
+    # calculated route, not an invented number. `incident` itself stays
+    # sourced from the reference route either way, since that's what's
+    # actually explaining why the number changed.
+    incident = _incident_label(reference)
+    chosen = reference
+    if incident and len(routes) > 1:
+        chosen = min(routes[1:], key=lambda r: r["summary"]["travelTimeInSeconds"])
+    summary = chosen["summary"]
     # Inside the cached function, not in route() below — st.cache_data
     # only re-executes this body on an actual cache miss, so this
     # naturally records one point per real TomTom call (~every 15 min),
@@ -128,7 +161,7 @@ def _fetch_route_raw(api_key: str, dest_lat: float, dest_lon: float, record_hist
         "duration_seconds": summary["travelTimeInSeconds"],
         "delay_seconds": summary["trafficDelayInSeconds"],
         "distance_km": summary["lengthInMeters"] / 1000,
-        "incident": _incident_label(route_data),
+        "incident": incident,
     }
 
 
