@@ -5955,6 +5955,47 @@ html, body, [class*="css"] {
     padding-left: 0.9rem;
     border-left: 1px solid #3A2412;
 }
+/* Session request: "subtle urgency... a little tab that shows it's
+   still active when I wake up." Corner placement, not part of the
+   centered clock/date/weather stack — a real signal, but deliberately
+   subordinate to the main content, same "subtle" instruction the
+   whole thing is built around. position:absolute works directly
+   against .night-mode's own position:fixed containing block, no extra
+   wrapper needed. Static — no pulse/blink; this app's own global
+   animation kill-switch would drop one anyway, and a steady tag reads
+   as "still true," not "just happened," which is the honest framing
+   for something that's been active for a while by the time anyone's
+   looking at this screen. */
+.night-attention {
+    position: absolute;
+    top: 2rem;
+    right: 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.5rem;
+}
+.night-attention-item {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 0.95rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: #C9873F;
+    background: rgba(90, 50, 20, 0.32);
+    border: 1px solid rgba(201, 135, 63, 0.32);
+    padding: 0.45rem 0.9rem;
+    border-radius: 999px;
+}
+.night-attention-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: #D9822B;
+    flex-shrink: 0;
+}
 
 /* Phone breakpoint. Everything above this point is untouched at any
    width above it (including the kiosk monitor, always far wider) —

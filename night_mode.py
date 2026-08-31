@@ -26,7 +26,45 @@ from datetime import datetime
 
 import streamlit as st
 
+import road_conditions_511
+import weather_alerts_bar
 from icons import icon_for, label_for
+
+
+def _overnight_attention_items(now: datetime) -> list[str]:
+    """What's still real and worth a glance the moment you wake up —
+    session request: "if there's an ongoing special weather statement
+    or road closure... something worth my attention overnight, just a
+    little tab that shows it's still active." Two real, already-live
+    sources, checked fresh on every render (this view reruns like any
+    other page): weather_alerts_bar's own current active-alert
+    severity, and road_conditions_511's own real, route-matched active
+    issues. Deliberately just an existence check + a short generic
+    label, not the full friendly headline those sources can also give
+    — this is a subtle "something's active, FYI" signal for a tiny
+    corner tab, not a second full readout; the real detail is already
+    one page-flip away on Weather/Household.
+
+    Reaching this function at all already means nothing storm-grade is
+    active — a genuine thunderstorm/tornado/hurricane bypasses night
+    mode entirely before render() is ever called (see app.py's own
+    _night_mode_storm_active gate) — so whatever shows up here is a
+    lesser tier (fog, frost, heat, an advisory) that's still real and
+    still worth knowing, just not urgent enough to already have kicked
+    you off this screen."""
+    items = []
+    try:
+        if weather_alerts_bar.current_severity() is not None:
+            items.append("Weather statement active")
+    except Exception:
+        pass
+    try:
+        issues = road_conditions_511.road_issues_near_commute(now)
+        if issues:
+            items.append(f"{issues[0]['type'].capitalize()} active")
+    except Exception:
+        pass
+    return items
 
 
 def render(now: datetime, weather: dict | None, category: str, phase: str, dim: float = 0.0) -> None:
@@ -70,11 +108,25 @@ def render(now: datetime, weather: dict | None, category: str, phase: str, dim: 
         overlay_alpha = dim * 0.82
         overlay_html = f'<div class="night-mode-overlay" style="background:rgba(0,0,0,{overlay_alpha:.3f});"></div>'
 
+    # Session request: "subtle urgency... a little tab that shows it's
+    # still active when I wake up" — see _overnight_attention_items's
+    # own docstring for what qualifies and why. A plain static tag per
+    # item, no animation (this app's own global kill-switch would drop
+    # one anyway) and no color escalation beyond the rest of the
+    # screen's own warm palette — "subtle" is the whole point, not a
+    # second alarm layered onto a screen that's supposed to stay calm.
+    attention_html = ""
+    attention_items = _overnight_attention_items(now)
+    if attention_items:
+        tags = "".join(f'<span class="night-attention-item"><span class="night-attention-dot"></span>{html.escape(item)}</span>' for item in attention_items)
+        attention_html = f'<div class="night-attention">{tags}</div>'
+
     st.markdown(
         f'<div class="night-mode">'
         f'<div class="night-clock">{time_str}<span class="night-ampm">{ampm}</span></div>'
         f'<div class="night-date">{date_str}</div>'
         f"{weather_html}"
+        f"{attention_html}"
         f"{overlay_html}"
         f"</div>",
         unsafe_allow_html=True,
