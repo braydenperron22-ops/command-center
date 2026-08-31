@@ -157,11 +157,20 @@ def _fetch_route_raw(api_key: str, dest_lat: float, dest_lon: float, record_hist
     # different routes against each other.
     if record_history:
         commute_history.record(summary["travelTimeInSeconds"])
+    # Session request: "every single road that is in any of my
+    # commutes" — real point-by-point geometry of the actual route
+    # being taken (already `chosen`, so this reflects any active
+    # severe-section reroute above too), for road_conditions_511.py to
+    # match real MTO events against the real driven path instead of a
+    # blunt radius around either endpoint. Confirmed live: a real
+    # ~24km route returns 250 real lat/lon points.
+    points = [(p["latitude"], p["longitude"]) for p in chosen.get("legs", [{}])[0].get("points", [])]
     return {
         "duration_seconds": summary["travelTimeInSeconds"],
         "delay_seconds": summary["trafficDelayInSeconds"],
         "distance_km": summary["lengthInMeters"] / 1000,
         "incident": incident,
+        "points": points,
     }
 
 

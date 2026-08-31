@@ -216,13 +216,18 @@ def _road_ice_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
         real_conditions = road_conditions_511.conditions_near_commute()
     except Exception:
         real_conditions = []
+    # road_issues_near_commute (renamed from closures_near_commute —
+    # now covers construction/maintenance/incidents too, not just full
+    # closures, see road_conditions_511.py's own session request) needs
+    # `now` to resolve today's real commute route(s), same as every
+    # other caller since that rename.
     try:
-        real_closures = road_conditions_511.closures_near_commute()
+        real_issues = road_conditions_511.road_issues_near_commute(now)
     except Exception:
-        real_closures = []
-    if real_conditions or real_closures:
+        real_issues = []
+    if real_conditions or real_issues:
         parts = [f"Hwy {c['roadway']}: {c['condition'] or 'reduced visibility'}" for c in real_conditions[:2]]
-        parts += [f"Hwy {c['roadway']} closed: {c['description']}" for c in real_closures[:2]]
+        parts += [f"Hwy {c['roadway']} {c['type']}: {c['description']}" for c in real_issues[:2]]
         return 7, f"road conditions (511 Ontario): {'; '.join(parts)}"
     if not road_conditions.ice_risk(weather.get("temp_c"), weather.get("forecast_low_c"), weather):
         return None

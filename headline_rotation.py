@@ -30,6 +30,7 @@ import streamlit as st
 import commute_reminder
 import news
 import persisted_state
+import road_conditions_511
 import weather_alerts_bar
 from config import TOP_ALERT_HOLD_SECONDS
 
@@ -64,6 +65,12 @@ def _candidates(now: datetime, weather: dict | None) -> dict[str, dict]:
     statement = weather_alerts_bar.weather_statement_candidate(weather)
     if statement is not None:
         out["weather_statement"] = statement
+    # Session request: "when there's an alert like this, it should
+    # have the same red headline effect that a severe weather alert
+    # has." Same wiring shape as every other source here.
+    road_issue = road_conditions_511.road_closure_headline_candidate(now)
+    if road_issue is not None:
+        out["road_issue"] = road_issue
     top = news.top_alert_candidate()
     if top is not None:
         out["news"] = top

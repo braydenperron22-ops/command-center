@@ -54,6 +54,8 @@ from datetime import datetime
 import requests
 import streamlit as st
 
+import commute_client
+import commute_reminder
 import fetch_throttle
 import groq_client
 import persisted_state
@@ -124,6 +126,59 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dl = radians(lon2 - lon1)
     a = sin(dp / 2) ** 2 + cos(p1) * cos(p2) * sin(dl / 2) ** 2
     return 2 * earth_radius_km * asin(sqrt(a))
+
+
+# Session request: "make sure that every single road that is in any of
+# my commutes are checked for this... I want to know a hundred percent
+# of the time." Real point-by-point geometry of the actual currently-
+# calculated route (commute_client.route()'s own "points" — the real
+# driven path, reflecting any active severe-section reroute too), not
+# a blunt radius around either endpoint the way NEARBY_RADIUS_KM below
+# still is for the /roadconditions half of this module (untouched —
+# today's request is specifically about events: closures/construction/
+# maintenance, not general surface-condition reporting). Tight radius
+# on purpose: matching against the real path itself needs far less
+# slack than guessing from two endpoints ever did.
+ROUTE_MATCH_RADIUS_KM = 2
+
+
+def _min_distance_to_route_km(lat: float, lon: float, route_points: list[tuple[float, float]]) -> float:
+    if not route_points:
+        return float("inf")
+    return min(_distance_km(lat, lon, p[0], p[1]) for p in route_points)
+
+
+def _commute_routes(now) -> list[list[tuple[float, float]]]:
+    """Real geometry for every commute actually worth checking today —
+    session request: "any of my commutes," not just the one default.
+    The standing Home<->Work commute, plus today's real shift
+    destination (commute_reminder.todays_destination) when it's
+    somewhere genuinely different — not every commute that could ever
+    theoretically happen (unbounded, not practical to check), just the
+    default plus whatever's actually relevant today. Each entry missing
+    (a TomTom outage, e.g.) is simply absent rather than failing the
+    whole check — same graceful-degradation rule every other live
+    fetch in this app already follows."""
+    routes = []
+    try:
+        default_route = commute_client.route()
+        if default_route and default_route.get("points"):
+            routes.append(default_route["points"])
+    except Exception:
+        pass
+    try:
+        today_dest = commute_reminder.todays_destination(now)
+        if today_dest and today_dest != COMMUTE_DESTINATION:
+            today_route = commute_client.route(today_dest)
+            if today_route and today_route.get("points"):
+                routes.append(today_route["points"])
+    except Exception:
+        pass
+    return routes
+
+
+def _near_any_route(lat: float, lon: float, routes: list[list[tuple[float, float]]]) -> bool:
+    return any(_min_distance_to_route_km(lat, lon, points) <= ROUTE_MATCH_RADIUS_KM for points in routes)
 
 
 def _near_commute(lat: float, lon: float) -> bool:
@@ -266,21 +321,42 @@ def conditions_near_commute() -> list[dict]:
     return out
 
 
-def _real_closures(raw: list[dict]) -> list[dict]:
-    """Shared filter both closures_near_commute and get_new_alerts use
-    — a real, currently-active full closure (IsFullClosure == True,
-    regardless of EventType — a real closure shows up tagged as either
-    "roadwork" or "accidentsAndIncidents") within NEARBY_RADIUS_KM of
-    either end of the commute. Keeps the ID field (get_new_alerts'
-    own dedup key) rather than reshaping it away, unlike
-    closures_near_commute's own public {"roadway", "description"}
-    shape."""
+def _issue_type_label(e: dict) -> str:
+    """The real, deterministic name for what kind of road issue this
+    is — session request: "when there's construction, when there's
+    maintenance, when there's a closure, when there's anything" —
+    named for what it really is, not everything flattened to "closure"
+    the way this module used to. Same "built in code, not left to the
+    AI prompt" reliability reasoning as weather_alerts_bar's own type
+    prefix — checked directly against MTO's own real EventType/
+    IsFullClosure fields, not inferred from the free-text description."""
+    if e.get("IsFullClosure"):
+        return "road closure"
+    event_type = (e.get("EventType") or "").lower()
+    if event_type == "roadwork":
+        return "road construction"
+    if event_type == "accidentsandincidents":
+        return "traffic incident"
+    return "road alert"
+
+
+def _real_road_issues(raw: list[dict], routes: list[list[tuple[float, float]]]) -> list[dict]:
+    """Shared filter both road_issues_near_commute and get_new_alerts
+    use — every real MTO event actually along one of today's real
+    commute routes: closures, construction, maintenance, anything MTO
+    reports, not just full closures (session request: "I want to know
+    a hundred percent of the time... construction... maintenance... a
+    closure... anything"). Matched by real route geometry (see
+    _commute_routes/_near_any_route above) rather than a blunt radius
+    from either endpoint, so an issue anywhere along the real driven
+    path counts. Keeps the ID field (get_new_alerts' own dedup key)
+    and IsFullClosure (a severity signal downstream now, not a filter)
+    rather than reshaping them away, unlike road_issues_near_commute's
+    own public {"roadway", "description", "type"} shape."""
     out = []
     for e in raw or []:
-        if not e.get("IsFullClosure"):
-            continue
         lat, lon = e.get("Latitude"), e.get("Longitude")
-        if lat is None or lon is None or not _near_commute(lat, lon):
+        if lat is None or lon is None or not _near_any_route(lat, lon, routes):
             continue
         description = (e.get("Description") or "").strip()
         if not description or not e.get("ID"):
@@ -289,16 +365,24 @@ def _real_closures(raw: list[dict]) -> list[dict]:
     return out
 
 
-def closures_near_commute() -> list[dict]:
-    """[{"roadway", "description"}] for every real, currently-active
-    full closure near the commute — [] on a quiet day or a fetch
-    failure."""
+def road_issues_near_commute(now) -> list[dict]:
+    """[{"roadway", "description", "type"}] for every real, currently-
+    active road issue — closure, construction, maintenance, anything
+    MTO reports — along any of today's real commute routes. [] on a
+    genuinely quiet day or a fetch failure. Renamed from the old
+    closures_near_commute (kept finding only full closures) — same
+    "prefer real data over guessing" upgrade, now covering what the
+    name always should have promised."""
     global _last_good_closures
     try:
         raw = _fetch_events_raw()
     except Exception:
         return _last_good_closures
-    out = [{"roadway": e.get("RoadwayName") or "", "description": e["Description"].strip()} for e in _real_closures(raw)]
+    routes = _commute_routes(now)
+    out = [
+        {"roadway": e.get("RoadwayName") or "", "description": e["Description"].strip(), "type": _issue_type_label(e)}
+        for e in _real_road_issues(raw, routes)
+    ]
     _last_good_closures = out
     return out
 
@@ -370,71 +454,75 @@ def _spoken_closure_summary(description: str) -> str:
 
 
 def get_new_alerts(now: datetime) -> list[dict]:
-    """A real toast the moment a genuinely NEW full closure appears
-    near the commute — [] if unreachable or nothing new. "kind":
-    "weather" deliberately, same reasoning as lightning_client.
-    get_new_alerts's own docstring — reuses weather_alerts_bar.
+    """A real toast the moment a genuinely NEW road issue appears along
+    any of today's real commute routes — [] if unreachable or nothing
+    new. "kind": "weather" deliberately, same reasoning as lightning_
+    client.get_new_alerts's own docstring — reuses weather_alerts_bar.
     render_alert_bar as-is, riding the same top-priority toast lane,
     same styling, same voice treatment, at zero new CSS/JS cost.
-    "warning" severity, not "statement" — a closure directly blocking
-    the actual commute is a real hazard, not just background info.
+    "warning" severity for a real full closure — a hazard directly
+    blocking the commute, not just background info; "statement" for
+    anything less (construction, maintenance, an incident that hasn't
+    closed the road) — real, worth knowing, but not the same urgency.
 
     Session request: "same conversational style that we have from our
     weather... severe weather alerts" — headline/summary are now AI-
     rewritten (see _friendly_closure_headline/_spoken_closure_summary
-    above) and both open with a deterministic "This is a road closure"
-    lead-in, same "built in code, not left to the AI prompt" reasoning
-    as weather_alerts_bar's own type prefix (same session, same day) —
-    a should from a prompt isn't the same guarantee as code always
-    prepending it. No Warning/Watch/Advisory/Statement-style variation
-    here (511 doesn't have EC's tier vocabulary for this), so the
-    lead-in is fixed rather than computed. The repeating "still in effect" half
-    of "same style... every time it is updated" lives in
-    get_status_updates below, not here — this function only ever fires
-    once, for a genuinely new closure."""
+    above) and both open with a deterministic lead-in naming the real
+    issue type (_issue_type_label — "This is a road closure"/"This is
+    road construction"/etc, not everything flattened to "closure"),
+    same "built in code, not left to the AI prompt" reasoning as
+    weather_alerts_bar's own type prefix (same session, same day) — a
+    should from a prompt isn't the same guarantee as code always
+    prepending it. The repeating "still in effect" half of "same
+    style... every time it is updated" lives in get_status_updates
+    below, not here — this function only ever fires once, for a
+    genuinely new issue."""
     global _seen_closure_ids, _closure_baseline_done
     try:
         raw = _fetch_events_raw()
     except Exception:
         return []
-    closures = _real_closures(raw)
+    routes = _commute_routes(now)
+    issues = _real_road_issues(raw, routes)
 
     # Checked BEFORE the "nothing active" early-return below, not
-    # after — the real common case is zero closures active near the
+    # after — the real common case is zero issues active near the
     # commute at any given moment (confirmed live), so gating this on
-    # closures being non-empty would mean the baseline never actually
-    # completes until the first real closure happens to exist, and
-    # THAT one would then get wrongly swallowed as "baseline" instead
-    # of correctly toasting as the new event it actually is. One-time,
-    # on the first call ever, regardless of what's active right then.
+    # issues being non-empty would mean the baseline never actually
+    # completes until the first real one happens to exist, and THAT
+    # one would then get wrongly swallowed as "baseline" instead of
+    # correctly toasting as the new event it actually is. One-time, on
+    # the first call ever, regardless of what's active right then.
     if not _closure_baseline_done:
-        for e in closures:
+        for e in issues:
             _seen_closure_ids[str(e["ID"])] = True
         _closure_baseline_done = True
         persisted_state.save_per_instance("road_closure_seen_ids", _seen_closure_ids)
         persisted_state.save_per_instance("road_closure_baseline_done", True)
         return []
 
-    if not closures:
+    if not issues:
         return []
 
     alerts = []
-    for e in closures:
-        closure_id = str(e["ID"])
-        if closure_id in _seen_closure_ids:
+    for e in issues:
+        issue_id = str(e["ID"])
+        if issue_id in _seen_closure_ids:
             continue
-        _seen_closure_ids[closure_id] = True
+        _seen_closure_ids[issue_id] = True
         if len(_seen_closure_ids) > MAX_SEEN_CLOSURES:
             _seen_closure_ids.pop(next(iter(_seen_closure_ids)))
         description = e["Description"].strip()
-        headline = f"Road Closure: {_friendly_closure_headline(description)}"
+        type_label = _issue_type_label(e)
+        headline = f"{type_label.title()}: {_friendly_closure_headline(description)}"
         alerts.append(
             {
                 "kind": "weather",
-                "severity": "warning",
-                "label": "Road Closure",
+                "severity": "warning" if e.get("IsFullClosure") else "statement",
+                "label": type_label.title(),
                 "headline": headline,
-                "summary": f"This is a road closure. {_spoken_closure_summary(description)}",
+                "summary": f"This is a {type_label}. {_spoken_closure_summary(description)}",
             }
         )
     if alerts:
@@ -500,34 +588,36 @@ def get_status_updates(now: datetime) -> list[dict]:
         raw = _fetch_events_raw()
     except Exception:
         return []
-    closures = _real_closures(raw)
-    if not closures:
+    routes = _commute_routes(now)
+    issues = _real_road_issues(raw, routes)
+    if not issues:
         return []
 
     now_ts = now.timestamp()
     alerts = []
     changed = False
-    for e in closures:
-        closure_id = str(e["ID"])
-        last_at = _last_status_update_at.get(closure_id)
+    for e in issues:
+        issue_id = str(e["ID"])
+        last_at = _last_status_update_at.get(issue_id)
         if last_at is None:
-            _last_status_update_at[closure_id] = now_ts
+            _last_status_update_at[issue_id] = now_ts
             changed = True
             continue
         if (now_ts - last_at) < STATUS_UPDATE_INTERVAL_SECONDS:
             continue
-        _last_status_update_at[closure_id] = now_ts
+        _last_status_update_at[issue_id] = now_ts
         changed = True
         description = e["Description"].strip()
+        type_label = _issue_type_label(e)
         roadway = e.get("RoadwayName")
-        headline = f"Road Closure updated: Hwy {roadway} still closed" if roadway else "Road Closure updated: still closed"
+        headline = f"{type_label.title()} updated: Hwy {roadway}" if roadway else f"{type_label.title()} updated"
         alerts.append(
             {
                 "kind": "weather",
-                "severity": "warning",
-                "label": "Road Closure",
+                "severity": "warning" if e.get("IsFullClosure") else "statement",
+                "label": type_label.title(),
                 "headline": headline,
-                "summary": f"This road closure has been updated. It's still in effect. {_spoken_closure_summary(description)}",
+                "summary": f"This {type_label} has been updated. It's still in effect. {_spoken_closure_summary(description)}",
             }
         )
     if changed:
@@ -535,3 +625,40 @@ def get_status_updates(now: datetime) -> list[dict]:
             _last_status_update_at.pop(next(iter(_last_status_update_at)))
         persisted_state.save_per_instance("road_closure_status_at", _last_status_update_at)
     return alerts
+
+
+def road_closure_headline_candidate(now) -> dict | None:
+    """Red-headline rotation candidate — session request: "when
+    there's an alert like this, it should have the same red headline
+    effect that... a severe weather alert has where it shows at the
+    top." Same {"text", "css_class", "target_ms", "template",
+    "zero_text"} shape as weather_alerts_bar.weather_statement_
+    candidate — plugged into headline_rotation.py's own _candidates()
+    the same way that one is. None when nothing's active, same as
+    every other candidate here.
+
+    A real full closure outranks a lesser issue when several are
+    active near the commute at once (a genuine hazard over an
+    informational one, same priority ordering get_new_alerts's own
+    severity split uses) — the ID as a stable tiebreak beyond that,
+    not because it means anything, just so the same issue keeps
+    winning across reruns instead of flickering between two equally-
+    ranked ones. No countdown (target_ms) — MTO gives no estimated
+    reopen time to count down to, same reasoning weather_statement_
+    candidate's own docstring gives for its plain fallback text."""
+    try:
+        raw = _fetch_events_raw()
+    except Exception:
+        return None
+    routes = _commute_routes(now)
+    issues = _real_road_issues(raw, routes)
+    if not issues:
+        return None
+    issue = max(issues, key=lambda e: (bool(e.get("IsFullClosure")), str(e["ID"])))
+    description = issue["Description"].strip()
+    type_label = _issue_type_label(issue)
+    text = f"{type_label.title()}: {_friendly_closure_headline(description)}"
+    if len(issues) > 1:
+        text += f" (+{len(issues) - 1} more)"
+    rotation_class = "rotation-warning" if issue.get("IsFullClosure") else "rotation-notice"
+    return {"text": text, "css_class": rotation_class, "target_ms": None, "template": "{}", "zero_text": None}
