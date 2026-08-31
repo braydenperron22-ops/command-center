@@ -467,14 +467,26 @@ _last_status_update_at: dict = dict(persisted_state.load_per_instance("road_clos
 def get_status_updates(now: datetime) -> list[dict]:
     """A repeating "still in effect" ping every STATUS_UPDATE_INTERVAL_
     SECONDS for as long as a real closure stays active near the
-    commute, muted overnight. Deterministic text, no AI call — there's
-    nothing new to say every 15 minutes beyond "still going," same
-    "don't over-rewrite a repeating ping" restraint weather_alerts_bar.
-    get_storm_proximity_alerts's own milestone toasts already
-    established (that session's own "it repeats itself every time
-    there's an update, which is fine" — the repetition itself is fine,
-    a fresh AI paragraph every 15 minutes for the same fact wouldn't
-    be).
+    commute, muted overnight. Headline is a short, deterministic,
+    already-conversational string — nothing new to say every 15
+    minutes beyond "still going," same "don't over-rewrite a repeating
+    ping" restraint weather_alerts_bar.get_storm_proximity_alerts's own
+    milestone toasts already established.
+
+    The spoken summary, though, DOES call _spoken_closure_summary
+    again rather than reading the raw MTO description — real bug,
+    caught live: the raw text is genuinely awkward spoken verbatim
+    ("HWY 17/11 EXIT 344... HWY 94 (S) E JCT CENTENNIAL CRES"), exactly
+    the "not a formal bulletin" problem the session's own conversational
+    request was about in the first place, and the repeating ping
+    shouldn't be exempt from that just because it's not the first
+    announcement. Not the cost concern it might look like:
+    groq_client.generate's own exact-prompt-text cache (20 min TTL)
+    means a still-warm cache from the initial announcement often makes
+    this free, and even a genuine re-call is one small prompt per 15
+    minutes for as long as a real closure stays open — bounded, not
+    runaway, and a small real cost is worth it for text that's
+    actually pleasant to hear.
 
     The first time this function ever sees a given closure, it seeds
     _last_status_update_at for it WITHOUT firing — get_new_alerts
@@ -515,7 +527,7 @@ def get_status_updates(now: datetime) -> list[dict]:
                 "severity": "warning",
                 "label": "Road Closure",
                 "headline": headline,
-                "summary": f"This road closure has been updated. It's still in effect. {description}",
+                "summary": f"This road closure has been updated. It's still in effect. {_spoken_closure_summary(description)}",
             }
         )
     if changed:
