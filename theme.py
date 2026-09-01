@@ -6020,16 +6020,21 @@ html, body, [class*="css"] {
     border-left: 1px solid #3A2412;
 }
 /* Session request: "subtle urgency... a little tab that shows it's
-   still active when I wake up." Corner placement, not part of the
-   centered clock/date/weather stack — a real signal, but deliberately
-   subordinate to the main content, same "subtle" instruction the
-   whole thing is built around. position:absolute works directly
-   against .night-mode's own position:fixed containing block, no extra
-   wrapper needed. Static — no pulse/blink; this app's own global
-   animation kill-switch would drop one anyway, and a steady tag reads
-   as "still true," not "just happened," which is the honest framing
-   for something that's been active for a while by the time anyone's
-   looking at this screen. */
+   still active when I wake up," then, once a real road closure sat
+   here overnight: "make it bigger and write it out fully... it's not
+   very visible in the corner." Sized up meaningfully (was 0.95rem/low-
+   alpha, easy to lose against the black background from across a
+   room) while keeping every other constraint that made this "subtle"
+   in the first place: still corner-placed, not part of the centered
+   clock/date/weather stack; still the same warm amber/ember family,
+   no color escalation; still static, no pulse/blink (this app's own
+   global animation kill-switch would drop one anyway) — a steady tag
+   reads as "still true," not "just happened," the honest framing for
+   something that's been active a while by the time anyone's looking.
+   "Bigger and more obvious" != "bright and alarming" for a nightstand
+   screen; only legibility changed here, not tone. position:absolute
+   works directly against .night-mode's own position:fixed containing
+   block, no extra wrapper needed. */
 .night-attention {
     position: absolute;
     top: 2rem;
@@ -6037,25 +6042,25 @@ html, body, [class*="css"] {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 0.5rem;
+    gap: 0.7rem;
 }
 .night-attention-item {
     display: flex;
     align-items: center;
-    gap: 0.55rem;
+    gap: 0.7rem;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
-    font-size: 0.95rem;
-    font-weight: 500;
+    font-size: 1.5rem;
+    font-weight: 600;
     letter-spacing: 0.01em;
-    color: #C9873F;
-    background: rgba(90, 50, 20, 0.32);
-    border: 1px solid rgba(201, 135, 63, 0.32);
-    padding: 0.45rem 0.9rem;
+    color: #E0A868;
+    background: rgba(90, 50, 20, 0.55);
+    border: 1px solid rgba(201, 135, 63, 0.55);
+    padding: 0.7rem 1.3rem;
     border-radius: 999px;
 }
 .night-attention-dot {
-    width: 0.5rem;
-    height: 0.5rem;
+    width: 0.75rem;
+    height: 0.75rem;
     border-radius: 50%;
     background: #D9822B;
     flex-shrink: 0;

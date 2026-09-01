@@ -201,6 +201,31 @@ def current_severity() -> str | None:
     return _severity(alert["title"])
 
 
+def current_type_label() -> str | None:
+    """"Fog Advisory"/"Heat Warning"/etc for whatever current_severity()
+    above would report, or just the bare type ("Advisory") if the title
+    doesn't match any known hazard word — session request: night_mode's
+    own corner tab used to just say "Weather statement active" for
+    literally anything active, no matter what it actually was; "write
+    it out fully... make it more obvious" wants the real thing, not a
+    placeholder category. Reuses _HAZARD_RANK's own real hazard
+    vocabulary (same one _hazard_rank/_selection_score already trust)
+    rather than parsing EC's title text freehand — safer than guessing
+    at a delimiter/format this module hasn't actually verified. Cheap
+    and AI-free on purpose, same as current_severity's own reasoning:
+    this renders on every ordinary night_mode rerun, not a one-shot
+    toast moment."""
+    alerts = _combined_alerts()
+    if not alerts:
+        return None
+    alert = max(alerts, key=_selection_score)
+    title = alert["title"]
+    t = title.lower()
+    hazard = next((h for h in _HAZARD_RANK if h in t), None)
+    type_label = _type_label(title)
+    return f"{hazard.title()} {type_label}" if hazard else type_label
+
+
 # Session request: "a recent special weather statement just came in but
 # it didnt show as a toast alert, make sure they show up." weather_
 # statement_candidate (headline_rotation.py's own unified rotation)

@@ -37,13 +37,19 @@ def _overnight_attention_items(now: datetime) -> list[str]:
     or road closure... something worth my attention overnight, just a
     little tab that shows it's still active." Two real, already-live
     sources, checked fresh on every render (this view reruns like any
-    other page): weather_alerts_bar's own current active-alert
-    severity, and road_conditions_511's own real, route-matched active
-    issues. Deliberately just an existence check + a short generic
-    label, not the full friendly headline those sources can also give
-    — this is a subtle "something's active, FYI" signal for a tiny
-    corner tab, not a second full readout; the real detail is already
-    one page-flip away on Weather/Household.
+    other page): weather_alerts_bar's own current active-alert type,
+    and road_conditions_511's own real, route-matched active issues.
+
+    Session follow-up: "make [it] bigger and write it out fully... it's
+    not very visible" — this used to be a deliberately generic "Weather
+    statement active"/"Road closure active" existence check, on the
+    reasoning that the real detail was one page-flip away on Weather/
+    Household. Now says the real thing (the actual EC alert type, the
+    actual roadway) instead of a placeholder category — still no AI
+    rewrite and no new network calls (weather_alerts_bar.current_type_
+    label/road_conditions_511.readable_roadway are both cheap, reused
+    off data these sources already fetch), so this stays as safe to
+    call on every ordinary rerun as the plain existence check was.
 
     Reaching this function at all already means nothing storm-grade is
     active — a genuine thunderstorm/tornado/hurricane bypasses night
@@ -54,14 +60,18 @@ def _overnight_attention_items(now: datetime) -> list[str]:
     you off this screen."""
     items = []
     try:
-        if weather_alerts_bar.current_severity() is not None:
-            items.append("Weather statement active")
+        type_label = weather_alerts_bar.current_type_label()
+        if type_label is not None:
+            items.append(f"{type_label} active")
     except Exception:
         pass
     try:
         issues = road_conditions_511.road_issues_near_commute(now)
         if issues:
-            items.append(f"{issues[0]['type'].capitalize()} active")
+            issue = issues[0]
+            roadway = road_conditions_511.readable_roadway(issue["roadway"]) or "Road"
+            detail = "closed" if issue["type"] == "road closure" else issue["type"]
+            items.append(f"{roadway} {detail}")
     except Exception:
         pass
     return items
