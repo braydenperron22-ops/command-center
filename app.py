@@ -628,15 +628,55 @@ components.html(
     // were never the thing making the numbers/text right, only the
     // thing making the change to them smooth.
 
+    // kiosk-reload-watchdog used to live here — a blind, unconditional
+    // window.parent.location.reload() every 60 minutes, regardless of
+    // whether the page was actually healthy. Session report: "full
+    // audit and find out why it freezes in random states" — real,
+    // confirmed root cause (Streamlit's own GitHub issue #6442, closed
+    // "not planned" by Streamlit's own maintainers, still present as
+    // of the 1.58.0 this app runs): a client websocket disconnecting
+    // while a rerun request is in flight — an ordinary LAN/WiFi blip
+    // on the Windows kiosk PC, not a rare event over real 24/7 uptime —
+    // can leave that ONE session stuck with no automatic recovery,
+    // even while the server itself, and every OTHER connected client,
+    // stays completely healthy (confirmed live: heartbeat.txt read 37s
+    // old, server answered in 4ms, while the physical kiosk sat frozen
+    // on an old timestamp). The blind hourly reload WOULD eventually
+    // have recovered from that — just up to a full 59 minutes late,
+    // and at the cost of reloading a perfectly healthy kiosk once an
+    // hour for no reason the other 23 hours a day. Replaced with a
+    // real staleness DETECTOR instead of a blind timer: polls the
+    // fresh data-ts app.py stamps into #kiosk-client-heartbeat on
+    // every rerun that reaches this exact client (a separate, real
+    // page element — not this script block, which stays a fixed
+    // literal string on purpose, see the consolidation comment above
+    // on why that matters for iframe stability) — if THAT stops
+    // advancing for 4 minutes straight (comfortably past the normal
+    // ~75s outer cycle, so a merely slow-but-healthy rerun never
+    // false-triggers this), only then reloads. Catches a real freeze
+    // in minutes instead of up to an hour, and never touches a
+    // healthy kiosk at all.
     (function () {
       var doc = window.parent.document;
-      if (doc.getElementById('kiosk-reload-watchdog')) return;
+      if (doc.getElementById('kiosk-stale-watchdog')) return;
       var s = doc.createElement('script');
-      s.id = 'kiosk-reload-watchdog';
+      s.id = 'kiosk-stale-watchdog';
       s.textContent = [
+        "var kioskLastTs = null;",
+        "var kioskLastChangeAt = Date.now();",
         "setInterval(function () {",
-        "  window.parent.location.reload();",
-        "}, 60 * 60 * 1000);",
+        "  var el = window.parent.document.getElementById('kiosk-client-heartbeat');",
+        "  if (!el) return;",
+        "  var ts = el.getAttribute('data-ts');",
+        "  if (ts !== kioskLastTs) {",
+        "    kioskLastTs = ts;",
+        "    kioskLastChangeAt = Date.now();",
+        "    return;",
+        "  }",
+        "  if (Date.now() - kioskLastChangeAt > 4 * 60 * 1000) {",
+        "    window.parent.location.reload();",
+        "  }",
+        "}, 20 * 1000);",
       ].join('\\n');
       doc.head.appendChild(s);
     })();
@@ -3312,6 +3352,28 @@ _toast_fragment(
     now, weather, air_quality, phase, category, market_intraday_pct,
     _game_takeover_live, _night_mode_active, _jumbotron_active, readings,
 )
+
+# Session report: "full audit and find out why it freezes in random
+# states." Real, confirmed root cause (Streamlit's own GitHub issue
+# #6442, closed "not planned"): if a client's websocket disconnects
+# while a rerun request is in flight — a plain LAN/WiFi blip on the
+# Windows kiosk PC, no rarer an event over 24/7 uptime than any other
+# transient network hiccup — the session can get stuck with no
+# automatic recovery, even though the SERVER itself stays completely
+# healthy (confirmed live: heartbeat.txt read as 37s old, server
+# answered in 4ms, while the physical kiosk sat frozen showing a
+#10-minute-old timestamp). heartbeat.py's own file only proves SOME
+# client got a completed rerun recently — it can't see whether THIS
+# specific browser tab did. This marker is the client-visible
+# equivalent: a fresh timestamp, rendered into the real page DOM (not
+# the static merged-iframe script block below, which stays a fixed
+# literal on purpose — see its own comment on why) every time a rerun
+# genuinely reaches the end of the script. kiosk-stale-watchdog (same
+# block) polls this and force-reloads the one tab it's actually
+# running in the moment IT stops advancing — not a blind "reload
+# regardless of health" timer the old kiosk-reload-watchdog was (see
+# that script's own history, removed below in favor of this).
+st.markdown(f'<div id="kiosk-client-heartbeat" data-ts="{now.timestamp()}" style="display:none;"></div>', unsafe_allow_html=True)
 
 # Literal last statement in the script, on purpose — see heartbeat.py's
 # own docstring. Session report: "it only freezes sometimes but the
