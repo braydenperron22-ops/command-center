@@ -236,7 +236,26 @@ def _fetch_recent_raw(lookback_hours: int) -> list[dict]:
         return []
     since = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).strftime("%d-%b-%Y")
     try:
-        with imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT) as imap:
+        # Full-audit finding: this had NO timeout at all — imaplib.
+        # IMAP4_SSL blocks the underlying socket indefinitely by default
+        # (Python only bounds it if you explicitly pass one), unlike
+        # every other network call in this app, which already has one
+        # (confirmed via a full sweep of every requests.get/post call).
+        # Confirmed live as the actual cause of a real multi-hour kiosk
+        # freeze: this function is called from morning_briefing.py's
+        # own clause loop (each *_clause individually try/excepted, but
+        # a genuine hang inside one — not a raised exception — still
+        # blocks every clause after it, and everything in app.py after
+        # that, forever) — a slow/unresponsive Gmail IMAP endpoint froze
+        # the entire dashboard, not just the email feature, with no
+        # recovery short of a manual process restart. `timeout=` covers
+        # the connection AND every subsequent operation on it (login/
+        # select/search/fetch) — the same "a real hazard worded plainly
+        # beats no banner at all" rule this app already applies to every
+        # other data source: a slow mail server should degrade to
+        # _last_good_raw (the except block below, already written for
+        # exactly this) via a real TimeoutError, not freeze the kiosk.
+        with imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT, timeout=15) as imap:
             imap.login(st.secrets["GMAIL_ADDRESS"], st.secrets["GMAIL_APP_PASSWORD"])
             imap.select("INBOX", readonly=True)
             status, data = imap.search(None, f'(SINCE "{since}")')

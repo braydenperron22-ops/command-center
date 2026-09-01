@@ -5942,14 +5942,24 @@ html, body, [class*="css"] {
 .night-mode {
     position: fixed;
     inset: 0;
-    /* Highest z-index anywhere in this app (jumbotron's own session
-       controls are the previous ceiling at 9999) — a deliberate safety
-       net, not just a display gate in app.py: night mode is meant to be
-       the one thing on screen, and this guarantees it visually wins
-       over any toast/ticker/badge that still tries to render
-       underneath rather than relying on every single one of those
-       being individually suppressed correctly. */
-    z-index: 10000;
+    /* Full-audit finding: this was 10000, believed to be "the highest
+       z-index anywhere in this app" against jumbotron's own 9999
+       ceiling — but .news-alert-bar/.email-alert-bar/.commute-alert-
+       bar/.sports-alert-bar-*/.weather-alert-bar-* are ALSO 10000 (see
+       .news-alert-bar's own comment: raised there, separately, to beat
+       the SAME jumbotron ceiling). Two elements at an identical
+       z-index resolve by DOM/paint order, not "which one is meant to
+       win" — confirmed live: a road-closure toast rendered on top of
+       night mode at 2:33am, the exact failure this comment already
+       claimed couldn't happen. 10001 — one above every other value
+       anywhere in this stylesheet (checked: nothing else exceeds
+       10000) — actually is the deliberate safety net this comment
+       always meant it to be: night mode is supposed to be the one
+       thing on screen, guaranteed to visually win over any toast/
+       ticker/badge that still tries to render underneath, rather than
+       relying on every single one of those being individually
+       suppressed correctly. */
+    z-index: 10001;
     background: #000000;
     display: flex;
     flex-direction: column;
