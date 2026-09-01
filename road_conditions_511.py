@@ -430,7 +430,12 @@ def _friendly_closure_headline(description: str) -> str:
     Cached by groq_client.generate's own exact-prompt-text caching, so
     this only pays for a real call once per genuinely new closure, not
     every rerun. Falls back to the raw description unchanged on any AI
-    outage — a real closure worded plainly beats no toast at all."""
+    outage — a real closure worded plainly beats no toast at all.
+
+    allow_during_pause=True — same fix as weather_alerts_bar._friendly_
+    headline/_spoken_summary: a real closure can happen at any hour, and
+    this is the one place a missed highway closure toast was actually
+    traced to (raw MTO text on screen during the overnight AI pause)."""
     rewritten = groq_client.generate(
         "Rewrite this Ontario 511 road closure description as one short, casual sentence a person would "
         "actually say out loud to a friend — not a formal traffic bulletin, not a paragraph. Keep the real "
@@ -440,6 +445,7 @@ def _friendly_closure_headline(description: str) -> str:
         max_output_tokens=80,
         account="primary",
         reasoning_effort="low",
+        allow_during_pause=True,
     )
     return rewritten or description
 
@@ -451,7 +457,8 @@ def _spoken_closure_summary(description: str) -> str:
     (not a full multi-section bulletin the way EC's report page is),
     so there's no boilerplate to strip, just tone to smooth over.
     Falls back to the raw description unchanged on any AI outage, same
-    reasoning as _friendly_closure_headline above."""
+    reasoning as _friendly_closure_headline above — including the same
+    allow_during_pause=True exception, for the same reason."""
     rewritten = groq_client.generate(
         "Rewrite this Ontario 511 road closure description as a single smooth, natural-sounding sentence or "
         "two meant to be read aloud by a text-to-speech voice. Keep every real fact — which road, which "
@@ -461,6 +468,7 @@ def _spoken_closure_summary(description: str) -> str:
         max_output_tokens=150,
         account="primary",
         reasoning_effort="low",
+        allow_during_pause=True,
     )
     return rewritten or description
 

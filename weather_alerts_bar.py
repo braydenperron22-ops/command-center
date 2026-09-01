@@ -316,6 +316,15 @@ def _friendly_headline(title: str, type_label: str | None = None, is_update: boo
     any AI outage/rate limit, same as every other AI-optional path in
     this app — a real hazard worded plainly beats no banner at all.
 
+    Session report: a real overnight alert toast showed EC's raw title
+    instead of this rewrite — this call was missing the same
+    allow_during_pause=True fix _spoken_summary already got below, so
+    a genuine bulletin arriving during the overnight pause silently
+    skipped straight to the plainer raw text ON SCREEN even though the
+    spoken version stayed smooth. Same narrowly-scoped exception, same
+    reasoning: a real hazard's headline shouldn't read worse just
+    because it's late.
+
     `type_label`/`is_update`, when given, prepend a deterministic
     "Advisory:"/"Advisory updated:" prefix — session request: "it
     should always say this is a warning/watch/whatever... this is how
@@ -338,6 +347,7 @@ def _friendly_headline(title: str, type_label: str | None = None, is_update: boo
         max_output_tokens=80,
         account="primary",
         reasoning_effort="low",
+        allow_during_pause=True,
     )
     body = rewritten or title
     if type_label is None:
