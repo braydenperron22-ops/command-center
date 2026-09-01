@@ -1487,6 +1487,22 @@ def _resolve_takeover(now: datetime, jumbotron_requested: bool) -> tuple[dict | 
     on the kiosk: "I would rather watch the NFL than the UFC right
     now" — nfl gets the same live-game priority Habs/Jays already had.
 
+    Session correction, live during a real Jays-vs-Dana-White's-
+    Contender-Series conflict: the exception above only ever fired for
+    takeover["phase"] == "live" — a tracked team's own PREGAME window
+    (its countdown before first pitch/puck drop/kickoff) got no
+    protection at all, so UFC coverage that was itself only in ITS OWN
+    countdown (nothing actually fighting yet) still won over a Jays
+    game 35 minutes from first pitch. User's own words drew the real
+    line: "if the UFC was live right now, I wouldn't complain if it
+    took over... kill the time till the Jays game starts. But since
+    they're both in pregame mode, it just confuses me." Not "pregame
+    beats UFC" — whichever one is actually LIVE wins; if neither is,
+    the tracked team wins. A tracked team already-live still beats UFC
+    unconditionally (unchanged); a tracked team merely pregame/postgame
+    now also beats UFC UNLESS UFC itself is live, in which case UFC
+    still gets to fill the wait the same way it always could.
+
     `jumbotron_requested`: True for an explicit ?page=jumbotron (a
     manual preview from a phone, for a day with no game in its window
     — falls back to whatever game is nearest so the board can actually
@@ -1504,7 +1520,12 @@ def _resolve_takeover(now: datetime, jumbotron_requested: bool) -> tuple[dict | 
         ufc_takeover = ufc_client.takeover_state(now)
     except Exception:
         ufc_takeover = None
-    if ufc_takeover is not None and takeover and takeover["league"]["sport"] in ("nhl", "mlb", "nfl") and takeover["phase"] == "live":
+    if (
+        ufc_takeover is not None
+        and takeover
+        and takeover["league"]["sport"] in ("nhl", "mlb", "nfl")
+        and (takeover["phase"] == "live" or ufc_takeover["phase"] != "live")
+    ):
         ufc_takeover = None
     if jumbotron_requested:
         takeover = takeover or sports_alerts.takeover_preview_state()
