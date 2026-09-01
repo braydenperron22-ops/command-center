@@ -106,7 +106,6 @@ from bs4 import BeautifulSoup
 import data_health
 import fetch_throttle
 import groq_client
-import ntfy_client
 import persisted_state
 
 # (feed URL, display name) — unlike the Conflicts page's Google News
@@ -481,14 +480,11 @@ INDIVIDUAL_MAX_OUTPUT_TOKENS = 250
 # a fixed constant so a deployment that never sets this secret at all
 # (true today) behaves exactly as before — this only changes anything
 # once a second instance actually configures a different value.
-# news_decided (the classification cache, right below) and
-# pushed_headlines (update_top_alert's own phone-push dedup, later in
-# this file) both stay on their single shared key on purpose: no
-# instance should ever re-spend a Groq/Gemini call re-classifying a
-# headline another instance already judged, and the same physical phone
-# must never get the same ntfy push twice just because two instances
-# both saw the headline as "new to me." The actual INSTANCE_ID/per-
-# instance load-save split now lives in persisted_state.py itself
+# news_decided (the classification cache, right below) stays on its
+# single shared key on purpose: no instance should ever re-spend a
+# Groq/Gemini call re-classifying a headline another instance already
+# judged. The actual INSTANCE_ID/per-instance load-save split now lives
+# in persisted_state.py itself
 # (load_per_instance/save_per_instance) since commute_reminder.py,
 # prediction_markets_client.py, and weather_alerts_bar.py all needed
 # the identical pattern for their own toast dedup.
@@ -496,8 +492,8 @@ INDIVIDUAL_MAX_OUTPUT_TOKENS = 250
 # hash -> decision dict (kept) or None (AI rejected). A key's absence
 # means "not yet classified" — decide() and _run_individual_decide()
 # both rely on that three-way distinction (see their own docstrings).
-# Persisted (same Upstash-backed pattern as _pushed_headlines/
-# news_seen_headlines below: loaded once at import, saved only on a
+# Persisted (same Upstash-backed pattern as news_seen_headlines below:
+# loaded once at import, saved only on a
 # genuine new verdict — INDIVIDUAL_MAX_PER_TICK caps that to at most
 # once a minute, nowhere near the per-rerun cost this app already
 # avoids elsewhere). Session report: "please streamline the system so
@@ -530,9 +526,8 @@ _last_tick_at: float = 0.0
 # therefore never gets past re-classifying (and, without this fix,
 # re-alerting) whatever's earliest in fetch_headlines()'s own order —
 # always the same few headlines — while everything later in the list
-# rarely gets reached at all. Persisted now (same shape as
-# _pushed_headlines below: loaded once at import, saved only on a
-# genuine new headline — bounded by real news volume, not rerun
+# rarely gets reached at all. Persisted now (loaded once at import,
+# saved only on a genuine new headline — bounded by real news volume, not rerun
 # cadence, so this doesn't reintroduce the per-rerun Upstash cost this
 # session already found and fixed elsewhere) specifically so the "seen"
 # half survives a restart even though _decided doesn't have to: the
@@ -758,9 +753,9 @@ def _build_batch_prompt(items: list[dict]) -> str:
     it's looking back at something already known, not reporting
     something breaking now. Explicit REJECT criteria added for that
     shape of headline, and EARNINGS tightened to require an actual
-    beat/miss rather than any routine earnings report — both push
-    notifications (see update_top_alert) and the News page itself
-    inherit this directly, since both key off the same verdict here."""
+    beat/miss rather than any routine earnings report — both the toast
+    alert (render_alert_bar) and the News page itself inherit this
+    directly, since both key off the same verdict here."""
     lines = []
     for i, item in enumerate(items):
         entry = f"{i + 1}. HEADLINE: {item['headline']}"
@@ -1337,72 +1332,16 @@ def render_alert_bar(alert: dict) -> None:
         unsafe_allow_html=True,
     )
 
-
-# Bounded, FIFO, disk-persisted list of headline hashes already
-# pushed — comfortably covers a long stretch of breaking headlines
-# without growing forever (same shape as MAX_SEEN_HEADLINES above, same
-# reasoning: headlines this old have long since rolled off every RSS
-# feed's own window, so they'd never come back around as "new" anyway).
-PUSHED_HEADLINES_MAX = 200
-
-# Loaded once at import, not re-fetched from persisted_state on every
-# call — update_top_alert() runs unconditionally every 5s rerun (app.py
-# calls it with no gating), and with persisted_state now backed by
-# Upstash Redis, "reload from the cloud every rerun just to check"
-# would burn roughly 17,280 GET commands a day from this one call site
-# alone. Same fix, same root cause, as groq_client.py's
-# _outage_episode and data_health.py's _stale_notified — session
-# question "will this handle our volume ok?" traced live to ~3.3x over
-# the free tier's 500k/month across these three call sites combined.
-# Mutated in place, only ever re-saved on a genuine new push (a real
-# breaking headline going out — bounded by actual news volume, not
-# rerun cadence).
-_pushed_headlines: list = list(persisted_state.load("pushed_headlines", []))
-
-def update_top_alert(new_alerts: list[dict]) -> None:
-    """Pushes a phone notification for a fresh important (red)
-    headline — session request: "if it deems that a headline is truly
-    breaking news... get it to ping me." Call once per rerun with
-    whatever `get_new_alerts` just returned. Needs its own independent,
-    disk-persisted dedup (PUSHED_HEADLINES_MAX below), NOT just trust
-    in `new_alerts` already being filtered — session report of a real
-    duplicate (the same Brent oil headline pushed twice) traced to
-    get_new_alerts()'s own seen_headlines tracking living in
-    st.session_state, which resets on a reconnect or a process restart
-    and can hand the exact same headline back as "new" a second time.
-    Dedup state lives in _pushed_headlines above (loaded once, not
-    re-fetched here every call — see its own comment).
-
-    Used to also drive an on-screen persistent top banner (via
-    top_alert_candidate, headline_rotation.py's own unified rotation) —
-    retired: "breaking news falls into the same category in terms of
-    the color hierarchy as road closures, severe thunderstorms, and
-    market circuit breakers... breaking news should get its own toast
-    alert" — get_new_alerts's own one-shot toast (render_alert_bar,
-    already wired into app.py's toast queue independently of this
-    function) already covers "breaking news gets a real, visible
-    moment"; keeping it ALSO camped in the persistent rotation for up
-    to TOP_ALERT_HOLD_SECONDS afterward was the actual problem, not
-    just which color it showed up in. The push here is unaffected —
-    that's a completely separate, still-real feature."""
-    global _pushed_headlines
-    pushed_set = set(_pushed_headlines)
-    changed = False
-    for alert in new_alerts:
-        if alert.get("important"):
-            h = _hash(alert["headline"])
-            if h in pushed_set:
-                continue
-            pushed_set.add(h)
-            _pushed_headlines.append(h)
-            changed = True
-            ntfy_client.send(
-                title=f"Breaking: {alert['category']}",
-                message=alert["headline"],
-                priority="urgent",
-                tags="rotating_light",
-            )
-    if changed:
-        if len(_pushed_headlines) > PUSHED_HEADLINES_MAX:
-            _pushed_headlines = _pushed_headlines[-PUSHED_HEADLINES_MAX:]
-        persisted_state.save("pushed_headlines", _pushed_headlines)
+# Session request: "take the breaking news out of the notifications" —
+# this module used to also push a phone notification for a fresh
+# important (red) headline (update_top_alert, called from app.py's own
+# _gather_new_alerts right after get_new_alerts). Removed outright,
+# along with its own dedup state (_pushed_headlines/PUSHED_HEADLINES_
+# MAX) — nothing else in this file used either one, so there was
+# nothing worth leaving behind. The on-screen toast (render_alert_bar,
+# below) and headline_rotation.py's own rotation are both untouched —
+# only the phone push is gone. ntfy_client.send is still called from
+# several OTHER sources (weather, road closures, market circuit
+# breaker/volatility, email, commute, AI health, morning brief) — this
+# was a deliberate removal of just this one, not a retreat from phone
+# push generally.

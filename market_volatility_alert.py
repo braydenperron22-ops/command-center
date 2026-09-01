@@ -35,6 +35,7 @@ its own first crossing rather than sharing one global "seen" flag."""
 from datetime import datetime
 
 import market_yf_client
+import ntfy_client
 import persisted_state
 
 _STATE_KEY = "market_volatility_alert_state"
@@ -71,12 +72,19 @@ def get_new_alerts(now: datetime) -> list[dict]:
     pct = quote["intraday"]
     direction = "up" if pct >= 0 else "down"
     label = "S&P 500 futures" if status == "closed" else "S&P 500"
+    headline = f"{label} swinging {direction} {abs(pct):.1f}% — outside its priced-in range"
+    # Session request: "make it so that literally all of the important
+    # things get an alert." Once-per-trading-day by construction (see
+    # this module's own docstring) — genuinely rare, genuinely real
+    # money moving outside what the options market itself expected, not
+    # routine noise.
+    ntfy_client.send(title="Market Volatility", message=headline, priority="high", tags="bar_chart")
     return [
         {
             "kind": "weather",
             "severity": "warning",
             "label": "Market Volatility",
-            "headline": f"{label} swinging {direction} {abs(pct):.1f}% — outside its priced-in range",
+            "headline": headline,
             "summary": f"VIX implies a ±{band['expected_move_pct']:.1f}% day; today's move already blew past that.",
         }
     ]

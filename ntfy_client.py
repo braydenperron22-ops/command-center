@@ -4,9 +4,12 @@ phone (subscribed to that same topic) gets it pushed instantly. Session
 request: "how can we get push notifications from the dashboard for
 free" — then, correcting an initial presence-gated design: "I wanted
 to send me a push notification regardless if I'm home or not" — for
-breaking news (news.update_top_alert) and the leave-for-work toast
-milestones (commute_reminder.check), unconditionally, not filtered by
-whether he's actually home.
+the leave-for-work toast milestones (commute_reminder.check) and
+breaking news at the time (news.update_top_alert, since removed —
+session request: "take the breaking news out of the notifications"),
+unconditionally, not filtered by whether he's actually home. Grew from
+those two into most of this app's genuinely severe/rare toast sources
+— see each call site's own comment for why it earned a push.
 
 The topic name IS the access control on ntfy's free public server —
 anyone who knows it can subscribe to it (or post to it), so NTFY_TOPIC

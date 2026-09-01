@@ -71,7 +71,7 @@ _TIER_HOLD_SECONDS = {"rotation-critical": 16, "rotation-warning": 12, "rotation
 
 # Loaded once at import, not re-fetched every rerun — same per-rerun-
 # cost convention as every other persisted dict in this app (news.py's
-# own _pushed_headlines, commute_reminder's _shown_state, etc.). Both
+# own _seen_headlines, commute_reminder's _shown_state, etc.). Both
 # mutated in place and only re-saved on a genuine change below.
 _first_seen: dict[str, float] = persisted_state.load("headline_rotation_first_seen", {})
 _rotation_state: dict = persisted_state.load(
@@ -111,9 +111,13 @@ def _candidates(now: datetime, weather: dict | None) -> dict[str, dict]:
     # — no longer a candidate here at all. news.get_new_alerts's own
     # one-shot toast (already wired independently into app.py's toast
     # queue) is breaking news's real moment now; the persistent shared
-    # slot is reserved for genuinely ongoing/active hazards. See news.
-    # update_top_alert's own updated docstring for the full story —
-    # top_alert_candidate itself was retired, not just unwired here.
+    # slot is reserved for genuinely ongoing/active hazards.
+    # top_alert_candidate itself was retired, not just unwired here (see
+    # git history). Breaking news's phone push (news.update_top_alert)
+    # outlived that retirement for a while as a separate, still-real
+    # feature — since removed too, a later, separate request ("take the
+    # breaking news out of the notifications"); see news.py's own
+    # comment where that function used to live for the full story.
     return out
 
 

@@ -32,6 +32,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import market_yf_client
+import ntfy_client
 import persisted_state
 
 SYMBOL = "^GSPC"  # the real cash S&P 500 index — MWCB is specifically about this, not futures
@@ -151,6 +152,15 @@ def get_new_alerts(now: datetime) -> list[dict]:
         f"This is a market circuit breaker alert. A {label} circuit breaker has been triggered — "
         f"the S&P 500 is down {pct_str} from yesterday's close. {detail}"
     )
+    # Session request: "make it so that literally all of the important
+    # things get an alert" — this has never fired live (see this
+    # module's own docstring) but is exactly the kind of thing that
+    # request means: rarer and more consequential than anything else in
+    # this app that already pushes. Urgent/bypasses DND unconditionally,
+    # same as this alert's own "extreme" severity/menacing overlay —
+    # nothing about a real circuit breaker is a can-wait-until-morning
+    # event.
+    ntfy_client.send(title="Market Circuit Breaker", message=headline, priority="urgent", tags="rotating_light")
     return [
         {
             "kind": "weather",

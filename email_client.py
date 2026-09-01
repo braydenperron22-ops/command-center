@@ -45,6 +45,7 @@ from email.header import decode_header
 import streamlit as st
 
 import groq_client
+import ntfy_client
 import persisted_state
 
 IMAP_HOST = "imap.gmail.com"
@@ -503,6 +504,12 @@ def get_new_alerts(now: datetime) -> list[dict]:
         if not _decided.get(e["message_id"]):
             continue
         alerts.append({"kind": "email", "from": e["from"], "subject": e["subject"], "snippet": e["snippet"]})
+        # Session request: "make it so that literally all of the
+        # important things get an alert." This is already the same
+        # AI-judged-important gate the old breaking-news push used
+        # (see news.py's own history) — arrives here genuinely
+        # filtered, not every inbox message.
+        ntfy_client.send(title=f"Email: {e['from']}", message=e["subject"], priority="high", tags="envelope")
     persisted_state.save_per_instance("email_seen", _seen)
     return alerts
 

@@ -28,6 +28,7 @@ import requests
 import streamlit as st
 
 import data_health
+import ntfy_client
 import persisted_state
 from config import WEATHER_LAT, WEATHER_LON
 
@@ -193,6 +194,14 @@ def get_new_alerts(now: datetime) -> list[dict]:
     bearing = relative.get("bearingENG")
     where = f" {bearing} of you" if bearing else ""
     headline = f"Lightning strike {distance_km:.1f} km{where}"
+    # Session request: "make it so that literally all of the important
+    # things get an alert." "high" not "urgent" — a real strike this
+    # close is genuinely worth knowing, but an active storm can produce
+    # several distinct strikes within RADIUS_KM in quick succession, and
+    # this toast is already deliberately silent on-screen (no chime/
+    # voice, see "silent" below) for that same "don't be naggy about a
+    # repeatable event" reason — the phone push should read the same way.
+    ntfy_client.send(title="Lightning", message=headline, priority="high", tags="warning")
     return [
         {
             "kind": "weather",

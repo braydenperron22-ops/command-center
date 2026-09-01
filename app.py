@@ -3024,7 +3024,6 @@ def _gather_new_alerts(now: datetime) -> list[dict]:
     alerts: list[dict] = []
     try:
         alerts = news.get_new_alerts()
-        news.update_top_alert(alerts)
     except Exception:
         pass
 

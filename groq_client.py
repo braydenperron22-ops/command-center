@@ -525,12 +525,13 @@ AI_OUTAGE_ALERT_AFTER_SECONDS = 20 * 60
 # Upstash Redis (see that module's own docstring), "reload from the
 # cloud every rerun just to check" would burn roughly 17,280 GET
 # commands a day from this one call site alone — over 500k/month by
-# itself, before counting the other two sites with the same shape
-# (data_health.notify_stale, news.update_top_alert). Session question:
-# "will this handle our volume ok?" — the honest answer with the
-# original per-rerun-reload pattern was no (traced and computed live:
-# ~3.3x over the free tier's 500k/month just from these three call
-# sites' GETs). This module-level cache, mutated in place and only
+# itself, before counting the other site with the same shape
+# (data_health.notify_stale — news.update_top_alert used to be a third,
+# since removed). Session question: "will this handle our volume ok?"
+# — the honest answer with the original per-rerun-reload pattern was no
+# (traced and computed live: ~3.3x over the free tier's 500k/month just
+# from these call sites' GETs, three of them at the time). This
+# module-level cache, mutated in place and only
 # ever re-saved to persisted_state on a genuine state change (an
 # outage starting, ending, or crossing the alert threshold — all rare,
 # real events), cuts that same call site down to one load per process
