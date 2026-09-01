@@ -2763,65 +2763,82 @@ html, body, [class*="css"] {
    look 3 of the 4 sources already shared) rather than .top-alert-bar's
    old solid-gradient style, so the shared slot reads as one consistent
    thing regardless of which source is currently showing. */
+/* Session request: "every single bar at the top should look like the
+   toaster" — restyled from the centered dark-blur pill above to the
+   same full-width solid-gradient bar this app's actual toasts
+   (.news-alert-bar and family) already use, white text included (same
+   convention those use for contrast against a saturated gradient,
+   rather than tinting the text itself). top:0/left:0/right:0 instead
+   of a centered pill with its own max-width — genuinely full-width,
+   matching a toast's own shape, not just its color language. */
 .headline-rotation {
     position: fixed;
-    top: 18px;
-    left: 50%;
-    transform: translate(-50%, 0);
+    top: 0;
+    left: 0;
+    right: 0;
     z-index: 502;
     text-align: center;
     font-size: 2rem;
     font-weight: 800;
     letter-spacing: -0.01em;
     line-height: 1.25;
-    max-width: min(1100px, calc(100vw - 64px));
-    background: rgba(12,12,16,0.72);
-    backdrop-filter: blur(24px) saturate(160%);
-    -webkit-backdrop-filter: blur(24px) saturate(160%);
-    border: 1px solid rgba(255,69,58,0.25);
-    border-radius: 20px;
-    padding: 0.5rem 1.6rem;
-    color: #FF6961;
+    padding: 0.9rem 1.6rem;
+    border-bottom: 2px solid rgba(255,255,255,0.25);
+    color: #FFFFFF;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.35);
 }
-/* Same 4-color palette .leave-headline's own intensity-* tiers already
-   use — one shared scale across every source rather than each keeping
-   its own bespoke severity naming, so the swap between sources reads
-   as one consistent system, not several different color languages
-   taking turns. The leave candidate itself never carries one of these
-   for its own ON-SCREEN color (see headline_rotation._render_
-   candidate's own comment) — that stays the pre-existing, live-ticking
-   .leave-headline.intensity-* rules below — but headline_rotation.py's
-   own server-side copy of the SAME tier still drives this element's
-   ordering/hold-time priority even for "leave," so the two systems
-   agree on how urgent it is even though only one of them paints it.
+/* Same 4-tier severity scale .leave-headline's own intensity-* tiers
+   already use — one shared scale across every source rather than each
+   keeping its own bespoke severity naming, so the swap between
+   sources reads as one consistent system. The leave candidate itself
+   never carries one of these for its own ON-SCREEN color (see
+   headline_rotation._render_candidate's own comment) — that stays the
+   pre-existing, live-ticking .leave-headline.intensity-* rules below —
+   but headline_rotation.py's own server-side copy of the SAME tier
+   still drives this element's ordering/hold-time priority even for
+   "leave," so the two systems agree on how urgent it is even though
+   only one of them paints it.
 
-   Session request: "get a clearer hierarchy going between what's more
-   important." Font-size/padding now scale WITH severity too, not just
-   color — the base .headline-rotation rule above is the "notice"
-   size; calm reads smaller (a distant, low-urgency FYI shouldn't
-   command the same visual weight as an active hazard), warning and
-   critical read larger — so the hierarchy is visible in a single
-   glance, not just eventually via which tier you happen to catch
-   mid-rotation. */
+   Each tier's own accent color (from the pre-toast-redesign palette —
+   #5AC8FA/#FF9F0A/#FF6961/#FF453A) is now the GRADIENT, not the text
+   color, dark-to-bright-to-dark left-to-right, same shape as
+   .news-alert-bar's own gradient just adapted per tier instead of one
+   fixed red. Font-size/padding still scale WITH severity too (session
+   request: "get a clearer hierarchy going between what's more
+   important") — calm reads smaller, warning and critical read larger
+   — so the hierarchy stays visible in a single glance on top of the
+   color difference. */
 .headline-rotation.rotation-calm {
-    color: #5AC8FA;
-    border-color: rgba(90,200,250,0.2);
+    background: linear-gradient(90deg, #0d2f3d 0%, #1c6684 50%, #0d2f3d 100%);
+    box-shadow: 0 4px 24px rgba(28,102,132,0.32);
     font-size: 1.6rem;
-    padding: 0.4rem 1.3rem;
+    padding: 0.7rem 1.5rem;
 }
-.headline-rotation.rotation-notice { color: #FF9F0A; border-color: rgba(255,159,10,0.22); }
+.headline-rotation.rotation-notice {
+    background: linear-gradient(90deg, #4a3005 0%, #b3720a 50%, #4a3005 100%);
+    box-shadow: 0 4px 24px rgba(179,114,10,0.32);
+}
 .headline-rotation.rotation-warning {
-    color: #FF6961;
-    border-color: rgba(255,105,97,0.25);
+    background: linear-gradient(90deg, #4a1512 0%, #a83a30 50%, #4a1512 100%);
+    box-shadow: 0 4px 24px rgba(168,58,48,0.35);
     font-size: 2.15rem;
-    padding: 0.55rem 1.7rem;
+    padding: 1rem 1.7rem;
 }
 .headline-rotation.rotation-critical {
-    color: #FF453A;
-    border-color: rgba(255,69,58,0.3);
+    background: linear-gradient(90deg, #5c0d0d 0%, #c41e1e 50%, #5c0d0d 100%);
+    box-shadow: 0 4px 24px rgba(196,30,30,0.4);
     font-size: 2.3rem;
-    padding: 0.6rem 1.8rem;
-    animation: leave-headline-pulse 1.2s ease-in-out infinite;
+    padding: 1.05rem 1.8rem;
+    animation: leave-headline-pulse 1.2s ease-in-out infinite, headline-rotation-toast-pulse 1.6s ease-in-out infinite;
+}
+/* box-shadow pulse for the top bar specifically — toast-pulse-red(-
+   extreme) exist already but glow UPWARD (negative y-offset), tuned
+   for a bar pinned to the BOTTOM of the screen; this is the same
+   shape/intensity as toast-pulse-red-extreme, offset flipped positive
+   so the glow reads correctly for a bar pinned to the TOP instead. */
+@keyframes headline-rotation-toast-pulse {
+    0%, 100% { box-shadow: 0 4px 24px rgba(196,30,30,0.4); }
+    50% { box-shadow: 0 6px 44px rgba(196,30,30,0.75), 0 2px 80px rgba(196,30,30,0.3); }
 }
 /* The one-shot "swap" animation itself — a JS-toggled class
    (app.py's kiosk-headline-rotation-swap script), not a plain
@@ -2840,11 +2857,12 @@ html, body, [class*="css"] {
    layering on top of it for the swap's brief duration. */
 .headline-rotation.rotation-swap-in { animation: headline-rotation-swap-in 0.5s cubic-bezier(.2,.8,.2,1); }
 .headline-rotation.rotation-critical.rotation-swap-in {
-    animation: headline-rotation-swap-in 0.5s cubic-bezier(.2,.8,.2,1), leave-headline-pulse 1.2s ease-in-out infinite;
+    animation: headline-rotation-swap-in 0.5s cubic-bezier(.2,.8,.2,1), leave-headline-pulse 1.2s ease-in-out infinite,
+        headline-rotation-toast-pulse 1.6s ease-in-out infinite;
 }
 @keyframes headline-rotation-swap-in {
-    from { opacity: 0; transform: translate(-50%, -16px); }
-    to { opacity: 1; transform: translate(-50%, 0); }
+    from { opacity: 0; transform: translateY(-16px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 /* Audit fix — a real bug, not just a precaution: when the leave
    candidate is showing (headline_rotation._render_candidate carries
@@ -2866,7 +2884,10 @@ html, body, [class*="css"] {
    but no property overlap with it) remain the only source of truth
    for those. */
 .headline-rotation.leave-headline {
-    top: 18px;
+    top: 0;
+    left: 0;
+    right: 0;
+    transform: none;
     font-size: 2rem;
     z-index: 502;
 }
@@ -2959,6 +2980,25 @@ html, body, [class*="css"] {
     color: #FF453A;
     border-color: rgba(255,69,58,0.35);
     animation: leave-headline-pulse-overdue 0.7s ease-in-out infinite;
+}
+/* Same real fix the mobile breakpoint's own leave-headline-pulse-
+   overdue-mobile already established, needed here too now that the
+   rotation redesign made .headline-rotation.leave-headline full-width
+   (no more left:50%/transform:translateX(-50%) to stay centered
+   around) — leave-headline-pulse-overdue's own translateX(-50%),
+   baked into every frame, only makes sense for the STANDALONE Today-
+   page .leave-headline (still centered that way, untouched). Without
+   this override the rotation-embedded leave candidate would shift
+   sideways by half its own width on every overdue pulse. More
+   specific (0,3,0) than .leave-headline.intensity-overdue's own
+   0,2,0, so this correctly wins for the combined case regardless of
+   source order. */
+@keyframes leave-headline-pulse-overdue-rotation {
+    0%, 100% { text-shadow: 0 0 22px rgba(255,69,58,0.5); transform: scale(1); }
+    50% { text-shadow: 0 0 40px rgba(255,69,58,0.9), 0 0 70px rgba(255,69,58,0.4); transform: scale(1.03); }
+}
+.headline-rotation.leave-headline.intensity-overdue {
+    animation: leave-headline-pulse-overdue-rotation 0.7s ease-in-out infinite;
 }
 
 /* commute_reminder.render_ticker_leave_bar — same slot as .ticker-bar

@@ -108,7 +108,6 @@ import fetch_throttle
 import groq_client
 import ntfy_client
 import persisted_state
-from config import TOP_ALERT_HOLD_SECONDS
 
 # (feed URL, display name) — unlike the Conflicts page's Google News
 # search (which already gets a " - Publisher" suffix baked into every
@@ -1360,46 +1359,37 @@ PUSHED_HEADLINES_MAX = 200
 # rerun cadence).
 _pushed_headlines: list = list(persisted_state.load("pushed_headlines", []))
 
-# Session report on the ON-SCREEN banner itself (not the push dedup
-# above, which was already disk-persisted): "make it so all the red
-# headlines... cycle at the top of the screen... make it hard cached
-# in upstash so refreshes dont reset it." This used to live in
-# st.session_state, which resets on a reconnect — the exact same class
-# of bug PUSHED_HEADLINES_MAX's own comment already describes for the
-# push-dedup case, just never fixed for the banner's own "is one still
-# active" state. Moved to persisted_state so a reconnect can't
-# silently drop an active breaking-news headline early.
-_top_alert: dict | None = persisted_state.load("news_top_alert", None)
-
-
 def update_top_alert(new_alerts: list[dict]) -> None:
-    """Whenever a fresh important (red) headline comes through, it takes
-    over the persistent top banner, replacing whatever was there before —
-    "the next red headline" is exactly the next call here where an alert
-    has important=True. Call once per rerun with whatever `get_new_alerts`
-    just returned.
-
-    Also pushes a phone notification for the same event — session
-    request: "if it deems that a headline is truly breaking news... get
-    it to ping me." The push specifically needs its own independent,
-    disk-persisted dedup (PUSHED_HEADLINES_MAX below), NOT just trust in
-    `new_alerts` already being filtered — session report of a real
+    """Pushes a phone notification for a fresh important (red)
+    headline — session request: "if it deems that a headline is truly
+    breaking news... get it to ping me." Call once per rerun with
+    whatever `get_new_alerts` just returned. Needs its own independent,
+    disk-persisted dedup (PUSHED_HEADLINES_MAX below), NOT just trust
+    in `new_alerts` already being filtered — session report of a real
     duplicate (the same Brent oil headline pushed twice) traced to
     get_new_alerts()'s own seen_headlines tracking living in
     st.session_state, which resets on a reconnect or a process restart
     and can hand the exact same headline back as "new" a second time.
-    The on-screen top banner isn't re-gated here, only the push — a
-    banner re-appearing after a rare reconnect was never reported as a
-    problem the way a duplicate phone buzz was. Dedup state lives in
-    _pushed_headlines above (loaded once, not re-fetched here every
-    call — see its own comment)."""
-    global _pushed_headlines, _top_alert
+    Dedup state lives in _pushed_headlines above (loaded once, not
+    re-fetched here every call — see its own comment).
+
+    Used to also drive an on-screen persistent top banner (via
+    top_alert_candidate, headline_rotation.py's own unified rotation) —
+    retired: "breaking news falls into the same category in terms of
+    the color hierarchy as road closures, severe thunderstorms, and
+    market circuit breakers... breaking news should get its own toast
+    alert" — get_new_alerts's own one-shot toast (render_alert_bar,
+    already wired into app.py's toast queue independently of this
+    function) already covers "breaking news gets a real, visible
+    moment"; keeping it ALSO camped in the persistent rotation for up
+    to TOP_ALERT_HOLD_SECONDS afterward was the actual problem, not
+    just which color it showed up in. The push here is unaffected —
+    that's a completely separate, still-real feature."""
+    global _pushed_headlines
     pushed_set = set(_pushed_headlines)
     changed = False
     for alert in new_alerts:
         if alert.get("important"):
-            _top_alert = {**alert, "set_at": time.time()}
-            persisted_state.save("news_top_alert", _top_alert)
             h = _hash(alert["headline"])
             if h in pushed_set:
                 continue
@@ -1416,60 +1406,3 @@ def update_top_alert(new_alerts: list[dict]) -> None:
         if len(_pushed_headlines) > PUSHED_HEADLINES_MAX:
             _pushed_headlines = _pushed_headlines[-PUSHED_HEADLINES_MAX:]
         persisted_state.save("pushed_headlines", _pushed_headlines)
-
-
-def _current_top_alert() -> dict | None:
-    """The active top_alert dict if still within its hold window
-    (TOP_ALERT_HOLD_SECONDS), clearing (and persisting the clear) if
-    it's expired — the one place that logic lives, so expiry only ever
-    gets written once regardless of how many callers check it (today,
-    just top_alert_candidate below, but kept separate from it rather
-    than inlined for exactly that reason)."""
-    global _top_alert
-    if not _top_alert:
-        return None
-    if time.time() - _top_alert["set_at"] > TOP_ALERT_HOLD_SECONDS:
-        _top_alert = None
-        persisted_state.save("news_top_alert", None)
-        return None
-    return _top_alert
-
-
-def top_alert_candidate() -> dict | None:
-    """Breaking-news headline for headline_rotation.py's own unified
-    rotation, if one's still within its hold window (TOP_ALERT_HOLD_
-    SECONDS) — None otherwise. This used to render its own always-on-
-    screen banner directly; retired once every "red headline" source
-    moved into that shared rotation, but the design decision behind it
-    is still exactly as true here: decide()'s AI verdict on a headline
-    is trusted as final once made (same "locked in at first sight"
-    philosophy pages_news.py's own entries already use) — nothing
-    re-checks the stored headline against a live filter on each call,
-    since a keyword-list edit mid-session changing its mind wouldn't
-    un-ring the bell anyway, and re-validating would mean a real AI
-    call on every rerun besides.
-
-    Session report: "breaking news falls into the same category in
-    terms of the color hierarchy as road closures, severe thunderstorms,
-    and market circuit breakers... tone down regular market breaking
-    news." rotation-warning (this app's real-hazard tier — a genuine
-    full closure, an actual Severe Thunderstorm Warning) used to be
-    shared with every AI-classified headline here regardless of
-    category (Fed/BoC, Earnings, Tariffs, Conflict, plain Breaking
-    News — see _AI_VERDICT_LABELS; there's no finer severity gradient
-    among them once classified "important" to preserve), diluting what
-    that tier was actually supposed to mean. Downgraded to rotation-
-    notice — still real, still worth the shared slot and a genuine
-    swap-in, just visually and temporally subordinate (smaller,
-    shorter hold, lower rotation priority — see headline_rotation.py's
-    own _TIER_PRIORITY/_TIER_HOLD_SECONDS) to an actual active hazard."""
-    top_alert = _current_top_alert()
-    if not top_alert:
-        return None
-    return {
-        "text": top_alert["headline"],
-        "css_class": "rotation-notice",
-        "target_ms": None,
-        "template": "{}",
-        "zero_text": None,
-    }

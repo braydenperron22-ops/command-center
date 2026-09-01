@@ -321,7 +321,7 @@ def conditions_near_commute() -> list[dict]:
     return out
 
 
-def _readable_roadway(roadway: str | None) -> str | None:
+def readable_roadway(roadway: str | None) -> str | None:
     """MTO's own RoadwayName already carries its own prefix ("HWY 17",
     "QEW") — real bug, caught live: code elsewhere blindly prepended
     its own "Hwy " too, producing "Hwy HWY 17". Normalizes "HWY" to
@@ -644,8 +644,8 @@ def get_status_updates(now: datetime) -> list[dict]:
         changed = True
         description = e["Description"].strip()
         type_label = _issue_type_label(e)
-        readable_roadway = _readable_roadway(e.get("RoadwayName"))
-        headline = f"{type_label.title()} updated: {readable_roadway}" if readable_roadway else f"{type_label.title()} updated"
+        roadway_text = readable_roadway(e.get("RoadwayName"))
+        headline = f"{type_label.title()} updated: {roadway_text}" if roadway_text else f"{type_label.title()} updated"
         alerts.append(
             {
                 "kind": "weather",
@@ -746,9 +746,9 @@ def get_cleared_alerts(now) -> list[dict]:
         info = _last_known_active.pop(issue_id)
         changed = True
         type_label = info.get("type") or "road alert"
-        readable_roadway = _readable_roadway(info.get("roadway"))
-        headline = f"{type_label.title()} cleared: {readable_roadway}" if readable_roadway else f"{type_label.title()} cleared"
-        where = f" on {readable_roadway}" if readable_roadway else ""
+        roadway_text = readable_roadway(info.get("roadway"))
+        headline = f"{type_label.title()} cleared: {roadway_text}" if roadway_text else f"{type_label.title()} cleared"
+        where = f" on {roadway_text}" if roadway_text else ""
         alerts.append(
             {
                 "kind": "weather",

@@ -22,6 +22,7 @@ import commute_client
 import commute_history
 import commute_reminder
 import road_conditions
+import road_conditions_511
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 from weather_client import fetch_weather
 
@@ -169,12 +170,38 @@ def _render_commute(now: datetime) -> None:
 
     minutes = round(data["duration_seconds"] / 60)
     delay_minutes = round(data["delay_seconds"] / 60)
+
+    # Session report: "commute is showing twenty four minutes with no
+    # delays... that's not true... could you say twenty four minutes,
+    # detour active, Highway eleven closed." Real gap: duration_seconds
+    # already reflects a genuine detour when the reference route shows
+    # a real severe section (commute_client._fetch_route_raw switches
+    # to the fastest actual alternative route in that case — see its
+    # own comment), but delay_seconds is still just TomTom's own
+    # trafficDelayInSeconds for whichever route was actually CHOSEN —
+    # an alternate route that's simply LONGER isn't necessarily
+    # showing extra congestion of its own, so delay_minutes can
+    # genuinely read 0 even while duration_seconds is already the
+    # detour-adjusted time. road_conditions_511's own real, route-
+    # matched issues (more specific than TomTom's own generic incident
+    # label too — an actual road name, not just "slow traffic") catch
+    # this distinctly from a genuinely quiet commute.
+    try:
+        road_issues = road_conditions_511.road_issues_near_commute(now)
+    except Exception:
+        road_issues = []
+
     if delay_minutes >= 1:
         # "why", not just "how much" — TomTom's traffic sections say
         # what's actually causing the delay (accident, road work, ...)
         # when it has that detail, not just the aggregate minutes.
         reason = f" ({data['incident']})" if data.get("incident") else ""
         delay_text, delay_class = f"+{delay_minutes} min from traffic{reason}", "market-down"
+    elif road_issues:
+        issue = road_issues[0]
+        roadway_text = road_conditions_511.readable_roadway(issue["roadway"]) or "a nearby road"
+        detail = "closed" if issue["type"] == "road closure" else issue["type"]
+        delay_text, delay_class = f"detour active — {roadway_text} {detail}", "market-down"
     else:
         delay_text, delay_class = "no delays", "market-up"
 

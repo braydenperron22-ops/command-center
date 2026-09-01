@@ -39,7 +39,6 @@ import streamlit as st
 
 import commute_reminder
 import market_circuit_breaker
-import news
 import persisted_state
 import road_conditions_511
 import weather_alerts_bar
@@ -108,9 +107,13 @@ def _candidates(now: datetime, weather: dict | None) -> dict[str, dict]:
     circuit_breaker = market_circuit_breaker.circuit_breaker_headline_candidate(now)
     if circuit_breaker is not None:
         out["circuit_breaker"] = circuit_breaker
-    top = news.top_alert_candidate()
-    if top is not None:
-        out["news"] = top
+    # Session request: "breaking news should get its own toast alert"
+    # — no longer a candidate here at all. news.get_new_alerts's own
+    # one-shot toast (already wired independently into app.py's toast
+    # queue) is breaking news's real moment now; the persistent shared
+    # slot is reserved for genuinely ongoing/active hazards. See news.
+    # update_top_alert's own updated docstring for the full story —
+    # top_alert_candidate itself was retired, not just unwired here.
     return out
 
 
