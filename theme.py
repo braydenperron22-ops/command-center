@@ -46,25 +46,24 @@ CSS = """
    `!important` still loses to an external stylesheet rule that has
    one.
 
-   Three exceptions, kept on purpose because they're the actual CONTENT
+   Two exceptions, kept on purpose because they're the actual CONTENT
    of their page, not decorative chrome — killing them wouldn't make
    the dashboard calmer, it would make a whole feature stop working:
    .ticker-track's scroll (the bottom ticker's entire reason to exist
-   is that it moves), .night-ticker-track's scroll (night_mode.py's own
-   top ticker, added later — same reasoning exactly, a road-closure/
-   weather tag someone asked to "dash across the top... readable from
-   across the room" doesn't work as a static line), and .weather-radar-
-   frame-img's crossfade (the Radar page's whole point is showing
-   recent motion; the frames are already-loaded static images cycled by
-   app.py's kiosk-radar-anim script, so the "animation" here is
-   genuinely the data, not polish). Everything else — every pulse,
-   glow, fade-in, swap-in, shake, and page/jumbotron transition — is
-   gone. */
+   is that it moves) and .weather-radar-frame-img's crossfade (the
+   Radar page's whole point is showing recent motion; the frames are
+   already-loaded static images cycled by app.py's kiosk-radar-anim
+   script, so the "animation" here is genuinely the data, not polish).
+   Everything else — every pulse, glow, fade-in, swap-in, shake, and
+   page/jumbotron transition — is gone. (night_mode.py's own top bar
+   briefly had a third exception here too, a scrolling ticker — traded
+   for a static, centered bar instead, see .night-ticker's own comment,
+   so nothing needed the carve-out for long.) */
 * {
     animation: none !important;
     transition: none !important;
 }
-.ticker-track, .night-ticker-track {
+.ticker-track {
     animation: ticker-scroll 55s linear infinite !important;
 }
 .weather-radar-frame-img {
@@ -6024,22 +6023,30 @@ html, body, [class*="css"] {
     border-left: 1px solid #3A2412;
 }
 /* Session history: "subtle urgency... a little tab that shows it's
-   still active when I wake up" (a small static corner pill) -> "make
-   it bigger and write it out fully... not very visible in the corner"
-   (bigger pill, real content) -> this pass: "like a modified headline
-   bar... dash across the top like we do on the main page... without
-   the red or the colors... big readable from across the room." A
-   full-width top ticker, replacing the corner pill entirely. Reuses
-   ticker.py's own @keyframes ticker-scroll (defined above, near
-   .ticker-bar) rather than a second copy — same 55s loop, same reason
-   it's exempt from this app's global animation kill-switch (theme.py's
-   own kill-switch rule explicitly carves out ticker-scroll/radar-
-   crossfade), so this needed no new exception. Deliberately still the
-   same warm amber family as the rest of this screen, not the main
-   page's severity-colored .headline-rotation (warning/critical red-
-   orange) — "without the red or the colors" was explicit; only size
-   and motion changed, not tone, same "bigger and more obvious, not
-   brighter and more alarming" line the corner-pill pass already drew.
+   still active when I wake up" (small static corner pill) -> "make it
+   bigger and write it out fully... not very visible in the corner"
+   (bigger pill, real content) -> "like a modified headline bar... dash
+   across the top like we do on the main page... without the red or the
+   colors" (tried as a scrolling ticker, reusing ticker.py's own
+   ticker-scroll keyframe) -> this pass, correcting that last guess:
+   "centered in the middle, please, just like on the main display."
+   That's .headline-rotation below, not the scrolling bottom ticker —
+   a static, full-width, CENTERED bar is the real reference. Static
+   again now (no animation, so .night-ticker-track's entry in the
+   global animation kill-switch's own exception list above it in this
+   file — the one right under `* { animation: none !important; }` —
+   was removed along with it; nothing here needs that carve-out
+   anymore). Still deliberately the same warm amber family as the rest
+   of this screen, not .headline-rotation's own severity-tiered
+   blue/amber/red/critical gradient — "without the red or the colors"
+   was explicit from the start and still holds; only .headline-
+   rotation's SHAPE (fixed, full-width, centered text) got borrowed,
+   not its coloring. Multiple simultaneous items (weather + a road
+   closure both active) join on one centered line with a dot separator
+   rather than rotating between them — .headline-rotation's own
+   rotation needs real timing state across many more sources; night
+   mode realistically never has more than two, so one joined line is
+   the proportionate version, not a scaled-down copy of that machinery.
    position:absolute (not fixed) — .night-mode itself is already the
    fixed, full-viewport containing block this needs to span. */
 .night-ticker {
@@ -6047,34 +6054,25 @@ html, body, [class*="css"] {
     top: 0;
     left: 0;
     right: 0;
-    background: rgba(20, 10, 5, 0.85);
-    border-bottom: 1px solid rgba(201, 135, 63, 0.35);
-    padding: 1.15rem 0;
-    overflow: hidden;
-}
-.night-ticker-track {
-    display: flex;
-    width: max-content;
-    animation: ticker-scroll 55s linear infinite;
-}
-.night-ticker-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.7rem;
-    white-space: nowrap;
+    text-align: center;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
     font-size: 2rem;
     font-weight: 600;
     letter-spacing: 0.01em;
+    line-height: 1.3;
     color: #E0A868;
-    padding: 0 3rem;
+    background: rgba(20, 10, 5, 0.85);
+    border-bottom: 1px solid rgba(201, 135, 63, 0.35);
+    padding: 1.15rem 2.5rem;
 }
 .night-ticker-dot {
-    width: 0.8rem;
-    height: 0.8rem;
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
     border-radius: 50%;
     background: #D9822B;
-    flex-shrink: 0;
+    margin: 0 0.9rem;
+    vertical-align: middle;
 }
 
 /* Phone breakpoint. Everything above this point is untouched at any

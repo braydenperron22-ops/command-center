@@ -118,40 +118,34 @@ def render(now: datetime, weather: dict | None, category: str, phase: str, dim: 
         overlay_alpha = dim * 0.82
         overlay_html = f'<div class="night-mode-overlay" style="background:rgba(0,0,0,{overlay_alpha:.3f});"></div>'
 
-    # Session history on this element: started as "subtle urgency... a
-    # little tab that shows it's still active" (a small static corner
-    # pill), then "make it bigger and write it out fully... not very
-    # visible in the corner" (bigger pill, real content instead of a
-    # placeholder), then this pass: "like a modified headline bar...
-    # dash across the top like we do on the main page... big readable
-    # from across the room." A full-width top ticker now, replacing the
-    # corner pill entirely rather than sitting alongside it — reuses
-    # this app's own ticker-scroll keyframe (ticker.py's own bottom
-    # market ticker uses the same one). theme.py's global animation
-    # kill-switch stops everything by default, so .night-ticker-track
-    # gets its own explicit !important carve-out there, right alongside
-    # .ticker-track's own — same "the animation genuinely is the
-    # content" exception, not a new kind of one. Deliberately NOT the
-    # main page's colored .headline-rotation (that one escalates
-    # warning/critical to red/orange) — "without the red or the colors"
-    # was explicit; this stays the same warm amber family as the rest
-    # of this screen regardless of what's active, same "bigger and more
-    # obvious, not brighter and more alarming" line the corner-pill
-    # pass already drew.
+    # Session history on this element: "subtle urgency... a little tab
+    # that shows it's still active" (small static corner pill) -> "make
+    # it bigger and write it out fully... not very visible in the
+    # corner" (bigger pill, real content) -> "like a modified headline
+    # bar... dash across the top... without the red or the colors"
+    # (tried as a horizontally-scrolling ticker, same mechanism as
+    # ticker.py's own bottom market ticker) -> this pass, correcting
+    # that last guess: "centered in the middle, please, just like on
+    # the main display." The main display's own static, centered,
+    # full-width top bar is .headline-rotation, not the scrolling
+    # ticker — see .night-ticker's own CSS comment in theme.py for the
+    # full history and why only its SHAPE got borrowed, not its
+    # severity-tiered coloring ("without the red or the colors" still
+    # holds). Static now, so no ticker-scroll animation and no entry in
+    # theme.py's global kill-switch exception list either — both
+    # removed along with the scrolling version.
     #
-    # Items are rendered twice back-to-back (ticker.py's own
-    # .ticker-track does the same) so the 55s translateX(-50%) loop
-    # scrolls seamlessly — the second copy scrolls into exactly where
-    # the first copy started, instead of a visible jump/gap once a
-    # cycle completes.
+    # Multiple simultaneous items (weather + a road closure both
+    # active) join on one centered line with a dot separator, rather
+    # than each getting their own line or rotating like .headline-
+    # rotation's own multi-source rotation does — night mode
+    # realistically never has more than two active at once, so one
+    # joined line covers it without needing that rotation machinery.
     ticker_html = ""
     attention_items = _overnight_attention_items(now)
     if attention_items:
-        one_pass = "".join(
-            f'<span class="night-ticker-item"><span class="night-ticker-dot"></span>{html.escape(item)}</span>'
-            for item in attention_items
-        )
-        ticker_html = f'<div class="night-ticker"><div class="night-ticker-track">{one_pass}{one_pass}</div></div>'
+        separator = '<span class="night-ticker-dot"></span>'
+        ticker_html = f'<div class="night-ticker">{separator.join(html.escape(item) for item in attention_items)}</div>'
 
     st.markdown(
         f'<div class="night-mode">'
