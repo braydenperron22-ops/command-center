@@ -767,6 +767,22 @@ def get_cleared_alerts(now) -> list[dict]:
         roadway_text = readable_roadway(info.get("roadway"))
         headline = f"{type_label.title()} cleared: {roadway_text}" if roadway_text else f"{type_label.title()} cleared"
         where = f" on {roadway_text}" if roadway_text else ""
+        # Session report: "the closure was fixed last night... didn't
+        # get an alert for it." Real gap — get_new_alerts above got a
+        # phone push when this session added weather/road-closure phone
+        # coverage, but this "it cleared" half never did, so the only
+        # notice was the on-screen toast, useless to anyone asleep when
+        # it fired (confirmed this exact toast fired live at 2:33 AM
+        # the same night this was found). `info["type"]` doubles as the
+        # same IsFullClosure signal get_new_alerts's own push already
+        # gates on — _issue_type_label only ever returns "road closure"
+        # when IsFullClosure was true (see its own docstring) — so this
+        # stays scoped to real full closures reopening, not every minor
+        # construction/incident clearing. Lower priority/a different
+        # tag than the original closure push — this is good news, not
+        # a new hazard, shouldn't read as urgent.
+        if type_label == "road closure":
+            ntfy_client.send(title="Road Closure Cleared", message=headline, priority="default", tags="white_check_mark")
         alerts.append(
             {
                 "kind": "weather",
