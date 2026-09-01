@@ -62,6 +62,7 @@ import commute_reminder
 import cpp_payment_dates
 import ec_alerts
 import email_client
+import fetch_throttle
 import fuel_price_client
 import gemini_client
 import groq_client
@@ -1947,7 +1948,27 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
     # fantasy-hockey-league notification is exactly the real interest
     # signal that classifier is tuned to reject, not something worth
     # surfacing as a toast, but genuinely useful here.
-    email_interest_block = email_client.interest_signal_block()
+    # Full-audit finding: interest_signal_block's own IMAP fetch covers
+    # INTEREST_SIGNAL_LOOKBACK_HOURS (a full week) vs morning_brief_
+    # summary's 24h — a real, much longer inbox, and _fetch_recent_raw
+    # fetches one message at a time (imap.fetch per UID, not a batch
+    # command), so even with email_client.py's own new timeout=15 fix
+    # (see that module's own comment — this used to be able to hang
+    # forever, confirmed live), a slow-but-responding Gmail can still
+    # legitimately take minutes to work through a week of messages one
+    # by one. Confirmed live: this specific call was still the thing
+    # holding up the entire dashboard behind a real, bounded-but-long
+    # IMAP session — not a bug in the timeout fix, just a genuinely
+    # slow real fetch that this one-shot daily feature shouldn't be
+    # allowed to block the whole kiosk over. run_bounded (the same
+    # background-thread-with-a-budget pattern the toast pipeline
+    # already uses for sports/email/aviation) caps the actual wait to
+    # 10s — losing this one signal on a slow day is a fully acceptable
+    # degradation for a "nice to have" pattern-finding input, the exact
+    # reasoning run_bounded's own docstring already establishes.
+    email_interest_block = fetch_throttle.run_bounded(
+        "morning_brief_interest_signal", email_client.interest_signal_block, datetime.now().timestamp(), budget_seconds=10
+    )
     # Session request: "it can say what it wants" — reverses the prior
     # "never infer anything sensitive (health, finances, relationships)
     # from a sender or subject alone" rule below. A real name that shows
