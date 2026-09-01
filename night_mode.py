@@ -118,25 +118,47 @@ def render(now: datetime, weather: dict | None, category: str, phase: str, dim: 
         overlay_alpha = dim * 0.82
         overlay_html = f'<div class="night-mode-overlay" style="background:rgba(0,0,0,{overlay_alpha:.3f});"></div>'
 
-    # Session request: "subtle urgency... a little tab that shows it's
-    # still active when I wake up" — see _overnight_attention_items's
-    # own docstring for what qualifies and why. A plain static tag per
-    # item, no animation (this app's own global kill-switch would drop
-    # one anyway) and no color escalation beyond the rest of the
-    # screen's own warm palette — "subtle" is the whole point, not a
-    # second alarm layered onto a screen that's supposed to stay calm.
-    attention_html = ""
+    # Session history on this element: started as "subtle urgency... a
+    # little tab that shows it's still active" (a small static corner
+    # pill), then "make it bigger and write it out fully... not very
+    # visible in the corner" (bigger pill, real content instead of a
+    # placeholder), then this pass: "like a modified headline bar...
+    # dash across the top like we do on the main page... big readable
+    # from across the room." A full-width top ticker now, replacing the
+    # corner pill entirely rather than sitting alongside it — reuses
+    # this app's own ticker-scroll keyframe (ticker.py's own bottom
+    # market ticker uses the same one). theme.py's global animation
+    # kill-switch stops everything by default, so .night-ticker-track
+    # gets its own explicit !important carve-out there, right alongside
+    # .ticker-track's own — same "the animation genuinely is the
+    # content" exception, not a new kind of one. Deliberately NOT the
+    # main page's colored .headline-rotation (that one escalates
+    # warning/critical to red/orange) — "without the red or the colors"
+    # was explicit; this stays the same warm amber family as the rest
+    # of this screen regardless of what's active, same "bigger and more
+    # obvious, not brighter and more alarming" line the corner-pill
+    # pass already drew.
+    #
+    # Items are rendered twice back-to-back (ticker.py's own
+    # .ticker-track does the same) so the 55s translateX(-50%) loop
+    # scrolls seamlessly — the second copy scrolls into exactly where
+    # the first copy started, instead of a visible jump/gap once a
+    # cycle completes.
+    ticker_html = ""
     attention_items = _overnight_attention_items(now)
     if attention_items:
-        tags = "".join(f'<span class="night-attention-item"><span class="night-attention-dot"></span>{html.escape(item)}</span>' for item in attention_items)
-        attention_html = f'<div class="night-attention">{tags}</div>'
+        one_pass = "".join(
+            f'<span class="night-ticker-item"><span class="night-ticker-dot"></span>{html.escape(item)}</span>'
+            for item in attention_items
+        )
+        ticker_html = f'<div class="night-ticker"><div class="night-ticker-track">{one_pass}{one_pass}</div></div>'
 
     st.markdown(
         f'<div class="night-mode">'
         f'<div class="night-clock">{time_str}<span class="night-ampm">{ampm}</span></div>'
         f'<div class="night-date">{date_str}</div>'
         f"{weather_html}"
-        f"{attention_html}"
+        f"{ticker_html}"
         f"{overlay_html}"
         f"</div>",
         unsafe_allow_html=True,

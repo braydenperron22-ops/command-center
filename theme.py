@@ -46,21 +46,25 @@ CSS = """
    `!important` still loses to an external stylesheet rule that has
    one.
 
-   Two exceptions, kept on purpose because they're the actual CONTENT
+   Three exceptions, kept on purpose because they're the actual CONTENT
    of their page, not decorative chrome — killing them wouldn't make
    the dashboard calmer, it would make a whole feature stop working:
    .ticker-track's scroll (the bottom ticker's entire reason to exist
-   is that it moves) and .weather-radar-frame-img's crossfade (the
-   Radar page's whole point is showing recent motion; the frames are
-   already-loaded static images cycled by app.py's kiosk-radar-anim
-   script, so the "animation" here is genuinely the data, not polish).
-   Everything else — every pulse, glow, fade-in, swap-in, shake, and
-   page/jumbotron transition — is gone. */
+   is that it moves), .night-ticker-track's scroll (night_mode.py's own
+   top ticker, added later — same reasoning exactly, a road-closure/
+   weather tag someone asked to "dash across the top... readable from
+   across the room" doesn't work as a static line), and .weather-radar-
+   frame-img's crossfade (the Radar page's whole point is showing
+   recent motion; the frames are already-loaded static images cycled by
+   app.py's kiosk-radar-anim script, so the "animation" here is
+   genuinely the data, not polish). Everything else — every pulse,
+   glow, fade-in, swap-in, shake, and page/jumbotron transition — is
+   gone. */
 * {
     animation: none !important;
     transition: none !important;
 }
-.ticker-track {
+.ticker-track, .night-ticker-track {
     animation: ticker-scroll 55s linear infinite !important;
 }
 .weather-radar-frame-img {
@@ -6019,48 +6023,55 @@ html, body, [class*="css"] {
     padding-left: 0.9rem;
     border-left: 1px solid #3A2412;
 }
-/* Session request: "subtle urgency... a little tab that shows it's
-   still active when I wake up," then, once a real road closure sat
-   here overnight: "make it bigger and write it out fully... it's not
-   very visible in the corner." Sized up meaningfully (was 0.95rem/low-
-   alpha, easy to lose against the black background from across a
-   room) while keeping every other constraint that made this "subtle"
-   in the first place: still corner-placed, not part of the centered
-   clock/date/weather stack; still the same warm amber/ember family,
-   no color escalation; still static, no pulse/blink (this app's own
-   global animation kill-switch would drop one anyway) — a steady tag
-   reads as "still true," not "just happened," the honest framing for
-   something that's been active a while by the time anyone's looking.
-   "Bigger and more obvious" != "bright and alarming" for a nightstand
-   screen; only legibility changed here, not tone. position:absolute
-   works directly against .night-mode's own position:fixed containing
-   block, no extra wrapper needed. */
-.night-attention {
+/* Session history: "subtle urgency... a little tab that shows it's
+   still active when I wake up" (a small static corner pill) -> "make
+   it bigger and write it out fully... not very visible in the corner"
+   (bigger pill, real content) -> this pass: "like a modified headline
+   bar... dash across the top like we do on the main page... without
+   the red or the colors... big readable from across the room." A
+   full-width top ticker, replacing the corner pill entirely. Reuses
+   ticker.py's own @keyframes ticker-scroll (defined above, near
+   .ticker-bar) rather than a second copy — same 55s loop, same reason
+   it's exempt from this app's global animation kill-switch (theme.py's
+   own kill-switch rule explicitly carves out ticker-scroll/radar-
+   crossfade), so this needed no new exception. Deliberately still the
+   same warm amber family as the rest of this screen, not the main
+   page's severity-colored .headline-rotation (warning/critical red-
+   orange) — "without the red or the colors" was explicit; only size
+   and motion changed, not tone, same "bigger and more obvious, not
+   brighter and more alarming" line the corner-pill pass already drew.
+   position:absolute (not fixed) — .night-mode itself is already the
+   fixed, full-viewport containing block this needs to span. */
+.night-ticker {
     position: absolute;
-    top: 2rem;
-    right: 2rem;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0.7rem;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: rgba(20, 10, 5, 0.85);
+    border-bottom: 1px solid rgba(201, 135, 63, 0.35);
+    padding: 1.15rem 0;
+    overflow: hidden;
 }
-.night-attention-item {
+.night-ticker-track {
     display: flex;
+    width: max-content;
+    animation: ticker-scroll 55s linear infinite;
+}
+.night-ticker-item {
+    display: inline-flex;
     align-items: center;
     gap: 0.7rem;
+    white-space: nowrap;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
-    font-size: 1.5rem;
+    font-size: 2rem;
     font-weight: 600;
     letter-spacing: 0.01em;
     color: #E0A868;
-    background: rgba(90, 50, 20, 0.55);
-    border: 1px solid rgba(201, 135, 63, 0.55);
-    padding: 0.7rem 1.3rem;
-    border-radius: 999px;
+    padding: 0 3rem;
 }
-.night-attention-dot {
-    width: 0.75rem;
-    height: 0.75rem;
+.night-ticker-dot {
+    width: 0.8rem;
+    height: 0.8rem;
     border-radius: 50%;
     background: #D9822B;
     flex-shrink: 0;
