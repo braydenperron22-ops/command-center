@@ -8,12 +8,15 @@ elsewhere in this app — nothing here makes its own new network request
 beyond what those modules' own callers already pay for.
 """
 
+from datetime import datetime
+
 import aviation_client
 import commute_client
 import market_internals
 import market_yf_client
 import portfolio_client
 import prediction_markets_client
+import road_conditions_511
 import sports_client
 import air_quality_client
 import fuel_price_client
@@ -133,14 +136,25 @@ def build_playoff_odds_stat_items() -> list[dict]:
     return items
 
 
-def build_commute_stat_item() -> dict | None:
+def build_commute_stat_item(now: datetime) -> dict | None:
     """Real-time drive time to the default commute destination — the
-    same TomTom-backed number pages_today._commute_html shows, "no
+    same TomTom-backed number pages_today._render_commute shows, "no
     delays" (good/green) vs. a real traffic delay with its own reason
     when TomTom has one (bad/red) — same wording/threshold convention
     as that tile. None whenever TOMTOM_API_KEY isn't configured or the
     route fetch itself failed (commute_client.route's own None case),
-    same as that tile's own empty state."""
+    same as that tile's own empty state.
+
+    Session report: "doesnt show it in ticker tape" — this was its own
+    separate, un-updated copy of the exact same delay-detection logic
+    pages_today._render_commute already had fixed twice today (see
+    that function's own comments): TomTom's delay_seconds alone misses
+    a real detour that's simply a LONGER route rather than a congested
+    one, and road_conditions_511's own real, route-matched issues catch
+    that distinctly. Same fix applied here instead of just linking back
+    to it, since this is a genuinely separate render path (the bottom
+    ticker, not the Today page tile) that would otherwise keep showing
+    "no delays" regardless of how many other places got it right."""
     data = commute_client.route(None)
     if not data:
         return None
@@ -149,6 +163,18 @@ def build_commute_stat_item() -> dict | None:
     if delay_minutes >= 1:
         reason = f" ({data['incident']})" if data.get("incident") else ""
         return {"text": f"Commute {minutes} min (+{delay_minutes} min traffic{reason})", "tone": "bad"}
+    try:
+        road_issues = road_conditions_511.road_issues_near_commute(now)
+    except Exception:
+        road_issues = []
+    if road_issues:
+        issue = road_issues[0]
+        roadway_text = road_conditions_511.readable_roadway(issue["roadway"]) or "a nearby road"
+        detail = "closed" if issue["type"] == "road closure" else issue["type"]
+        reference_seconds = data.get("reference_duration_seconds")
+        extra_minutes = round((data["duration_seconds"] - reference_seconds) / 60) if reference_seconds is not None else 0
+        extra_text = f", +{extra_minutes} min vs normal" if extra_minutes >= 1 else ""
+        return {"text": f"Commute {minutes} min (detour — {roadway_text} {detail}{extra_text})", "tone": "bad"}
     return {"text": f"Commute {minutes} min (no delays)", "tone": "good"}
 
 

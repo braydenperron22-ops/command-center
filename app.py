@@ -2874,7 +2874,7 @@ def _alert_priority(alert: dict) -> int:
     return 10
 
 
-def _render_bottom_ticker(readings: dict) -> None:
+def _render_bottom_ticker(now: datetime, readings: dict) -> None:
     """A pure live-stat ticker (session request: "remove the dates for
     data... just not [as] informational and as good as the other
     options" — the release-date countdown machinery this used to have
@@ -2936,7 +2936,7 @@ def _render_bottom_ticker(readings: dict) -> None:
     except Exception:
         pass
     try:
-        commute_stat = ticker.build_commute_stat_item()
+        commute_stat = ticker.build_commute_stat_item(now)
         if commute_stat:
             stats.append(commute_stat)
     except Exception:
@@ -3228,7 +3228,7 @@ def _toast_fragment(
                 # Falls back to the ticker rather than leaving the bottom
                 # strip fully blank for this rerun — see _render_bottom_
                 # ticker's own docstring for the session report this fixes.
-                _render_bottom_ticker(readings)
+                _render_bottom_ticker(now, readings)
         elif _jumbotron_active and commute_reminder.leave_headline_active(now):
             # Session report: a golf tee time's leave-in window landing
             # during a Jays game — "that space is crucial for the
@@ -3246,7 +3246,7 @@ def _toast_fragment(
             # covers the market ticker.
             commute_reminder.render_ticker_leave_bar(now)
         else:
-            _render_bottom_ticker(readings)
+            _render_bottom_ticker(now, readings)
     except Exception as _bottom_bar_exc:
         # Session report: "the bottom bar goes away... the ticker tape
         # goes away... the red headliner... should be there, but it's
@@ -3268,7 +3268,7 @@ def _toast_fragment(
             {"at": time.time(), "kind": "setup", "headline": None, "error": f"{type(_bottom_bar_exc).__name__}: {_bottom_bar_exc}"},
         )
         try:
-            _render_bottom_ticker(readings)
+            _render_bottom_ticker(now, readings)
         except Exception:
             pass
 
