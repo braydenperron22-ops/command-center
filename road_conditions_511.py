@@ -58,6 +58,7 @@ import commute_client
 import commute_reminder
 import fetch_throttle
 import groq_client
+import ntfy_client
 import persisted_state
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
@@ -536,6 +537,15 @@ def get_new_alerts(now: datetime) -> list[dict]:
         description = e["Description"].strip()
         type_label = _issue_type_label(e)
         headline = f"{type_label.title()}: {_friendly_closure_headline(description)}"
+        # Session request: "everything I need to know about should be
+        # put onto my phone" — a real full closure directly blocking the
+        # commute previously had zero phone-push coverage, same gap
+        # weather_alerts_bar._friendly_headline's own new push above
+        # just closed. Same "IsFullClosure only" scope as the Govee
+        # light flash a few lines below — routine construction/
+        # maintenance isn't worth a phone buzz.
+        if e.get("IsFullClosure"):
+            ntfy_client.send(title="Road Closure", message=headline, priority="high", tags="rotating_light")
         alerts.append(
             {
                 "kind": "weather",

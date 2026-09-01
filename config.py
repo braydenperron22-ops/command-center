@@ -41,6 +41,22 @@ WEATHER_LAT = 46.228058
 WEATHER_LON = -79.245407
 TIMEZONE = "America/Toronto"
 
+# The dashboard's own LAN address — session request: "make the phone
+# push alerts feel like a byproduct of my dashboard... I should be able
+# to see what my dashboard is doing from my phone." ntfy_client.send
+# defaults every push's tap-through Click action here, so opening a
+# notification lands straight back on the live system instead of
+# dead-ending in the ntfy app. LAN-only (no public/Cloudflare-tunnel/
+# Tailscale URL exists for this app — confirmed, nothing else in this
+# codebase references one) — a tap only resolves while the phone is on
+# the same home network, same real limitation the ntfy push itself
+# doesn't have (that's plain internet push, works from anywhere). This
+# IP is the Mac's own DHCP-assigned LAN address, same one the Windows
+# kiosk's own launch script already points at — a router-side static
+# reservation would keep both of these from silently going stale
+# together.
+DASHBOARD_URL = "http://192.168.0.197:8501"
+
 UV_HIGH_THRESHOLD = 5
 # "Feels like" only earns a hero badge once it diverges enough from the
 # actual temperature to matter — a couple degrees of humidex/wind

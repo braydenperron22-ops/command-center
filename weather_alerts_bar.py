@@ -15,6 +15,7 @@ import ec_aqhi
 import ec_storm_timing
 import groq_client
 import kiosk_tts
+import ntfy_client
 import persisted_state
 from config import EXTREME_COLD_THRESHOLD_C, EXTREME_HEAT_THRESHOLD_C
 
@@ -412,6 +413,21 @@ def get_new_alerts(now: datetime) -> list[dict]:
     _mark_title_announced(alert["title"])
     severity = _severity(alert["title"])
     headline = _friendly_headline(alert["title"], type_label, is_update)
+    # Session request: "everything I need to know about should be put
+    # onto my phone" — a genuine Warning-tier-or-above alert (or worse)
+    # is exactly the kind of thing that request means, and this toast
+    # previously had zero phone-push coverage at all, unlike lower-
+    # stakes stuff (news.py's own breaking-news push, prediction_
+    # markets_client's rate-odds pushes) that already did. "extreme" also
+    # goes urgent/bypasses DND, same tier ec_storm_timing's own storm-
+    # phase Govee lights already treat as worth waking someone for.
+    if severity in ("extreme", "warning", "warning-moderate"):
+        ntfy_client.send(
+            title="Environment Canada",
+            message=headline,
+            priority="urgent" if severity == "extreme" else "high",
+            tags="warning",
+        )
     phase_info = ec_storm_timing.storm_phase(now, alert["title"], severity)
     # Session follow-up: "make it so that the clearing [time] number
     # sits where the leave in section is in the jumbotron" — this used
