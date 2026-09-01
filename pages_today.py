@@ -201,7 +201,21 @@ def _render_commute(now: datetime) -> None:
         issue = road_issues[0]
         roadway_text = road_conditions_511.readable_roadway(issue["roadway"]) or "a nearby road"
         detail = "closed" if issue["type"] == "road closure" else issue["type"]
-        delay_text, delay_class = f"detour active — {roadway_text} {detail}", "market-down"
+        # Session follow-up: "it's still delayed from my regular route
+        # tho. so compute it from my normal routes time to the
+        # detour." commute_client's own reference_duration_seconds IS
+        # genuinely "what this route normally takes" (that's the exact
+        # same property that made it the wrong number to quote as a
+        # drive-time estimate earlier — TomTom excludes a real
+        # closure's cost from it by design — but the right one for
+        # this comparison). >= 1 min, same real-difference threshold
+        # delay_minutes itself already uses above, so a detour that
+        # happens to cost only a handful of seconds doesn't get an
+        # oddly-precise "+0 min" tacked on.
+        reference_seconds = data.get("reference_duration_seconds")
+        extra_minutes = round((data["duration_seconds"] - reference_seconds) / 60) if reference_seconds is not None else 0
+        extra_text = f" (+{extra_minutes} min vs your normal route)" if extra_minutes >= 1 else ""
+        delay_text, delay_class = f"detour active — {roadway_text} {detail}{extra_text}", "market-down"
     else:
         delay_text, delay_class = "no delays", "market-up"
 

@@ -171,6 +171,18 @@ def _fetch_route_raw(api_key: str, dest_lat: float, dest_lon: float, record_hist
         "distance_km": summary["lengthInMeters"] / 1000,
         "incident": incident,
         "points": points,
+        # Session report: "it's still delayed from my regular route
+        # tho. so compute it from my normal routes time to the
+        # detour." The reference route's own time IS genuinely "what
+        # this route normally takes" — that's the real reason its own
+        # number was fiction as a DRIVE-TIME quote earlier (TomTom
+        # excludes a real closure's cost from it by design), but that
+        # exact same property makes it the right baseline for THIS
+        # question. Equal to duration_seconds whenever no alternative
+        # was needed (chosen is reference) — callers can always safely
+        # take (duration_seconds - reference_duration_seconds) as the
+        # real extra cost of today's detour, zero on an ordinary day.
+        "reference_duration_seconds": reference["summary"]["travelTimeInSeconds"],
     }
 
 
