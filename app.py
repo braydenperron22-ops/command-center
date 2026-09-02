@@ -741,7 +741,29 @@ components.html(
     // runs unconditional of page), so this polls twice that often and
     // grades on a much tighter scale than the 4-minute reload
     // threshold above — this is meant to be glanced at and trusted
-    // within seconds, that one is a last-resort recovery net.
+    // within seconds.
+    //
+    // Session report, real kiosk (not this Mac): a 2+ hour freeze that
+    // kiosk-stale-watchdog's own 4-minute/65s-cadence check should
+    // have caught and reloaded past in minutes, but evidently didn't
+    // recover from — "the same kind of protection... I don't wanna
+    // have to manually refresh." Rather than trust that one check
+    // alone, this now ALSO reloads on its own, off the pulse-ts
+    // signal specifically because it's the fastest one in the app (10s
+    // vs 65s) — dashboard-pulse-ts already uses a real time.time()
+    // wall-clock stamp (not app.py's own business `now`, which can
+    // already be stale-at-capture by the time a slow rerun reaches the
+    // bottom of the script — confirmed live this session, see
+    // _email_clause/_portfolio_clause's own budget-clock comments), so
+    // ageSec here is a direct, honest staleness measurement with no
+    // "did the value change" indirection needed. 90s (about 9 missed
+    // ticks) rather than reloading the instant it crosses the
+    // Stalled/60s display threshold — real jitter from a source
+    // occasionally using its own full per-tick budget shouldn't
+    // trigger a reload, only a staleness that's clearly not just a
+    // slow tick. Two independent watchdogs on two different signals,
+    // deliberately not merged into one — if either has a blind spot
+    // the other still catches it.
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('dashboard-pulse-watchdog')) return;
@@ -756,6 +778,10 @@ components.html(
         "  var ts = parseFloat(tsEl.getAttribute('data-ts'));",
         "  if (!ts) return;",
         "  var ageSec = (Date.now() / 1000) - ts;",
+        "  if (ageSec >= 90) {",
+        "    window.parent.location.reload();",
+        "    return;",
+        "  }",
         "  var cls = 'good';",
         "  var label = 'Live';",
         "  if (ageSec >= 60) {",
