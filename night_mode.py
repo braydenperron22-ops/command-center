@@ -78,17 +78,21 @@ def _overnight_attention_items(now: datetime) -> list[str]:
 
 
 def render(now: datetime, weather: dict | None, category: str, phase: str, dim: float = 0.0) -> None:
-    """`dim` is app.py's own `night_dim` (0.0-1.0) — the exact same
-    value the regular dashboard's own sleep overlay uses. Session
-    report: "dim the display to the same extent that it's dimmed
-    overnight normally." That regular overlay is a separate, unrelated
-    fixed div at z-index:20 — this view's own z-index:10000 (deliberately
-    the highest in the app, see its own CSS comment) sits ON TOP of it,
-    so the existing overlay was rendering underneath night mode the
-    whole time, doing nothing visible. Reapplied here, inside this
-    view's own stacking context, with the identical *0.82 multiplier
-    so the two are genuinely the same darkness, not just similarly
-    dark by coincidence."""
+    """`dim` is app.py's own `night_dim` (0.0-1.0) — the same value the
+    regular dashboard's own sleep overlay uses, though no longer scaled
+    by the identical multiplier (see the overlay's own comment below for
+    why: this view's palette is already dim by design, and reusing the
+    regular dashboard's *0.82 double-dimmed it into illegibility).
+    Session report: "dim the display to the same extent that it's
+    dimmed overnight normally." That regular overlay is a separate,
+    unrelated fixed div at z-index:20 — this view's own z-index:10001
+    (deliberately the highest in the app, see its own CSS comment) sits
+    ON TOP of it, so the existing overlay was rendering underneath night
+    mode the whole time, doing nothing visible. Reapplied here, inside
+    this view's own stacking context, reacting to the same real fade
+    the regular dashboard's own dim does — just scaled to stay legible
+    on this view's own already-dim palette instead of copying the exact
+    multiplier a much brighter default palette needs."""
     time_str = now.strftime("%-I:%M").lstrip("0") or "12:00"
     ampm = now.strftime("%p")
     date_str = now.strftime("%A, %B %-d")
@@ -115,7 +119,26 @@ def render(now: datetime, weather: dict | None, category: str, phase: str, dim: 
 
     overlay_html = ""
     if dim > 0:
-        overlay_alpha = dim * 0.82
+        # Session report: "the night screen is no longer showing up.
+        # it's just a black screen." Real, measurable bug in the *0.82
+        # multiplier above (render()'s own docstring on why it's the
+        # exact same one the regular dashboard's bright/white daytime
+        # palette uses): this view's OWN palette is already deliberately
+        # dim — #B8703A, the clock's own color, is a genuinely dark
+        # amber to begin with, "nothing above a dim brightness" per this
+        # module's own docstring. Stacking a further 82%-opaque black
+        # layer on top of an ALREADY-dim color at full night (dim=1.0)
+        # computes to an effective rgb(33,20,10) — technically nonzero,
+        # indistinguishable from pure black on a real TV. The regular
+        # dashboard's own bright palette genuinely needs 0.82 to tone
+        # down for night; this one never had that problem to start with
+        # and was being double-dimmed into illegibility, defeating the
+        # entire point of a glanceable nightstand clock. 0.30 keeps the
+        # same real behavior (measurably darker at full night than at
+        # dusk/dawn, reacting to the same fade this always has) while
+        # keeping the dimmest state — effective color roughly 70% of
+        # the base amber — still clearly readable across a room.
+        overlay_alpha = dim * 0.30
         overlay_html = f'<div class="night-mode-overlay" style="background:rgba(0,0,0,{overlay_alpha:.3f});"></div>'
 
     # Session history on this element: "subtle urgency... a little tab
