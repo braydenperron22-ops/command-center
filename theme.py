@@ -5936,9 +5936,22 @@ html, body, [class*="css"] {
    palette rather than reusing this app's normal --bone/--mut greys or
    any accent blue (#0A84FF, used all over the daytime UI) — those are
    exactly the cool/bright tones that make a 3am glance actually wake
-   you up. Every color below is a dim warm amber/copper instead, nothing
-   reaching full brightness, closer to a red-light flashlight or an old
-   LED alarm clock than to the rest of this kiosk. */
+   you up.
+
+   Originally a dim warm amber/copper, described even then as "closer
+   to a red-light flashlight... than to the rest of this kiosk" —
+   session correction: "make the color like a brighter red... keep the
+   dimming intact. That way you can actually read the numbers and they
+   kinda pop... without unleashing a ton of blue light." Now an actual
+   warm red instead of amber, same reasoning that inspired the amber
+   choice in the first place — red is the literal longest-wavelength
+   visible color, zero blue component by construction, the same
+   physics behind a genuine red-light flashlight or a cockpit's own
+   night-vision-preserving displays; brighter than the old amber was
+   specifically for legibility, not because dim itself was wrong.
+   Dimming behavior (night_mode.py's own overlay_alpha) is completely
+   unchanged — this pass only recolors, doesn't touch how dark it gets
+   at full night. */
 .night-mode {
     position: fixed;
     inset: 0;
@@ -5985,20 +5998,20 @@ html, body, [class*="css"] {
     font-weight: 300;
     line-height: 1;
     letter-spacing: -0.02em;
-    color: #B8703A;
+    color: #FF3B30;
     font-variant-numeric: tabular-nums;
 }
 .night-ampm {
     font-size: 3rem;
     font-weight: 400;
     margin-left: 0.8rem;
-    color: #7A4A26;
+    color: #B8342A;
     vertical-align: middle;
 }
 .night-date {
     font-size: 1.7rem;
     font-weight: 400;
-    color: #6B4224;
+    color: #9C2E24;
     letter-spacing: 0.02em;
 }
 .night-weather {
@@ -6006,13 +6019,13 @@ html, body, [class*="css"] {
     align-items: center;
     gap: 0.9rem;
     margin-top: 0.8rem;
-    color: #6B4224;
+    color: #9C2E24;
 }
 .night-weather-icon {
     width: 2.2rem;
     height: 2.2rem;
     display: flex;
-    color: #8F5A2C;
+    color: #D9382A;
 }
 .night-weather-icon svg {
     width: 100%;
@@ -6021,7 +6034,7 @@ html, body, [class*="css"] {
 .night-weather-temp {
     font-size: 2rem;
     font-weight: 500;
-    color: #A8622E;
+    color: #FF3B30;
     font-variant-numeric: tabular-nums;
 }
 .night-weather-cond {
@@ -6030,7 +6043,7 @@ html, body, [class*="css"] {
 .night-weather-low {
     font-size: 1.4rem;
     padding-left: 0.9rem;
-    border-left: 1px solid #3A2412;
+    border-left: 1px solid #3D1512;
 }
 /* Session history: "subtle urgency... a little tab that shows it's
    still active when I wake up" (small static corner pill) -> "make it
@@ -6070,9 +6083,9 @@ html, body, [class*="css"] {
     font-weight: 600;
     letter-spacing: 0.01em;
     line-height: 1.3;
-    color: #E0A868;
-    background: rgba(20, 10, 5, 0.85);
-    border-bottom: 1px solid rgba(201, 135, 63, 0.35);
+    color: #FF3B30;
+    background: rgba(24, 9, 7, 0.85);
+    border-bottom: 1px solid rgba(255, 59, 48, 0.35);
     padding: 1.15rem 2.5rem;
 }
 .night-ticker-dot {
@@ -6080,7 +6093,7 @@ html, body, [class*="css"] {
     width: 0.5rem;
     height: 0.5rem;
     border-radius: 50%;
-    background: #D9822B;
+    background: #FF3B30;
     margin: 0 0.9rem;
     vertical-align: middle;
 }

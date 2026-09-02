@@ -124,20 +124,25 @@ def render(now: datetime, weather: dict | None, category: str, phase: str, dim: 
         # multiplier above (render()'s own docstring on why it's the
         # exact same one the regular dashboard's bright/white daytime
         # palette uses): this view's OWN palette is already deliberately
-        # dim — #B8703A, the clock's own color, is a genuinely dark
-        # amber to begin with, "nothing above a dim brightness" per this
-        # module's own docstring. Stacking a further 82%-opaque black
-        # layer on top of an ALREADY-dim color at full night (dim=1.0)
-        # computes to an effective rgb(33,20,10) — technically nonzero,
-        # indistinguishable from pure black on a real TV. The regular
-        # dashboard's own bright palette genuinely needs 0.82 to tone
-        # down for night; this one never had that problem to start with
-        # and was being double-dimmed into illegibility, defeating the
-        # entire point of a glanceable nightstand clock. 0.30 keeps the
-        # same real behavior (measurably darker at full night than at
-        # dusk/dawn, reacting to the same fade this always has) while
-        # keeping the dimmest state — effective color roughly 70% of
-        # the base amber — still clearly readable across a room.
+        # dim by design, "nothing above a dim brightness" per this
+        # module's own docstring — at the time this was found, the
+        # clock's own color was #B8703A, a genuinely dark amber on its
+        # own. Stacking a further 82%-opaque black layer on top of an
+        # already-dim color at full night (dim=1.0) computed to an
+        # effective rgb(33,20,10) — technically nonzero, indistinguishable
+        # from pure black on a real TV. The regular dashboard's own
+        # bright palette genuinely needs 0.82 to tone down for night;
+        # this one never had that problem to start with and was being
+        # double-dimmed into illegibility, defeating the entire point of
+        # a glanceable nightstand clock. 0.30 keeps the same real
+        # behavior (measurably darker at full night than at dusk/dawn,
+        # reacting to the same fade this always has) while staying
+        # clearly readable at the dimmest state. Session follow-up
+        # brightened the palette itself too (amber -> red, theme.py's
+        # own comment above .night-mode has the current colors and why)
+        # — this 0.30 cap is independent of the exact color chosen and
+        # doesn't need re-deriving if the palette ever changes again,
+        # only re-checked against whichever color is current.
         overlay_alpha = dim * 0.30
         overlay_html = f'<div class="night-mode-overlay" style="background:rgba(0,0,0,{overlay_alpha:.3f});"></div>'
 
