@@ -681,6 +681,52 @@ components.html(
       doc.head.appendChild(s);
     })();
 
+    // Session report: "the night screen is no longer showing up. it's
+    // just a black screen... I don't really wanna refresh it. The
+    // whole point is for it to be idle." kiosk-stale-watchdog above
+    // only proves the SERVER-side script keeps completing reruns — it
+    // stayed green the whole time this bug was reproduced (heartbeat.
+    // txt/data-ts both kept advancing normally), because the failure
+    // isn't the script getting stuck, it's Streamlit's own client-side
+    // DOM patching failing to correctly swap in a structurally very
+    // different layout (regular chrome vs. the jumbotron, or the
+    // jumbotron's own pregame vs. live vs. postgame shapes) onto a
+    // page that's been sitting open and already-rendered for hours —
+    // see app.py's own _kiosk_state_key comment for the full story.
+    // This watches that separate, purpose-built marker instead: the
+    // first poll just records whatever state is already showing (no
+    // reload on a fresh connect); any later poll where it's genuinely
+    // different forces one clean reload, so a structurally big layout
+    // change always arrives via a fresh render instead of a patch onto
+    // stale DOM. Deliberately its own separate watchdog, not folded
+    // into kiosk-stale-watchdog above — that one's trigger (heartbeat
+    // gone stale) and this one's (state changed but DOM might not have
+    // followed) are genuinely different failure signals; conflating
+    // them would blur which one actually fired if this ever needs
+    // debugging again.
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-transition-watchdog')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-transition-watchdog';
+      s.textContent = [
+        "var kioskLastState = null;",
+        "setInterval(function () {",
+        "  var el = window.parent.document.getElementById('kiosk-state-key');",
+        "  if (!el) return;",
+        "  var state = el.getAttribute('data-state');",
+        "  if (kioskLastState === null) {",
+        "    kioskLastState = state;",
+        "    return;",
+        "  }",
+        "  if (state !== kioskLastState) {",
+        "    window.parent.location.reload();",
+        "  }",
+        "}, 10 * 1000);",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('kiosk-ticker-persist')) return;
@@ -3394,6 +3440,61 @@ _toast_fragment(
 # regardless of health" timer the old kiosk-reload-watchdog was (see
 # that script's own history, removed below in favor of this).
 st.markdown(f'<div id="kiosk-client-heartbeat" data-ts="{now.timestamp()}" style="display:none;"></div>', unsafe_allow_html=True)
+
+# Session report: "the night screen is no longer showing up. it's just
+# a black screen... I don't really wanna refresh it. The whole point
+# is for it to be idle" — a real, distinct bug from #6442 above, found
+# the same way: this Mac's own local copy rendered a real Jays postgame
+# jumbotron transition fine on a FRESH page load, but the actual kiosk
+# — a browser tab that's been sitting open for hours, no reload —
+# stayed black and never recovered on its own. kiosk-stale-watchdog
+# above can't catch this: it only proves a rerun reached the end of the
+# SERVER-side script, which it does here — heartbeat.txt/data-ts both
+# keep advancing normally the whole time, since the failure isn't the
+# script getting stuck, it's Streamlit's own client-side DOM patching
+# failing to correctly swap in a structurally very different layout
+# (this app's own regular chrome vs. the jumbotron's own DOM, or
+# jumbotron's own pregame vs. live vs. postgame shapes) onto a page
+# that's been sitting open and already-rendered for a long time — the
+# same general class of "diffing gets confused by a structural change
+# mid-session" issue already documented elsewhere in this app (see
+# weather_alerts_bar.render_alert_bar's own countdown-span comment,
+# and the kiosk-ticker-persist script below). A fresh page load never
+# hits this (there's no prior DOM to mispatch against), which is
+# exactly why this Mac's own test copy never reproduced it.
+#
+# Real fix: don't trust Streamlit's in-place patch for a change this
+# structural — force one clean reload the moment the actual logical
+# state changes, so the new layout always arrives via a fresh full
+# render instead of a patch onto stale DOM. `_kiosk_state_key` is a
+# short, stable string that changes exactly when the visible layout
+# fundamentally would: entering/leaving night mode, entering/leaving a
+# takeover, a different game/event taking over, or a takeover's own
+# phase advancing (pregame/live/postgame, or UFC's countdown/live) —
+# not on every rerun, and not on live score/inning ticks within the
+# same phase (kiosk-jumbotron-fragment's own 5s cadence already handles
+# those in place, correctly, without needing a reload).
+if _night_mode_active:
+    _kiosk_state_key = "night"
+elif _takeover:
+    _kiosk_state_key = f"game:{_takeover['game']['game_id']}:{_takeover['phase']}"
+elif _ufc_takeover:
+    _kiosk_state_key = f"ufc:{_ufc_takeover['event']['event_id']}:{_ufc_takeover['phase']}"
+else:
+    # Deliberately NOT f"page:{page}" — the ~15 regular rotation pages
+    # (Home/Weather/Markets/...) all share the same overall page shell
+    # and swap only one inner content block, exactly the kind of change
+    # Streamlit's own diffing already handles correctly hundreds of
+    # times a day (every PAGE_ROTATION_SECONDS) with no documented
+    # history of this failure mode — including page name here would
+    # force a reload on every single rotation swap, reintroducing the
+    # "reload a perfectly healthy kiosk for no reason" cost the old
+    # blind hourly reload was already replaced for. One flat value
+    # covers all of them; only the bigger jumps above (night mode,
+    # takeover phase/game changes) are structurally risky enough to
+    # warrant forcing a fresh load.
+    _kiosk_state_key = "regular"
+st.markdown(f'<div id="kiosk-state-key" data-state="{html.escape(_kiosk_state_key)}" style="display:none;"></div>', unsafe_allow_html=True)
 
 # Literal last statement in the script, on purpose — see heartbeat.py's
 # own docstring. Session report: "it only freezes sometimes but the
