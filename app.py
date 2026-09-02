@@ -1924,8 +1924,54 @@ if _requested_page not in PAGES and not _jumbotron_active and not _night_mode_ac
 # slowness (FRED readings foremost) is still real and worth a follow-up
 # pass to bring this back down closer to the original 5s cadence.
 # (45s was tried first and wasn't safe — a real cold-start run measured
-# 70s live, right in this same investigation.)
-st_autorefresh(interval=75000, key="clock_tick")
+# 70s live, right in this same investigation.) Later bumped to 75000
+# for headroom once the morning brief's own email/portfolio clauses
+# (below) turned out to add their own real cold-cache cost on top.
+#
+# Session follow-up: "seventy five seconds makes it feel so archaic
+# and laggy... how much can we cut it down without risking the issues
+# from the five second refresh time." Re-instrumented the same way
+# (temporary AUDIT_TIMING checkpoints, removed before shipping — see
+# git history) and found the actual dominant recurring cost wasn't
+# baseline script weight at all: morning_briefing.render()'s email and
+# portfolio clauses were each making a real, wholly UNbounded blocking
+# fetch on their own cache misses — measured live at 38.9s and 17.6s,
+# 56.5s of one single 60.7s rerun, and this recurs on nearly EVERY
+# rerun during the 5-10am morning window specifically (email's own
+# cache is only 3 minutes, portfolio's 15) — likely the actual source
+# of the "35-59s slow tier" felt day to day. Separately, live during
+# this same investigation, pages_home.fetch_readings' own known "isn't
+# itself cached" gap (see above) went from "several real seconds" to
+# an outright hang — heartbeat stale 9+ minutes, watchdog had to
+# force-restart the process — because it sweeps 10 FRED/StatCan
+# indicators sequentially with no shared ceiling, each individually
+# capped at 10s but nothing stopping all 10 from queuing up on a cold
+# cache. Both fixed with fetch_throttle.run_bounded (same mechanism
+# the toast loop already used) — see _email_clause/_portfolio_clause
+# in morning_briefing.py and fetch_readings in pages_home.py for the
+# real numbers and reasoning. Verified live: warm-cache steady-state
+# full rerun is now ~5.4s (was 35-59s); a genuinely cold cache (first
+# rerun after any restart/redeploy) is now ~57-62s and reliably
+# finishes rather than risking a hang.
+#
+# That cold-start number is why this interval is only trimmed
+# modestly, not slashed to match the new ~5s steady state: it exists
+# specifically to stay clear of a fresh deploy's own cold-cache cost,
+# and 65s still comfortably covers the ~57-62s measured tonight with
+# real (if narrower than before) margin — the same reasoning that set
+# 75s over a 70s ceiling above. The felt improvement is almost
+# entirely from reruns actually finishing fast now, not from this
+# number — a still-real remaining cold-cache cost (weather + air
+# quality fetch sequentially at the very top of the script, each
+# individually timeout-capped but not sharing a budget or running in
+# parallel, ~20-30s combined on a 15-minute cache miss) was found but
+# deliberately left alone this pass: it's already safe (a real
+# timeout, no hang risk) and only recurs on a ~15-minute cache
+# boundary, not every tick — a smaller, lower-priority target for a
+# future pass if the interval needs to come down further than this.
+# Jumbotron (5s) and toast (10s) fragments run independently of this
+# number entirely and were already confirmed fast in an earlier pass.
+st_autorefresh(interval=65000, key="clock_tick")
 
 try:
     weather = fetch_weather()

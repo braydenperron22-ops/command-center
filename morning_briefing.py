@@ -506,7 +506,35 @@ def _agenda_clause(now: datetime) -> tuple[int, str] | None:
 # reason the morning brief should have a lower bar for what counts as
 # worth mentioning than a toast does.
 def _email_clause(now: datetime) -> tuple[int, str] | None:
-    summary = email_client.morning_brief_summary(now)
+    # Audit fix: this is a genuinely different st.cache_data key
+    # (MORNING_BRIEF_LOOKBACK_HOURS=24) than the toast loop's own warm
+    # 6h fetch (see email_client.morning_brief_summary's own
+    # docstring), so a cold morning — nothing cached yet for this
+    # wider window — hit real IMAP + possible fresh Groq classification
+    # calls straight in the outer render() cycle: measured live at
+    # 38.9s, the single largest cost in a 60.7s morning_briefing.render()
+    # call. Same fetch_throttle.run_bounded fix already used a few
+    # functions below for email_interest_block, and the exact pattern
+    # email_client.py's own warm_daily_feed/cached_recent_important
+    # comment already documents as the fix for this shape of bug
+    # elsewhere in the same file. A skipped render still leaves the
+    # background thread running to completion, which populates
+    # _fetch_recent_raw's own 3-minute cache — so the very next render
+    # (well within 3 minutes on any interval this app uses) reads warm
+    # and returns near-instantly instead of paying this again.
+    # Budget clock is a fresh datetime.now(), NOT `now` — `now` is
+    # captured once near the top of app.py's outer script, and by the
+    # time execution reaches this clause (after weather/air-quality/
+    # other page work) it can already be well past budget_seconds old,
+    # which would silently zero out the budget before the real call
+    # ever starts (caught live: now.timestamp() measured 16s stale
+    # here, which made every attempt skip instantly). Same fix
+    # _update_learned_notes' own email_interest_block call already
+    # uses below, for the same reason.
+    summary = fetch_throttle.run_bounded(
+        "morning_brief_email", lambda: email_client.morning_brief_summary(now),
+        datetime.now().timestamp(), budget_seconds=10, default=None,
+    )
     if summary is None:
         return None
     return 4, f"email: {summary}"
@@ -696,38 +724,60 @@ def _portfolio_clause(now: datetime) -> tuple[int, str] | None:
     day's deposit is a much smaller share of a 7/30-day window, and
     excluding it there too would start hiding genuine multi-week
     trends instead of just the one-day noise spike."""
-    portfolio = portfolio_client.fetch_portfolio()
-    if not portfolio or portfolio.get("total_cad") is None:
+
+    def _compute():
+        portfolio = portfolio_client.fetch_portfolio()
+        if not portfolio or portfolio.get("total_cad") is None:
+            return None
+        skip_today = payday_schedule.is_payday(now.date() - timedelta(days=1))
+        best = None  # (abs_pct, days, pct, amount)
+        for days, (min_pct, min_amount) in _PORTFOLIO_MEANINGFUL_THRESHOLDS.items():
+            if days == 1 and skip_today:
+                continue
+            # "today" uses the same self-recorded day-over-day comparison
+            # pages_portfolio.py's own tile does now (see portfolio_client.
+            # daily_change's own docstring) instead of fetch_period_change's
+            # SnapTrade-account-history mechanism — session request: "can
+            # we instead outsource it by caching yesterday's result." Week/
+            # month keep using fetch_period_change; a same-day cache has no
+            # way to answer those.
+            change = portfolio_client.daily_change() if days == 1 else portfolio_client.fetch_period_change(days)
+            if not change:
+                continue
+            pct, amount = change["pct"], change["amount"]
+            if abs(pct) < min_pct or abs(amount) < min_amount:
+                continue
+            if best is None or abs(pct) > best[0]:
+                best = (abs(pct), days, pct, amount)
+        if best is None:
+            return None
+        return best, portfolio["total_cad"]
+
+    # Audit fix: up to four real sequential calls (fetch_portfolio +
+    # one fetch_period_change per threshold) on a cold 15-minute cache
+    # — measured live at 17.6s, the second-largest cost in a 60.7s
+    # morning_briefing.render() call, right after _email_clause above.
+    # Same fetch_throttle.run_bounded fix, same reasoning: fetch_portfolio
+    # and fetch_period_change are each already st.cache_data(ttl=15min),
+    # so a background thread left running past the budget still warms
+    # those caches for the next render rather than wasting the work.
+    # Fresh datetime.now() as the budget clock, not `now` — see
+    # _email_clause's own comment just above for why the stale
+    # script-top `now` silently zeroes this budget out before the real
+    # call ever starts.
+    outcome = fetch_throttle.run_bounded(
+        "morning_brief_portfolio", _compute, datetime.now().timestamp(), budget_seconds=10, default=None,
+    )
+    if outcome is None:
         return None
-    skip_today = payday_schedule.is_payday(now.date() - timedelta(days=1))
-    best = None  # (abs_pct, days, pct, amount)
-    for days, (min_pct, min_amount) in _PORTFOLIO_MEANINGFUL_THRESHOLDS.items():
-        if days == 1 and skip_today:
-            continue
-        # "today" uses the same self-recorded day-over-day comparison
-        # pages_portfolio.py's own tile does now (see portfolio_client.
-        # daily_change's own docstring) instead of fetch_period_change's
-        # SnapTrade-account-history mechanism — session request: "can
-        # we instead outsource it by caching yesterday's result." Week/
-        # month keep using fetch_period_change; a same-day cache has no
-        # way to answer those.
-        change = portfolio_client.daily_change() if days == 1 else portfolio_client.fetch_period_change(days)
-        if not change:
-            continue
-        pct, amount = change["pct"], change["amount"]
-        if abs(pct) < min_pct or abs(amount) < min_amount:
-            continue
-        if best is None or abs(pct) > best[0]:
-            best = (abs(pct), days, pct, amount)
-    if best is None:
-        return None
+    best, total_cad = outcome
     _, days, pct, amount = best
     direction = "up" if amount >= 0 else "down"
     label = _PORTFOLIO_PERIOD_LABEL[days]
     return (
         3,
         f"portfolio {direction} {abs(pct):.1f}% (${abs(amount):,.0f}) {label} — "
-        f"${portfolio['total_cad']:,.0f} CAD total",
+        f"${total_cad:,.0f} CAD total",
     )
 
 

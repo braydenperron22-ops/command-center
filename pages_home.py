@@ -4,6 +4,7 @@ import time
 
 import streamlit as st
 
+import fetch_throttle
 import fred_client
 import market_client
 import regime_bar
@@ -44,16 +45,42 @@ def current_country(epoch_seconds: float | None = None) -> str:
 
 def fetch_readings(fred_api_key: str) -> tuple[dict, dict]:
     """Every country's every indicator — needed regardless of which page is
-    active, since the release-calendar ticker at the bottom is global."""
+    active, since the release-calendar ticker at the bottom is global.
+
+    Audit fix: each build_indicator_reading call already has its own real
+    timeout (fred_client/statcan_client both pass requests' own
+    timeout=10) and hour-long st.cache_data TTL, but this loop calling
+    all of them had no shared bound across itself — a simultaneous cold
+    cache (every fresh process start: a Streamlit Cloud redeploy, or
+    this Mac's own watchdog-triggered restart) pays up to 10s per
+    indicator, sequentially, no early exit. Confirmed live: 10 real
+    indicators, this Mac's own repeated restarts tonight hit the
+    ceiling on several at once, stalling the outer rerun well past the
+    watchdog's own stale-heartbeat threshold. Same fetch_throttle.
+    run_bounded fix as morning_briefing's email/portfolio clauses —
+    one shared budget across the whole sweep; a skipped indicator's
+    reading is None this render (the exact same shape render_tile
+    already has to handle for a genuine FRED/StatCan fetch error), and
+    its background thread still finishes and warms its own hour-long
+    cache regardless."""
     readings = {}
     new_flags = {}
     now = time.time()
+    _budget_start = time.time()
     for c, indicators in INDICATORS.items():
         for ind in indicators:
             if ind.get("source") == "statcan":
-                reading = statcan_client.build_indicator_reading(ind["vector_id"], ind["transform"])
+                reading = fetch_throttle.run_bounded(
+                    f"home_reading_{c}_{ind['key']}",
+                    lambda ind=ind: statcan_client.build_indicator_reading(ind["vector_id"], ind["transform"]),
+                    _budget_start, budget_seconds=10, default=None,
+                )
             else:
-                reading = fred_client.build_indicator_reading(ind["series_id"], fred_api_key, ind["transform"])
+                reading = fetch_throttle.run_bounded(
+                    f"home_reading_{c}_{ind['key']}",
+                    lambda ind=ind: fred_client.build_indicator_reading(ind["series_id"], fred_api_key, ind["transform"]),
+                    _budget_start, budget_seconds=10, default=None,
+                )
             key = (c, ind["key"])
             readings[key] = reading
 
