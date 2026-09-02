@@ -1376,12 +1376,14 @@ def parse_headline_body(raw: str) -> tuple[str, str] | None:
     return headline, body
 
 
-def render(now: datetime, weather: dict | None, air_quality: dict | None) -> None:
-    if not (MORNING_WINDOW_START_HOUR <= now.hour < MORNING_WINDOW_END_HOUR):
-        return
-    if not weather:
-        return
-
+def _generate_brief_now(now: datetime, weather: dict | None, air_quality: dict | None) -> tuple[str, str] | None:
+    """The actual clause-gathering + AI-write work render() below does —
+    pulled out into its own function so spoken_brief_for_leave_timer can
+    call it directly too (see that function's own docstring for why:
+    the leave timer can genuinely fire before render()'s own outer-
+    script cadence has run even once yet today). Returns None only when
+    there's truly nothing to report (no clauses fired at all) — same
+    "no brief" case render() already treats as "show nothing."""
     clauses = []
     for name, fn, args in (
         ("alert", _alert_clause, (now,)),
@@ -1416,7 +1418,7 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
             clauses.append((name, priority, text))
 
     if not clauses:
-        return
+        return None
     clauses.sort(key=lambda c: c[1], reverse=True)
     # Session request: "give it as much data as possible so it could
     # make as many informed comments as possible." The AI now gets
@@ -1474,6 +1476,18 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
         headline, body = "Morning update", plain[0].upper() + plain[1:] + "."
     else:
         headline, body = result
+    return headline, body
+
+
+def render(now: datetime, weather: dict | None, air_quality: dict | None) -> None:
+    if not (MORNING_WINDOW_START_HOUR <= now.hour < MORNING_WINDOW_END_HOUR):
+        return
+    if not weather:
+        return
+    result = _generate_brief_now(now, weather, air_quality)
+    if result is None:
+        return
+    headline, body = result
 
     global _last_brief_text, _last_brief_text_date
     _last_brief_text = (headline, body)
@@ -1621,7 +1635,7 @@ def _spoken_brief_text(headline: str, body: str) -> str | None:
     return gemini_client.generate(prompt, temperature=0.4, max_output_tokens=500)
 
 
-def spoken_brief_for_leave_timer(now: datetime) -> str | None:
+def spoken_brief_for_leave_timer(now: datetime, weather: dict | None, air_quality: dict | None) -> str | None:
     """The full brief, rewritten for speech, the ONE time app.py should
     swap it in as the leave-timer's own voice line — or None the other
     ~99% of the time (every other rerun, every other milestone, every
@@ -1630,7 +1644,7 @@ def spoken_brief_for_leave_timer(now: datetime) -> str | None:
     brief read out to me... so I can get my morning brief from bed and
     have an idea what my day looks like."
 
-    Three real gates, all of which have to pass:
+    Real gates, all of which have to pass:
     1. Actually the morning window (MORNING_WINDOW_START_HOUR-END_HOUR)
        — commute_reminder.py has no idea what a "morning brief" even is,
        so app.py's own caller only checks "is this the day's first real
@@ -1643,29 +1657,43 @@ def spoken_brief_for_leave_timer(now: datetime) -> str | None:
        morning is still "first for its own event" by commute_reminder's
        own per-event tracking, but the brief was already read once;
        reading it again would just be noise.
-    3. A real, TODAY-dated brief has to already exist (_last_brief_text/
-       _last_brief_text_date, set by render() above) — the toast
-       fragment that calls into this runs on its own fast 10s cadence,
-       independent of the outer script's own slower cycle that actually
-       calls render(); on a freshly-restarted process it's possible
-       (if unlikely, since the earliest realistic leave alert is still
-       well after render() would have already run at least once) for
-       the leave-timer to fire before today's brief has ever actually
-       been generated. Skip rather than read yesterday's stale text or
-       a `None` — same "no number beats a guessed one" instinct this
-       app already applies everywhere else, just for a whole brief
-       instead of one fact."""
-    global _last_spoken_date
+
+    Session report, the very first real morning this shipped: "it's
+    been five minutes since the leave in timer has started. Still no
+    readout." Root cause, confirmed live: the process had restarted (a
+    Cloud sleep/wake, a redeploy, or just this Mac's own launchd cycle)
+    only ~90 seconds before the leave alert fired — well inside the
+    morning window, but before the OUTER script's own ~75s cadence had
+    reached render() even once yet, so _last_brief_text was still None.
+    The original version of this function just gave up in that case
+    ("no number beats a guessed one, even for a whole brief") — which
+    sounded safe but actually threw away the one shot at a spoken brief
+    for the whole day, since commute_reminder's own per-event dedup
+    means this milestone never fires again. Fixed by generating the
+    brief directly, right here, the same way render() does (same
+    _generate_brief_now, same facts, same AI call) — no longer
+    dependent on render()'s own separate cadence having won a race it
+    was never guaranteed to win."""
+    global _last_spoken_date, _last_brief_text, _last_brief_text_date
     if not (MORNING_WINDOW_START_HOUR <= now.hour < MORNING_WINDOW_END_HOUR):
         return None
     today = now.date().isoformat()
     if _last_spoken_date == today:
         return None
-    if _last_brief_text is None or _last_brief_text_date != today:
-        return None
     if groq_client.ai_pulls_paused():
         return None
-    headline, body = _last_brief_text
+    if _last_brief_text is not None and _last_brief_text_date == today:
+        headline, body = _last_brief_text
+    else:
+        if not weather:
+            return None
+        result = _generate_brief_now(now, weather, air_quality)
+        if result is None:
+            return None
+        headline, body = result
+        _last_brief_text = result
+        _last_brief_text_date = today
+        _notify_new_brief(headline, body, now)
     spoken = _spoken_brief_text(headline, body)
     if spoken is None:
         return None

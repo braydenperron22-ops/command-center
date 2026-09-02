@@ -3071,7 +3071,7 @@ def _render_bottom_ticker(now: datetime, readings: dict) -> None:
         st.markdown(ticker.render_html(stats), unsafe_allow_html=True)
 
 
-def _gather_new_alerts(now: datetime) -> list[dict]:
+def _gather_new_alerts(now: datetime, weather: dict | None, air_quality: dict | None) -> list[dict]:
     """Every toast-alert source, checked fresh — news, the leave-for-
     work reminder, Jays/Habs/Saints scoring plays, EC weather alerts
     (new + storm-proximity), lightning, rain-nowcast, road closures,
@@ -3087,7 +3087,12 @@ def _gather_new_alerts(now: datetime) -> list[dict]:
     every fragment tick regardless of which page is showing, same
     invariant several of these sources' own docstrings already
     document (news.get_new_alerts's own seen-headline tracking in
-    particular needs this)."""
+    particular needs this).
+
+    `weather`/`air_quality` are passed in (not re-fetched here) purely
+    so the leave-timer's own spoken-morning-brief augmentation below
+    can generate a fresh brief on the rare tick it needs to — see
+    morning_briefing.spoken_brief_for_leave_timer's own docstring."""
     alerts: list[dict] = []
     try:
         alerts = news.get_new_alerts()
@@ -3111,7 +3116,7 @@ def _gather_new_alerts(now: datetime) -> list[dict]:
             # longer voice line riding along with it this one time.
             if commute_alert.get("is_first_leave_alert_today"):
                 try:
-                    _spoken_brief = morning_briefing.spoken_brief_for_leave_timer(now)
+                    _spoken_brief = morning_briefing.spoken_brief_for_leave_timer(now, weather, air_quality)
                 except Exception:
                     _spoken_brief = None
                 if _spoken_brief:
@@ -3280,7 +3285,7 @@ def _toast_fragment(
     changed, not its own error isolation."""
     current_alert, elapsed = None, None
     try:
-        new_alerts = _gather_new_alerts(now)
+        new_alerts = _gather_new_alerts(now, weather, air_quality)
         new_alerts.sort(key=_alert_priority)
         if len(new_alerts) > MAX_BURST_ALERTS:
             overflow = len(new_alerts) - MAX_BURST_ALERTS
