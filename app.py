@@ -3121,6 +3121,11 @@ def _gather_new_alerts(now: datetime, weather: dict | None, air_quality: dict | 
                     _spoken_brief = None
                 if _spoken_brief:
                     commute_alert["summary"] = _spoken_brief
+                    # See commute_reminder.render_bar's own comment —
+                    # a slower speech rate for this one genuinely long
+                    # passage, without touching every other alert's
+                    # already-tuned normal pace.
+                    commute_alert["long_form_audio"] = True
             alerts.append(commute_alert)
     except Exception:
         pass

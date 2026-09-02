@@ -70,7 +70,7 @@ def _get_voice() -> PiperVoice:
 
 
 @st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
-def synthesize_base64(text: str) -> str | None:
+def synthesize_base64(text: str, length_scale: float | None = None) -> str | None:
     """WAV audio for `text`, base64-encoded — ready to embed directly as
     a data URI (f"data:audio/wav;base64,{this}") in a toast's own HTML,
     for app.py's kiosk script to play via a plain <audio> element
@@ -78,14 +78,32 @@ def synthesize_base64(text: str) -> str | None:
     None on any failure (model genuinely missing, a bad input, etc.) —
     callers must fall back to speechSynthesis in that case, the same
     graceful-degradation rule every other real-time fetch in this app
-    already follows, not a new one invented for this feature."""
+    already follows, not a new one invented for this feature.
+
+    `length_scale` — session request, on the (much longer than any
+    prior alert) morning-brief readout specifically: "it talks a little
+    fast. Like, it's just trying to get it over with." _SYNTHESIS_
+    CONFIG's own comment already documents that speech rate was A/B'd
+    once before and deliberately left at the model's own default — but
+    that comparison only ever used a short alert-length sentence, and a
+    pace that's barely noticeable over five words reads as rushed over
+    a full paragraph. Rather than revisit that earlier, still-good
+    call for every short alert (weather/road-closure/leave-timer), this
+    stays optional and defaults to None (the shared _SYNTHESIS_CONFIG,
+    unchanged) — only a caller reading something genuinely long, like
+    morning_briefing's own spoken brief, passes a slower override."""
     if not text:
         return None
     try:
         voice = _get_voice()
         buffer = io.BytesIO()
+        syn_config = (
+            SynthesisConfig(length_scale=length_scale, noise_scale=0.5, noise_w_scale=0.5)
+            if length_scale is not None
+            else _SYNTHESIS_CONFIG
+        )
         with wave.open(buffer, "wb") as wav_file:
-            voice.synthesize_wav(text, wav_file, syn_config=_SYNTHESIS_CONFIG)
+            voice.synthesize_wav(text, wav_file, syn_config=syn_config)
         return base64.b64encode(buffer.getvalue()).decode("ascii")
     except Exception:
         return None

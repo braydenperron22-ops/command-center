@@ -723,7 +723,18 @@ def render_bar(alert: dict) -> None:
     # speechSynthesis fallback if synthesis itself ever fails.
     spoken_text = alert.get("summary", "")
     summary_attr = html.escape(spoken_text)
-    audio_b64 = kiosk_tts.synthesize_base64(spoken_text) if spoken_text else None
+    # Session request, specifically about the (much longer than any
+    # normal leave-timer line) morning-brief readout: "it talks a
+    # little fast... like it's just trying to get it over with." An
+    # explicit flag (app.py sets it only when it swaps in the spoken
+    # brief), not a length heuristic on spoken_text itself — keeps this
+    # a deliberate choice for that one genuinely long passage rather
+    # than something that could quietly flip on for an ordinary leave
+    # line that just happens to run a bit long. See kiosk_tts.
+    # synthesize_base64's own length_scale comment for why the normal,
+    # already-tuned rate stays untouched for every other alert.
+    audio_length_scale = 1.2 if alert.get("long_form_audio") else None
+    audio_b64 = kiosk_tts.synthesize_base64(spoken_text, length_scale=audio_length_scale) if spoken_text else None
     audio_attr = f' data-audio-b64="{audio_b64}"' if audio_b64 else ""
     # data-volume is the ceiling for THIS shift's leave-by time (see
     # _leave_volume_ceiling) — app.py's kioskPlayLeaveVoice reads it
