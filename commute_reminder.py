@@ -453,6 +453,21 @@ def check(now: datetime) -> dict | None:
     milestone = _due_milestone(minutes_until_leave, shown_for_event, now.hour + now.minute / 60)
     if milestone is None:
         return None
+    # Captured before the .add() below — genuinely the first milestone
+    # ever shown for THIS event (usually the 120-minute one, but not
+    # always: a kiosk that starts mid-window, e.g. after a redeploy,
+    # can enter partway through and see a smaller number first — this
+    # still counts as "the leave timer starting" for that event, since
+    # it's this event's own first alert regardless of which number it
+    # happens to be). Session request: "as soon as the leave in timer
+    # starts for the day... have the morning brief read out to me" —
+    # app.py's own orchestration uses this to decide when to swap in
+    # the spoken brief; see morning_briefing.spoken_brief_for_leave_
+    # timer's own docstring for why this alone isn't sufficient (a
+    # second, unrelated shift/errand later the same day would also be
+    # "first for ITS OWN event" — that function's own once-per-
+    # CALENDAR-DAY dedup is the other half of getting this right).
+    is_first_leave_alert_today = not shown_for_event
     shown_for_event.add(milestone)
     _shown_state["events"][event_key] = sorted(shown_for_event)
     persisted_state.save_per_instance("commute_reminder_shown", _shown_state)
@@ -490,6 +505,11 @@ def check(now: datetime) -> dict | None:
         "label": label,
         "summary": "" if is_home else _leave_spoken_text(shift, milestone),
         "volume": _leave_volume_ceiling(now_aware, leave_by),
+        # False for a home event even if it genuinely is this event's
+        # first alert — a home event never gets a spoken line at all
+        # (see "summary" above), so there's nothing for app.py's own
+        # spoken-brief override to attach to.
+        "is_first_leave_alert_today": is_first_leave_alert_today and not is_home,
     }
 
 

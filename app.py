@@ -3097,6 +3097,25 @@ def _gather_new_alerts(now: datetime) -> list[dict]:
     try:
         commute_alert = commute_reminder.check(now)
         if commute_alert:
+            # Session request: "as soon as the leave in timer starts for
+            # the day... have the morning brief read out to me... so I
+            # can get my morning brief from bed." commute_reminder's own
+            # is_first_leave_alert_today only knows "is this the first
+            # alert for THIS event" — morning_briefing.spoken_brief_for_
+            # leave_timer's own docstring covers the rest (the real
+            # morning-window check, the once-per-CALENDAR-DAY dedup, and
+            # why it can still legitimately return None). Only the
+            # SPOKEN line changes here — "headline" (the on-screen toast
+            # text) is untouched, so the visible banner still reads the
+            # normal short "Leave in 120 min," it just gets a much
+            # longer voice line riding along with it this one time.
+            if commute_alert.get("is_first_leave_alert_today"):
+                try:
+                    _spoken_brief = morning_briefing.spoken_brief_for_leave_timer(now)
+                except Exception:
+                    _spoken_brief = None
+                if _spoken_brief:
+                    commute_alert["summary"] = _spoken_brief
             alerts.append(commute_alert)
     except Exception:
         pass

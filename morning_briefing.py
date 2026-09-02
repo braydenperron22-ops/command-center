@@ -1475,6 +1475,10 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
     else:
         headline, body = result
 
+    global _last_brief_text, _last_brief_text_date
+    _last_brief_text = (headline, body)
+    _last_brief_text_date = now.date().isoformat()
+
     _notify_new_brief(headline, body, now)
     # Session redesign: five real candidate formats compared side by
     # side from actual live data, then "I like loud hype headline plus
@@ -1522,6 +1526,30 @@ def render(now: datetime, weather: dict | None, air_quality: dict | None) -> Non
 # the same root cause, so fixed the same way while auditing it).
 _last_brief_date: str | None = persisted_state.load("morning_brief_date", None)
 
+# Plain module-level (not persisted) — the current on-screen brief's
+# own text, set fresh by render() every time it actually produces one
+# (AI-written or the plain fallback, either path), so spoken_brief_for_
+# leave_timer below can read whatever's genuinely showing right now
+# without re-running the whole clause-gathering loop just to get it
+# again. `_last_brief_text_date` guards against reading a STALE
+# leftover from a prior day if this is ever called before render() has
+# run at all today (see that function's own docstring for why this
+# matters) — no reason to persist either across a restart, since a
+# fresh process just regenerates both the moment render() next runs.
+_last_brief_text: tuple[str, str] | None = None
+_last_brief_text_date: str | None = None
+
+# Session request: "as soon as the leave in timer starts for the day
+# ... have the morning brief read out to me." Once per calendar day,
+# same shape as _last_brief_date above but tracked separately — the
+# WRITTEN brief's own daily push and this SPOKEN readout are two
+# genuinely different events that don't need to happen at the same
+# moment (the push fires the instant render() first produces a brief
+# each morning; this fires whenever the day's first real leave-timer
+# alert happens to land, which could be noticeably later).
+_LAST_SPOKEN_DATE_KEY = "morning_brief_last_spoken_date"
+_last_spoken_date: str | None = persisted_state.load(_LAST_SPOKEN_DATE_KEY, None)
+
 
 def _notify_new_brief(headline: str, body: str, now: datetime) -> None:
     """Pushes the morning brief to the phone once per calendar day — the
@@ -1554,6 +1582,96 @@ def _notify_new_brief(headline: str, body: str, now: datetime) -> None:
     _last_brief_date = today
     persisted_state.save("morning_brief_date", today)
     ntfy_client.send(title="Morning Brief", message=f"{headline}\n\n{body}", priority="default", tags="sunny")
+
+
+def _spoken_brief_text(headline: str, body: str) -> str | None:
+    """AI rewrite of the already-written, already-on-screen brief into
+    a flowing, natural spoken version for Piper to read aloud — session
+    request: "get the AI to... translate it into a more conversational
+    style... turn the numbers into text internally so the AI doesn't
+    choke." The on-screen card is deliberately written with real digits,
+    not spelled out (_ai_headline_and_body's own docstring: "kiosk needs
+    to be scannable at a glance, not literary") — exactly backwards from
+    what a TTS voice needs, which is the actual "choking" the request
+    named. Same shape as weather_alerts_bar._spoken_summary and road_
+    conditions_511._spoken_closure_summary: converts an already-correct,
+    already-approved text into a TTS-safe reading rather than generating
+    a second, independent version that could drift from what the card
+    itself says — same real facts, just the surface form changes.
+
+    Deliberately no plain-text fallback on failure (unlike those two
+    _spoken_* functions, which fall back to their own raw source text) —
+    reading the raw digit-heavy original aloud verbatim is exactly the
+    "choking" problem this exists to prevent, so a None here has to mean
+    "skip the spoken brief entirely this time," not "read the broken
+    version anyway." spoken_brief_for_leave_timer below already falls
+    back to the leave-timer's own normal short voice line whenever this
+    returns None, so nothing is silently lost either way."""
+    prompt = (
+        "Rewrite the following morning briefing as a single smooth, natural-sounding, conversational "
+        "passage meant to be read aloud by a text-to-speech voice — the way you'd actually tell a friend "
+        "about their day out loud, not read a card to them. Convert every number into its natural spoken "
+        "word form: times as words (\"eight forty five\", not \"8:45\"), dollar amounts as words (\"eleven "
+        "hundred dollars\", not \"$1,100\"), percentages as words (\"twenty four percent\", not \"24%\"), and "
+        "the same for any other digit, symbol, or abbreviation a voice can't read cleanly. Strip any HTML "
+        "tags. Keep every real fact — never invent, drop, or change one — and keep the same tone; only the "
+        "surface form changes for speech, not the content or the personality.\n\n"
+        f"HEADLINE: {headline}\n\nBODY: {body}"
+    )
+    return gemini_client.generate(prompt, temperature=0.4, max_output_tokens=500)
+
+
+def spoken_brief_for_leave_timer(now: datetime) -> str | None:
+    """The full brief, rewritten for speech, the ONE time app.py should
+    swap it in as the leave-timer's own voice line — or None the other
+    ~99% of the time (every other rerun, every other milestone, every
+    other day) when nothing here should happen. Session request: "as
+    soon as the leave in timer starts for the day... have the morning
+    brief read out to me... so I can get my morning brief from bed and
+    have an idea what my day looks like."
+
+    Three real gates, all of which have to pass:
+    1. Actually the morning window (MORNING_WINDOW_START_HOUR-END_HOUR)
+       — commute_reminder.py has no idea what a "morning brief" even is,
+       so app.py's own caller only checks "is this the day's first real
+       leave alert" (commute_reminder.check's own is_first_leave_alert_
+       today) — that alone would also fire for an evening shift's own
+       first alert, reading a "morning" brief out at 6pm. This is the
+       other half: skip entirely outside the real morning window.
+    2. Once per CALENDAR DAY (_last_spoken_date below), not once per
+       EVENT — a second, unrelated commute/errand later the same
+       morning is still "first for its own event" by commute_reminder's
+       own per-event tracking, but the brief was already read once;
+       reading it again would just be noise.
+    3. A real, TODAY-dated brief has to already exist (_last_brief_text/
+       _last_brief_text_date, set by render() above) — the toast
+       fragment that calls into this runs on its own fast 10s cadence,
+       independent of the outer script's own slower cycle that actually
+       calls render(); on a freshly-restarted process it's possible
+       (if unlikely, since the earliest realistic leave alert is still
+       well after render() would have already run at least once) for
+       the leave-timer to fire before today's brief has ever actually
+       been generated. Skip rather than read yesterday's stale text or
+       a `None` — same "no number beats a guessed one" instinct this
+       app already applies everywhere else, just for a whole brief
+       instead of one fact."""
+    global _last_spoken_date
+    if not (MORNING_WINDOW_START_HOUR <= now.hour < MORNING_WINDOW_END_HOUR):
+        return None
+    today = now.date().isoformat()
+    if _last_spoken_date == today:
+        return None
+    if _last_brief_text is None or _last_brief_text_date != today:
+        return None
+    if groq_client.ai_pulls_paused():
+        return None
+    headline, body = _last_brief_text
+    spoken = _spoken_brief_text(headline, body)
+    if spoken is None:
+        return None
+    _last_spoken_date = today
+    persisted_state.save(_LAST_SPOKEN_DATE_KEY, today)
+    return spoken
 
 
 # Recent days' picked facts, oldest first — session question: "would it
