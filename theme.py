@@ -6000,6 +6000,18 @@ html, body, [class*="css"] {
     letter-spacing: -0.02em;
     color: #FF3B30;
     font-variant-numeric: tabular-nums;
+    /* Session follow-up: "it's not that bright yet or, like, poppy
+       yet." The R channel was already maxed (255) — there's no more
+       "brighter red" left in the flat color itself, so this reaches
+       for a different lever instead of just tweaking the hex again: a
+       real glow, the same way an actual LED alarm clock or a neon sign
+       "pops" against a dark room — light bleeding outward, not just a
+       brighter fill. Static (two fixed shadow layers, tight + wide
+       bloom), no animation — this app's own global kill-switch would
+       drop a pulsing version anyway, and a steady glow is the more
+       honest read for a display that's just sitting there being a
+       clock, not alerting about anything. */
+    text-shadow: 0 0 25px rgba(255, 59, 48, 0.75), 0 0 60px rgba(255, 59, 48, 0.4);
 }
 .night-ampm {
     font-size: 3rem;
@@ -6035,6 +6047,7 @@ html, body, [class*="css"] {
     font-size: 2rem;
     font-weight: 500;
     color: #FF3B30;
+    text-shadow: 0 0 14px rgba(255, 59, 48, 0.7), 0 0 32px rgba(255, 59, 48, 0.35);
     font-variant-numeric: tabular-nums;
 }
 .night-weather-cond {
