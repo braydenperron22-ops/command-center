@@ -27,6 +27,7 @@ import evening_briefing
 import govee_lighting
 import groq_client
 import headline_rotation
+import dashboard_health
 import heartbeat
 import holidays_client
 import lightning_client
@@ -723,6 +724,53 @@ components.html(
         "    window.parent.location.reload();",
         "  }",
         "}, 10 * 1000);",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+
+    // Session request: "a system that shows how the dashboard is
+    // running... when it's being hung up, and when it's running
+    // smoothly, like an actual heart rate monitor." Same shape as
+    // kiosk-stale-watchdog above (a client-side clock ticking against
+    // a server-stamped timestamp is the only honest way to show
+    // staleness — server-computed relative text would freeze right
+    // along with a genuinely stuck process, showing a false "just
+    // now" forever), just faster and paired with a visible element
+    // instead of a silent reload: dashboard-pulse-ts is stamped fresh
+    // every 10s by the toast fragment (app.py's own _toast_fragment,
+    // runs unconditional of page), so this polls twice that often and
+    // grades on a much tighter scale than the 4-minute reload
+    // threshold above — this is meant to be glanced at and trusted
+    // within seconds, that one is a last-resort recovery net.
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('dashboard-pulse-watchdog')) return;
+      var s = doc.createElement('script');
+      s.id = 'dashboard-pulse-watchdog';
+      s.textContent = [
+        "setInterval(function () {",
+        "  var tsEl = window.parent.document.getElementById('dashboard-pulse-ts');",
+        "  var dot = window.parent.document.getElementById('dashboard-pulse-dot');",
+        "  var text = window.parent.document.getElementById('dashboard-pulse-text');",
+        "  if (!tsEl || !dot || !text) return;",
+        "  var ts = parseFloat(tsEl.getAttribute('data-ts'));",
+        "  if (!ts) return;",
+        "  var ageSec = (Date.now() / 1000) - ts;",
+        "  var cls = 'good';",
+        "  var label = 'Live';",
+        "  if (ageSec >= 60) {",
+        "    cls = 'low';",
+        "    label = 'Stalled';",
+        "  } else if (ageSec >= 20) {",
+        "    cls = 'medium';",
+        "    label = 'Slow';",
+        "  }",
+        "  var mins = Math.floor(ageSec / 60);",
+        "  var secs = Math.floor(ageSec % 60);",
+        "  var ageLabel = mins > 0 ? (mins + 'm ' + secs + 's ago') : (secs + 's ago');",
+        "  dot.className = 'ai-status-dot ai-status-dot-' + cls;",
+        "  text.textContent = 'Dashboard: ' + label + ' (' + ageLabel + ')';",
+        "}, 2000);",
       ].join('\\n');
       doc.head.appendChild(s);
     })();
@@ -1972,6 +2020,7 @@ if _requested_page not in PAGES and not _jumbotron_active and not _night_mode_ac
 # Jumbotron (5s) and toast (10s) fragments run independently of this
 # number entirely and were already confirmed fast in an earlier pass.
 st_autorefresh(interval=65000, key="clock_tick")
+_rerun_started_at = time.time()
 
 try:
     weather = fetch_weather()
@@ -2706,6 +2755,27 @@ if not _jumbotron_active and not _night_mode_active:
             </div>"""
             for m in groq_client.ai_status_by_model()
         )
+        # Session request: "a system that shows how the dashboard is
+        # running... when it's being hung up, and when it's running
+        # smoothly, like an actual heart rate monitor." This row's own
+        # color/text is only ever touched by dashboard-pulse-watchdog
+        # (the JS block down in the consolidated kiosk script) reading
+        # dashboard-pulse-ts, a marker the 10s toast fragment stamps
+        # fresh every tick, unconditional of page — this initial
+        # "good"/"Live" is just the first-paint guess before that JS
+        # has run once, corrected within ~2s either way. Deliberately
+        # NOT re-rendered by this outer ~65s script on every tick —
+        # server-computed "Xs ago" text would freeze the instant this
+        # exact bug happened (a real, wedged process can't rerun to
+        # update its own "just updated" claim) — see dashboard_health.py's
+        # own docstring for why the fast signal has to be a client-side
+        # clock ticking against a server timestamp, not server text.
+        _ai_rows_html += (
+            '<div class="ai-status-row">'
+            '<span class="ai-status-dot ai-status-dot-good" id="dashboard-pulse-dot"></span>'
+            '<span class="ai-status-text" id="dashboard-pulse-text">Dashboard: Live</span>'
+            "</div>"
+        )
         st.markdown(f'<div class="ai-status-bar">{_ai_rows_html}</div>', unsafe_allow_html=True)
     except Exception:
         pass
@@ -3334,6 +3404,15 @@ def _toast_fragment(
     per-kind dispatch catch, the separate Govee catch — is preserved
     exactly as it was in the outer script; only where this code runs
     changed, not its own error isolation."""
+    # dashboard_health's own fast "heart rate" pulse — see that
+    # module's docstring. Deliberately the very first statement here,
+    # outside every try/except below: this fragment already runs
+    # unconditionally every 10s regardless of page/mode, so stamping
+    # first means a real failure further down in THIS fragment still
+    # leaves an honest, fresh pulse — only a genuine process-wide
+    # freeze (nothing in app.py reaching this fragment at all) should
+    # ever make it go stale on screen.
+    st.markdown(f'<div id="dashboard-pulse-ts" data-ts="{time.time()}" style="display:none;"></div>', unsafe_allow_html=True)
     current_alert, elapsed = None, None
     try:
         new_alerts = _gather_new_alerts(now, weather, air_quality)
@@ -3581,4 +3660,8 @@ st.markdown(f'<div id="kiosk-state-key" data-state="{html.escape(_kiosk_state_ke
 # externally and force-restarts the service if a rerun hasn't
 # completed recently — deliberately placed after every other block in
 # this file so a stuck rerun genuinely never reaches it.
+try:
+    dashboard_health.record_rerun(time.time() - _rerun_started_at)
+except Exception:
+    pass
 heartbeat.beat()

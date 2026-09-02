@@ -28,6 +28,7 @@ from datetime import date
 import streamlit as st
 
 import cpp_payment_dates
+import dashboard_health
 import data_health
 import gemini_client
 import groq_client
@@ -212,6 +213,52 @@ def _system_rows() -> str:
     return "".join(rows)
 
 
+def _pulse_bar_tone(duration: float) -> str:
+    if duration >= 40:
+        return "low"
+    if duration >= 15:
+        return "medium"
+    return "good"
+
+
+def _pulse_rows() -> str:
+    """Session request: "a system that shows how the dashboard is
+    running... when it's being hung up, and when it's running
+    smoothly, like an actual heart rate monitor." See dashboard_health.py
+    for the two signals this reads — a live status pill also sits
+    outside this page, in the always-on corner (app.py's own
+    dashboard-pulse-dot/-text, watched client-side); this tile is the
+    fuller diagnostic history: how long each of the last MAX_HISTORY
+    full outer reruns actually took, the same real number this session
+    spent tonight measuring by hand with temporary print statements."""
+    last = dashboard_health.last_rerun()
+    if last is None:
+        return _row("Status", "No data yet", "neutral", "process just started")
+    age = time.time() - last["ts"]
+    if age >= 180:
+        tone, label = "low", "Stalled"
+    elif age >= 90:
+        tone, label = "medium", "Slow"
+    else:
+        tone, label = "good", "Live"
+    rows = [
+        _row("Status", label, tone, _relative_time(last["ts"])),
+        _row("Last full rerun", meta=f"{last['duration']:.1f}s"),
+    ]
+    hist = dashboard_health.history()
+    if hist:
+        durations = [h["duration"] for h in hist]
+        rows.append(_row(f"Avg (last {len(hist)})", meta=f"{sum(durations) / len(durations):.1f}s"))
+        max_dur = max(durations)
+        bars_html = "".join(
+            f'<div class="maint-pulse-bar maint-pulse-bar-{_pulse_bar_tone(d)}" '
+            f'style="height:{max(3, (d / max_dur) * 32):.0f}px" title="{d:.1f}s"></div>'
+            for d in durations
+        )
+        rows.append(f'<div class="maint-pulse-sparkline">{bars_html}</div>')
+    return "".join(rows)
+
+
 def render() -> None:
     st.markdown('<div class="page-title page-title-maintenance">Maintenance</div>', unsafe_allow_html=True)
     row1 = st.columns(3)
@@ -233,3 +280,5 @@ def render() -> None:
         st.markdown(_tile("Toast Alerts", _toast_health_rows()), unsafe_allow_html=True)
     with row3[1]:
         st.markdown(_tile("Govee", _govee_health_rows()), unsafe_allow_html=True)
+    with row3[2]:
+        st.markdown(_tile("Dashboard Pulse", _pulse_rows()), unsafe_allow_html=True)

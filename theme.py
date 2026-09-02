@@ -1997,6 +1997,28 @@ html, body, [class*="css"] {
 .maint-pill-low { background: rgba(255,105,97,0.18); color: #FF6961; }
 .maint-pill-neutral { background: rgba(90,200,250,0.14); color: #5AC8FA; }
 
+/* Dashboard Pulse tile's own rerun-duration history — session
+   request: "like an actual heart rate monitor." Plain height/color
+   bars, deliberately no animation (the blanket kill-switch above
+   already covers this; not carving out a third exception here since
+   the color + exact-seconds tooltip already say everything the motion
+   would, per this session's own "no decorative chrome" precedent). */
+.maint-pulse-sparkline {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 36px;
+    margin-top: 0.4rem;
+}
+.maint-pulse-bar {
+    flex: 1 1 0;
+    min-width: 3px;
+    border-radius: 2px 2px 0 0;
+}
+.maint-pulse-bar-good { background: #32D74B; }
+.maint-pulse-bar-medium { background: #FF9F0A; }
+.maint-pulse-bar-low { background: #FF6961; }
+
 /* Team + opponent logos (sports_client.py — MLB's static logo CDN and
    NHL's, both free, no key, keyed by team id/abbrev with no API call
    needed to look one up). object-fit:contain since these come in a mix
