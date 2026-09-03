@@ -1860,7 +1860,20 @@ if _wake_time is not None:
     # vs naive) — strip tzinfo on a throwaway copy for JUST this
     # comparison rather than changing what wake_time_for returns.
     _wake_time_naive = _wake_time.replace(tzinfo=None)
-    if _wake_time_naive > _night_mode_day_start:
+    # Second real live bug, caught right after the first fix: wake_time_
+    # for looks at the NEXT real commitment, which by early evening is
+    # already tomorrow's — using that to push _night_mode_day_start
+    # (meant as "when night mode ends THIS morning") into tomorrow made
+    # it later than _night_mode_day_end (tonight's 9:30pm), so the
+    # night-mode-active check (now outside [day_start, day_end)) was
+    # true for literally the entire rest of today, confirmed live (a
+    # 6:54pm rerun showing the night-mode clock). Only apply the
+    # extension when the computed wake time actually falls on the SAME
+    # calendar date as this morning's own boundary — i.e. only when
+    # it's genuinely about to matter (the early-morning hours before a
+    # later-than-4:30 wake-up), never a future date borrowed in from an
+    # evening lookahead.
+    if _wake_time_naive.date() == _night_mode_day_start.date() and _wake_time_naive > _night_mode_day_start:
         _night_mode_day_start = _wake_time_naive
 _night_mode_day_end = now.replace(hour=21, minute=30, second=0, microsecond=0)
 _night_mode_active = (
