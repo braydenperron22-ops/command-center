@@ -41,6 +41,7 @@ import commute_reminder
 import market_circuit_breaker
 import persisted_state
 import road_conditions_511
+import sleep_tracker
 import weather_alerts_bar
 from config import TOP_ALERT_HOLD_SECONDS
 
@@ -107,6 +108,12 @@ def _candidates(now: datetime, weather: dict | None) -> dict[str, dict]:
     circuit_breaker = market_circuit_breaker.circuit_breaker_headline_candidate(now)
     if circuit_breaker is not None:
         out["circuit_breaker"] = circuit_breaker
+    # Session request: "a bedtime timer... count down to that bedtime
+    # when we're within two hours of it." Same wiring shape as every
+    # other source here.
+    bedtime = sleep_tracker.bedtime_headline_candidate(now)
+    if bedtime is not None:
+        out["bedtime"] = bedtime
     # Session request: "breaking news should get its own toast alert"
     # — no longer a candidate here at all. news.get_new_alerts's own
     # one-shot toast (already wired independently into app.py's toast

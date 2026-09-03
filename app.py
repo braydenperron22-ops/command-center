@@ -65,6 +65,7 @@ import road_conditions
 import road_conditions_511
 import scores_client
 import seasons_client
+import sleep_tracker
 import sports_alerts
 import td_quarter_schedule
 import theme
@@ -1023,18 +1024,44 @@ components.html(
         // so the moment the night cutoff ends is never itself the
         // loudest possible jump. Full 1.0 holds flat from 8am to 10pm
         // same as before; only the first 3 morning hours changed.
+        // Session request: "the only things that should sound before my
+        // boots are on the ground in the morning are the leave van
+        // alerts... make the alerts quieter or just mute them entirely."
+        // Reads #kiosk-wake-time (app.py's own sleep_tracker.wake_time_for,
+        // stamped fresh each rerun — see that marker's own comment) so
+        // the non-severe ramp below can start later than the flat 5am
+        // default on a day the real wake-up is later than that. Only
+        // trusts the marker if it's actually today's date — a stale one
+        // (kiosk sitting on a cached render overnight) falling back to
+        // the plain 5am default is the same safe behavior this had
+        // before the marker existed at all, not a new failure mode.
+        // Deliberately doesn't touch the severe path at all — severe
+        // weather/road-closure alerts stay audible overnight and through
+        // the morning exactly as before, per the same session's own
+        // explicit exception ("unless it's genuinely impactful").
+        "function kioskGetWakeHour() {",
+        "  var el = document.getElementById('kiosk-wake-time');",
+        "  if (!el) return 5;",
+        "  var ts = parseFloat(el.getAttribute('data-wake-ts'));",
+        "  if (!ts) return 5;",
+        "  var w = new Date(ts * 1000);",
+        "  var n = new Date();",
+        "  if (w.getFullYear() !== n.getFullYear() || w.getMonth() !== n.getMonth() || w.getDate() !== n.getDate()) return 5;",
+        "  return Math.max(5, w.getHours() + w.getMinutes() / 60);",
+        "}",
         "function kioskAlertVolume(severe) {",
         "  var d = new Date();",
         "  var hour = d.getHours() + d.getMinutes() / 60;",
-        "  var isNight = hour >= 22 || hour < 5;",
         "  if (severe) {",
+        "    var isNight = hour >= 22 || hour < 5;",
         "    if (isNight) { return 0.5; }",
         "    var morningRampEnd = 8;",
         "    if (hour < morningRampEnd) { return 0.5 + 0.5 * (hour - 5) / (morningRampEnd - 5); }",
         "    return 1;",
         "  }",
-        "  if (isNight) { return 0; }",
-        "  var dayStart = 5, peak = 13.5, dayEnd = 22;",
+        "  var peak = 13.5, dayEnd = 22;",
+        "  var dayStart = Math.min(kioskGetWakeHour(), peak - 0.5);",
+        "  if (hour >= dayEnd || hour < dayStart) { return 0; }",
         "  if (hour <= peak) { return (hour - dayStart) / (peak - dayStart); }",
         "  return 1 - (hour - peak) / (dayEnd - peak);",
         "}",
@@ -1810,6 +1837,22 @@ try:
 except Exception:
     _night_mode_storm_active = False
 _night_mode_day_start = now.replace(hour=4, minute=30, second=0, microsecond=0)
+# Session request: "make sure the display actually stays properly dim
+# [in the morning]... too bright early in the morning indirectly
+# impacts sleep." The flat 4:30am default only ever covered an early
+# wake-up — a day with a later real commitment (an afternoon shift, a
+# day off followed by a late-morning one) used to go bright at 4:30am
+# regardless, then sit that way through however many hours were left
+# before the real wake-up. sleep_tracker.wake_time_for already computes
+# the real target for today specifically (next real commitment minus
+# its own 90-minute lead) — only ever pushes this LATER than 4:30am,
+# never earlier, so a normal early-shift day is completely unaffected.
+try:
+    _wake_time = sleep_tracker.wake_time_for(now)
+except Exception:
+    _wake_time = None
+if _wake_time is not None and _wake_time > _night_mode_day_start:
+    _night_mode_day_start = _wake_time
 _night_mode_day_end = now.replace(hour=21, minute=30, second=0, microsecond=0)
 _night_mode_active = (
     not _jumbotron_active
@@ -3662,6 +3705,20 @@ _toast_fragment(
 # regardless of health" timer the old kiosk-reload-watchdog was (see
 # that script's own history, removed below in favor of this).
 st.markdown(f'<div id="kiosk-client-heartbeat" data-ts="{now.timestamp()}" style="display:none;"></div>', unsafe_allow_html=True)
+
+# Session request: "the only things that should sound before my boots
+# are on the ground in the morning are the leave van alerts... make the
+# alerts quieter or just mute them entirely." kioskAlertVolume's own
+# morning ramp (below, in the consolidated kiosk script) has always
+# started climbing at a flat 5am — this marker carries today's real
+# wake_time (same one night_mode's own dim window now extends to, see
+# _night_mode_day_start above) so that ramp can start later on a day
+# the real wake-up is later than 5am, instead of getting loud while
+# still well before boots-on-the-ground. Only ever rendered when a real
+# wake_time exists; the client-side script falls back to the flat 5am
+# default otherwise, unchanged from before this existed.
+if _wake_time is not None:
+    st.markdown(f'<div id="kiosk-wake-time" data-wake-ts="{_wake_time.timestamp()}" style="display:none;"></div>', unsafe_allow_html=True)
 
 # Session report: "the night screen is no longer showing up. it's just
 # a black screen... I don't really wanna refresh it. The whole point
