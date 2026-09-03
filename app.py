@@ -9,7 +9,7 @@ hotkeys)."""
 
 import html
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import streamlit as st
@@ -2357,8 +2357,41 @@ try:
     # the plug itself is gone), a separate thing from this dim overlay
     # — this overlay only even applies when night_mode ISN'T active in
     # the first place (game_live suppresses both).
-    if quiet_hours and not weather_wake_recent:
-        night_dim = 1.0
+    # Session request: "gradual screen warming... not a hard cutover."
+    # night_dim used to snap straight to full dim the instant quiet_hours
+    # (defined above, only true starting exactly at QUIET_HOURS_START_
+    # HOUR) went true. quiet_hours itself is untouched — still means
+    # exactly what it always has, and its own definition/every other
+    # comment referencing it stays accurate — this only widens the
+    # CONDITION guarding this one dim assignment to also cover the hour
+    # immediately before it, so there's actually a window for a ramp to
+    # run in. (First pass here gated this on quiet_hours alone, which
+    # doesn't go true until QUIET_HOURS_START_HOUR itself — the ramp
+    # code was correct but unreachable during the hour it needed to run
+    # in; caught before shipping by directly testing the boundary values.)
+    _pre_bedtime_ramp_active = QUIET_HOURS_START_HOUR - 1 <= now.hour < QUIET_HOURS_START_HOUR
+    if (quiet_hours or _pre_bedtime_ramp_active) and not weather_wake_recent:
+        # Ramps over PRE_BEDTIME_DIM_RAMP_MINUTES leading up to
+        # QUIET_HOURS_START_HOUR, reaching the exact same 1.0 by the
+        # exact same clock time quiet_hours itself always has. Scoped to
+        # the evening approach specifically — quiet_hours' own full span
+        # (which also covers the whole overnight-through-noon stretch)
+        # keeps the flat 1.0 it's always had past that point; only the
+        # initial approach into it is new. Deliberately NOT tied to
+        # sleep_tracker's own bedtime-aware boundary (unlike night_mode's
+        # switch below) — this is the general evening wind-down everyone
+        # gets regardless of tomorrow's schedule specifics, same
+        # separation of concerns quiet_hours vs. night_mode already had
+        # before tonight.
+        PRE_BEDTIME_DIM_RAMP_MINUTES = 60
+        if _pre_bedtime_ramp_active:
+            ramp_start = now.replace(hour=QUIET_HOURS_START_HOUR, minute=0, second=0, microsecond=0) - timedelta(
+                minutes=PRE_BEDTIME_DIM_RAMP_MINUTES
+            )
+            minutes_into_ramp = (now - ramp_start).total_seconds() / 60
+            night_dim = max(0.0, min(1.0, minutes_into_ramp / PRE_BEDTIME_DIM_RAMP_MINUTES))
+        else:
+            night_dim = 1.0
     elif severe_weather_active:
         night_dim = 0.0
 
