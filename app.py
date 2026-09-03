@@ -1876,6 +1876,25 @@ if _wake_time is not None:
     if _wake_time_naive.date() == _night_mode_day_start.date() and _wake_time_naive > _night_mode_day_start:
         _night_mode_day_start = _wake_time_naive
 _night_mode_day_end = now.replace(hour=21, minute=30, second=0, microsecond=0)
+# Session follow-up: "the evening side isn't adaptive like the morning
+# side now is... night mode still only dims at a flat 9:30pm regardless
+# of your actual bedtime." Mirror of the morning-side fix above, same
+# date-safety lesson already learned there: only pull tonight's cutoff
+# EARLIER than 9:30pm, and only using a bedtime that actually belongs
+# to tonight (sleep_tracker.bedtime_for's own cap already normalizes an
+# after-midnight value back onto the right evening — see its own
+# _apply_bedtime_cap docstring) — never later, never a different day's
+# value borrowed in. A normal night (bedtime later than 9:30 anyway,
+# the common case) is completely unaffected; this only ever fires on a
+# genuinely early-wake day whose 8-hours-back math lands before 9:30pm.
+try:
+    _bedtime = sleep_tracker.bedtime_for(now)
+except Exception:
+    _bedtime = None
+if _bedtime is not None:
+    _bedtime_naive = _bedtime.replace(tzinfo=None)
+    if _bedtime_naive.date() == _night_mode_day_end.date() and _bedtime_naive < _night_mode_day_end:
+        _night_mode_day_end = _bedtime_naive
 _night_mode_active = (
     not _jumbotron_active
     and not game_live
@@ -2863,6 +2882,14 @@ if not _jumbotron_active and not _night_mode_active:
 # like an AI outage."
 try:
     groq_client.notify_if_outage()
+except Exception:
+    pass
+
+# Session request: "a phone ping, not just a screen countdown."
+# sleep_tracker.maybe_push_wind_down owns its own dedup (once per real
+# bedtime, keyed by date) — see that function's own docstring.
+try:
+    sleep_tracker.maybe_push_wind_down(now)
 except Exception:
     pass
 

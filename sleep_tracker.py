@@ -39,6 +39,8 @@ from datetime import date, datetime, time, timedelta
 import streamlit as st
 
 import calendar_client
+import ntfy_client
+import persisted_state
 
 WAKE_BUFFER_MINUTES = 90
 SLEEP_TARGET_HOURS = 8
@@ -183,3 +185,43 @@ def bedtime_headline_candidate(now: datetime) -> dict | None:
         "template": "Bedtime in {}",
         "zero_text": "Bedtime now",
     }
+
+
+# Session follow-up: "a phone ping, not just a screen countdown... the
+# on-screen countdown only helps if you're looking at the kiosk." Same
+# persisted-dedup shape commute_reminder's own leave-timer push already
+# uses (a plain saved list of already-sent keys) — keyed by calendar
+# date so a fresh day always gets its own real chance to fire again,
+# not just once ever.
+_PUSHED_DATES_KEY = "sleep_bedtime_pushed_dates"
+_pushed_dates: list[str] = persisted_state.load(_PUSHED_DATES_KEY, [])
+PUSH_LEAD_MINUTES = 30
+
+
+def maybe_push_wind_down(now: datetime) -> None:
+    """Call once per rerun (app.py, unconditional, same shape as
+    groq_client.notify_if_outage's own call site) — a single push in
+    the PUSH_LEAD_MINUTES window before bedtime, never more than one
+    per calendar date. Deliberately not wired into the faster 10s toast
+    fragment — a background push has no reason to need sub-minute
+    reaction time, and the outer script's own cadence is more than
+    fine-grained enough to land inside a 30-minute window."""
+    bedtime = bedtime_for(now)
+    if bedtime is None:
+        return
+    now_aware = now.replace(tzinfo=bedtime.tzinfo) if bedtime.tzinfo else now
+    remaining = (bedtime - now_aware).total_seconds()
+    if not (0 <= remaining <= PUSH_LEAD_MINUTES * 60):
+        return
+    date_key = bedtime.date().isoformat()
+    if date_key in _pushed_dates:
+        return
+    _pushed_dates.append(date_key)
+    persisted_state.save(_PUSHED_DATES_KEY, _pushed_dates)
+    minutes = max(1, int(remaining // 60))
+    ntfy_client.send(
+        title="Wind down",
+        message=f"Bedtime in {minutes} min",
+        priority="default",
+        tags="crescent_moon",
+    )
