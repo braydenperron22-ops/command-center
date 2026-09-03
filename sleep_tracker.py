@@ -34,7 +34,7 @@ module's own docstring for why show_end_time is excluded (the TD shift
 calendar's own end time is a known placeholder, never real data; start
 times are real)."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 import streamlit as st
 
@@ -42,6 +42,18 @@ import calendar_client
 
 WAKE_BUFFER_MINUTES = 90
 SLEEP_TARGET_HOURS = 8
+
+# Session follow-up, live: "it's gonna tell me to go to about twelve
+# thirty [AM]. That can't happen... make it the latest it can tell me
+# to go to bed, ten thirty PM." A long enough wake-buffer-before-a-late-
+# commitment day was pushing the 8-hour-back math well past midnight —
+# real math, but not a real bedtime anyone should be nudged toward. The
+# cap only ever pulls a too-late bedtime EARLIER (to 10:30pm that same
+# evening); a day whose natural math already lands before 10:30pm is
+# completely untouched — the target is never pushed later than what
+# the real wake-up already computed.
+BEDTIME_CAP_HOUR = 22
+BEDTIME_CAP_MINUTE = 30
 
 # Same "2 hours" the user asked for, and the same number commute_
 # reminder's own leave-timer headline has always used (commute_
@@ -108,11 +120,24 @@ def wake_time_for(now: datetime) -> datetime | None:
     return commitment["start"] - timedelta(minutes=WAKE_BUFFER_MINUTES)
 
 
+def _apply_bedtime_cap(bedtime: datetime) -> datetime:
+    """Never later than BEDTIME_CAP_HOUR:MINUTE on the evening bedtime
+    actually belongs to — a bedtime landing after midnight (hour < 12)
+    belongs to the PREVIOUS calendar date's evening, the same way
+    anyone would actually describe "tonight" past midnight; landing
+    that same cap on bedtime's own date for an after-midnight value
+    would compare against the WRONG evening (tomorrow's, not
+    tonight's) and fail to cap anything at all."""
+    evening_date = bedtime.date() if bedtime.hour >= 12 else bedtime.date() - timedelta(days=1)
+    cap = datetime.combine(evening_date, time(BEDTIME_CAP_HOUR, BEDTIME_CAP_MINUTE), tzinfo=bedtime.tzinfo)
+    return min(bedtime, cap)
+
+
 def bedtime_for(now: datetime) -> datetime | None:
     wake = wake_time_for(now)
     if wake is None:
         return None
-    return wake - timedelta(hours=SLEEP_TARGET_HOURS)
+    return _apply_bedtime_cap(wake - timedelta(hours=SLEEP_TARGET_HOURS))
 
 
 def _format_clock(remaining_seconds: float) -> str:
