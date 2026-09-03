@@ -87,11 +87,23 @@ def wake_time_for(now: datetime) -> datetime | None:
     """The real target wake-up time — the next real commitment's own
     start time, minus the session-confirmed 90-minute lead. None if
     there's nothing on the calendar to wake up for at all (a genuine
-    day off doesn't get a synthetic bedtime)."""
+    day off doesn't get a synthetic bedtime).
+
+    Always returns a value whose tzinfo matches `now`'s own — calendar
+    event start times come back naive (confirmed live: a bare TypeError
+    comparing this against a `now`-derived aware datetime elsewhere),
+    same thing commute_reminder's own _current_shift already has to
+    correct for on every comparison it makes. Doing it once here, at
+    the source, means every caller (this module's own bedtime_for, and
+    app.py's night-mode window) gets a consistently comparable value
+    without each having to repeat the same fix."""
     commitment = _next_commitment(now)
     if commitment is None:
         return None
-    return commitment["start"] - timedelta(minutes=WAKE_BUFFER_MINUTES)
+    start = commitment["start"]
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=now.tzinfo)
+    return start - timedelta(minutes=WAKE_BUFFER_MINUTES)
 
 
 def bedtime_for(now: datetime) -> datetime | None:
