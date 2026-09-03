@@ -870,7 +870,31 @@ components.html(
         "  real.style.display = 'none';",
         "}",
         "kioskPersistTicker();",
-        "new MutationObserver(kioskPersistTicker).observe(document.body, {childList: true, subtree: true});",
+        // Session report: recurring Chrome "Page Unresponsive" freezes,
+        // bad enough that even a manual refresh attempt hung too (only
+        // fully exiting/reopening the tab cleared it) — confirmed live
+        // this session that .ticker-bar's own DOM parent chain is FOUR
+        // levels of exclusive (childCount:1) wrapper divs before ever
+        // reaching shared layout, while document.body itself has just 3
+        // direct children total — meaning {subtree:true} on body was
+        // never actually scoped to "the ticker area," it was scoped to
+        // THE ENTIRE APP: every jumbotron update (every 5s during a live
+        // game), every toast fragment tick (every 10s), every dashboard-
+        // pulse-ts stamp, all firing this same callback, which itself
+        // does multiple whole-document querySelector calls plus an
+        // innerHTML diff/write, every single time, hours on end. Almost
+        // certainly the real cause — a live game's jumbotron churning
+        // every 5s for hours is exactly the kind of sustained load that
+        // would tip a synchronous per-mutation handler into hanging the
+        // tab's main thread. Narrowed to the anchor's own immediate
+        // parent (confirmed live: childCount 1, i.e. nothing else ever
+        // lives there) so this only ever fires for changes actually
+        // inside the ticker/toast slot itself — document.body stays as
+        // a fallback only for the case the anchor genuinely isn't found
+        // yet at setup time, not the normal path.
+        "var kioskTickerAnchor = document.querySelector('.ticker-bar, ' + TOAST_SEL);",
+        "var kioskTickerObserveTarget = (kioskTickerAnchor && kioskTickerAnchor.parentElement) || document.body;",
+        "new MutationObserver(kioskPersistTicker).observe(kioskTickerObserveTarget, {childList: true, subtree: true});",
       ].join('\\n');
       doc.head.appendChild(s);
     })();
