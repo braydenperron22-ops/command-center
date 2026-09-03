@@ -1851,8 +1851,17 @@ try:
     _wake_time = sleep_tracker.wake_time_for(now)
 except Exception:
     _wake_time = None
-if _wake_time is not None and _wake_time > _night_mode_day_start:
-    _night_mode_day_start = _wake_time
+if _wake_time is not None:
+    # sleep_tracker.wake_time_for stays timezone-aware on purpose (see
+    # its own docstring — target_ms below needs that); `now` and every
+    # _night_mode_day_* boundary here are deliberately naive (module
+    # top: now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)).
+    # A real live crash the first time this shipped (TypeError, aware
+    # vs naive) — strip tzinfo on a throwaway copy for JUST this
+    # comparison rather than changing what wake_time_for returns.
+    _wake_time_naive = _wake_time.replace(tzinfo=None)
+    if _wake_time_naive > _night_mode_day_start:
+        _night_mode_day_start = _wake_time_naive
 _night_mode_day_end = now.replace(hour=21, minute=30, second=0, microsecond=0)
 _night_mode_active = (
     not _jumbotron_active

@@ -89,21 +89,23 @@ def wake_time_for(now: datetime) -> datetime | None:
     there's nothing on the calendar to wake up for at all (a genuine
     day off doesn't get a synthetic bedtime).
 
-    Always returns a value whose tzinfo matches `now`'s own — calendar
-    event start times come back naive (confirmed live: a bare TypeError
-    comparing this against a `now`-derived aware datetime elsewhere),
-    same thing commute_reminder's own _current_shift already has to
-    correct for on every comparison it makes. Doing it once here, at
-    the source, means every caller (this module's own bedtime_for, and
-    app.py's night-mode window) gets a consistently comparable value
-    without each having to repeat the same fix."""
+    Deliberately stays timezone-AWARE (calendar event start times come
+    back that way) rather than matching app.py's own naive `now` —
+    same choice commute_reminder's leave_by_time already makes, for the
+    same reason: target_ms below (and app.py's own marker div for the
+    client-side audio ramp) needs .timestamp() to be correct regardless
+    of the server's own system timezone, which only holds for a
+    genuinely aware datetime — a naive one's .timestamp() silently
+    assumes the MACHINE's local zone, wrong on a UTC-clocked Cloud
+    container. (First pass here stripped tzinfo instead, to match `now`
+    for a comparison in app.py — fixed the crash locally but shipped a
+    real live one: caught immediately after deploy, reverted. The
+    comparison that actually needs a naive value belongs at that one
+    app.py call site, not baked into this function's own contract.)"""
     commitment = _next_commitment(now)
     if commitment is None:
         return None
-    start = commitment["start"]
-    if start.tzinfo is None:
-        start = start.replace(tzinfo=now.tzinfo)
-    return start - timedelta(minutes=WAKE_BUFFER_MINUTES)
+    return commitment["start"] - timedelta(minutes=WAKE_BUFFER_MINUTES)
 
 
 def bedtime_for(now: datetime) -> datetime | None:
