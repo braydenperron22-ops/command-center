@@ -1520,7 +1520,25 @@ components.html(
         "  kioskRevealOverlay(el, !!(weatherEl || urgentEl));",
         "}",
         "kioskCheckToastChime();",
-        "new MutationObserver(kioskCheckToastChime).observe(document.body, {childList: true, subtree: true, characterData: true});",
+        // Session report, real kiosk: recurring Chrome "Page Unresponsive"
+        // freezes. Same root cause as kiosk-ticker-persist's own fix
+        // above, worse here: this observer also watches characterData
+        // (any text-node change anywhere on the page, not just elements
+        // added/removed), and .live-countdown's own child rewrites its
+        // text once a SECOND while any leave/leave-ticker countdown is
+        // showing — meaning this ran on document.body's entire subtree
+        // roughly once a second, continuously, each time doing up to 6
+        // separate whole-document querySelector calls. Every selector
+        // this function checks (weather/urgent/leave/sports/email/
+        // gentle) is a state of the exact same single bottom-bar slot
+        // kiosk-ticker-persist already found the real scope for — reuse
+        // that, not document.body.
+        "var kioskChimeAnchor = document.querySelector("
+          + "'.ticker-bar, ' + KIOSK_CHIME_URGENT_SEL + ', ' + KIOSK_CHIME_GENTLE_SEL + ', '"
+          + "+ KIOSK_LEAVE_VOICE_SEL + ', ' + KIOSK_WEATHER_VOICE_SEL + ', '"
+          + "+ KIOSK_SPORTS_VOICE_SEL + ', ' + KIOSK_EMAIL_CHIME_SEL);",
+        "var kioskChimeObserveTarget = (kioskChimeAnchor && kioskChimeAnchor.parentElement) || document.body;",
+        "new MutationObserver(kioskCheckToastChime).observe(kioskChimeObserveTarget, {childList: true, subtree: true, characterData: true});",
         "kioskAudioKeepAlive();",
         "setInterval(kioskAudioKeepAlive, KIOSK_AUDIO_KEEPALIVE_MS);",
       ].join('\\n');
