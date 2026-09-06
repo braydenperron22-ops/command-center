@@ -1836,17 +1836,23 @@ try:
     _night_mode_storm_active = weather_alerts_bar.current_storm_phase(now) is not None
 except Exception:
     _night_mode_storm_active = False
-_night_mode_day_start = now.replace(hour=4, minute=30, second=0, microsecond=0)
-# Session request: "make sure the display actually stays properly dim
-# [in the morning]... too bright early in the morning indirectly
-# impacts sleep." The flat 4:30am default only ever covered an early
-# wake-up — a day with a later real commitment (an afternoon shift, a
-# day off followed by a late-morning one) used to go bright at 4:30am
-# regardless, then sit that way through however many hours were left
-# before the real wake-up. sleep_tracker.wake_time_for already computes
-# the real target for today specifically (next real commitment minus
-# its own 90-minute lead) — only ever pushes this LATER than 4:30am,
-# never earlier, so a normal early-shift day is completely unaffected.
+# Session request: "stay in night mode until sunrise unless i have
+# other commitments." Was a flat 4:30am default, then a version that
+# only ever pushed that default LATER for a real commitment (see the
+# two comments below this line for what that fix itself broke and how
+# it got corrected) — replaced the floor itself with real sunrise
+# (weather_client.py's own weather["sunrise"], already a naive
+# datetime — same convention as `now`, confirmed by reading that
+# module directly rather than assuming, after two earlier tzinfo bugs
+# in this exact block tonight). Falls back to the old flat 4:30am only
+# if weather/sunrise genuinely isn't available yet this rerun (a cold
+# cache, an API hiccup) — better than crashing or leaving this unset.
+try:
+    _night_mode_day_start = weather["sunrise"].replace(second=0, microsecond=0) if weather else None
+except Exception:
+    _night_mode_day_start = None
+if _night_mode_day_start is None:
+    _night_mode_day_start = now.replace(hour=4, minute=30, second=0, microsecond=0)
 try:
     _wake_time = sleep_tracker.wake_time_for(now)
 except Exception:
@@ -1867,13 +1873,18 @@ if _wake_time is not None:
     # it later than _night_mode_day_end (tonight's 9:30pm), so the
     # night-mode-active check (now outside [day_start, day_end)) was
     # true for literally the entire rest of today, confirmed live (a
-    # 6:54pm rerun showing the night-mode clock). Only apply the
-    # extension when the computed wake time actually falls on the SAME
-    # calendar date as this morning's own boundary — i.e. only when
-    # it's genuinely about to matter (the early-morning hours before a
-    # later-than-4:30 wake-up), never a future date borrowed in from an
+    # 6:54pm rerun showing the night-mode clock). Only apply this when
+    # the computed wake time actually falls on the SAME calendar date
+    # as `now` — i.e. only when it's genuinely about to matter (a real
+    # commitment today), never a future date borrowed in from an
     # evening lookahead.
-    if _wake_time_naive.date() == _night_mode_day_start.date() and _wake_time_naive > _night_mode_day_start:
+    #
+    # A real commitment REPLACES sunrise outright now (not just "if
+    # later than it" — that was the right rule for a flat clock-time
+    # floor, wrong for this one): "unless i have other commitments"
+    # means an early one should end night mode BEFORE sunrise same as
+    # a late one should hold it past sunrise, not just push later.
+    if _wake_time_naive.date() == now.date():
         _night_mode_day_start = _wake_time_naive
 _night_mode_day_end = now.replace(hour=21, minute=30, second=0, microsecond=0)
 # Session follow-up: "the evening side isn't adaptive like the morning
