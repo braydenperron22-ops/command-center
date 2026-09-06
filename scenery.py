@@ -542,7 +542,20 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
 
     return f"""
     <style>
-    .cc-scene {{ position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }}
+    /* Session report, live: "I don't see any clouds... I don't see it
+       in the screenshot either" — real bug, not just subtle: z-index:
+       -1 was sinking this whole scene (rain/snow/clouds/rays/etc, all
+       of it) behind Streamlit's own .stApp wrapper, which paints a
+       solid opaque black background at a stacking level ABOVE a
+       negative z-index here — confirmed live by patching this one
+       value in the browser first (clouds appeared immediately) before
+       touching the actual file. A plain positive z-index still stays
+       behind every real page element (Streamlit's own components sit
+       at their own stacking level above this), so nothing about how
+       tile content layers on top changes — this was never about the
+       page content, only about the sky sitting behind an opaque wall
+       instead of Streamlit's own background layer. */
+    .cc-scene {{ position: fixed; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; }}
 
     /* A faint fixed grain over the whole sky — real skies (and good
        wallpaper) aren't perfectly smooth gradients, they have a little
