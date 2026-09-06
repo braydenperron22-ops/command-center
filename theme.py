@@ -58,21 +58,7 @@ CSS = """
    page/jumbotron transition — is gone. (night_mode.py's own top bar
    briefly had a third exception here too, a scrolling ticker — traded
    for a static, centered bar instead, see .night-ticker's own comment,
-   so nothing needed the carve-out for long.)
-
-   A third real exception now lives in scenery.py instead of here —
-   session report, live: "I want rain and snow and thunderstorms to
-   feel legit... authentic and genuine" surfaced that this kill-switch
-   had ALSO been silently killing scenery.py's own already-built rain/
-   snow/fog/cloud/lightning/heat/frost animations as collateral damage
-   (added later, for the gratuitous stuff enumerated above — nobody
-   noticed it also caught a genuinely content-driven system built
-   earlier). See scene_html's own docstring in scenery.py for the fix
-   and why the per-element inline timing needed !important too, not
-   just the class rules. Flagged but deliberately NOT fixed the same
-   day: .rotation-timer-fill-a/-b just below in this file turned out to
-   have the identical problem (no !important, likely dead the same
-   way) — out of scope for this pass, worth its own look later. */
+   so nothing needed the carve-out for long.) */
 * {
     animation: none !important;
     transition: none !important;

@@ -221,28 +221,17 @@ def _particles(category: str, code: int) -> str:
         # falling perfectly straight — real rain is almost never
         # perfectly vertical, and a fixed lean reads as wind-blown
         # rather than a rendering quirk the way a random one would.
-        # !important on the inline duration/delay: the global animation
-        # kill-switch (theme.py, `* { animation: none !important; }`)
-        # forces every sub-property of the shorthand to !important too,
-        # including duration/delay — cc-drop's own class rule escapes
-        # that with its own !important animation: line (see scene_html's
-        # <style> block), but a shorthand's own !important still beats a
-        # PLAIN inline override for the sub-properties it doesn't
-        # specify, which would collapse every drop onto one identical
-        # duration instead of this per-drop randomized fall speed. An
-        # inline !important is the one thing with higher specificity
-        # than a class-level !important, so this is what actually lands.
         near = "".join(
             f'<div class="cc-drop" style="left:{(i * 13) % 100}%;'
-            f'animation-duration:{(1.0 - 0.5 * intensity) + (i % 5) * 0.12:.2f}s !important;'
-            f'animation-delay:-{(i % 10) * 0.1}s !important;"></div>'
+            f'animation-duration:{(1.0 - 0.5 * intensity) + (i % 5) * 0.12:.2f}s;'
+            f'animation-delay:-{(i % 10) * 0.1}s;"></div>'
             for i in range(count)
         )
         far_count = round(count * 0.7)
         far = "".join(
             f'<div class="cc-drop-far" style="left:{(i * 19 + 7) % 100}%;'
-            f'animation-duration:{(1.6 - 0.5 * intensity) + (i % 5) * 0.16:.2f}s !important;'
-            f'animation-delay:-{(i % 10) * 0.15}s !important;"></div>'
+            f'animation-duration:{(1.6 - 0.5 * intensity) + (i % 5) * 0.16:.2f}s;'
+            f'animation-delay:-{(i % 10) * 0.15}s;"></div>'
             for i in range(far_count)
         )
         return far + near  # far layer painted first, near layer drawn on top
@@ -251,8 +240,8 @@ def _particles(category: str, code: int) -> str:
         count = round(14 + 18 * intensity)
         return "".join(
             f'<div class="cc-flake" style="left:{(i * 17) % 100}%;'
-            f'animation-duration:{(10 - 5 * intensity) + (i % 6) * 0.5:.2f}s !important;'
-            f'animation-delay:-{(i % 10) * 0.6}s !important;"></div>'
+            f'animation-duration:{(10 - 5 * intensity) + (i % 6) * 0.5:.2f}s;'
+            f'animation-delay:-{(i % 10) * 0.6}s;"></div>'
             for i in range(count)
         )
     return ""
@@ -266,7 +255,7 @@ def _particles(category: str, code: int) -> str:
 def _heat_shimmer() -> str:
     return "".join(
         f'<div class="cc-heat" style="left:{(i * 19) % 100}%;'
-        f'animation-duration:{5 + (i % 4)}s !important;animation-delay:-{(i % 8) * 0.7:.1f}s !important;"></div>'
+        f'animation-duration:{5 + (i % 4)}s;animation-delay:-{(i % 8) * 0.7:.1f}s;"></div>'
         for i in range(16)
     )
 
@@ -277,7 +266,7 @@ def _heat_shimmer() -> str:
 def _cold_sparkle() -> str:
     return "".join(
         f'<div class="cc-frost" style="left:{(i * 23) % 100}%;top:{(i * 31) % 90}%;'
-        f'animation-duration:{3 + (i % 4)}s !important;animation-delay:-{(i % 8) * 0.5:.1f}s !important;"></div>'
+        f'animation-duration:{3 + (i % 4)}s;animation-delay:-{(i % 8) * 0.5:.1f}s;"></div>'
         for i in range(14)
     )
 
@@ -436,7 +425,7 @@ _STORM_FLASH_CYCLE_SECONDS = 11
 def _storm_flash(now) -> str:
     seconds_of_day = now.hour * 3600 + now.minute * 60 + now.second
     delay = -(seconds_of_day % _STORM_FLASH_CYCLE_SECONDS)
-    return f'<div class="cc-lightning" style="animation-delay:{delay}s !important;"></div>'
+    return f'<div class="cc-lightning" style="animation-delay:{delay}s;"></div>'
 
 
 # Large, softly blurred, slow side-to-side drift — the "misty" read fog
@@ -472,29 +461,6 @@ def _cloud_shapes() -> str:
     return '<div class="cc-clouds"></div>'
 
 
-def _sun_rays(category: str, now: datetime) -> str:
-    """Actual visible sunbeam rays radiating from the real sun position
-    — session report: "I want the sun and the rays of sun, like,
-    shining." sky_style's own sun glow (a soft radial-gradient) reads
-    as ambient light, not rays; this is the missing "beams" half. Lives
-    here as a real DOM element (not a third background-image layer in
-    sky_style) for the same reason rain/snow/etc. all do — see this
-    file's own top docstring on why an actual shape there kept visibly
-    popping every rerun. A repeating-conic-gradient (alternating faint-
-    light/transparent wedges) is the standard cheap CSS technique for
-    this: one element, one animated property (rotation), GPU-
-    composited. mask-image fades it radially from the sun's own real
-    position so it reads as light spreading from a point, not a hard-
-    edged pinwheel dropped on the sky."""
-    if category != "clear":
-        return ""
-    glow_pos = _sun_glow_position(now)
-    if glow_pos is None:
-        return ""
-    gx, gy = glow_pos
-    return f'<div class="cc-sunrays" style="left:{gx:.1f}%;top:{gy:.1f}%;"></div>'
-
-
 def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | None = None) -> str:
     """Static CSS rules + decorative scene HTML: stars, rain/snow/fog/
     clouds/heat/cold/lightning (the sun glow and the vignette live in
@@ -506,31 +472,7 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
     had. Takes an already-resolved category, same reasoning as
     sky_style — a caller's override (e.g. "smoke") has to actually
     reach the render, not get silently recomputed away.
-
-    Session report, live: "I want rain and snow and thunderstorms to
-    actually feel legit... fully authentic and genuine" — every
-    animation below turned out to already be built exactly for this
-    (real depth-layered wind-blown rain, a lightning flash time-synced
-    against rerun restarts, drift-animated fog/clouds), just silently
-    dead: theme.py's later, unrelated global kill-switch (`* {
-    animation: none !important; }`, added for gratuitous UI pulses/
-    transitions elsewhere) caught this whole system as collateral
-    damage, since none of its rules had their own !important to
-    survive it — the same fate the rotation-timer-fill bar separately
-    turned out to already be quietly suffering (unfixed, out of scope
-    here — flagged, not touched). Every animation rule below now
-    carries `!important` to escape that kill-switch (a class selector's
-    own !important already beats a plain `*` selector's on specificity
-    alone, no reliance on stylesheet load order); the per-element inline
-    animation-duration/-delay this file generates (the actual source of
-    "every drop/flake looks randomly paced, not robotic") needed
-    !important added too, in _particles/_heat_shimmer/_cold_sparkle/
-    _storm_flash — a shorthand `!important` still resets every
-    sub-property it doesn't mention to `!important` too, so a plain
-    inline override would have kept losing to the class rule's own now-
-    !important shorthand and collapsed every particle onto one identical
-    timing. Verified this specifically (a plain inline override does NOT
-    survive; an inline !important does) before shipping, not assumed."""
+    """
     particles = _particles(category, code)
     stars = _stars(phase)
     fog = _fog_haze() if category == "fog" else ""
@@ -538,24 +480,10 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
     lightning = _storm_flash(now) if category == "storm" else ""
     heat = _heat_shimmer() if temp_extreme == "heat" else ""
     frost = _cold_sparkle() if temp_extreme == "cold" else ""
-    sunrays = _sun_rays(category, now)
 
     return f"""
     <style>
-    /* Session report, live: "I don't see any clouds... I don't see it
-       in the screenshot either" — real bug, not just subtle: z-index:
-       -1 was sinking this whole scene (rain/snow/clouds/rays/etc, all
-       of it) behind Streamlit's own .stApp wrapper, which paints a
-       solid opaque black background at a stacking level ABOVE a
-       negative z-index here — confirmed live by patching this one
-       value in the browser first (clouds appeared immediately) before
-       touching the actual file. A plain positive z-index still stays
-       behind every real page element (Streamlit's own components sit
-       at their own stacking level above this), so nothing about how
-       tile content layers on top changes — this was never about the
-       page content, only about the sky sitting behind an opaque wall
-       instead of Streamlit's own background layer. */
-    .cc-scene {{ position: fixed; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; }}
+    .cc-scene {{ position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }}
 
     /* A faint fixed grain over the whole sky — real skies (and good
        wallpaper) aren't perfectly smooth gradients, they have a little
@@ -572,32 +500,6 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
         position: absolute; width: 2px; height: 2px; border-radius: 50%;
         background: white;
     }}
-    /* Sun rays — see _sun_rays' own comment for why this is a real
-       element instead of another sky_style background-image layer.
-       repeating-conic-gradient alternates faint-light/transparent
-       wedges around the sun's own real position; mask-image fades that
-       radially so it reads as beams of light spreading from a point,
-       not a flat pinwheel — a hard circular cutoff would look exactly
-       like one. Positioning (translate to center on left/top) has to
-       live INSIDE cc-ray-spin's own keyframes, not here — same reason
-       cc-fall bakes rain's wind-lean into its own keyframes rather than
-       a base-style transform: an element's animation fully owns the
-       transform property while running, so a separate static transform
-       here would just be silently overridden the instant it starts. */
-    .cc-sunrays {{
-        position: absolute; width: 140vmax; height: 140vmax;
-        background: repeating-conic-gradient(
-            rgba(255, 250, 228, 0.20) 0deg 3deg,
-            transparent 3deg 15deg
-        );
-        -webkit-mask-image: radial-gradient(circle, rgba(0,0,0,0.9) 0%, transparent 42%);
-        mask-image: radial-gradient(circle, rgba(0,0,0,0.9) 0%, transparent 42%);
-        animation: cc-ray-spin 220s linear infinite !important;
-    }}
-    @keyframes cc-ray-spin {{
-        from {{ transform: translate(-50%, -50%) rotate(0deg); }}
-        to {{ transform: translate(-50%, -50%) rotate(360deg); }}
-    }}
     /* Rain: a fixed wind-lean (rotate), held constant throughout the
        fall animation's own diagonal drift rather than just a straight
        vertical drop — see _particles' own comment on why this reads as
@@ -613,13 +515,13 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
     .cc-drop {{
         position: absolute; top: -5%; width: 1.5px; height: 18px;
         background: rgba(190, 213, 235, 0.5);
-        animation: cc-fall linear infinite !important;
+        animation: cc-fall linear infinite;
     }}
     .cc-drop-far {{
         position: absolute; top: -5%; width: 1px; height: 13px;
         background: rgba(190, 213, 235, 0.28);
         filter: blur(0.5px);
-        animation: cc-fall linear infinite !important;
+        animation: cc-fall linear infinite;
     }}
     @keyframes cc-fall {{
         from {{ transform: rotate(10deg) translate(0, 0); }}
@@ -628,7 +530,7 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
     .cc-flake {{
         position: absolute; top: -5%; width: 4px; height: 4px; border-radius: 50%;
         background: rgba(255,255,255,0.75);
-        animation: cc-snowfall linear infinite !important;
+        animation: cc-snowfall linear infinite;
     }}
     @keyframes cc-snowfall {{
         from {{ transform: translate(0, 0); }}
@@ -644,7 +546,7 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
             radial-gradient(ellipse 60% 50% at 30% 40%, rgba(255,255,255,0.14), transparent 65%),
             radial-gradient(ellipse 50% 40% at 75% 60%, rgba(255,255,255,0.10), transparent 60%);
         filter: blur(2px);
-        animation: cc-drift 70s ease-in-out infinite !important;
+        animation: cc-drift 70s ease-in-out infinite;
     }}
     @keyframes cc-drift {{
         0%, 100% {{ transform: translateX(-3%); }}
@@ -658,26 +560,14 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
        blobs at different sizes/positions/opacities for a sense of
        depth, drifting slower than fog (clouds read as higher up and
        further away, so slower apparent motion is the realistic cue). */
-    /* Session report, live: "I want to see the clouds pushing by...
-       right now it's just a light blue screen with a little gradient."
-       Bolder on every axis from the original tuning: higher opacity
-       per blob (was 0.42/0.32/0.26, genuinely hard to notice against a
-       bright sky), a fourth smaller blob for real fullness instead of
-       three isolated puffs, and roughly double the drift speed (150s
-       -> 80s) so the motion actually reads as pushing-by rather than
-       being imperceptible over a normal glance at the screen. Still
-       the same soft-blob-plus-blur technique, not a shape swap — that
-       was already proven safe against this app's rerun cadence,
-       staying with it here on purpose. */
     .cc-clouds {{
         position: absolute; inset: -15% -25%; top: -5%; height: 60%;
         background:
-            radial-gradient(ellipse 32% 45% at 18% 40%, rgba(255,255,255,0.60), transparent 70%),
-            radial-gradient(ellipse 40% 55% at 55% 25%, rgba(255,255,255,0.50), transparent 70%),
-            radial-gradient(ellipse 28% 40% at 85% 45%, rgba(255,255,255,0.42), transparent 70%),
-            radial-gradient(ellipse 22% 32% at 38% 55%, rgba(255,255,255,0.30), transparent 70%);
+            radial-gradient(ellipse 32% 45% at 18% 40%, rgba(255,255,255,0.42), transparent 70%),
+            radial-gradient(ellipse 40% 55% at 55% 25%, rgba(255,255,255,0.32), transparent 70%),
+            radial-gradient(ellipse 28% 40% at 85% 45%, rgba(255,255,255,0.26), transparent 70%);
         filter: blur(4px);
-        animation: cc-cloud-drift 80s ease-in-out infinite !important;
+        animation: cc-cloud-drift 150s ease-in-out infinite;
     }}
     @keyframes cc-cloud-drift {{
         0%, 100% {{ transform: translateX(-3%); }}
@@ -689,7 +579,7 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
        causing a visible restart glitch here specifically. */
     .cc-lightning {{
         position: absolute; inset: 0; background: white;
-        animation: cc-flash {_STORM_FLASH_CYCLE_SECONDS}s ease-in-out infinite !important;
+        animation: cc-flash {_STORM_FLASH_CYCLE_SECONDS}s ease-in-out infinite;
     }}
     @keyframes cc-flash {{
         0%, 91%, 100% {{ opacity: 0; }}
@@ -705,7 +595,7 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
     .cc-heat {{
         position: absolute; bottom: -5%; width: 10px; height: 10px; border-radius: 50%;
         background: radial-gradient(circle, rgba(255,176,84,0.4), transparent 70%);
-        animation: cc-rise linear infinite !important;
+        animation: cc-rise linear infinite;
     }}
     @keyframes cc-rise {{
         0% {{ transform: translateY(0); opacity: 0; }}
@@ -722,12 +612,12 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
     .cc-frost {{
         position: absolute; width: 3px; height: 3px; border-radius: 50%;
         background: rgba(224,242,255,0.85);
-        animation: cc-twinkle ease-in-out infinite !important;
+        animation: cc-twinkle ease-in-out infinite;
     }}
     @keyframes cc-twinkle {{
         0%, 100% {{ opacity: 0.15; }}
         50% {{ opacity: 0.65; }}
     }}
     </style>
-    <div class="cc-scene">{stars}{sunrays}{particles}{fog}{clouds}{lightning}{heat}{frost}<div class="cc-grain"></div></div>
+    <div class="cc-scene">{stars}{particles}{fog}{clouds}{lightning}{heat}{frost}<div class="cc-grain"></div></div>
     """
