@@ -221,17 +221,28 @@ def _particles(category: str, code: int) -> str:
         # falling perfectly straight — real rain is almost never
         # perfectly vertical, and a fixed lean reads as wind-blown
         # rather than a rendering quirk the way a random one would.
+        # !important on the inline duration/delay: the global animation
+        # kill-switch (theme.py, `* { animation: none !important; }`)
+        # forces every sub-property of the shorthand to !important too,
+        # including duration/delay — cc-drop's own class rule escapes
+        # that with its own !important animation: line (see scene_html's
+        # <style> block), but a shorthand's own !important still beats a
+        # PLAIN inline override for the sub-properties it doesn't
+        # specify, which would collapse every drop onto one identical
+        # duration instead of this per-drop randomized fall speed. An
+        # inline !important is the one thing with higher specificity
+        # than a class-level !important, so this is what actually lands.
         near = "".join(
             f'<div class="cc-drop" style="left:{(i * 13) % 100}%;'
-            f'animation-duration:{(1.0 - 0.5 * intensity) + (i % 5) * 0.12:.2f}s;'
-            f'animation-delay:-{(i % 10) * 0.1}s;"></div>'
+            f'animation-duration:{(1.0 - 0.5 * intensity) + (i % 5) * 0.12:.2f}s !important;'
+            f'animation-delay:-{(i % 10) * 0.1}s !important;"></div>'
             for i in range(count)
         )
         far_count = round(count * 0.7)
         far = "".join(
             f'<div class="cc-drop-far" style="left:{(i * 19 + 7) % 100}%;'
-            f'animation-duration:{(1.6 - 0.5 * intensity) + (i % 5) * 0.16:.2f}s;'
-            f'animation-delay:-{(i % 10) * 0.15}s;"></div>'
+            f'animation-duration:{(1.6 - 0.5 * intensity) + (i % 5) * 0.16:.2f}s !important;'
+            f'animation-delay:-{(i % 10) * 0.15}s !important;"></div>'
             for i in range(far_count)
         )
         return far + near  # far layer painted first, near layer drawn on top
@@ -240,8 +251,8 @@ def _particles(category: str, code: int) -> str:
         count = round(14 + 18 * intensity)
         return "".join(
             f'<div class="cc-flake" style="left:{(i * 17) % 100}%;'
-            f'animation-duration:{(10 - 5 * intensity) + (i % 6) * 0.5:.2f}s;'
-            f'animation-delay:-{(i % 10) * 0.6}s;"></div>'
+            f'animation-duration:{(10 - 5 * intensity) + (i % 6) * 0.5:.2f}s !important;'
+            f'animation-delay:-{(i % 10) * 0.6}s !important;"></div>'
             for i in range(count)
         )
     return ""
@@ -255,7 +266,7 @@ def _particles(category: str, code: int) -> str:
 def _heat_shimmer() -> str:
     return "".join(
         f'<div class="cc-heat" style="left:{(i * 19) % 100}%;'
-        f'animation-duration:{5 + (i % 4)}s;animation-delay:-{(i % 8) * 0.7:.1f}s;"></div>'
+        f'animation-duration:{5 + (i % 4)}s !important;animation-delay:-{(i % 8) * 0.7:.1f}s !important;"></div>'
         for i in range(16)
     )
 
@@ -266,7 +277,7 @@ def _heat_shimmer() -> str:
 def _cold_sparkle() -> str:
     return "".join(
         f'<div class="cc-frost" style="left:{(i * 23) % 100}%;top:{(i * 31) % 90}%;'
-        f'animation-duration:{3 + (i % 4)}s;animation-delay:-{(i % 8) * 0.5:.1f}s;"></div>'
+        f'animation-duration:{3 + (i % 4)}s !important;animation-delay:-{(i % 8) * 0.5:.1f}s !important;"></div>'
         for i in range(14)
     )
 
@@ -425,7 +436,7 @@ _STORM_FLASH_CYCLE_SECONDS = 11
 def _storm_flash(now) -> str:
     seconds_of_day = now.hour * 3600 + now.minute * 60 + now.second
     delay = -(seconds_of_day % _STORM_FLASH_CYCLE_SECONDS)
-    return f'<div class="cc-lightning" style="animation-delay:{delay}s;"></div>'
+    return f'<div class="cc-lightning" style="animation-delay:{delay}s !important;"></div>'
 
 
 # Large, softly blurred, slow side-to-side drift — the "misty" read fog
@@ -472,7 +483,31 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
     had. Takes an already-resolved category, same reasoning as
     sky_style — a caller's override (e.g. "smoke") has to actually
     reach the render, not get silently recomputed away.
-    """
+
+    Session report, live: "I want rain and snow and thunderstorms to
+    actually feel legit... fully authentic and genuine" — every
+    animation below turned out to already be built exactly for this
+    (real depth-layered wind-blown rain, a lightning flash time-synced
+    against rerun restarts, drift-animated fog/clouds), just silently
+    dead: theme.py's later, unrelated global kill-switch (`* {
+    animation: none !important; }`, added for gratuitous UI pulses/
+    transitions elsewhere) caught this whole system as collateral
+    damage, since none of its rules had their own !important to
+    survive it — the same fate the rotation-timer-fill bar separately
+    turned out to already be quietly suffering (unfixed, out of scope
+    here — flagged, not touched). Every animation rule below now
+    carries `!important` to escape that kill-switch (a class selector's
+    own !important already beats a plain `*` selector's on specificity
+    alone, no reliance on stylesheet load order); the per-element inline
+    animation-duration/-delay this file generates (the actual source of
+    "every drop/flake looks randomly paced, not robotic") needed
+    !important added too, in _particles/_heat_shimmer/_cold_sparkle/
+    _storm_flash — a shorthand `!important` still resets every
+    sub-property it doesn't mention to `!important` too, so a plain
+    inline override would have kept losing to the class rule's own now-
+    !important shorthand and collapsed every particle onto one identical
+    timing. Verified this specifically (a plain inline override does NOT
+    survive; an inline !important does) before shipping, not assumed."""
     particles = _particles(category, code)
     stars = _stars(phase)
     fog = _fog_haze() if category == "fog" else ""
@@ -515,13 +550,13 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
     .cc-drop {{
         position: absolute; top: -5%; width: 1.5px; height: 18px;
         background: rgba(190, 213, 235, 0.5);
-        animation: cc-fall linear infinite;
+        animation: cc-fall linear infinite !important;
     }}
     .cc-drop-far {{
         position: absolute; top: -5%; width: 1px; height: 13px;
         background: rgba(190, 213, 235, 0.28);
         filter: blur(0.5px);
-        animation: cc-fall linear infinite;
+        animation: cc-fall linear infinite !important;
     }}
     @keyframes cc-fall {{
         from {{ transform: rotate(10deg) translate(0, 0); }}
@@ -530,7 +565,7 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
     .cc-flake {{
         position: absolute; top: -5%; width: 4px; height: 4px; border-radius: 50%;
         background: rgba(255,255,255,0.75);
-        animation: cc-snowfall linear infinite;
+        animation: cc-snowfall linear infinite !important;
     }}
     @keyframes cc-snowfall {{
         from {{ transform: translate(0, 0); }}
@@ -546,7 +581,7 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
             radial-gradient(ellipse 60% 50% at 30% 40%, rgba(255,255,255,0.14), transparent 65%),
             radial-gradient(ellipse 50% 40% at 75% 60%, rgba(255,255,255,0.10), transparent 60%);
         filter: blur(2px);
-        animation: cc-drift 70s ease-in-out infinite;
+        animation: cc-drift 70s ease-in-out infinite !important;
     }}
     @keyframes cc-drift {{
         0%, 100% {{ transform: translateX(-3%); }}
@@ -567,7 +602,7 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
             radial-gradient(ellipse 40% 55% at 55% 25%, rgba(255,255,255,0.32), transparent 70%),
             radial-gradient(ellipse 28% 40% at 85% 45%, rgba(255,255,255,0.26), transparent 70%);
         filter: blur(4px);
-        animation: cc-cloud-drift 150s ease-in-out infinite;
+        animation: cc-cloud-drift 150s ease-in-out infinite !important;
     }}
     @keyframes cc-cloud-drift {{
         0%, 100% {{ transform: translateX(-3%); }}
@@ -579,7 +614,7 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
        causing a visible restart glitch here specifically. */
     .cc-lightning {{
         position: absolute; inset: 0; background: white;
-        animation: cc-flash {_STORM_FLASH_CYCLE_SECONDS}s ease-in-out infinite;
+        animation: cc-flash {_STORM_FLASH_CYCLE_SECONDS}s ease-in-out infinite !important;
     }}
     @keyframes cc-flash {{
         0%, 91%, 100% {{ opacity: 0; }}
@@ -595,7 +630,7 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
     .cc-heat {{
         position: absolute; bottom: -5%; width: 10px; height: 10px; border-radius: 50%;
         background: radial-gradient(circle, rgba(255,176,84,0.4), transparent 70%);
-        animation: cc-rise linear infinite;
+        animation: cc-rise linear infinite !important;
     }}
     @keyframes cc-rise {{
         0% {{ transform: translateY(0); opacity: 0; }}
@@ -612,7 +647,7 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
     .cc-frost {{
         position: absolute; width: 3px; height: 3px; border-radius: 50%;
         background: rgba(224,242,255,0.85);
-        animation: cc-twinkle ease-in-out infinite;
+        animation: cc-twinkle ease-in-out infinite !important;
     }}
     @keyframes cc-twinkle {{
         0%, 100% {{ opacity: 0.15; }}
