@@ -78,12 +78,30 @@ def _shift_events_for(calendars: list[dict], day: date) -> list[dict]:
     )
 
 
+# Session report, live: a 2pm golf tee time got treated as "something
+# to wake up early for," computing a wake_time of 12:30pm and keeping
+# night mode dimmed until then — screen still showing the night clock
+# at almost 8am. _shift_events_for's own filter (not all_day, not
+# show_end_time) is the same one commute_reminder's leave-timer uses,
+# and that's fine there — you leave for a 2pm tee time same as a 7am
+# shift. But this module's whole premise is "wake up N minutes before
+# THE THING" — only sound for a genuine morning commitment, never an
+# afternoon appointment nobody needs an early alarm for. Real appointment
+# data (golf, apartment shopping) surfaced this immediately; no reason
+# to wait for a second live report to fix it the same way the earlier
+# date-boundary bugs got fixed only after shipping.
+WAKE_RELEVANT_CUTOFF_HOUR = 12
+
+
 def _next_commitment(now: datetime) -> dict | None:
-    """The earliest real, still-upcoming shift/appointment — checks
+    """The earliest real, still-upcoming MORNING commitment — checks
     today first (covers the "it's 2am, the shift I'm waking up for is
     technically later today" case) then tomorrow, so this reads
     correctly regardless of what time it is right now when it's
-    called."""
+    called. Skips anything starting at or after WAKE_RELEVANT_CUTOFF_
+    HOUR regardless of which day it falls on — an afternoon commitment
+    is real for commute_reminder's own leave-timer purposes, but never
+    a reason for THIS module to compute an early wake-up/bedtime."""
     calendars = st.secrets.get("CALENDARS")
     if not calendars:
         return None
@@ -91,6 +109,8 @@ def _next_commitment(now: datetime) -> dict | None:
         day = (now + timedelta(days=day_offset)).date()
         for event in _shift_events_for(calendars, day):
             start = event["start"]
+            if start.hour >= WAKE_RELEVANT_CUTOFF_HOUR:
+                continue
             now_aware = now.replace(tzinfo=start.tzinfo) if start.tzinfo else now
             if start > now_aware:
                 return event
