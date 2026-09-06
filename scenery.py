@@ -472,6 +472,29 @@ def _cloud_shapes() -> str:
     return '<div class="cc-clouds"></div>'
 
 
+def _sun_rays(category: str, now: datetime) -> str:
+    """Actual visible sunbeam rays radiating from the real sun position
+    — session report: "I want the sun and the rays of sun, like,
+    shining." sky_style's own sun glow (a soft radial-gradient) reads
+    as ambient light, not rays; this is the missing "beams" half. Lives
+    here as a real DOM element (not a third background-image layer in
+    sky_style) for the same reason rain/snow/etc. all do — see this
+    file's own top docstring on why an actual shape there kept visibly
+    popping every rerun. A repeating-conic-gradient (alternating faint-
+    light/transparent wedges) is the standard cheap CSS technique for
+    this: one element, one animated property (rotation), GPU-
+    composited. mask-image fades it radially from the sun's own real
+    position so it reads as light spreading from a point, not a hard-
+    edged pinwheel dropped on the sky."""
+    if category != "clear":
+        return ""
+    glow_pos = _sun_glow_position(now)
+    if glow_pos is None:
+        return ""
+    gx, gy = glow_pos
+    return f'<div class="cc-sunrays" style="left:{gx:.1f}%;top:{gy:.1f}%;"></div>'
+
+
 def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | None = None) -> str:
     """Static CSS rules + decorative scene HTML: stars, rain/snow/fog/
     clouds/heat/cold/lightning (the sun glow and the vignette live in
@@ -515,6 +538,7 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
     lightning = _storm_flash(now) if category == "storm" else ""
     heat = _heat_shimmer() if temp_extreme == "heat" else ""
     frost = _cold_sparkle() if temp_extreme == "cold" else ""
+    sunrays = _sun_rays(category, now)
 
     return f"""
     <style>
@@ -534,6 +558,32 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
     .cc-star {{
         position: absolute; width: 2px; height: 2px; border-radius: 50%;
         background: white;
+    }}
+    /* Sun rays — see _sun_rays' own comment for why this is a real
+       element instead of another sky_style background-image layer.
+       repeating-conic-gradient alternates faint-light/transparent
+       wedges around the sun's own real position; mask-image fades that
+       radially so it reads as beams of light spreading from a point,
+       not a flat pinwheel — a hard circular cutoff would look exactly
+       like one. Positioning (translate to center on left/top) has to
+       live INSIDE cc-ray-spin's own keyframes, not here — same reason
+       cc-fall bakes rain's wind-lean into its own keyframes rather than
+       a base-style transform: an element's animation fully owns the
+       transform property while running, so a separate static transform
+       here would just be silently overridden the instant it starts. */
+    .cc-sunrays {{
+        position: absolute; width: 140vmax; height: 140vmax;
+        background: repeating-conic-gradient(
+            rgba(255, 250, 228, 0.20) 0deg 3deg,
+            transparent 3deg 15deg
+        );
+        -webkit-mask-image: radial-gradient(circle, rgba(0,0,0,0.9) 0%, transparent 42%);
+        mask-image: radial-gradient(circle, rgba(0,0,0,0.9) 0%, transparent 42%);
+        animation: cc-ray-spin 220s linear infinite !important;
+    }}
+    @keyframes cc-ray-spin {{
+        from {{ transform: translate(-50%, -50%) rotate(0deg); }}
+        to {{ transform: translate(-50%, -50%) rotate(360deg); }}
     }}
     /* Rain: a fixed wind-lean (rotate), held constant throughout the
        fall animation's own diagonal drift rather than just a straight
@@ -595,14 +645,26 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
        blobs at different sizes/positions/opacities for a sense of
        depth, drifting slower than fog (clouds read as higher up and
        further away, so slower apparent motion is the realistic cue). */
+    /* Session report, live: "I want to see the clouds pushing by...
+       right now it's just a light blue screen with a little gradient."
+       Bolder on every axis from the original tuning: higher opacity
+       per blob (was 0.42/0.32/0.26, genuinely hard to notice against a
+       bright sky), a fourth smaller blob for real fullness instead of
+       three isolated puffs, and roughly double the drift speed (150s
+       -> 80s) so the motion actually reads as pushing-by rather than
+       being imperceptible over a normal glance at the screen. Still
+       the same soft-blob-plus-blur technique, not a shape swap — that
+       was already proven safe against this app's rerun cadence,
+       staying with it here on purpose. */
     .cc-clouds {{
         position: absolute; inset: -15% -25%; top: -5%; height: 60%;
         background:
-            radial-gradient(ellipse 32% 45% at 18% 40%, rgba(255,255,255,0.42), transparent 70%),
-            radial-gradient(ellipse 40% 55% at 55% 25%, rgba(255,255,255,0.32), transparent 70%),
-            radial-gradient(ellipse 28% 40% at 85% 45%, rgba(255,255,255,0.26), transparent 70%);
+            radial-gradient(ellipse 32% 45% at 18% 40%, rgba(255,255,255,0.60), transparent 70%),
+            radial-gradient(ellipse 40% 55% at 55% 25%, rgba(255,255,255,0.50), transparent 70%),
+            radial-gradient(ellipse 28% 40% at 85% 45%, rgba(255,255,255,0.42), transparent 70%),
+            radial-gradient(ellipse 22% 32% at 38% 55%, rgba(255,255,255,0.30), transparent 70%);
         filter: blur(4px);
-        animation: cc-cloud-drift 150s ease-in-out infinite !important;
+        animation: cc-cloud-drift 80s ease-in-out infinite !important;
     }}
     @keyframes cc-cloud-drift {{
         0%, 100% {{ transform: translateX(-3%); }}
@@ -654,5 +716,5 @@ def scene_html(category: str, phase: str, code: int, now, temp_extreme: str | No
         50% {{ opacity: 0.65; }}
     }}
     </style>
-    <div class="cc-scene">{stars}{particles}{fog}{clouds}{lightning}{heat}{frost}<div class="cc-grain"></div></div>
+    <div class="cc-scene">{stars}{sunrays}{particles}{fog}{clouds}{lightning}{heat}{frost}<div class="cc-grain"></div></div>
     """
