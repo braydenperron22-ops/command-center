@@ -765,6 +765,24 @@ components.html(
     // slow tick. Two independent watchdogs on two different signals,
     // deliberately not merged into one — if either has a blind spot
     // the other still catches it.
+    //
+    // Bug found (session report: "the clock stopped updating... a
+    // simple refresh fixed it"): this used to bail out entirely
+    // (`if (!tsEl || !dot || !text) return;`) unless the VISIBLE
+    // #dashboard-pulse-dot/-text badge also existed in the DOM — but
+    // that badge is only rendered `if not _jumbotron_active and not
+    // _night_mode_active` (see the ai-status-bar block above), while
+    // #dashboard-pulse-ts itself is stamped unconditionally, every
+    // page/mode, as the very first line of _toast_fragment. That made
+    // this entire watchdog silently inert — never even checking
+    // staleness, let alone reloading — for every minute spent in night
+    // mode or a live-game jumbotron takeover, which together are a
+    // real chunk of most days and, worse, exactly the two states
+    // nobody's watching closely enough to notice a frozen screen
+    // quickly on their own. The reload check below now depends only on
+    // tsEl (always present); dot/text are read separately afterward and
+    // only touched if they happen to exist, same as the badge's own
+    // existing suppression during those two modes.
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('dashboard-pulse-watchdog')) return;
@@ -773,9 +791,7 @@ components.html(
       s.textContent = [
         "setInterval(function () {",
         "  var tsEl = window.parent.document.getElementById('dashboard-pulse-ts');",
-        "  var dot = window.parent.document.getElementById('dashboard-pulse-dot');",
-        "  var text = window.parent.document.getElementById('dashboard-pulse-text');",
-        "  if (!tsEl || !dot || !text) return;",
+        "  if (!tsEl) return;",
         "  var ts = parseFloat(tsEl.getAttribute('data-ts'));",
         "  if (!ts) return;",
         "  var ageSec = (Date.now() / 1000) - ts;",
@@ -783,6 +799,9 @@ components.html(
         "    window.parent.location.reload();",
         "    return;",
         "  }",
+        "  var dot = window.parent.document.getElementById('dashboard-pulse-dot');",
+        "  var text = window.parent.document.getElementById('dashboard-pulse-text');",
+        "  if (!dot || !text) return;",
         "  var cls = 'good';",
         "  var label = 'Live';",
         "  if (ageSec >= 60) {",
