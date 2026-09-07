@@ -1913,6 +1913,22 @@ _night_mode_active = (
     and not _night_mode_storm_active
     and not (_night_mode_day_start <= now < _night_mode_day_end)
 )
+# TEMPORARY live diagnostic — session report, live: night mode not
+# engaged at 5:22am despite sunrise not until 6:45am. Streamlit Cloud's
+# own logs aren't reachable the way this Mac's local ones are, so the
+# diagnostic has to ride in the page itself, same technique already
+# used for dashboard-pulse-ts/kiosk-wake-time. Remove once diagnosed.
+_audit_nightmode = (
+    f"now={now} day_start={_night_mode_day_start} day_end={_night_mode_day_end} "
+    f"weather_present={weather is not None} sunrise={weather.get('sunrise') if weather else None} "
+    f"wake_time={_wake_time} jumbotron={_jumbotron_active} game_live={game_live} "
+    f"leave_active={_night_mode_leave_active} storm_active={_night_mode_storm_active} "
+    f"active={_night_mode_active}"
+)
+st.markdown(
+    f'<div id="audit-nightmode" data-info="{html.escape(_audit_nightmode)}" style="display:none;"></div>',
+    unsafe_allow_html=True,
+)
 
 # Transition overlay — session feedback: the hard cut between the
 # everyday dashboard and the jumbotron "feels dystopian," worth a real
