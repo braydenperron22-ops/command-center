@@ -1847,6 +1847,23 @@ except Exception:
 # in this exact block tonight). Falls back to the old flat 4:30am only
 # if weather/sunrise genuinely isn't available yet this rerun (a cold
 # cache, an API hiccup) — better than crashing or leaving this unset.
+#
+# Real live bug, caught the next morning: `weather` itself isn't
+# assigned until much later in this script (the real fetch_weather()
+# call, well below) — this block sits well before that, so `weather`
+# was never actually defined yet here. The try/except above silently
+# swallowed that exact NameError every single rerun and fell back to
+# the flat 4:30am default — meaning this whole sunrise feature never
+# once actually ran, confirmed live at 5:22am (sunrise 6:45am that
+# day): night mode had already ended, on the old 4:30am floor, exactly
+# as if this fix had never shipped. fetch_weather() is st.cache_data-
+# cached, so calling it here too is a cache hit, not a second real
+# fetch — the real call further down still runs exactly as before and
+# just overwrites this with the identical cached value.
+try:
+    weather = fetch_weather()
+except Exception:
+    weather = None
 try:
     _night_mode_day_start = weather["sunrise"].replace(second=0, microsecond=0) if weather else None
 except Exception:
