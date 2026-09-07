@@ -190,25 +190,6 @@ def _load_periodic_cache() -> dict[str, tuple[float, str]]:
 
 _periodic_cache: dict[str, tuple[float, str]] = _load_periodic_cache()
 
-# TEMPORARY one-time reset — session report: "does the morning brief
-# only look at this source now? because it's still referencing the
-# one eighty seven point nine." fuel_price_client was already fixed
-# to the real weekly source (164.6¢/L) and morning_briefing's own
-# _learned_notes was already cleared, but the brief kept showing the
-# identical old text verbatim after redeploy anyway — root cause
-# found here: this cache is disk-backed *specifically* so it survives
-# a restart (see _load_periodic_cache's own docstring/reasoning
-# above), so the AI text generated before the gas-price fix landed
-# just kept being served for the rest of its own 30-min
-# AI_REFRESH_SECONDS window, completely independent of the deploy or
-# of _learned_notes. Clears only morning_briefing's own feature_key —
-# pages_conflicts' hourly entry is unrelated and still genuinely
-# fresh. Remove this block once confirmed the next brief regenerates
-# clean.
-if "morning_briefing_sentence" in _periodic_cache:
-    del _periodic_cache["morning_briefing_sentence"]
-    persisted_state.save("gemini_periodic_cache", _periodic_cache)
-
 
 def periodic_cache_status() -> dict[str, float]:
     """feature_key -> generated_at (epoch seconds) for every feature
