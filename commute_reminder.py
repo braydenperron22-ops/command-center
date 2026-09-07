@@ -69,6 +69,21 @@ LATEST_FIRE_MINUTES = -30
 QUIET_MILESTONE_CUTOFF_HOUR = 5
 QUIET_MILESTONE_MIN_MINUTES = 30
 
+# Session request: "make the leave in alert silent until the one hour
+# mark." Distinct from both quiet-hour gates above: QUIET_MILESTONE_*
+# decides whether a wide-notice milestone fires AT ALL before 5am;
+# _leave_volume_ceiling decides how LOUD an alert that does fire can
+# get. Neither one made the two widest heads-ups (120/90 minutes out)
+# silent on an ordinary daytime shift — they always played the same
+# chime + spoken line as every other milestone. This is a third,
+# independent gate: those two stay fully visible (the toast, the
+# countdown headline/ticker) but genuinely produce zero sound —
+# chime included, not just the spoken line — until the countdown
+# reaches this threshold. Applied in render_bar via a data-silent
+# attribute the client checks before making any noise at all (see
+# app.py's kioskPlayLeaveVoice), same data-driven shape as data-volume.
+LEAVE_ALERT_SILENT_ABOVE_MINUTES = 60
+
 # The persistent headline (leave_headline_candidate, below — shown via
 # headline_rotation.py's unified rotation) is deliberately narrower
 # than the toast milestones above — hours-out visibility is
@@ -505,6 +520,12 @@ def check(now: datetime) -> dict | None:
         "label": label,
         "summary": "" if is_home else _leave_spoken_text(shift, milestone),
         "volume": _leave_volume_ceiling(now_aware, leave_by),
+        # See LEAVE_ALERT_SILENT_ABOVE_MINUTES above — this milestone's
+        # own distance from leave-by, not is_home (a silent-tier home
+        # event and an audible-tier one both still just skip the voice
+        # line via "summary" above; this is the separate all-sound-off
+        # gate for the wide early heads-ups specifically).
+        "silent": milestone > LEAVE_ALERT_SILENT_ABOVE_MINUTES,
         # False for a home event even if it genuinely is this event's
         # first alert — a home event never gets a spoken line at all
         # (see "summary" above), so there's nothing for app.py's own
@@ -733,8 +754,16 @@ def render_bar(alert: dict) -> None:
     # line that just happens to run a bit long. See kiosk_tts.
     # synthesize_base64's own length_scale comment for why the normal,
     # already-tuned rate stays untouched for every other alert.
+    # Skipped entirely (not just muted client-side) when this milestone
+    # is in the silent tier (see LEAVE_ALERT_SILENT_ABOVE_MINUTES) —
+    # kioskPlayLeaveVoice below never plays it either way, so there's no
+    # reason to pay for a real Piper synthesis call on text no one will
+    # ever hear.
+    is_silent = bool(alert.get("silent"))
     audio_length_scale = 1.2 if alert.get("long_form_audio") else None
-    audio_b64 = kiosk_tts.synthesize_base64(spoken_text, length_scale=audio_length_scale) if spoken_text else None
+    audio_b64 = (
+        kiosk_tts.synthesize_base64(spoken_text, length_scale=audio_length_scale) if spoken_text and not is_silent else None
+    )
     audio_attr = f' data-audio-b64="{audio_b64}"' if audio_b64 else ""
     # data-volume is the ceiling for THIS shift's leave-by time (see
     # _leave_volume_ceiling) — app.py's kioskPlayLeaveVoice reads it
@@ -742,8 +771,14 @@ def render_bar(alert: dict) -> None:
     # stays quiet without needing to touch the wall-clock schedule at
     # all.
     volume_attr = f' data-volume="{alert.get("volume", 1.0):.3f}"'
+    # data-silent — see LEAVE_ALERT_SILENT_ABOVE_MINUTES. app.py's
+    # kioskPlayLeaveVoice checks this before making any sound at all
+    # (chime included, not just the spoken line) — the toast/headline/
+    # countdown all still show normally either way, this only affects
+    # whether it makes noise.
+    silent_attr = ' data-silent="true"' if is_silent else ""
     st.markdown(
-        f"""<div class="commute-alert-bar" data-summary="{summary_attr}"{audio_attr}{volume_attr}>
+        f"""<div class="commute-alert-bar" data-summary="{summary_attr}"{audio_attr}{volume_attr}{silent_attr}>
             <span class="news-breaking-label">{label}</span>
             <span class="news-alert-headline">{headline}</span>
         </div>""",

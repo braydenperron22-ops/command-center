@@ -1336,7 +1336,15 @@ components.html(
         // Falls back to full volume only if the attribute is somehow
         // missing (a caller that predates this, same defensive shape
         // as _alert_label's own fallback).
+        // Session request: "make the leave in alert silent until the
+        // one hour mark" — commute_reminder.py's data-silent (see its
+        // own LEAVE_ALERT_SILENT_ABOVE_MINUTES) covers the two widest
+        // heads-ups (120/90 min out): the toast/headline/countdown still
+        // show normally, this just skips every sound this function would
+        // otherwise make, chime included — checked before kioskPlayChime
+        // below, not after, since the chime used to be unconditional.
         "function kioskPlayLeaveVoice(el) {",
+        "  if (el.getAttribute('data-silent') === 'true') { return; }",
         "  var vol = parseFloat(el.getAttribute('data-volume'));",
         "  if (!(vol >= 0 && vol <= 1)) { vol = 1; }",
         "  kioskPlayChime(false, vol);",
