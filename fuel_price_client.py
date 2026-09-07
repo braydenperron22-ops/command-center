@@ -14,7 +14,6 @@ from datetime import date, timedelta
 import requests
 import streamlit as st
 
-import daily_gas_price
 import data_health
 import fetch_throttle
 import persisted_state
@@ -191,32 +190,34 @@ def eco_mode_status() -> dict | None:
     adjusted reference rather than a trailing-weeks average that just
     tracks whatever prices happened to do recently. The floor itself
     always comes from this module's own weekly CSV history — that's the
-    only source with the 10-year depth _real_price_floor needs — but the
-    *current* price prefers daily_gas_price's real day-to-day reading
-    over the CSV's own latest (up to a week stale) row when it's
-    reachable, session request: "I want it to actually update day after
-    day." `next_update` follows whichever price won: a day out for the
-    daily source, or the CSV's own weekly cadence (latest reading's date
-    plus 7 days) when falling back to it. `change` is today's price
-    minus yesterday's (cents/litre, real day-over-day — see
-    daily_gas_price.today_price), or None when only the weekly CSV is
-    available, since two different weekly readings a week apart isn't a
-    day-over-day change. None if there isn't enough price history or
-    CPI data to judge a real floor from."""
+    only source with the 10-year depth _real_price_floor needs. The
+    *current* price ALSO always comes from that same weekly CSV now —
+    `next_update` is the CSV's own weekly cadence (latest reading's date
+    plus 7 days), `change` is always None (a week-over-week CSV reading
+    isn't a real day-over-day change, never was).
+
+    Session report, live: "go back to the original weekly source...
+    this daily source is just not accurate at all — the prices at the
+    pump right now are probably like 172, meanwhile this is telling me
+    187.9, which is just not true." daily_gas_price.today_price() (real
+    day-after-day North Bay prices, added for exactly that freshness —
+    see that module's own docstring) reverted here after a real,
+    user-confirmed-wrong reading from its own source site
+    (affordableenergy.ca) — not a bug in this app's own fetch/parse
+    logic, the third-party site itself was simply wrong that day.
+    daily_gas_price.py itself is untouched (still real, working code —
+    see its own module docstring), just no longer called from here;
+    reverting this one line back is enough if it's ever worth trying
+    again later."""
     readings = fetch_readings()
     if not readings:
         return None
     floor = _real_price_floor(readings)
     if floor is None:
         return None
-    daily = daily_gas_price.today_price()
-    if daily is not None:
-        price, as_of, next_update = daily["price_cents_per_litre"], daily["date"], daily["date"] + timedelta(days=1)
-        change = daily["change"]
-    else:
-        latest = readings[-1]
-        price, as_of, next_update = latest["price_cents_per_litre"], latest["date"], latest["date"] + timedelta(days=7)
-        change = None
+    latest = readings[-1]
+    price, as_of, next_update = latest["price_cents_per_litre"], latest["date"], latest["date"] + timedelta(days=7)
+    change = None
     # Feature-level success — records whether SOME real price came
     # through at all, daily source or weekly-CSV fallback either way
     # (see data_health.THRESHOLDS_SECONDS's own "gas_price" comment on
