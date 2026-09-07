@@ -1851,6 +1851,21 @@ def _recent_history_block(now: datetime) -> str:
 # on that call (see _update_learned_notes) — this app's own artificial
 # limit is gone, not the model's.
 _learned_notes: str = persisted_state.load("morning_brief_learned_notes", "")
+# TEMPORARY one-time reset — session report, live: the brief kept
+# writing "187.9¢/L" well after fuel_price_client.eco_mode_status()
+# was fixed to use the real weekly source (164.6¢/L). Today's own
+# fresh facts were already correct; this persisted, AI-synthesized
+# "evolving understanding" blob still narrated a gas-price trend
+# climbing through recent days (178.9, 183.9...) and was almost
+# certainly what the AI was actually anchoring its wording on instead
+# of today's real fact. Runs once on this deploy (module import time,
+# so once per process start) to clear the shared Upstash-backed value
+# for real — this Mac's own local persisted_state has no Upstash
+# configured, so clearing it locally first only touched a local
+# fallback file, never the actual value the real Cloud kiosk reads.
+# Remove this block once confirmed the next brief regenerates clean.
+persisted_state.save("morning_brief_learned_notes", "")
+_learned_notes = ""
 _learned_notes_date: str | None = persisted_state.load("morning_brief_learned_notes_date", None)
 
 # How many recent activity rows to hand the learned-notes AI — enough
