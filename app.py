@@ -2730,29 +2730,50 @@ if weather:
         )
     EVENING_BADGE_HOUR = 18  # 6pm — see the garbage/payday badges just below
 
+    # Session request: "for badges that are time sensitive only in the
+    # morning — garbage, recycling, payday — make it so at the end of
+    # the morning brief they're not showing anymore... it is 4:45pm, I
+    # don't need to know it's garbage day anymore." Reuses the morning
+    # brief's own window-end hour rather than inventing a separate
+    # cutoff — "gone once the morning brief's done" is the exact
+    # boundary asked for, and it keeps the two from silently drifting
+    # apart if that window ever gets retuned. Deliberately NOT applied
+    # to every badge below — the user drew the line explicitly, twice:
+    # holidays (Labour Day, and by the same reasoning seasons) are an
+    # all-day fact, not a morning task, and TD-quarter/CPP-day both got
+    # a specific "keep it all day" confirmation (a sales-reset lasts the
+    # whole shift; branch-traffic awareness matters whenever the branch
+    # is actually open, not just at open). Only garbage/recycling and
+    # payday are genuinely "do/notice this in the morning, done by
+    # afternoon" — those two are the only ones this gates.
+    MORNING_BADGE_CUTOFF_HOUR = morning_briefing.MORNING_WINDOW_END_HOUR
+
     # Garbage/recycling day — used to be its own always-visible tile on
-    # the Household page; moved here and gated to "today, or tomorrow
-    # once it's evening" (see waste_schedule.next_pickup) so it reads
-    # like every other hero badge, something worth a glance right now,
-    # not a permanent daily fixture. "Tomorrow" only starts showing at
-    # EVENING_BADGE_HOUR — session feedback: seeing "Garbage tomorrow"
-    # at 10am is a full day early and just noise, but by evening it's
-    # the actionable "bins go out tonight" moment. "Today" still shows
-    # any time, since that one's always immediately actionable.
+    # the Household page; moved here and gated to "today (morning only),
+    # or tomorrow once it's evening" (see waste_schedule.next_pickup) so
+    # it reads like every other hero badge, something worth a glance
+    # right now, not a permanent daily fixture. "Tomorrow" only starts
+    # showing at EVENING_BADGE_HOUR — session feedback: seeing "Garbage
+    # tomorrow" at 10am is a full day early and just noise, but by
+    # evening it's the actionable "bins go out tonight" moment.
     pickup = waste_schedule.next_pickup(now.date())
-    if pickup["days_until"] == 0 or (pickup["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR):
+    if (pickup["days_until"] == 0 and now.hour < MORNING_BADGE_CUTOFF_HOUR) or (
+        pickup["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR
+    ):
         when = "today" if pickup["days_until"] == 0 else "tomorrow"
         extras.append(
             f'<span class="weather-extra" style="color:#A2845E; '
             f'background:{_badge_bg("#A2845E", 0.22)}; border-color:#A2845E;">'
             f'{pickup["kind"]} {when}</span>'
         )
-    # Payday — same spot and same today/evening-tomorrow gating as the
-    # garbage badge right above, not a permanent fixture. Green (the
-    # app's existing "good" tone, matching market-up/badge-good) rather
-    # than a color already claimed by another badge.
+    # Payday — same spot and same today(morning-only)/evening-tomorrow
+    # gating as the garbage badge right above, not a permanent fixture.
+    # Green (the app's existing "good" tone, matching market-up/badge-
+    # good) rather than a color already claimed by another badge.
     payday = payday_schedule.next_payday(now.date())
-    if payday["days_until"] == 0 or (payday["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR):
+    if (payday["days_until"] == 0 and now.hour < MORNING_BADGE_CUTOFF_HOUR) or (
+        payday["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR
+    ):
         payday_when = "today" if payday["days_until"] == 0 else "tomorrow"
         extras.append(
             f'<span class="weather-extra" style="color:#32D74B; '
