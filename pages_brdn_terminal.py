@@ -20,10 +20,29 @@ last_report()/report_history()/track_record_summary()/employment_
 report()/quarterly_report_status()) — no new computation of its own,
 same cheap read-only contract pages_brayden_index.render() already has.
 A "raw signal feed" panel (brayden_index.current_signals(), the actual
-fact sheet the AI reasons from) was tried and cut — see the comment
-where it used to sit for why: it re-ran the ENTIRE live fact-gathering
-pipeline (real network calls) on every page view, turning a page meant
-to feel instant into a 60-100s+ load, confirmed live."""
+fact sheet the AI reasons from) was tried and cut — it re-ran the
+ENTIRE live fact-gathering pipeline (real network calls) on every page
+view, turning a page meant to feel instant into a 60-100s+ load,
+confirmed live.
+
+Bug found live (session incident, second one on this page): there is
+NO full-screen wrapper element rendered here, on purpose. An earlier
+version opened one with `st.markdown('<div class="brdn-terminal">',
+...)` and closed it in a LATER, separate st.markdown call, assuming
+the HTML would nest across both the way it would in a plain static
+document — Streamlit doesn't work that way (each st.markdown call gets
+its own independent DOM container), so that div immediately self-
+closed empty, and because it was still position:fixed/inset:0/
+z-index:500 it sat on top of the whole page as an opaque black square,
+hiding every real panel that had actually rendered fine underneath it.
+The fix is the same trick pages_jumbotron.py already relies on:
+.streamlit/config.toml's own backgroundColor is already #000000 app-
+wide, so a full-screen black background needs no wrapper element at
+all — just don't paint anything else over it (app.py's _terminal_
+active already skips the sky/hero-row/etc.). Every panel below is
+independently a real, self-closed element, each carrying its own font/
+color directly (theme.py's own .brdn-terminal-panel/-header/-footer)
+instead of inheriting from a parent that never actually wrapped them."""
 
 import html
 from datetime import datetime
@@ -36,8 +55,9 @@ import tiles
 # Bloomberg's own real signature palette — black, amber labels, a
 # brighter green/red than this app's normal market-up/market-down
 # (#32D74B/#FF6961) since a terminal reads as more clinical/saturated
-# than this app's usual soft glass-card look. Scoped entirely inside
-# .brdn-terminal (theme.py) so nothing else in the app is touched.
+# than this app's usual soft glass-card look. .brdn-terminal-up/-down
+# (theme.py) apply this directly wherever needed, not via inheritance
+# from any wrapping element — see this module's own docstring for why.
 _CHART_COLOR = {"good": "#00FF7F", "bad": "#FF3B30"}
 
 
@@ -46,7 +66,7 @@ def _fmt_time(ts: float) -> str:
 
 
 def _catalyst_line(c: dict) -> str:
-    cls = "up" if c["direction"] == "bullish" else "down"
+    cls = "brdn-terminal-up" if c["direction"] == "bullish" else "brdn-terminal-down"
     arrow = "▲" if c["direction"] == "bullish" else "▼"
     mag = c["magnitude"].upper()
     label = html.escape(c["label"])
@@ -62,7 +82,7 @@ def _catalyst_line(c: dict) -> str:
 
 def _history_line(e: dict) -> str:
     pct = e["pct_change"]
-    cls = "up" if pct > 0 else "down" if pct < 0 else ""
+    cls = "brdn-terminal-up" if pct > 0 else "brdn-terminal-down" if pct < 0 else ""
     sign = "+" if pct >= 0 else ""
     catalysts = e.get("catalysts") or []
     label = html.escape(catalysts[0]["label"]) if catalysts else "no named catalysts"
@@ -88,14 +108,12 @@ def render(now: datetime) -> None:
     reprice = brayden_index.next_reprice_estimate()
 
     tone = data["tone"]
-    dir_class = "up" if tone == "good" else "down" if tone == "bad" else ""
+    dir_class = "brdn-terminal-up" if tone == "good" else "brdn-terminal-down" if tone == "bad" else ""
     arrow = "▲" if tone == "good" else "▼" if tone == "bad" else "●"
     sign = "+" if data["change"] >= 0 else ""
     cycle_pct = data["cycle_pct_change"]
-    cycle_class = "up" if cycle_pct > 0 else "down" if cycle_pct < 0 else ""
+    cycle_class = "brdn-terminal-up" if cycle_pct > 0 else "brdn-terminal-down" if cycle_pct < 0 else ""
     cycle_sign = "+" if cycle_pct >= 0 else ""
-
-    st.markdown('<div class="brdn-terminal">', unsafe_allow_html=True)
 
     st.markdown(
         f'<div class="brdn-terminal-header">'
@@ -111,11 +129,14 @@ def render(now: datetime) -> None:
 
     col1, col2, col3 = st.columns([1, 1.4, 1])
     with col1:
+        drift_class = ""
+        if stats:
+            drift_class = "brdn-terminal-up" if stats["net_drift_pct"] > 0 else "brdn-terminal-down" if stats["net_drift_pct"] < 0 else ""
+        drift_value = f'<span class="{drift_class}">{"+" if stats and stats["net_drift_pct"] >= 0 else ""}{stats["net_drift_pct"]:.2f}%</span>' if stats else "N/A"
         rows = [
             ("DAY OPEN", f'${data["day_open_price"]:.2f}'),
             ("LAST CYCLE", f'<span class="{cycle_class}">{cycle_sign}{cycle_pct:.2f}%</span>'),
-            ("NET DRIFT (10C)", f'<span class="{"up" if stats and stats["net_drift_pct"] > 0 else "down" if stats and stats["net_drift_pct"] < 0 else ""}">'
-             f'{"+" if stats and stats["net_drift_pct"] >= 0 else ""}{stats["net_drift_pct"]:.2f}%</span>' if stats else "N/A"),
+            ("NET DRIFT (10C)", drift_value),
             ("BULL/BEAR/FLAT", f'{stats["bullish_n"]}/{stats["bearish_n"]}/{stats["flat_n"]}' if stats else "N/A"),
             ("Q REPORT", "ON FILE" if q_status["filed_this_quarter"] else "OUTSTANDING"),
         ]
@@ -178,21 +199,6 @@ def render(now: datetime) -> None:
             unsafe_allow_html=True,
         )
 
-    # Session incident: a "RAW SIGNAL FEED" panel here used to call
-    # brayden_index.current_signals() — which re-runs the ENTIRE fact-
-    # gathering pipeline (portfolio, two real TomTom calls via commute
-    # status, a live email IMAP fetch measured at ~16s alone, market
-    # data, road conditions...) fresh, live, on every single page view.
-    # Every other BRDN page view is explicitly a cheap, no-network read
-    # of already-computed state (see pages_brayden_index.py's own
-    # module docstring) — this broke that contract and made a hotkey-
-    # triggered page that should feel instant take 60-100s+ to render,
-    # confirmed live (timed each real call locally: commute_status
-    # alone ~7s, email alone ~16s). Cut entirely rather than cached —
-    # the transparency idea was nice but not worth that cost for a page
-    # meant to be instant; the normal BRDN page's own "what the market
-    # believes" section already covers the same spirit far more
-    # cheaply.
     rows_html = "".join(_history_line(e) for e in reversed(entries)) or '<div class="brdn-terminal-dim">No cycle history yet.</div>'
     st.markdown(
         f'<div class="brdn-terminal-panel"><div class="brdn-terminal-label">TRACK RECORD (LAST {len(entries)})</div>{rows_html}</div>',
@@ -201,6 +207,6 @@ def render(now: datetime) -> None:
 
     st.markdown(
         '<div class="brdn-terminal-footer">SIMULATED INSTRUMENT — FOR ENTERTAINMENT ONLY — NOT A REAL SECURITY — '
-        'PRESS P TO EXIT</div></div>',
+        'PRESS P TO EXIT</div>',
         unsafe_allow_html=True,
     )

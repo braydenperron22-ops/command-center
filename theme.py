@@ -3271,27 +3271,40 @@ html, body, [class*="css"] {
    kinda like the Jumbotron, but for a Bloomberg terminal." Deliberately
    its own visual language, not this app's usual glass-card look: flat
    black, hard 1px borders, monospace, amber labels — Bloomberg's own
-   real signature palette. .up/.down are scoped inside .brdn-terminal
-   only (a brighter, more clinical green/red than this app's normal
-   market-up/market-down) so nothing outside this one page is touched.
+   real signature palette.
+
+   Bug found live (session incident: the page appeared to hang, was
+   actually rendering fine but invisible): there is NO real full-screen
+   wrapper element here, on purpose now — an earlier version tried
+   `st.markdown('<div class="brdn-terminal">', ...)` opened in one call
+   and closed in a LATER, separate st.markdown call, assuming the HTML
+   would nest across both like it would in a plain static document.
+   Streamlit doesn't work that way: each st.markdown call gets its own
+   independent DOM container, so that div immediately self-closed empty
+   — and because it was still position:fixed/inset:0/z-index:500, it
+   sat on top of the whole page as an opaque black square, hiding every
+   real panel that rendered (correctly) as sibling elements after it.
+   Confirmed live: all 6 panels were genuinely in the DOM the entire
+   time, just visually buried under this element.
+
+   The fix is the same trick pages_jumbotron.py already relies on and
+   this should have copied from the start: .streamlit/config.toml's own
+   backgroundColor is already #000000 app-wide, so a full-screen black
+   background needs no wrapper element at all — just don't paint
+   anything else over it (app.py's own _terminal_active already skips
+   the normal sky/hero-row/etc. the same way it does for the
+   jumbotron). Each real top-level piece (header/panel/footer) carries
+   its own font-family/color directly instead of inheriting from a
+   parent that no longer (and structurally never actually did) wrap
+   them. .brdn-terminal-up/-down replace the old .up/.down (which used
+   to rely on that same non-functional parent scoping) — a brighter,
+   more clinical green/red than this app's normal market-up/market-
+   down, applied directly wherever needed instead of via inheritance.
    No animation/transition here at all — theme.py's own global kill
    switch would just neuter it anyway (see this file's "Animations
    removed" note), so it's left out rather than shipped as dead code. */
-.brdn-terminal {
-    position: fixed;
-    inset: 0;
-    z-index: 500;
-    background: #000;
-    color: #E8E8E0;
-    font-family: "SF Mono", "Menlo", "Consolas", "Roboto Mono", monospace;
-    padding: 1.1rem 1.6rem 0.9rem;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    gap: 0.7rem;
-}
-.brdn-terminal .up { color: #00FF7F; }
-.brdn-terminal .down { color: #FF3B30; }
+.brdn-terminal-up { color: #00FF7F; }
+.brdn-terminal-down { color: #FF3B30; }
 .brdn-terminal-header {
     display: flex;
     align-items: baseline;
@@ -3300,6 +3313,9 @@ html, body, [class*="css"] {
     padding-bottom: 0.6rem;
     font-size: 1.15rem;
     font-variant-numeric: tabular-nums;
+    font-family: "SF Mono", "Menlo", "Consolas", "Roboto Mono", monospace;
+    color: #E8E8E0;
+    margin: 0 0 0.7rem;
 }
 .brdn-terminal-ticker {
     color: #FF9F0A;
@@ -3333,6 +3349,16 @@ html, body, [class*="css"] {
     height: 100%;
     box-sizing: border-box;
     overflow: hidden;
+    font-family: "SF Mono", "Menlo", "Consolas", "Roboto Mono", monospace;
+    color: #E8E8E0;
+    /* Real spacing between st.columns() ROWS — each row of panels is
+       its own separate Streamlit element now (no flex-column parent
+       providing gap across rows the way the old, non-functional
+       wrapper's CSS implied); bottom margin here is what actually
+       creates that spacing. Columns WITHIN one row still align by
+       height normally (a real st.columns() layout primitive, unlike
+       the old wrapper div — this part was never actually broken). */
+    margin-bottom: 0.7rem;
 }
 .brdn-terminal-label {
     color: #FF9F0A;
@@ -3363,12 +3389,12 @@ html, body, [class*="css"] {
     white-space: normal;
 }
 .brdn-terminal-footer {
-    margin-top: auto;
     text-align: center;
     color: #5A5A50;
     font-size: 0.7rem;
     letter-spacing: 0.08em;
     padding-top: 0.4rem;
+    font-family: "SF Mono", "Menlo", "Consolas", "Roboto Mono", monospace;
 }
 
 /* Today page's agenda only — same news-feed-row shape the News page
