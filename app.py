@@ -759,12 +759,11 @@ components.html(
     // bottom of the script — confirmed live this session, see
     // _email_clause/_portfolio_clause's own budget-clock comments), so
     // ageSec here is a direct, honest staleness measurement with no
-    // "did the value change" indirection needed. 90s (about 9 missed
-    // ticks) rather than reloading the instant it crosses the
-    // Stalled/60s display threshold — real jitter from a source
-    // occasionally using its own full per-tick budget shouldn't
-    // trigger a reload, only a staleness that's clearly not just a
-    // slow tick. Two independent watchdogs on two different signals,
+    // "did the value change" indirection needed. Reload threshold and
+    // the Slow/Stalled display bands themselves — see the "drops into
+    // the red quite often" fix further down for the real-world reason
+    // these ended up much looser than the nominal 10s cadence would
+    // suggest. Two independent watchdogs on two different signals,
     // deliberately not merged into one — if either has a blind spot
     // the other still catches it.
     //
@@ -785,6 +784,28 @@ components.html(
     // tsEl (always present); dot/text are read separately afterward and
     // only touched if they happen to exist, same as the badge's own
     // existing suppression during those two modes.
+    // Session report: "it takes a while to refresh. It drops into the
+    // red quite often... and after the red, it forces a refresh, and
+    // it goes back green again." Watched dashboard-pulse-ts live: this
+    // 10s fragment genuinely goes as long as ~60s between real ticks
+    // under normal, healthy operation, not a fluke — a real Redis-
+    // adjacent measurement earlier this app's own history independently
+    // clocked the same ~59s. Most likely cause (Streamlit gives one
+    // session only one execution slot at a time): whenever this
+    // fragment's own 10s timer fires while the outer ~65-75s
+    // st_autorefresh rerun is still mid-flight, it has to wait for that
+    // rerun to finish first — and that rerun's own documented execution
+    // time (see kiosk-stale-watchdog's own comment above) already runs
+    // up to 70s on its own. The thresholds below were calibrated
+    // assuming a reliable 10s cadence that was never actually being
+    // met — Stalled/reload at 60s/90s meant a completely healthy
+    // dashboard was routinely crossing both, forcing a reload that
+    // fixed nothing (the same contention is still there right after)
+    // and just restarted the clock until the next slow cycle repeated
+    // it. Widened with real margin over the ~60s normal case instead:
+    // Slow now covers the routine lag without escalating, Stalled/
+    // reload only fire for staleness that's clearly NOT just this
+    // fragment's own known real-world cadence.
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('dashboard-pulse-watchdog')) return;
@@ -797,7 +818,7 @@ components.html(
         "  var ts = parseFloat(tsEl.getAttribute('data-ts'));",
         "  if (!ts) return;",
         "  var ageSec = (Date.now() / 1000) - ts;",
-        "  if (ageSec >= 90) {",
+        "  if (ageSec >= 150) {",
         "    window.parent.location.reload();",
         "    return;",
         "  }",
@@ -806,10 +827,10 @@ components.html(
         "  if (!dot || !text) return;",
         "  var cls = 'good';",
         "  var label = 'Live';",
-        "  if (ageSec >= 60) {",
+        "  if (ageSec >= 90) {",
         "    cls = 'low';",
         "    label = 'Stalled';",
-        "  } else if (ageSec >= 20) {",
+        "  } else if (ageSec >= 25) {",
         "    cls = 'medium';",
         "    label = 'Slow';",
         "  }",
