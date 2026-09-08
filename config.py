@@ -196,7 +196,7 @@ YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 # another swap.
 PAGES = [
     "home", "conflicts", "news", "email", "markets", "internals", "today", "household",
-    "weather", "hourly", "radar", "sports", "scores", "portfolio", "predictions",
+    "weather", "hourly", "radar", "sports", "scores", "portfolio", "predictions", "brdn",
 ]
 PAGE_ROTATION_SECONDS = 5 * 60
 

@@ -11,6 +11,7 @@ beyond what those modules' own callers already pay for.
 from datetime import datetime
 
 import aviation_client
+import brayden_index
 import commute_client
 import market_internals
 import market_yf_client
@@ -88,6 +89,19 @@ def build_portfolio_stat_item() -> dict | None:
         return {"text": total_text, "tone": "neutral"}
     sign = "+" if pct >= 0 else ""
     return {"text": f"{total_text} ({sign}{pct:.2f}%)", "tone": "good" if pct >= 0 else "bad"}
+
+
+def build_brdn_stat_item() -> dict | None:
+    """The Brayden Index's current price + this cycle's change — visible
+    ambient from any page, not just while actually on the BRDN page
+    itself (see brayden_index.py/pages_brayden_index.py). Cheap: reads
+    already-computed state, no AI/network cost of its own."""
+    try:
+        data = brayden_index.current()
+    except Exception:
+        return None
+    arrow = "▲" if data["change"] > 0 else "▼" if data["change"] < 0 else "●"
+    return {"text": f'BRDN ${data["price"]:.2f} {arrow} {abs(data["pct_change"]):.2f}%', "tone": data["tone"]}
 
 
 def build_sports_stat_items() -> list[dict]:

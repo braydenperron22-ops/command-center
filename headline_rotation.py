@@ -37,6 +37,7 @@ from datetime import datetime
 
 import streamlit as st
 
+import brayden_index
 import commute_reminder
 import market_circuit_breaker
 import persisted_state
@@ -114,6 +115,12 @@ def _candidates(now: datetime, weather: dict | None) -> dict[str, dict]:
     bedtime = sleep_tracker.bedtime_headline_candidate(now)
     if bedtime is not None:
         out["bedtime"] = bedtime
+    # Session request: "the Brayden Index" — a genuinely big single-cycle
+    # move earns the same red-headline treatment as a circuit-breaker
+    # event. Same wiring shape as every other source here.
+    brdn_move = brayden_index.big_move_headline_candidate(now)
+    if brdn_move is not None:
+        out["brdn_move"] = brdn_move
     # Session request: "breaking news should get its own toast alert"
     # — no longer a candidate here at all. news.get_new_alerts's own
     # one-shot toast (already wired independently into app.py's toast

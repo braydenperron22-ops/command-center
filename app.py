@@ -17,6 +17,7 @@ from streamlit_autorefresh import st_autorefresh
 
 import air_quality_client
 import aviation_client
+import brayden_index
 import commute_reminder
 import cpp_payment_dates
 import data_health
@@ -39,6 +40,7 @@ import market_yf_client
 import morning_briefing
 import news
 import night_mode
+import pages_brayden_index
 import pages_conflicts
 import pages_email
 import pages_home
@@ -2031,7 +2033,7 @@ _PAGE_LABELS = {
     "home": "Home", "conflicts": "Conflicts", "news": "News", "email": "Email", "markets": "Markets",
     "internals": "Internals", "today": "Today", "household": "Household",
     "weather": "Weather", "hourly": "Hourly", "radar": "Radar", "sports": "Sports", "scores": "Scores",
-    "portfolio": "Portfolio", "predictions": "Predictions",
+    "portfolio": "Portfolio", "predictions": "Predictions", "brdn": "BRDN",
 }
 
 # Invisible on the kiosk monitor — theme.py hides .mobile-nav entirely
@@ -3155,6 +3157,18 @@ if FRED_API_KEY:
     except Exception:
         pass
 
+# Session request: "the Brayden Index" — a fictional AI-priced "stock"
+# for Brayden's own life/trajectory (see brayden_index.py's own
+# docstring). maybe_reprice owns its own hourly throttle
+# (gemini_client.generate_periodic), so this is cheap to call every
+# rerun regardless of page — same pattern as sleep_tracker.
+# maybe_push_wind_down further down. Needs `readings` (just computed
+# above) for the optional macro-regime signal fed into its prompt.
+try:
+    brayden_index.maybe_reprice(now, readings)
+except Exception:
+    pass
+
 # Session report: "the transition between pages is quite choppy...
 # different elements from different pages pop up as longer than five
 # seconds." Root cause (confirmed via a full audit of every page's own
@@ -3260,6 +3274,8 @@ with st.container(key="page_body"):
         _safe_render(pages_portfolio.render)
     elif page == "predictions":
         _safe_render(pages_predictions.render, readings, FRED_API_KEY)
+    elif page == "brdn":
+        _safe_render(pages_brayden_index.render)
     elif page == "maintenance":
         _safe_render(pages_maintenance.render)
     else:
@@ -3399,6 +3415,12 @@ def _render_bottom_ticker(now: datetime, readings: dict) -> None:
         portfolio_stat = ticker.build_portfolio_stat_item()
         if portfolio_stat:
             stats.append(portfolio_stat)
+    except Exception:
+        pass
+    try:
+        brdn_stat = ticker.build_brdn_stat_item()
+        if brdn_stat:
+            stats.append(brdn_stat)
     except Exception:
         pass
     try:
