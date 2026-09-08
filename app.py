@@ -1622,7 +1622,7 @@ components.html(
       s.id = 'brdn-jitter';
       s.textContent = [
         "setInterval(function () {",
-        "  var el = window.parent.document.getElementById('brdn-ticker-live');",
+        "  var el = document.getElementById('brdn-ticker-live');",
         "  if (!el) return;",
         "  var base = parseFloat(el.getAttribute('data-brdn-price'));",
         "  if (!base) return;",
