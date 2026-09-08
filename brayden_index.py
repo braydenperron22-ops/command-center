@@ -109,6 +109,22 @@ _expectations: str = persisted_state.load("brdn_expectations", "")
 # NEW cached string (a real new cycle) is ever applied.
 _last_applied_raw: str | None = persisted_state.load("brdn_last_applied_raw", None)
 
+# Session request: "let's do it, the quarterly notification... a copy
+# of my data on LinkedIn as well as a little verbal update... framed as
+# a quarterly employment report." No live LinkedIn/social feed exists
+# or ever will (that request was explicitly declined — automated
+# scraping/login is both against LinkedIn's own ToS and a hard no for
+# entering credentials on Brayden's behalf regardless of who's asking).
+# This is the honest middle ground actually discussed: a quarterly
+# push reminding him to pull his own LinkedIn data export and give a
+# plain-language update, which THEN gets recorded here via
+# record_employment_report — either typed straight into the dashboard
+# (pages_brayden_index.py) or relayed through Claude in chat. Real
+# calendar quarters (Jan/Apr/Jul/Oct), not TD's own fiscal quarters
+# (td_quarter_schedule.py, Feb/May/Aug/Nov) — this is meant to read as
+# an ordinary "Q1 2027" employment report, not TD-specific.
+_employment_report: dict | None = persisted_state.load("brdn_employment_report", None)
+
 if not _history:
     # The literal IPO — one point, right now, at the launch price. The
     # very next real maybe_reprice() cycle is free to move off this
@@ -189,6 +205,15 @@ def last_report() -> dict | None:
 
 def expectations() -> str:
     return _expectations
+
+
+def employment_report() -> dict | None:
+    """{"quarter_label", "summary", "filed_at"} for whatever was last
+    filed via record_employment_report, or None before the first one
+    ever lands. Read by pages_brayden_index.py to show what's on file,
+    and by quarterly_report_status to know whether THIS quarter's
+    report has already been filed."""
+    return _employment_report
 
 
 def next_reprice_estimate(night_mode_active: bool = False) -> dict:
@@ -352,6 +377,30 @@ def _gather_signals(now: datetime, readings: dict | None) -> str:
             regime_data = regime.classify(readings, confidence, credit, breadth)
             if regime_data:
                 facts.append(f"Broader macro/economic backdrop: {regime_data['narrative']}")
+    except Exception:
+        pass
+
+    try:
+        if _employment_report:
+            age_days = (now.timestamp() - _employment_report["filed_at"]) / 86400
+            quarter = _employment_report["quarter_label"]
+            summary = _employment_report["summary"]
+            if age_days <= _EMPLOYMENT_REPORT_FRESH_DAYS:
+                # Fresh — labeled explicitly as real, self-reported news
+                # so the AI weighs it the way it would any other
+                # genuinely new development, not routine background.
+                # Deliberately NOT told to treat this as automatically
+                # major — a quiet quarter with nothing real to report is
+                # itself a legitimate (small-move) outcome, same "don't
+                # force a number, let the market actually decide"
+                # principle this whole module already runs on.
+                facts.append(
+                    f"Just-filed {quarter} employment report (fresh, self-reported by "
+                    f"Brayden via his own LinkedIn export + a verbal update — weigh "
+                    f"like real news, not routine background): {summary}"
+                )
+            else:
+                facts.append(f"Last filed employment report ({quarter}, already priced in): {summary}")
     except Exception:
         pass
 
@@ -578,6 +627,97 @@ def maybe_push_morning_brief(now: datetime, readings: dict | None = None) -> Non
         ntfy_client.send(title=title, message=message, priority="default", tags="bar_chart")
     except Exception:
         pass
+
+
+# Session request: the quarterly employment report — a nudge to pull a
+# real LinkedIn data export and give a verbal update, NOT a scraper
+# (see this module's own state-block comment above for why nothing
+# automated touches LinkedIn/social accounts here). Ordinary calendar
+# quarters, fired within the first few days of Jan/Apr/Jul/Oct — same
+# "surfaced only if within N days" window discipline payday_schedule/
+# cpp_payment_dates/td_quarter_schedule already use in _gather_signals,
+# not a single exact-day check that a sleeping/redeploying kiosk could
+# silently miss entirely for the whole quarter.
+_QUARTERLY_REPORT_MONTHS = (1, 4, 7, 10)
+_QUARTERLY_REPORT_WINDOW_DAYS = 5
+_QUARTERLY_REPORT_PUSHED_KEY = "brdn_quarterly_report_pushed_quarter"
+# How long a filed report reads as fresh, newsworthy input to
+# _gather_signals before fading to quiet already-priced-in background —
+# see that function's own employment-report block below.
+_EMPLOYMENT_REPORT_FRESH_DAYS = 14
+
+
+def _quarter_label(d) -> str:
+    """d is a date or datetime — 'Q1 2027' etc, ordinary calendar
+    quarters. Deliberately separate from td_quarter_schedule's own
+    fiscal-quarter labels (Feb/May/Aug/Nov) — this is meant to read as
+    a normal employment report, not a TD-specific one."""
+    quarter_num = (d.month - 1) // 3 + 1
+    return f"Q{quarter_num} {d.year}"
+
+
+def maybe_push_quarterly_report(now: datetime) -> None:
+    """Once per real calendar quarter, in the first
+    _QUARTERLY_REPORT_WINDOW_DAYS days of Jan/Apr/Jul/Oct. Fires the
+    reminder only — filing itself always happens through
+    record_employment_report, whether typed into the dashboard or
+    relayed by Claude after Brayden reports back in chat, since there's
+    no way for this app to read what actually changed on its own."""
+    if now.month not in _QUARTERLY_REPORT_MONTHS or now.day > _QUARTERLY_REPORT_WINDOW_DAYS:
+        return
+    quarter = _quarter_label(now.date())
+    if persisted_state.load(_QUARTERLY_REPORT_PUSHED_KEY, None) == quarter:
+        return
+    # Marked before the send call, same reasoning as the morning-brief
+    # push just above — a transient ntfy failure shouldn't retry every
+    # rerun for the rest of the window.
+    persisted_state.save(_QUARTERLY_REPORT_PUSHED_KEY, quarter)
+    try:
+        ntfy_client.send(
+            title=f"BRDN {quarter} Employment Report due",
+            message=(
+                f"Time to file the {quarter} employment report for BRDN. Grab a "
+                "copy of your LinkedIn data (Settings > Data Privacy > Get a copy "
+                "of your data) and give a quick verbal rundown of what's changed — "
+                "role, comp, standing, anything career-relevant. File it on the "
+                "BRDN page, or just tell Claude and it'll get recorded — either "
+                "way it feeds straight into the next repricing."
+            ),
+            priority="default",
+            tags="briefcase",
+        )
+    except Exception:
+        pass
+
+
+def record_employment_report(summary: str, now: datetime) -> bool:
+    """Files THIS quarter's employment report — the actual content
+    (LinkedIn highlights + verbal update) landing in persisted state so
+    _gather_signals can hand it to the next repricing cycle as a fresh,
+    real signal. False (no-op) on blank input; True on a genuine file.
+    Overwrites the same quarter's own prior entry if called again
+    before the quarter rolls over (a correction/addition, not a second
+    report) rather than accumulating duplicates."""
+    global _employment_report
+    text = summary.strip()
+    if not text:
+        return False
+    _employment_report = {
+        "quarter_label": _quarter_label(now.date()),
+        "summary": text,
+        "filed_at": now.timestamp(),
+    }
+    persisted_state.save("brdn_employment_report", _employment_report)
+    return True
+
+
+def quarterly_report_status(now: datetime) -> dict:
+    """{"current_quarter", "filed_this_quarter"} — cheap, no AI/network
+    cost, for pages_brayden_index.py to show whether this quarter's
+    report is still outstanding."""
+    current_quarter = _quarter_label(now.date())
+    filed = bool(_employment_report) and _employment_report.get("quarter_label") == current_quarter
+    return {"current_quarter": current_quarter, "filed_this_quarter": filed}
 
 
 def big_move_headline_candidate(now: datetime) -> dict | None:

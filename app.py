@@ -3242,6 +3242,16 @@ try:
 except Exception:
     pass
 
+# Session request: "let's do it, the quarterly notification... framed
+# as a quarterly employment report." Reminder only — no scraping, see
+# brayden_index.py's own comment on why. maybe_push_quarterly_report
+# owns its own once-per-quarter window/dedup, same shape as the morning
+# brief just above.
+try:
+    brayden_index.maybe_push_quarterly_report(now)
+except Exception:
+    pass
+
 # Session request: "a little ticker somewhere on the main page
 # regardless of what page I'm on... visible from across the room, but
 # not obstructive... even on the night page." A plain unconditional

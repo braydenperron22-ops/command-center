@@ -12,11 +12,14 @@ app's other financial pages (Portfolio, Markets), not a separate
 visual style bolted on."""
 
 import html
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 import brayden_index
 import tiles
+from config import TIMEZONE
 
 _SENTIMENT_TONE = {"Bullish": "good", "Bearish": "bad", "Neutral": "neutral", "Mixed": "neutral"}
 _DIRECTION_COLOR = {"bullish": "#32D74B", "bearish": "#FF6961"}
@@ -173,3 +176,60 @@ def render() -> None:
         "</div>",
         unsafe_allow_html=True,
     )
+
+    _render_employment_report_section()
+
+
+def _render_employment_report_section() -> None:
+    """Session request: "let's do it, the quarterly notification... a
+    copy of my data on LinkedIn as well as a little verbal update...
+    framed as a quarterly employment report." No scraping happens
+    anywhere (see brayden_index.py's own comment on why) — this is the
+    self-serve filing spot the quarterly ntfy nudge points at. What's
+    typed here lands in brayden_index.record_employment_report and
+    feeds the NEXT repricing cycle as a real, fresh signal (see
+    _gather_signals' own employment-report block) — filing it doesn't
+    force a big move on its own; the market still decides whether
+    what's actually in it is genuinely new news or nothing much
+    changed, same as everything else BRDN reacts to."""
+    now = datetime.now(ZoneInfo(TIMEZONE))
+    status = brayden_index.quarterly_report_status(now)
+    report = brayden_index.employment_report()
+    quarter = html.escape(status["current_quarter"])
+
+    if status["filed_this_quarter"] and report:
+        filed_at = datetime.fromtimestamp(report["filed_at"], tz=ZoneInfo(TIMEZONE))
+        filed_label = f"{filed_at.strftime('%b')} {filed_at.day}"
+        st.markdown(
+            f'<div class="tile" style="margin-top:0.75rem;">'
+            f'<div class="tile-label">{quarter} EMPLOYMENT REPORT — ON FILE</div>'
+            f'<div class="tile-prev" style="margin-top:0.4rem; line-height:1.5;">{html.escape(report["summary"])}</div>'
+            f'<div class="tile-prev" style="margin-top:0.4rem; opacity:0.6;">Filed {filed_label} — '
+            "editing below re-files this quarter's report.</div>"
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f'<div class="tile" style="margin-top:0.75rem;">'
+            f'<div class="tile-label">{quarter} EMPLOYMENT REPORT — OUTSTANDING</div>'
+            '<div class="tile-prev" style="margin-top:0.4rem; line-height:1.5;">'
+            "Pull a copy of your LinkedIn data (Settings &gt; Data Privacy &gt; Get a copy of "
+            "your data) and summarize what's changed — role, comp, standing, anything "
+            "career-relevant. Nothing changed this quarter is a fine answer too."
+            "</div></div>",
+            unsafe_allow_html=True,
+        )
+
+    with st.form("brdn_employment_report_form", clear_on_submit=True):
+        summary = st.text_area(
+            f"{status['current_quarter']} update",
+            placeholder="e.g. Promoted to Senior Advisor, comp bump, hit Q3 targets, LinkedIn shows two new endorsements...",
+            label_visibility="collapsed",
+        )
+        submitted = st.form_submit_button("File report")
+    if submitted:
+        if brayden_index.record_employment_report(summary, now):
+            st.success(f"{status['current_quarter']} report filed — folded into the next repricing.")
+        else:
+            st.warning("Enter something before filing.")
