@@ -52,6 +52,8 @@ import payday_schedule
 import persisted_state
 import portfolio_client
 import regime
+import road_conditions
+import road_conditions_511
 import td_quarter_schedule
 import wildfire_client
 from config import TIMEZONE, USER_PROFILE
@@ -430,6 +432,37 @@ def _gather_signals(now: datetime, readings: dict | None) -> str:
         wildfire = wildfire_client.nearest_wildfire()
         if wildfire:
             facts.append(f"Nearest active wildfire: {wildfire['distance_km']:.0f} km away")
+    except Exception:
+        pass
+    try:
+        # Session request: "literally every single possible source that
+        # we could have should be fed to the AI... outside conditions...
+        # the opportunity cost." Two real, already-plumbed-elsewhere-in-
+        # this-app signals that genuinely belong here — not "every file
+        # in the repo," picked because they're already directly tied to
+        # Brayden's actual day, same bar every other fact in this
+        # function already clears (weather/AQI/wildfire above). Left
+        # OUT on purpose: generic world/conflict news and broad macro
+        # headlines (regime.classify's own narrative below already
+        # covers "broader backdrop" — this module is deliberately NOT a
+        # macro news ticker), email content (privacy-sensitive enough to
+        # want an explicit yes rather than assume), and sports
+        # fandom (a real stretch for serious "what affects his actual
+        # day" reasoning, versus vibes) — flagged to Brayden rather than
+        # silently included or excluded.
+        road_issues = road_conditions_511.road_issues_near_commute(now)
+        if road_issues:
+            issue = road_issues[0]
+            roadway = road_conditions_511.readable_roadway(issue["roadway"]) or "a nearby road"
+            facts.append(f"Active road issue on his commute route: {roadway} — {issue['type']}")
+    except Exception:
+        pass
+    try:
+        weather_for_ice = weather_client.fetch_weather()
+        if weather_for_ice and road_conditions.ice_risk(
+            weather_for_ice["temp_c"], weather_for_ice.get("forecast_low_c"), weather_for_ice
+        ):
+            facts.append("Black ice / slick road risk right now — a real safety factor for his commute today")
     except Exception:
         pass
     try:
