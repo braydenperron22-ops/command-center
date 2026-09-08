@@ -77,7 +77,19 @@ def render() -> None:
         # this is meant to be the "signature feature" centerpiece, same
         # zero-dependency inline-SVG technique as tiles.sparkline_svg
         # (see that function's own docstring), just sized for it.
-        sparkline_html = tiles.sparkline_svg(price_history, trend_tone, width=640, height=140)
+        # Session request: "hard to see on the dark page... brighter
+        # red, or make the line thicker." Brighter variants of the same
+        # good/bad hues everywhere else on this page already uses (the
+        # hero tile, catalyst dots) — not a new color family, just more
+        # luminant — plus a visibly thicker stroke. Passed explicitly
+        # so only THIS chart changes; every other sparkline_svg caller
+        # in the app (portfolio tiles, etc.) keeps its original quiet
+        # small-tile look untouched.
+        _BRDN_CHART_COLOR = {"good": "#3DFF7A", "bad": "#FF5C4D"}
+        sparkline_html = tiles.sparkline_svg(
+            price_history, trend_tone, width=640, height=140,
+            color=_BRDN_CHART_COLOR.get(trend_tone), stroke_width=3.0,
+        )
 
     sentiment = data["sentiment"]
     sentiment_tone = _SENTIMENT_TONE.get(sentiment, "neutral")

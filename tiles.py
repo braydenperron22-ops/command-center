@@ -33,8 +33,18 @@ def _tone(classification: str, good_direction: str | None) -> tuple[str, str]:
     return ("improving", "good") if favorable else ("worsening", "bad")
 
 
-def sparkline_svg(history: list[float], tone: str, width: int = 72, height: int = 28) -> str:
-    """A quiet, minimal trend line — no axes/ticks/labels, just the shape."""
+def sparkline_svg(
+    history: list[float], tone: str, width: int = 72, height: int = 28,
+    color: str | None = None, stroke_width: float = 1.75,
+) -> str:
+    """A quiet, minimal trend line — no axes/ticks/labels, just the shape.
+    `color`/`stroke_width` default to the original small-inline-tile
+    look (SPARKLINE_COLOR lookup, 1.75px) so every existing caller is
+    completely unaffected — only a caller that explicitly passes its
+    own values (see pages_brayden_index.py's own big centerpiece chart,
+    session request: "make it a little brighter... hard to see on the
+    dark page... brighter red, or make the line thicker") gets
+    something different."""
     if not history or len(history) < 2:
         return ""
     lo, hi = min(history), max(history)
@@ -43,10 +53,10 @@ def sparkline_svg(history: list[float], tone: str, width: int = 72, height: int 
     points = " ".join(
         f"{i * step:.1f},{height - ((v - lo) / span) * height:.1f}" for i, v in enumerate(history)
     )
-    color = SPARKLINE_COLOR.get(tone, "#9BA0AC")
+    resolved_color = color or SPARKLINE_COLOR.get(tone, "#9BA0AC")
     return (
         f'<svg class="sparkline" viewBox="0 0 {width} {height}" preserveAspectRatio="none">'
-        f'<polyline points="{points}" fill="none" stroke="{color}" stroke-width="1.75" '
+        f'<polyline points="{points}" fill="none" stroke="{resolved_color}" stroke-width="{stroke_width}" '
         f'stroke-linecap="round" stroke-linejoin="round"/></svg>'
     )
 
