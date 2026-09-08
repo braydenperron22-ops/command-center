@@ -43,7 +43,6 @@ import calendar_client
 import commute_reminder
 import cpp_payment_dates
 import ec_alerts
-import email_client
 import fuel_price_client
 import gemini_client
 import market_internals
@@ -375,6 +374,26 @@ def _gather_signals(now: datetime, readings: dict | None) -> str:
         # one (built for a different consumer, morning_briefing's
         # hobby-pattern inference) — subject+sender only here too, never
         # full message content.
+        #
+        # Imported HERE, not at module level — real live incident:
+        # top-level `import email_client` pulled its own deep transitive
+        # chain (email_client -> groq_client -> gemini_client ->
+        # sports_alerts -> scores_client -> data_health) into
+        # brayden_index's own import, which app.py imports EARLIER
+        # (line ~20) than its own existing top-level `import
+        # email_client` (line ~25) already does elsewhere. That handful
+        # of lines earlier was enough to newly hit what's almost
+        # certainly a Streamlit Cloud cold-start filesystem race (the
+        # same unreproducible-locally KeyError-at-import pattern seen
+        # twice before this session on two different unrelated modules)
+        # — confirmed live: the whole app went down, not just this
+        # page, immediately after this import was added, and recovered
+        # once it moved here. A local import costs nothing (Python
+        # caches the module after the first real import — app.py's own
+        # already runs by the time any page actually calls this) and
+        # keeps this module's own import-time footprint exactly what it
+        # was before this feature existed.
+        import email_client
         email_summary = email_client.morning_brief_summary(now)
         if email_summary:
             facts.append(f"Email: {email_summary}")
