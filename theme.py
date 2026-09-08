@@ -636,6 +636,21 @@ html, body, [class*="css"] {
     margin-bottom: 0;
 }
 
+/* BRDN's own price-history chart — same "shared .sparkline class is
+   hard-capped at the small inline-tile size" override shape as
+   .market-sparkline-wrap above, just sized as this page's real
+   centerpiece rather than a secondary chart lower in a tile. Session
+   request: "make the price history... fit into the slide a little bit
+   better." margin-bottom:0 for the same reason .market-sparkline-wrap
+   sets it — the base .sparkline's own small-tile spacing has no
+   business here. */
+.brdn-chart-wrap .sparkline {
+    width: 100%;
+    height: 12rem;
+    opacity: 1;
+    margin-bottom: 0;
+}
+
 /* Market Internals: the Confidence Index is the headline of that page,
    not a peer to the three ratio tiles below it — a much larger value
    (bigger than the clock, since this is the one thing that page exists
@@ -3250,6 +3265,123 @@ html, body, [class*="css"] {
 }
 .brdn-ticker.market-up { color: #32D74B; }
 .brdn-ticker.market-down { color: #FF6961; }
+
+/* pages_brdn_terminal.py — session request: "bring up the full
+   institutional analysis on my stock in a Bloomberg terminal style,
+   kinda like the Jumbotron, but for a Bloomberg terminal." Deliberately
+   its own visual language, not this app's usual glass-card look: flat
+   black, hard 1px borders, monospace, amber labels — Bloomberg's own
+   real signature palette. .up/.down are scoped inside .brdn-terminal
+   only (a brighter, more clinical green/red than this app's normal
+   market-up/market-down) so nothing outside this one page is touched.
+   No animation/transition here at all — theme.py's own global kill
+   switch would just neuter it anyway (see this file's "Animations
+   removed" note), so it's left out rather than shipped as dead code. */
+.brdn-terminal {
+    position: fixed;
+    inset: 0;
+    z-index: 500;
+    background: #000;
+    color: #E8E8E0;
+    font-family: "SF Mono", "Menlo", "Consolas", "Roboto Mono", monospace;
+    padding: 1.1rem 1.6rem 0.9rem;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+}
+.brdn-terminal .up { color: #00FF7F; }
+.brdn-terminal .down { color: #FF3B30; }
+.brdn-terminal-header {
+    display: flex;
+    align-items: baseline;
+    gap: 1.3rem;
+    border-bottom: 1px solid #FF9F0A;
+    padding-bottom: 0.6rem;
+    font-size: 1.15rem;
+    font-variant-numeric: tabular-nums;
+}
+.brdn-terminal-ticker {
+    color: #FF9F0A;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+.brdn-terminal-price {
+    font-size: 1.6rem;
+    font-weight: 700;
+}
+.brdn-terminal-tag {
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    opacity: 0.9;
+}
+.brdn-terminal-clock {
+    margin-left: auto;
+    font-size: 0.85rem;
+}
+.brdn-terminal-dim {
+    color: #8A8A82;
+    font-size: 0.85rem;
+}
+.brdn-terminal-panel {
+    border: 1px solid #3A3A32;
+    background: #0A0A08;
+    padding: 0.75rem 0.9rem;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+.brdn-terminal-label {
+    color: #FF9F0A;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.45rem;
+}
+.brdn-terminal-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.8rem;
+    padding: 0.28rem 0;
+    border-bottom: 1px solid #201F1A;
+    font-size: 0.92rem;
+    font-variant-numeric: tabular-nums;
+}
+.brdn-terminal-row:last-child { border-bottom: none; }
+.brdn-terminal-quote {
+    font-style: italic;
+    font-size: 0.92rem;
+    line-height: 1.45;
+    color: #C8C8C0;
+}
+.brdn-terminal-wrap {
+    line-height: 1.4;
+    white-space: normal;
+}
+.brdn-terminal-signals {
+    max-height: 11rem;
+    overflow: hidden;
+}
+.brdn-terminal-signal-line {
+    font-size: 0.78rem;
+    color: #B8B8AE;
+    padding: 0.15rem 0;
+    border-bottom: 1px solid #161510;
+    white-space: normal;
+    line-height: 1.35;
+}
+.brdn-terminal-footer {
+    margin-top: auto;
+    text-align: center;
+    color: #5A5A50;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    padding-top: 0.4rem;
+}
 
 /* Today page's agenda only — same news-feed-row shape the News page
    uses for its own (much longer, faster-scanned) list, but scaled up

@@ -41,6 +41,7 @@ import morning_briefing
 import news
 import night_mode
 import pages_brayden_index
+import pages_brdn_terminal
 import pages_conflicts
 import pages_email
 import pages_home
@@ -107,9 +108,13 @@ theme.inject()
 # watching a game outside the automatic takeover window (see
 # sports_alerts.takeover_state). Press D the same way for the
 # maintenance/diagnostics page (pages_maintenance.py) — session
-# request: "add a maintenance tab... on ours by pressing D." Both keys
-# share one toggle rule: set ?page= to that page, or clear it if that
-# page's already showing.
+# request: "add a maintenance tab... on ours by pressing D." Press P
+# the same way for the Bloomberg-terminal-style BRDN deep-dive
+# (pages_brdn_terminal.py) — session request: "make a shortcut for p...
+# bring up the full institutional analysis on my stock in a Bloomberg
+# terminal style, kinda like the Jumbotron." All three keys share one
+# toggle rule: set ?page= to that page, or clear it if that page's
+# already showing.
 #
 # Press S to open the screen picker (session request: "bind the S key
 # to a selection menu where i can pick any of the screens we've built
@@ -455,7 +460,8 @@ components.html(
         "    window.kioskTogglePicker();",
         "    return;",
         "  }",
-        "  var targetPage = key === 'j' ? 'jumbotron' : key === 'd' ? 'maintenance' : null;",
+        "  var targetPage = key === 'j' ? 'jumbotron' : key === 'd' ? 'maintenance' : "
+          + "key === 'p' ? 'terminal' : null;",
         "  if (!targetPage) return;",
         "  var url = new URL(window.location.href);",
         "  if (url.searchParams.get('page') === targetPage) {",
@@ -1854,6 +1860,12 @@ try:
         # as jumbotron. Session request: "add a maintenance tab... by
         # pressing D." See pages_maintenance.py.
         page = "maintenance"
+    elif _requested_page == "terminal":
+        # Same "hidden unless asked for" treatment as jumbotron/
+        # maintenance — session request: "make a shortcut for p...
+        # bring up the full institutional analysis on my stock in a
+        # Bloomberg terminal style." See pages_brdn_terminal.py.
+        page = "terminal"
     elif _requested_page in PAGES:
         page = _requested_page
     elif _takeover or _ufc_takeover:
@@ -1874,6 +1886,14 @@ except Exception:
 # the hero row instead of overlaying the board. The toast queue, ticker
 # and Govee sync still run as normal.
 _jumbotron_active = page == "jumbotron" and (_takeover is not None or _ufc_takeover is not None)
+# The BRDN terminal owns the entire screen too, same reasoning as the
+# jumbotron just above — its own header/footer chrome (pages_brdn_
+# terminal.py) replaces the normal hero row entirely, not stacks above
+# it. Deliberately its own flag, not folded into _jumbotron_active
+# (which means "a live game is genuinely happening" far beyond just
+# hero-row suppression — Govee lights, the AI game-time pause, etc. —
+# none of which the terminal page has anything to do with).
+_terminal_active = page == "terminal"
 # Separate from _jumbotron_active above on purpose — that one is "is
 # THIS session's screen currently showing the board," which is exactly
 # what the screen-dimming/top-alert suppression above needs, but wrong
@@ -2134,7 +2154,7 @@ _nav_items = "".join(
     f'href="?page={key}">{_PAGE_LABELS[key]}</a>'
     for key in PAGES
 )
-_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES and _requested_page != "maintenance" else ""
+_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES and _requested_page not in ("maintenance", "terminal") else ""
 # Separate from the PAGES loop above (same reasoning as jumbotron —
 # not part of the normal rotation, so it doesn't belong in that list).
 # Session request: "add a maintenance tab for the mobile version."
@@ -2167,7 +2187,7 @@ st.markdown(
 # route around.
 _picker_open = st.query_params.get("picker") == "open"
 _picker_entries = [(key, _PAGE_LABELS[key]) for key in PAGES] + [
-    ("jumbotron", "Jumbotron"), ("maintenance", "Dev / Maintenance"),
+    ("jumbotron", "Jumbotron"), ("maintenance", "Dev / Maintenance"), ("terminal", "BRDN Terminal"),
 ]
 _picker_tiles = "".join(
     f'<a class="screen-picker-item{" screen-picker-item-active" if key == page else ""}" href="?page={key}">{label}</a>'
@@ -2178,7 +2198,7 @@ _picker_tiles = "".join(
 # "?": _requested_page already holds the real ?page= value (or None
 # for auto-rotation), same source the mobile-nav's own "Auto" link
 # above is built from.
-_close_href = f"?page={_requested_page}" if _requested_page in PAGES or _requested_page in ("jumbotron", "maintenance") else "?"
+_close_href = f"?page={_requested_page}" if _requested_page in PAGES or _requested_page in ("jumbotron", "maintenance", "terminal") else "?"
 st.markdown(
     f'<div class="screen-picker{" screen-picker-open" if _picker_open else ""}">'
     f'<a class="screen-picker-backdrop" href="{_close_href}"></a>'
@@ -2213,7 +2233,7 @@ st.markdown(
 # animation-name always forces a real restart even on the same node,
 # which makes the freshly computed delay actually take effect each
 # time, while the browser still tweens smoothly in between reruns.
-if _requested_page not in PAGES and not _jumbotron_active and not _night_mode_active and page != "maintenance":
+if _requested_page not in PAGES and not _jumbotron_active and not _night_mode_active and page not in ("maintenance", "terminal"):
     _, _rotation_elapsed, _rotation_page_seconds = _scheduled_page(_rotation_epoch)
     st.session_state["_rotation_bar_tick"] = st.session_state.get("_rotation_bar_tick", 0) + 1
     _bar_variant = "a" if st.session_state["_rotation_bar_tick"] % 2 == 0 else "b"
@@ -2459,7 +2479,7 @@ try:
     # base theme's own backgroundColor is already solid black, so
     # simply not painting a sky over it gives the jumbotron exactly the
     # always-dark background it wants for free.
-    if not _jumbotron_active and not _night_mode_active:
+    if not _jumbotron_active and not _night_mode_active and not _terminal_active:
         st.markdown(
             sky_style(category, phase, bg_fade_from, bg_blend, now, weather_temp_extreme),
             unsafe_allow_html=True,
@@ -3054,7 +3074,7 @@ if weather:
 # alerts_bar.render_storm_headline/render, news.render_top_alert_bar) —
 # see headline_rotation.py's own module docstring for the full story.
 try:
-    if not _jumbotron_active and not _night_mode_active:
+    if not _jumbotron_active and not _night_mode_active and not _terminal_active:
         _weather_alert_shown = headline_rotation.render(now, weather)
 except Exception:
     pass
@@ -3064,7 +3084,7 @@ except Exception:
 # get ready to go timers" (see sports_alerts.render_game_countdown).
 # Skipped during a takeover: the jumbotron's own board carries a far
 # bigger countdown for the exact same game, and two would just compete.
-if not _jumbotron_active and not _night_mode_active:
+if not _jumbotron_active and not _night_mode_active and not _terminal_active:
     try:
         sports_alerts.render_game_countdown(now)
     except Exception:
@@ -3103,7 +3123,7 @@ except Exception:
 # list and what each one actually means. Page-independent like the
 # pinned headlines above; suppressed during a takeover for the same
 # reason they are.
-if not _jumbotron_active and not _night_mode_active:
+if not _jumbotron_active and not _night_mode_active and not _terminal_active:
     try:
         _ai_rows_html = "".join(
             f"""<div class="ai-status-row">
@@ -3140,7 +3160,7 @@ if not _jumbotron_active and not _night_mode_active:
 # The jumbotron brings its own marquee (clock, date, weather), so the
 # standard hero row would just be a duplicate stacked above it. Same
 # reasoning for night mode — night_mode.py brings its own clock/weather.
-if not _jumbotron_active and not _night_mode_active:
+if not _jumbotron_active and not _night_mode_active and not _terminal_active:
     # Reserves the real vertical space the unified headline-rotation
     # slot occupies (theme.py's .headline-rotation, fixed at top:18px)
     # so the clock/weather row renders below it instead of underneath
@@ -3180,7 +3200,7 @@ try:
     data_health.notify_stale(_stale_sources)
 except Exception:
     pass
-if _stale_sources and not _jumbotron_active and not _night_mode_active:
+if _stale_sources and not _jumbotron_active and not _night_mode_active and not _terminal_active:
     _stale_tint = "rgba(255,105,97,0.22)"
     _stale_bg = f"linear-gradient({_stale_tint}, {_stale_tint}), rgba(12,12,16,0.72)"
     _stale_badges = "".join(
@@ -3198,7 +3218,7 @@ if _stale_sources and not _jumbotron_active and not _night_mode_active:
 # morning-routine summary has no business on a live scoreboard, and
 # takeovers only ever happen at game time anyway. Same for night mode
 # — a morning-routine summary has no business on the nightstand clock.
-if not _jumbotron_active and not _night_mode_active:
+if not _jumbotron_active and not _night_mode_active and not _terminal_active:
     try:
         morning_briefing.render(now, weather, air_quality)
     except Exception:
@@ -3435,6 +3455,8 @@ with st.container(key="page_body"):
         _safe_render(pages_brayden_index.render)
     elif page == "maintenance":
         _safe_render(pages_maintenance.render)
+    elif page == "terminal":
+        _safe_render(pages_brdn_terminal.render, now, readings)
     else:
         # Every other branch above has a fallback (a real page render,
         # or _safe_render's own error tile) — this is the one path with

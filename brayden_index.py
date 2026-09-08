@@ -279,6 +279,20 @@ def next_reprice_estimate(night_mode_active: bool = False) -> dict:
     return {"seconds_until": seconds_until, "pct_elapsed": pct_elapsed, "due": seconds_until <= 0}
 
 
+def current_signals(now: datetime, readings: dict | None = None) -> str:
+    """Public read-only wrapper around _gather_signals — the exact same
+    fact sheet the AI reasons from this cycle, for a caller that wants
+    to actually SHOW it (pages_brdn_terminal.py's own "raw signals"
+    panel) rather than just consume it in a prompt. Same transparency
+    principle "what the market believes"/"recent track record" already
+    run on, just one layer closer to the metal. `readings` optional
+    (None just quietly skips the one macro/regime fact that needs it —
+    see _gather_signals' own try/except around that block) since a page
+    calling this typically won't have FRED readings on hand the way
+    app.py's own top-level scope does."""
+    return _gather_signals(now, readings)
+
+
 def _gather_signals(now: datetime, readings: dict | None) -> str:
     """A plain bulleted fact block, same shape as morning_briefing's own
     fact strings — each source independently guarded so one failure
@@ -1028,6 +1042,14 @@ def _next_report_due(today: date) -> dict:
     candidates += [date(today.year + 1, m, 1) for m in _QUARTERLY_REPORT_MONTHS]
     due = min(c for c in candidates if c > today)
     return {"date": due, "days_until": (due - today).days, "quarter_label": _quarter_label(due)}
+
+
+def next_report_due(today: date) -> dict:
+    """Public wrapper around _next_report_due — pages_brdn_terminal.py's
+    own "next Q report" readout, so it doesn't reach into a leading-
+    underscore internal directly. See that function's own docstring for
+    the actual semantics."""
+    return _next_report_due(today)
 
 
 def maybe_push_quarterly_report(now: datetime) -> None:

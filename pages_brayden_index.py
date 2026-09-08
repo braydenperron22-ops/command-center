@@ -211,9 +211,22 @@ def render() -> None:
             unsafe_allow_html=True,
         )
     with chart_col:
+        # Session request: "make the price history or the chart more
+        # visible. It's so tiny... make it fit into the slide a little
+        # bit better." Real cause, not a sizing tweak on the SVG itself
+        # (already 640x140 with preserveAspectRatio=none, already
+        # brighter/thicker per the earlier request): theme.py's shared
+        # .sparkline class hard-codes width:4.5rem/height:1.75rem for
+        # every OTHER caller's small inline-tile look (portfolio tiles,
+        # etc.), which was silently shrinking this chart down to that
+        # same tiny size regardless of its own viewBox. brdn-chart-wrap
+        # scopes a real full-width/tall override to just this one chart
+        # (same pattern theme.py's own .market-sparkline-wrap already
+        # uses for Markets' 1-year chart) instead of touching the shared
+        # class every small tile still depends on.
         st.markdown(
             f'<div class="tile"><div class="tile-label">PRICE HISTORY</div>'
-            f'<div style="margin-top:0.4rem;">{sparkline_html}</div></div>',
+            f'<div class="brdn-chart-wrap">{sparkline_html}</div></div>',
             unsafe_allow_html=True,
         )
 
