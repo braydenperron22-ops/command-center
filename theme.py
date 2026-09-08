@@ -3362,18 +3362,6 @@ html, body, [class*="css"] {
     line-height: 1.4;
     white-space: normal;
 }
-.brdn-terminal-signals {
-    max-height: 11rem;
-    overflow: hidden;
-}
-.brdn-terminal-signal-line {
-    font-size: 0.78rem;
-    color: #B8B8AE;
-    padding: 0.15rem 0;
-    border-bottom: 1px solid #161510;
-    white-space: normal;
-    line-height: 1.35;
-}
 .brdn-terminal-footer {
     margin-top: auto;
     text-align: center;

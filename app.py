@@ -3456,7 +3456,7 @@ with st.container(key="page_body"):
     elif page == "maintenance":
         _safe_render(pages_maintenance.render)
     elif page == "terminal":
-        _safe_render(pages_brdn_terminal.render, now, readings)
+        _safe_render(pages_brdn_terminal.render, now)
     else:
         # Every other branch above has a fallback (a real page render,
         # or _safe_render's own error tile) — this is the one path with

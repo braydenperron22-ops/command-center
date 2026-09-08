@@ -17,9 +17,13 @@ purpose-built instrument" contrast the jumbotron already has against
 the rest of this app. Every number here is read straight from
 brayden_index's own already-computed state (current()/history()/
 last_report()/report_history()/track_record_summary()/employment_
-report()/quarterly_report_status()) plus current_signals() for the raw
-fact sheet panel — no new computation of its own, same read-only
-contract pages_brayden_index.render() already has."""
+report()/quarterly_report_status()) — no new computation of its own,
+same cheap read-only contract pages_brayden_index.render() already has.
+A "raw signal feed" panel (brayden_index.current_signals(), the actual
+fact sheet the AI reasons from) was tried and cut — see the comment
+where it used to sit for why: it re-ran the ENTIRE live fact-gathering
+pipeline (real network calls) on every page view, turning a page meant
+to feel instant into a 60-100s+ load, confirmed live."""
 
 import html
 from datetime import datetime
@@ -71,7 +75,7 @@ def _history_line(e: dict) -> str:
     )
 
 
-def render(now: datetime, readings: dict | None = None) -> None:
+def render(now: datetime) -> None:
     data = brayden_index.current()
     price_history = brayden_index.history()
     report = brayden_index.last_report()
@@ -81,7 +85,6 @@ def render(now: datetime, readings: dict | None = None) -> None:
     employment = brayden_index.employment_report()
     q_status = brayden_index.quarterly_report_status(now)
     next_report = brayden_index.next_report_due(now.date())
-    signals = brayden_index.current_signals(now, readings)
     reprice = brayden_index.next_reprice_estimate()
 
     tone = data["tone"]
@@ -175,20 +178,26 @@ def render(now: datetime, readings: dict | None = None) -> None:
             unsafe_allow_html=True,
         )
 
-    col6, col7 = st.columns([1, 1])
-    with col6:
-        rows_html = "".join(_history_line(e) for e in reversed(entries)) or '<div class="brdn-terminal-dim">No cycle history yet.</div>'
-        st.markdown(
-            f'<div class="brdn-terminal-panel"><div class="brdn-terminal-label">TRACK RECORD (LAST {len(entries)})</div>{rows_html}</div>',
-            unsafe_allow_html=True,
-        )
-    with col7:
-        signal_lines = "".join(f'<div class="brdn-terminal-signal-line">{html.escape(s)}</div>' for s in signals.splitlines())
-        st.markdown(
-            f'<div class="brdn-terminal-panel"><div class="brdn-terminal-label">RAW SIGNAL FEED (LIVE)</div>'
-            f'<div class="brdn-terminal-signals">{signal_lines}</div></div>',
-            unsafe_allow_html=True,
-        )
+    # Session incident: a "RAW SIGNAL FEED" panel here used to call
+    # brayden_index.current_signals() — which re-runs the ENTIRE fact-
+    # gathering pipeline (portfolio, two real TomTom calls via commute
+    # status, a live email IMAP fetch measured at ~16s alone, market
+    # data, road conditions...) fresh, live, on every single page view.
+    # Every other BRDN page view is explicitly a cheap, no-network read
+    # of already-computed state (see pages_brayden_index.py's own
+    # module docstring) — this broke that contract and made a hotkey-
+    # triggered page that should feel instant take 60-100s+ to render,
+    # confirmed live (timed each real call locally: commute_status
+    # alone ~7s, email alone ~16s). Cut entirely rather than cached —
+    # the transparency idea was nice but not worth that cost for a page
+    # meant to be instant; the normal BRDN page's own "what the market
+    # believes" section already covers the same spirit far more
+    # cheaply.
+    rows_html = "".join(_history_line(e) for e in reversed(entries)) or '<div class="brdn-terminal-dim">No cycle history yet.</div>'
+    st.markdown(
+        f'<div class="brdn-terminal-panel"><div class="brdn-terminal-label">TRACK RECORD (LAST {len(entries)})</div>{rows_html}</div>',
+        unsafe_allow_html=True,
+    )
 
     st.markdown(
         '<div class="brdn-terminal-footer">SIMULATED INSTRUMENT — FOR ENTERTAINMENT ONLY — NOT A REAL SECURITY — '
