@@ -141,6 +141,32 @@ def expectations() -> str:
     return _expectations
 
 
+def next_reprice_estimate() -> dict:
+    """{"seconds_until", "pct_elapsed", "due"} — an ESTIMATE, not a
+    guarantee. Session request: "when does the AI reprice... a little
+    gauge to show when the next reprice is." The real next cycle fires
+    on the first outer rerun after REFRESH_SECONDS has genuinely
+    elapsed since the last one (see maybe_reprice/gemini_client.
+    generate_periodic) — that check only runs on the outer script's own
+    ~65-120s rerun cadence, so the real cycle can land up to a minute
+    or two after this estimate's own zero-mark, never to the literal
+    second. Anchored to the last successfully APPLIED cycle
+    (_last_report["updated_at"]) — not generate_periodic's own internal
+    cache timestamp, which is captured a moment earlier in the same
+    call and close enough not to matter for a countdown display — or
+    the IPO timestamp if no real cycle has landed yet."""
+    if _last_report is not None:
+        anchor = _last_report["updated_at"]
+    elif _history:
+        anchor = _history[0]["ts"]
+    else:
+        anchor = time.time()
+    elapsed = time.time() - anchor
+    seconds_until = max(0.0, REFRESH_SECONDS - elapsed)
+    pct_elapsed = min(1.0, max(0.0, elapsed / REFRESH_SECONDS)) if REFRESH_SECONDS else 1.0
+    return {"seconds_until": seconds_until, "pct_elapsed": pct_elapsed, "due": seconds_until <= 0}
+
+
 def _gather_signals(now: datetime, readings: dict | None) -> str:
     """A plain bulleted fact block, same shape as morning_briefing's own
     fact strings — each source independently guarded so one failure

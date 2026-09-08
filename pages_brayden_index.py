@@ -68,6 +68,28 @@ def render() -> None:
     sentiment = data["sentiment"]
     sentiment_tone = _SENTIMENT_TONE.get(sentiment, "neutral")
 
+    # Session request: "when does the AI reprice... a little gauge to
+    # show when the next reprice is." An honest estimate, not a
+    # countdown clock — see brayden_index.next_reprice_estimate's own
+    # docstring for why this can land a minute or two late in practice.
+    # Server-computed and re-rendered each outer rerun (~65-120s), same
+    # as everything else on this page — no client-side ticking needed
+    # for something this coarse. No CSS transition on the fill bar
+    # below on purpose — theme.py's own global animation kill switch
+    # would just neuter it anyway (see that file's own docstring), so
+    # it's left out rather than shipped as dead code.
+    reprice = brayden_index.next_reprice_estimate()
+    minutes_until = int(reprice["seconds_until"] // 60)
+    if reprice["due"]:
+        reprice_text = "Repricing due any moment"
+    elif minutes_until < 1:
+        reprice_text = "Repricing in under a minute"
+    elif minutes_until == 1:
+        reprice_text = "Next repricing in ~1 min"
+    else:
+        reprice_text = f"Next repricing in ~{minutes_until} min"
+    fill_pct = reprice["pct_elapsed"] * 100
+
     hero_col, chart_col = st.columns([1, 2])
     with hero_col:
         st.markdown(
@@ -80,6 +102,12 @@ def render() -> None:
             f'{arrow} {sign}${abs(data["change"]):.2f} ({sign}{data["pct_change"]:.2f}%) this cycle'
             f'</div>'
             f'<div class="badge badge-{sentiment_tone}" style="margin-top:0.6rem;">{html.escape(sentiment)}</div>'
+            f'<div class="tile-label" style="margin-top:1rem;">{html.escape(reprice_text).upper()}</div>'
+            f'<div style="margin-top:0.35rem; height:6px; border-radius:3px; '
+            f'background:rgba(255,255,255,0.1); overflow:hidden;">'
+            f'<div style="height:100%; width:{fill_pct:.1f}%; border-radius:3px; '
+            f'background:#5AC8FA;"></div>'
+            f'</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
