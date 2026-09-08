@@ -1170,3 +1170,37 @@ def big_move_headline_candidate(now: datetime) -> dict | None:
         "template": "{}",
         "zero_text": None,
     }
+
+
+# Session request: "during big market-shifting moments... we can see
+# the dashboard, like the Bloomberg terminal... I think that'd be kinda
+# sick." Same BIG_MOVE_THRESHOLD_PCT already used for the push
+# notification (maybe_reprice) and the headline rotation candidate just
+# above — this is that SAME signal earning a bigger stage, not a new
+# arbitrary bar. A much shorter recency window than that headline's own
+# hour-long hold, though — hijacking the entire screen is a far bigger
+# interruption than one more rotating banner, so this needs to hand
+# normal rotation back on its own quickly rather than camping there.
+TAKEOVER_DURATION_SECONDS = 5 * 60
+
+
+def big_move_takeover_active(now: datetime) -> bool:
+    """Whether BRDN just had a genuinely big move recent enough to
+    justify app.py pulling up the full terminal page automatically,
+    in place of whatever the passive rotation would otherwise be
+    showing. Self-expiring the same way big_move_headline_candidate
+    already is: once the NEXT cycle replaces _last_report — big or not
+    — this naturally goes false on its own, no separate "have I shown
+    this already" state needed. app.py is the one that decides how this
+    ranks against an actual live jumbotron game or night mode (see its
+    own routing comment) — this only ever answers "is BRDN itself
+    currently in a big-move moment," nothing about screen priority."""
+    if _last_report is None:
+        return False
+    pct = _last_report.get("pct_change", 0.0)
+    if abs(pct) < BIG_MOVE_THRESHOLD_PCT:
+        return False
+    updated_at = _last_report.get("updated_at")
+    if updated_at is None:
+        return False
+    return (now.timestamp() - updated_at) <= TAKEOVER_DURATION_SECONDS

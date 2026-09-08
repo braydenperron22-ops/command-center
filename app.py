@@ -1866,6 +1866,19 @@ try:
         page = _requested_page
     elif _takeover or _ufc_takeover:
         page = "jumbotron"
+    elif brayden_index.big_move_takeover_active(now):
+        # Session request: "during big market-shifting moments... we
+        # can see the dashboard, like the Bloomberg terminal." Only
+        # reached once a real live game (above) has already lost —
+        # sports still wins outright, same as it already does over
+        # everything else. A real live game and a big BRDN move
+        # genuinely competing for the screen at the same instant is
+        # rare enough that "sports wins" is a fine default without
+        # needing its own dedicated tie-break. Night mode's own
+        # precedence (computed further below, still wins over
+        # whatever `page` resolves to here) isn't touched by this at
+        # all — a big move at 2am still doesn't light up the bedroom.
+        page = "terminal"
     else:
         page, _, _ = _scheduled_page(_rotation_epoch)
 except Exception:
@@ -3390,10 +3403,12 @@ except Exception:
 # has warmed it.
 try:
     market_status = market_yf_client.market_status()
-    _primary_quote = market_yf_client.quote_for(market_yf_client.primary_symbol(market_status))
+    market_primary_symbol = market_yf_client.primary_symbol(market_status)
+    _primary_quote = market_yf_client.quote_for(market_primary_symbol)
     market_intraday_pct = _primary_quote["intraday"] if _primary_quote else None
 except Exception:
     market_status = None
+    market_primary_symbol = None
     market_intraday_pct = None
 
 with st.container(key="page_body"):
@@ -3452,7 +3467,7 @@ with st.container(key="page_body"):
     elif page == "maintenance":
         _safe_render(pages_maintenance.render)
     elif page == "terminal":
-        _safe_render(pages_brdn_terminal.render, now)
+        _safe_render(pages_brdn_terminal.render, now, market_primary_symbol, market_intraday_pct)
     else:
         # Every other branch above has a fallback (a real page render,
         # or _safe_render's own error tile) — this is the one path with

@@ -5,9 +5,13 @@ like the Jumbotron, but for a Bloomberg terminal." A full-screen
 takeover, same shape as pages_jumbotron.py — app.py suppresses the
 normal hero row/chrome for this page the exact same way it does for
 the jumbotron (see app.py's own _terminal_active) — reached via the 'p'
-hotkey or the 'S' screen picker, deliberately not part of the normal
-PAGES rotation (same "hidden unless asked for" treatment jumbotron/
-maintenance already get).
+hotkey, the 'S' screen picker, OR automatically (session follow-up:
+"during big market-shifting moments... we can see the dashboard, like
+the Bloomberg terminal" — see brayden_index.big_move_takeover_active
+and app.py's own routing for the priority rules). Deliberately not
+part of the normal PAGES rotation (same "hidden unless asked for"
+treatment jumbotron/maintenance already get) — it only ever shows up
+when explicitly asked for or genuinely earned.
 
 Deliberately its own distinct visual language, not a reskin of
 pages_brayden_index.py's normal glass-card layout: black terminal
@@ -17,13 +21,15 @@ purpose-built instrument" contrast the jumbotron already has against
 the rest of this app. Every number here is read straight from
 brayden_index's own already-computed state (current()/history()/
 last_report()/report_history()/track_record_summary()/employment_
-report()/quarterly_report_status()) — no new computation of its own,
-same cheap read-only contract pages_brayden_index.render() already has.
-A "raw signal feed" panel (brayden_index.current_signals(), the actual
-fact sheet the AI reasons from) was tried and cut — it re-ran the
-ENTIRE live fact-gathering pipeline (real network calls) on every page
-view, turning a page meant to feel instant into a 60-100s+ load,
-confirmed live.
+report()/quarterly_report_status()), plus a real market benchmark
+comparison reusing app.py's own already-fetched quote (zero new
+network cost) — no new computation of its own beyond that, same cheap
+read-only contract pages_brayden_index.render() already has. A "raw
+signal feed" panel (brayden_index.current_signals(), the actual fact
+sheet the AI reasons from) was tried and cut — it re-ran the ENTIRE
+live fact-gathering pipeline (real network calls) on every page view,
+turning a page meant to feel instant into a 60-100s+ load, confirmed
+live.
 
 Bug found live (session incident, second one on this page): there is
 NO full-screen wrapper element rendered here, on purpose. An earlier
@@ -95,7 +101,7 @@ def _history_line(e: dict) -> str:
     )
 
 
-def render(now: datetime) -> None:
+def render(now: datetime, benchmark_symbol: str | None = None, benchmark_pct: float | None = None) -> None:
     data = brayden_index.current()
     price_history = brayden_index.history()
     report = brayden_index.last_report()
@@ -140,6 +146,27 @@ def render(now: datetime) -> None:
             ("BULL/BEAR/FLAT", f'{stats["bullish_n"]}/{stats["bearish_n"]}/{stats["flat_n"]}' if stats else "N/A"),
             ("Q REPORT", "ON FILE" if q_status["filed_this_quarter"] else "OUTSTANDING"),
         ]
+        # All-time high/low — free (price_history is already fetched
+        # above for the chart), but a real, legitimate-index touch: a
+        # genuine 52-week-high/low equivalent for something that's only
+        # ever had one real "IPO."
+        if len(price_history) >= 2:
+            rows.append(("ALL-TIME HIGH", f"${max(price_history):.2f}"))
+            rows.append(("ALL-TIME LOW", f"${min(price_history):.2f}"))
+        # vs. benchmark — session request: "as legitimate as possible."
+        # Reuses app.py's own already-fetched market quote (the same
+        # one the bottom ticker/Govee light already read this rerun) —
+        # zero new network cost. Relative performance against a real
+        # index is a genuine piece of real terminal furniture, not
+        # window dressing.
+        if benchmark_pct is not None and benchmark_symbol:
+            relative = data["pct_change"] - benchmark_pct
+            rel_class = "brdn-terminal-up" if relative > 0 else "brdn-terminal-down" if relative < 0 else ""
+            rel_sign = "+" if relative >= 0 else ""
+            rows.append((
+                f"VS {html.escape(benchmark_symbol.upper())}",
+                f'<span class="{rel_class}">{rel_sign}{relative:.2f}%</span>',
+            ))
         row_html = "".join(
             f'<div class="brdn-terminal-row"><span class="brdn-terminal-dim">{label}</span><span>{value}</span></div>'
             for label, value in rows
