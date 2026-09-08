@@ -669,7 +669,7 @@ components.html(
         "var kioskLastTs = null;",
         "var kioskLastChangeAt = Date.now();",
         "setInterval(function () {",
-        "  var el = window.parent.document.getElementById('kiosk-client-heartbeat');",
+        "  var el = document.getElementById('kiosk-client-heartbeat');",
         "  if (!el) return;",
         "  var ts = el.getAttribute('data-ts');",
         "  if (ts !== kioskLastTs) {",
@@ -716,7 +716,7 @@ components.html(
       s.textContent = [
         "var kioskLastState = null;",
         "setInterval(function () {",
-        "  var el = window.parent.document.getElementById('kiosk-state-key');",
+        "  var el = document.getElementById('kiosk-state-key');",
         "  if (!el) return;",
         "  var state = el.getAttribute('data-state');",
         "  if (kioskLastState === null) {",
@@ -792,7 +792,7 @@ components.html(
       s.id = 'dashboard-pulse-watchdog';
       s.textContent = [
         "setInterval(function () {",
-        "  var tsEl = window.parent.document.getElementById('dashboard-pulse-ts');",
+        "  var tsEl = document.getElementById('dashboard-pulse-ts');",
         "  if (!tsEl) return;",
         "  var ts = parseFloat(tsEl.getAttribute('data-ts'));",
         "  if (!ts) return;",
@@ -801,8 +801,8 @@ components.html(
         "    window.parent.location.reload();",
         "    return;",
         "  }",
-        "  var dot = window.parent.document.getElementById('dashboard-pulse-dot');",
-        "  var text = window.parent.document.getElementById('dashboard-pulse-text');",
+        "  var dot = document.getElementById('dashboard-pulse-dot');",
+        "  var text = document.getElementById('dashboard-pulse-text');",
         "  if (!dot || !text) return;",
         "  var cls = 'good';",
         "  var label = 'Live';",
