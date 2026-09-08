@@ -175,14 +175,27 @@ def _format_clock(remaining_seconds: float) -> str:
     return f"{minutes}:{seconds:02d}"
 
 
-def bedtime_headline_candidate(now: datetime) -> dict | None:
-    """{"text", "css_class", "target_ms", "template", "zero_text"} —
-    same shape every other headline_rotation.py source uses. Active
-    from HEADLINE_WINDOW_MINUTES before bedtime through
-    OVERDUE_GRACE_MINUTES after it; rotation-notice once inside the
-    last 30 minutes, rotation-warning once actually overdue — a real
-    nudge once it's genuinely past time, not just a flat calm color the
-    whole 3-hour span."""
+# Session request: "make the bedtime clock visible on jumbotron, just
+# like the leave in timer... takes over the bottom rotating bar." Same
+# shared-source-of-truth shape commute_reminder._countdown_info already
+# established for the leave timer — one function feeding both the
+# headline-rotation candidate AND the jumbotron ticker-slot renderer,
+# so the two can never disagree. Tier values are the SAME intensity-*
+# vocabulary .jumbo-leave-ticker's own CSS (theme.py) already defines
+# for the leave timer (calm/aware/urgent/critical/overdue) — bedtime
+# only ever needs 3 of the 5 (no distinct "aware" or "critical" phase),
+# not a vocabulary of its own, so render_ticker_bedtime_bar can reuse
+# that CSS directly with no new rules.
+_TIER_TO_ROTATION_CLASS = {"calm": "rotation-calm", "urgent": "rotation-notice", "overdue": "rotation-warning"}
+
+
+def _countdown_info(now: datetime) -> tuple[int, str, str] | None:
+    """(target_ms, intensity tier, first-frame text) — bedtime's own
+    version of commute_reminder._countdown_info. Active from
+    HEADLINE_WINDOW_MINUTES before bedtime through OVERDUE_GRACE_MINUTES
+    after it; "urgent" once inside the last 30 minutes, "overdue" once
+    actually past bedtime — a real escalation, not a flat calm color
+    the whole span."""
     bedtime = bedtime_for(now)
     if bedtime is None:
         return None
@@ -192,19 +205,57 @@ def bedtime_headline_candidate(now: datetime) -> dict | None:
         return None
     target_ms = int(bedtime.timestamp() * 1000)
     if remaining <= 0:
-        css_class = "rotation-warning"
+        tier = "overdue"
     elif remaining <= 30 * 60:
-        css_class = "rotation-notice"
+        tier = "urgent"
     else:
-        css_class = "rotation-calm"
+        tier = "calm"
     text = "Bedtime now" if remaining <= 0 else f"Bedtime in {_format_clock(remaining)}"
+    return target_ms, tier, text
+
+
+def bedtime_headline_active(now: datetime) -> bool:
+    """Cheap boolean check, same shape as commute_reminder.
+    leave_headline_active — for callers that only need "is this active
+    right now," not the full candidate dict (app.py's own jumbotron
+    ticker-slot dispatch is exactly that)."""
+    return _countdown_info(now) is not None
+
+
+def bedtime_headline_candidate(now: datetime) -> dict | None:
+    """{"text", "css_class", "target_ms", "template", "zero_text"} —
+    same shape every other headline_rotation.py source uses."""
+    info = _countdown_info(now)
+    if info is None:
+        return None
+    target_ms, tier, text = info
     return {
         "text": text,
-        "css_class": css_class,
+        "css_class": _TIER_TO_ROTATION_CLASS[tier],
         "target_ms": target_ms,
         "template": "Bedtime in {}",
         "zero_text": "Bedtime now",
     }
+
+
+def render_ticker_bedtime_bar(now: datetime) -> None:
+    """The jumbotron ticker-slot version — same .jumbo-leave-ticker
+    class/shape as commute_reminder.render_ticker_leave_bar (matches
+    that slot's position/z-index exactly), just bedtime's own text/tier
+    instead of the leave timer's. See this function's own call site in
+    app.py for the real reason it exists: a 10pm game running past
+    bedtime used to leave the countdown invisible for hours, same
+    problem the leave-timer ticker was originally built to solve."""
+    info = _countdown_info(now)
+    if info is None:
+        return
+    target_ms, tier, text = info
+    st.markdown(
+        f'<div class="jumbo-leave-ticker intensity-{tier}"><span class="live-countdown" data-intensity '
+        f'data-target-ms="{target_ms}" data-format="clock" data-template="Bedtime in {{}}" '
+        f'data-zero-text="Bedtime now">{text}</span></div>',
+        unsafe_allow_html=True,
+    )
 
 
 # Session follow-up: "a phone ping, not just a screen countdown... the

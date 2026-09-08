@@ -1988,6 +1988,32 @@ if _bedtime is not None:
     _bedtime_naive = _bedtime.replace(tzinfo=None)
     if _bedtime_naive.date() == _night_mode_day_end.date() and _bedtime_naive < _night_mode_day_end:
         _night_mode_day_end = _bedtime_naive
+    # Session request: "when it's officially bedtime... kill the
+    # jumbotron and go straight to night mode... it's a ten PM game...
+    # gonna keep going until two in the morning, which is not what I
+    # want." A live game normally has absolute priority over night mode
+    # (see _night_mode_active's own "not _jumbotron_active"/"not
+    # game_live" terms just below) — this is the one deliberate
+    # exception: once bedtime has genuinely arrived, it wins outright
+    # and ends the takeover early instead of waiting for the game to
+    # finish. Same date-safety check as the _night_mode_day_end
+    # adjustment just above (this bedtime has to actually belong to
+    # tonight, not a stale/future value borrowed in from a lookahead —
+    # see the two real live bugs this exact pattern already caught,
+    # comments further up this block). Deliberately leaves
+    # _night_mode_leave_active/_night_mode_storm_active alone — an
+    # imminent leave-time or an active storm are their own real
+    # reasons to keep the screen awake, not something "go to bed"
+    # should override the way a mere game should. Also deliberately
+    # does NOT touch _game_takeover_live (the Govee light sync signal,
+    # a separate real-world device concern from what this one
+    # session's own screen shows — see that variable's own comment
+    # above for why the two were kept independent before).
+    if _bedtime_naive.date() == now.date() and now >= _bedtime_naive and (_jumbotron_active or game_live):
+        _jumbotron_active = False
+        game_live = False
+        if page == "jumbotron":
+            page, _, _ = _scheduled_page(_rotation_epoch)
 _night_mode_active = (
     not _jumbotron_active
     and not game_live
@@ -3902,6 +3928,19 @@ def _toast_fragment(
             # still covers it the instant one fires, same as it already
             # covers the market ticker.
             commute_reminder.render_ticker_leave_bar(now)
+        elif _jumbotron_active and sleep_tracker.bedtime_headline_active(now):
+            # Session request: "make the bedtime clock visible on
+            # jumbotron... takes over the bottom rotating bar... just
+            # like the leave in timer." Real trigger: "it's a ten PM
+            # game for the Blue Jays, it's gonna keep going until like
+            # two in the morning" — bedtime's own big red headline
+            # already skips itself during a takeover, same as the leave
+            # timer's, so without this a bedtime running out mid-game
+            # was invisible for hours. Checked AFTER the leave-timer
+            # branch on purpose — leave-timer keeps priority (a real
+            # external commitment over a wellness reminder) on the rare
+            # night both are active at once.
+            sleep_tracker.render_ticker_bedtime_bar(now)
         else:
             _render_bottom_ticker(now, readings)
     except Exception as _bottom_bar_exc:
