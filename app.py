@@ -1614,7 +1614,8 @@ components.html(
     // (same reasoning as every other kiosk timer here — rAF can get
     // suspended on a backgrounded tab, silently freezing this). Only
     // .brdn-ticker-price's own text moves; the %/arrow/color stay the
-    // real hourly change, untouched.
+    // real day's cumulative change (see brayden_index._day_open_price),
+    // untouched.
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('brdn-jitter')) return;
@@ -3244,8 +3245,9 @@ except Exception:
 # wobble around it, purely client-side, every ~2.5s; it never writes
 # anything back, never touches persisted_state, and the real price
 # here is still only ever set by a genuine maybe_reprice() cycle. The
-# %/arrow/color remain the real hourly change, untouched by the
-# jitter — only the raw price number wobbles, not the framing around
+# %/arrow/color remain the real day's cumulative change (see
+# brayden_index._day_open_price), untouched by the jitter — only the
+# raw price number wobbles, not the framing around
 # it (see .brdn-ticker-price's own id in the JS for why only that one
 # span is a moving target).
 try:

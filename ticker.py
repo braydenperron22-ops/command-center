@@ -92,9 +92,11 @@ def build_portfolio_stat_item() -> dict | None:
 
 
 def build_brdn_stat_item() -> dict | None:
-    """The Brayden Index's current price + this cycle's change — visible
-    ambient from any page, not just while actually on the BRDN page
-    itself (see brayden_index.py/pages_brayden_index.py). Cheap: reads
+    """The Brayden Index's current price + today's cumulative change
+    (day-open to now, same convention a real stock's daily % change
+    uses — see brayden_index._day_open_price) — visible ambient from
+    any page, not just while actually on the BRDN page itself (see
+    brayden_index.py/pages_brayden_index.py). Cheap: reads
     already-computed state, no AI/network cost of its own."""
     try:
         data = brayden_index.current()

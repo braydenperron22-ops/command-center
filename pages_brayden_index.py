@@ -56,6 +56,17 @@ def render() -> None:
     arrow = "▲" if tone == "good" else "▼" if tone == "bad" else "●"
     sign = "+" if data["change"] >= 0 else ""
 
+    # Session report: "it's showing up 0.3%... that's over the hour,
+    # not the day's return... meanwhile it's still down from where it
+    # opened today." data["change"]/["pct_change"] are the day's real
+    # cumulative move now (see brayden_index._day_open_price) — this
+    # secondary line shows the LAST cycle's own move separately
+    # (data["cycle_pct_change"]) specifically so the two numbers never
+    # get conflated again the way they silently were before.
+    cycle_pct = data["cycle_pct_change"]
+    cycle_sign = "+" if cycle_pct >= 0 else ""
+    cycle_class = "market-up" if cycle_pct > 0 else "market-down" if cycle_pct < 0 else ""
+
     sparkline_html = ""
     if len(price_history) >= 2:
         trend_tone = "good" if price_history[-1] >= price_history[0] else "bad"
@@ -104,7 +115,10 @@ def render() -> None:
             f'<div class="tile-value {direction_class}" style="font-size:2.8rem;">${data["price"]:.2f}</div>'
             f'</div>'
             f'<div class="tile-prev {direction_class}">'
-            f'{arrow} {sign}${abs(data["change"]):.2f} ({sign}{data["pct_change"]:.2f}%) this cycle'
+            f'{arrow} {sign}${abs(data["change"]):.2f} ({sign}{data["pct_change"]:.2f}%) today'
+            f'</div>'
+            f'<div class="tile-prev {cycle_class}" style="opacity:0.7; font-size:0.85em;">'
+            f'{cycle_sign}{cycle_pct:.2f}% last cycle'
             f'</div>'
             f'<div class="badge badge-{sentiment_tone}" style="margin-top:0.6rem;">{html.escape(sentiment)}</div>'
             f'<div class="tile-label" style="margin-top:1rem;">{html.escape(reprice_text).upper()}</div>'

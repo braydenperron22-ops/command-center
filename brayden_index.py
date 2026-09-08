@@ -34,6 +34,7 @@ how often this runs.
 import json
 import time
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -52,7 +53,7 @@ import portfolio_client
 import regime
 import td_quarter_schedule
 import wildfire_client
-from config import USER_PROFILE
+from config import TIMEZONE, USER_PROFILE
 from icons import label_for
 import weather_client
 
@@ -119,25 +120,58 @@ if not _history:
     persisted_state.save("brdn_history", _history)
 
 
+def _day_open_price() -> float:
+    """The reference price current()'s headline change/pct_change is
+    measured against — the last known price from before today began
+    (today's effective open), matching how a real stock's daily %
+    change is always measured (against the prior close, never against
+    "a few minutes/hours ago"). Session report: "it's showing up
+    0.3%... that's over the hour, not the day's return... it should
+    always be based on where the market opened that day... it shouldn't
+    bounce between hour to hour... meanwhile it's still down from where
+    it opened today" — the old version measured change against the
+    LAST CYCLE only, which could read green even while the whole day
+    was still net negative. One pricing session = local midnight to
+    local midnight, same TIMEZONE convention every other date boundary
+    in this app uses. Falls back to the earliest known price if
+    history doesn't reach back before today yet (BRDN's first day —
+    today's open IS the IPO price in that case, which is exactly
+    right)."""
+    midnight_local = datetime.now(ZoneInfo(TIMEZONE)).replace(hour=0, minute=0, second=0, microsecond=0)
+    midnight_ts = midnight_local.timestamp()
+    prior = [h["price"] for h in _history if h["ts"] < midnight_ts]
+    if prior:
+        return prior[-1]
+    return _history[0]["price"] if _history else LAUNCH_PRICE
+
+
 def current() -> dict:
-    """{"price", "prior_price", "change", "pct_change", "sentiment", "tone"} —
-    cheap, no AI/network cost, safe to call every rerun (ticker/headline
-    callers do exactly that)."""
-    if _last_report and len(_history) >= 2:
-        pct = _last_report.get("pct_change", 0.0)
-        prior = _history[-2]["price"]
-        sentiment = _last_report.get("sentiment", "Neutral")
-    else:
-        prior = LAUNCH_PRICE
-        pct = ((_price - prior) / prior * 100) if prior else 0.0
-        sentiment = "Neutral"
-    change = _price - prior
+    """{"price", "day_open_price", "change", "pct_change",
+    "cycle_pct_change", "sentiment", "tone"} — cheap, no AI/network
+    cost, safe to call every rerun (ticker/headline callers do exactly
+    that). "change"/"pct_change" are the DAY's cumulative move (see
+    _day_open_price) — every display in this app (corner ticker, page
+    hero tile, ticker-tape stat item) reads these two, so fixing them
+    here fixes all of them at once. "cycle_pct_change" is kept
+    separately, straight from the last report, for anything that
+    specifically wants "how much did the LAST cycle move it" rather
+    than the day's cumulative figure — big_move_headline_candidate and
+    the big-move push in maybe_reprice both want exactly that (a sharp
+    single-hour swing is newsworthy on its own, regardless of where the
+    day's cumulative number sits), so they deliberately keep reading
+    _last_report directly rather than this field."""
+    day_open = _day_open_price()
+    change = _price - day_open
+    pct_change = (change / day_open * 100) if day_open else 0.0
+    cycle_pct_change = _last_report.get("pct_change", 0.0) if _last_report else 0.0
+    sentiment = _last_report.get("sentiment", "Neutral") if _last_report else "Neutral"
     tone = "good" if change > 0 else "bad" if change < 0 else "neutral"
     return {
         "price": _price,
-        "prior_price": prior,
+        "day_open_price": day_open,
         "change": change,
-        "pct_change": pct,
+        "pct_change": pct_change,
+        "cycle_pct_change": cycle_pct_change,
         "sentiment": sentiment,
         "tone": tone,
     }
