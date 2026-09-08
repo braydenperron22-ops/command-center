@@ -40,6 +40,7 @@ import streamlit as st
 
 import air_quality_client
 import calendar_client
+import commute_reminder
 import cpp_payment_dates
 import ec_alerts
 import fuel_price_client
@@ -382,6 +383,34 @@ def _gather_signals(now: datetime, readings: dict | None) -> str:
         if weather:
             condition = label_for(weather["weather_code"])
             facts.append(f"Current weather: {weather['temp_c']:.0f}°C, {condition}")
+    except Exception:
+        pass
+    try:
+        # Session request: "the AI should have access to this stuff" —
+        # following the commute hybrid-routing work (commute_reminder.
+        # commute_status/is_congested), a real logistics friction point
+        # is exactly the kind of "unexpected development" this whole
+        # module is built to react to, same reasoning as a road closure
+        # or severe weather alert below. Only surfaced when it's
+        # actually congested (same AMBER_DELAY_THRESHOLD_SECONDS bar the
+        # Today page's own amber card uses) — a normal, undelayed
+        # commute isn't a fact worth spending a signal slot on every
+        # single cycle.
+        commute = commute_reminder.commute_status(now)
+        if commute and commute["is_congested"]:
+            route = commute["route"]
+            delay_minutes = round(route["delay_seconds"] / 60)
+            if route.get("incident"):
+                reason = f" ({route['incident']})"
+            elif route.get("predicted"):
+                reason = " (a recurring pattern, not a fresh incident)"
+            else:
+                reason = ""
+            dest_label = commute["destination"]["label"]
+            facts.append(
+                f"Commute to {dest_label} currently running +{delay_minutes} min behind from "
+                f"traffic{reason} — a real logistics friction point today"
+            )
     except Exception:
         pass
     try:
