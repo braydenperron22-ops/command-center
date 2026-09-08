@@ -3169,6 +3169,38 @@ try:
 except Exception:
     pass
 
+# Session request: "a little ticker somewhere on the main page
+# regardless of what page I'm on... visible from across the room, but
+# not obstructive... even on the night page." A plain unconditional
+# st.markdown, not the persistent-DOM-clone machinery kiosk-ticker-
+# persist/dashboard-pulse-dot need — those exist to protect a
+# CONTINUOUS per-second animation/countdown from Streamlit's own DOM
+# churn; this is static text that only actually changes once an hour
+# (see brayden_index.maybe_reprice above), so a fresh re-render every
+# outer rerun is already enough, same shape as .ai-status-bar just
+# below. Deliberately NOT gated on _jumbotron_active/_night_mode_active
+# the way that one is — the whole point here was "regardless of what
+# page... even on the night page." Fixed top-right (bottom-right is
+# already .ai-status-bar's corner) — see theme.py's own .brdn-ticker
+# for the "visible from across the room" sizing and the mobile-only
+# display:none twin to .ai-status-bar's (a position:fixed element on a
+# genuinely scrolling phone page overlaps content, same bug that one
+# already had fixed for it).
+try:
+    _brdn_now = brayden_index.current()
+    _brdn_tone_class = "market-up" if _brdn_now["change"] > 0 else "market-down" if _brdn_now["change"] < 0 else ""
+    _brdn_arrow = "▲" if _brdn_now["change"] > 0 else "▼" if _brdn_now["change"] < 0 else "●"
+    _brdn_sign = "+" if _brdn_now["pct_change"] >= 0 else ""
+    st.markdown(
+        f'<div class="brdn-ticker {_brdn_tone_class}">'
+        f'<span class="brdn-ticker-symbol">BRDN</span>'
+        f'${_brdn_now["price"]:.2f} {_brdn_arrow} {_brdn_sign}{_brdn_now["pct_change"]:.2f}%'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+except Exception:
+    pass
+
 # Session report: "the transition between pages is quite choppy...
 # different elements from different pages pop up as longer than five
 # seconds." Root cause (confirmed via a full audit of every page's own

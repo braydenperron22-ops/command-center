@@ -3206,6 +3206,44 @@ html, body, [class*="css"] {
     white-space: nowrap;
 }
 
+/* Session request: "a little ticker... visible from across the room,
+   but not obstructive... regardless of what page I'm on." Top-right —
+   .ai-status-bar already owns bottom-right (bottom:60px/right:14px);
+   no element currently claims top-right, confirmed by checking every
+   other position:fixed rule in this file. Sized and weighted to
+   actually read at a glance from across a room (unlike .ai-status-
+   text's deliberately-subtle 0.68rem debug telemetry just above) while
+   staying a small corner pill, not a banner — "not obstructive" is the
+   backdrop-blur + modest padding, not a smaller font. */
+.brdn-ticker {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    z-index: 401;
+    padding: 0.5rem 1.1rem;
+    border-radius: 12px;
+    background: rgba(12,12,16,0.72);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid rgba(255,255,255,0.14);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-weight: 700;
+    font-size: 1.6rem;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    color: #D6D6DC;
+}
+.brdn-ticker-symbol {
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    opacity: 0.6;
+    margin-right: 0.45rem;
+}
+.brdn-ticker.market-up { color: #32D74B; }
+.brdn-ticker.market-down { color: #FF6961; }
+
 /* Today page's agenda only — same news-feed-row shape the News page
    uses for its own (much longer, faster-scanned) list, but scaled up
    here since this list is short and meant to be read at a glance, not
@@ -6314,6 +6352,10 @@ html, body, [class*="css"] {
        kiosk (where scrolling never happens, so this never overlaps
        anything) keeps it. */
     .ai-status-bar { display: none; }
+
+    /* Same position:fixed-on-a-scrolling-phone-page bug as .ai-status-
+       bar just above, same fix — see that rule's own comment. */
+    .brdn-ticker { display: none; }
 
     /* The jumbotron's 3-column bento is built for a 1080p wall, not a
        phone — stack it and let the page scroll like the other mobile
