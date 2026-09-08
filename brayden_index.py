@@ -494,15 +494,27 @@ def _recent_history_digest(limit: int = _HISTORY_DIGEST_LIMIT) -> str:
     return "\n".join(f"- {l}" for l in lines)
 
 
-def _build_prompt(now: datetime, readings: dict | None) -> str:
-    signals = _gather_signals(now, readings)
+def _gather_context(now: datetime, readings: dict | None) -> dict:
+    """Everything a repricing decision needs, gathered exactly ONCE per
+    cycle — signals is real network+computation work (_gather_signals
+    hits portfolio/weather/market clients), so a second, skeptical pass
+    reasoning about the SAME cycle (see _build_critique_prompt) must
+    reuse this, not silently redo every one of those calls a second
+    time just to re-derive text it already has."""
     recent = _history[-8:]
     if len(recent) >= 2:
         recent_prices = ", ".join(f"${h['price']:.2f}" for h in recent)
     else:
         recent_prices = "none yet — just IPO'd at $10.00, this is the first real pricing decision"
-    expectations_text = _expectations or "(no prior expectations recorded yet — this is early in the index's history)"
-    history_digest = _recent_history_digest()
+    return {
+        "signals": _gather_signals(now, readings),
+        "recent_prices": recent_prices,
+        "expectations_text": _expectations or "(no prior expectations recorded yet — this is early in the index's history)",
+        "history_digest": _recent_history_digest(),
+    }
+
+
+def _build_prompt(context: dict) -> str:
     return (
         "You are the collective market — the pooled judgment of every hypothetical shareholder and analyst — "
         "pricing BRDN, a fictional publicly traded \"stock\" that represents one real person, Brayden, as if his "
@@ -512,17 +524,17 @@ def _build_prompt(now: datetime, readings: dict | None) -> str:
         "it more; a temporary/noisy blip should move it less than a real structural change to his actual "
         "trajectory. Most cycles, with nothing major happening, should be small moves (well under 1-2%) — save "
         "bigger moves for genuinely significant news.\n\n"
-        f"Current price: ${_price:.2f}. Recent price history, oldest to newest: {recent_prices}.\n\n"
+        f"Current price: ${_price:.2f}. Recent price history, oldest to newest: {context['recent_prices']}.\n\n"
         f"What the market currently believes about Brayden / already has priced in (your own note from last "
-        f"cycle): {expectations_text}\n\n"
+        f"cycle): {context['expectations_text']}\n\n"
         f"Your own recent cycle-by-cycle track record, oldest to newest — this is real memory, not a log to "
         f"ignore. A real market that's seen a pattern before reacts to it differently the next time: less "
         f"surprised, already half-expecting it, sometimes barely moving at all. If a similar catalyst shows up "
         f"below and you can see it (or something like it) already happened recently in this history, treat it "
         f"as familiar, not fresh news — react the way a market that remembers would. If nothing like the current "
         f"signals has shown up recently, that absence is itself informative — this genuinely would be new:\n"
-        f"{history_digest}\n\n"
-        f"Fresh signals since the last cycle:\n{signals}\n\n"
+        f"{context['history_digest']}\n\n"
+        f"Fresh signals since the last cycle:\n{context['signals']}\n\n"
         "Decide: (1) a percentage price move for this cycle, between -10 and +10, (2) overall sentiment, "
         "(3) up to 4 named catalysts (bullish or bearish) that actually drove this cycle's move, each with a "
         "magnitude, (4) one or two sentences of shareholder/analyst commentary in the voice of a real market "
@@ -530,6 +542,57 @@ def _build_prompt(now: datetime, readings: dict | None) -> str:
         "own \"what the market now believes\" note for next cycle: carry forward whatever's still true, fold in "
         "whatever's newly priced in.\n\n"
         "Respond with ONLY JSON, no markdown fences, no other text, in exactly this shape:\n"
+        '{"pct_change": 0.0, "sentiment": "Bullish", "catalysts": '
+        '[{"label": "...", "direction": "bullish", "magnitude": "minor", "note": "..."}], '
+        '"commentary": "...", "updated_expectations": "..."}'
+    )
+
+
+# Session request: "a genuine second self critique pass is not a
+# terrible idea" — following up on being told plainly this roughly
+# doubles BRDN's own AI call volume per cycle (still once per
+# REFRESH_SECONDS/NIGHT_REFRESH_SECONDS, just two calls instead of one
+# each time, not two SEPARATE cadences) before agreeing to it. A second
+# Gemini call, same context (reused from _gather_context, not
+# recomputed), shown the FIRST pass's own proposed JSON and asked to
+# play skeptical risk manager: does the move actually match the named
+# catalysts and recent precedent, or does it over/underreact? Returns
+# the SAME JSON shape so it reuses _parse() unchanged — either a
+# deliberate confirmation of the original numbers, or a revised
+# version. Never a hard requirement: maybe_reprice falls back to the
+# unreviewed first pass if this call fails or returns something
+# unparseable, exactly the same "a failure skips the improvement, never
+# the whole cycle" discipline every other AI call in this app follows.
+def _build_critique_prompt(context: dict, proposal: dict) -> str:
+    proposed_json = json.dumps({
+        "pct_change": proposal["pct_change"],
+        "sentiment": proposal["sentiment"],
+        "catalysts": proposal["catalysts"],
+        "commentary": proposal["commentary"],
+        "updated_expectations": proposal["updated_expectations"],
+    })
+    return (
+        "You are a skeptical risk manager reviewing another analyst's just-proposed repricing of BRDN, a "
+        "fictional \"stock\" representing one real person, Brayden. Your job is NOT to write a fresh take — "
+        "it's to sanity-check THIS specific proposal against the same evidence they had, and either confirm it "
+        "or correct it if it doesn't actually hold up.\n\n"
+        f"Current price: ${_price:.2f}. Recent price history, oldest to newest: {context['recent_prices']}.\n\n"
+        f"What the market already believed going into this cycle: {context['expectations_text']}\n\n"
+        f"Recent cycle-by-cycle track record, oldest to newest — use this to judge whether the proposal is "
+        f"properly weighing precedent (has something like this happened before and already been mostly priced "
+        f"in?) rather than treating everything as equally fresh:\n{context['history_digest']}\n\n"
+        f"Fresh signals this cycle was reacting to:\n{context['signals']}\n\n"
+        f"The proposed repricing you're reviewing:\n{proposed_json}\n\n"
+        "Check specifically: (1) does the pct_change actually match the direction and combined magnitude of the "
+        "named catalysts — not a rigid sum, but a real gut-check, is a big number backed by only minor catalysts, "
+        "or a tiny number attached to something that reads as major? (2) does it properly account for the "
+        "recent track record — is it overreacting to something that's already happened repeatedly and should be "
+        "mostly priced in by now, or underreacting to something genuinely new? (3) is the move proportionate — "
+        "most cycles with nothing major happening should be small (well under 1-2%).\n\n"
+        "If the proposal genuinely holds up, return it back essentially unchanged. If it doesn't, return your "
+        "own corrected version — you're not required to preserve any of its numbers or wording, only to be "
+        "consistent with the same evidence. Respond with ONLY JSON, no markdown fences, no other text, in "
+        "exactly this shape:\n"
         '{"pct_change": 0.0, "sentiment": "Bullish", "catalysts": '
         '[{"label": "...", "direction": "bullish", "magnitude": "minor", "note": "..."}], '
         '"commentary": "...", "updated_expectations": "..."}'
@@ -602,12 +665,25 @@ def maybe_reprice(now: datetime, readings: dict | None = None, night_mode_active
     `night_mode_active` should be app.py's own already-computed
     _night_mode_active — not re-derived here, see NIGHT_REFRESH_SECONDS'
     own comment for why this doesn't just call groq_client.
-    ai_pulls_paused directly the way every other Gemini feature does."""
+    ai_pulls_paused directly the way every other Gemini feature does.
+
+    Session request: "a genuine second self critique pass is not a
+    terrible idea" — once a real new cycle is confirmed below (the
+    SAME gate that already limits this to once per REFRESH_SECONDS/
+    NIGHT_REFRESH_SECONDS), a second Gemini call reviews the first
+    pass's own proposal before it's applied (see _build_critique_prompt
+    for what it actually checks). This doubles the AI calls PER REAL
+    CYCLE, not the cadence itself — still only once an hour (or once
+    per 3h overnight), just two calls instead of one each time. The
+    critique is best-effort: any failure (unavailable, unparseable)
+    falls back to the unreviewed first pass rather than blocking the
+    cycle — same discipline as every other AI call in this app."""
     # _history/_report_history are mutated in place (append/del below),
     # never reassigned wholesale, so neither needs to be declared global
     # here.
     global _price, _last_report, _expectations, _last_applied_raw
-    prompt = _build_prompt(now, readings)
+    context = _gather_context(now, readings)
+    prompt = _build_prompt(context)
     refresh_seconds = NIGHT_REFRESH_SECONDS if night_mode_active else REFRESH_SECONDS
     raw = gemini_client.generate_periodic(
         "brayden_index", refresh_seconds, prompt, temperature=0.4, max_output_tokens=600, allow_during_game=True
@@ -615,15 +691,24 @@ def maybe_reprice(now: datetime, readings: dict | None = None, night_mode_active
     if raw is None or raw == _last_applied_raw:
         return  # AI unavailable this call, or this hour's cycle was already applied — nothing new to do
 
-    parsed = _parse(raw)
+    proposal = _parse(raw)
     # Marked seen BEFORE checking parse success — a malformed response
     # is the SAME cached text for the rest of this hour, so without
     # this, a bad response would get uselessly re-parsed (and re-fail)
     # on every rerun until the next real cycle, instead of just once.
     _last_applied_raw = raw
     persisted_state.save("brdn_last_applied_raw", _last_applied_raw)
-    if parsed is None:
+    if proposal is None:
         return
+
+    # The critique call is a plain generate(), not generate_periodic —
+    # it's tied to THIS specific new cycle (already confirmed genuinely
+    # new by the guard above), not its own separate wall-clock cadence.
+    critique_raw = gemini_client.generate(
+        _build_critique_prompt(context, proposal), temperature=0.3, max_output_tokens=600, allow_during_game=True
+    )
+    critique = _parse(critique_raw) if critique_raw else None
+    parsed = critique if critique is not None else proposal
 
     pct = max(-MAX_PCT_CHANGE, min(MAX_PCT_CHANGE, parsed["pct_change"]))
     new_price = round(_price * (1 + pct / 100), 4)
