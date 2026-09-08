@@ -382,25 +382,40 @@ def _gather_signals(now: datetime, readings: dict | None) -> str:
 
     try:
         if _employment_report:
-            age_days = (now.timestamp() - _employment_report["filed_at"]) / 86400
             quarter = _employment_report["quarter_label"]
             summary = _employment_report["summary"]
-            if age_days <= _EMPLOYMENT_REPORT_FRESH_DAYS:
-                # Fresh — labeled explicitly as real, self-reported news
-                # so the AI weighs it the way it would any other
-                # genuinely new development, not routine background.
-                # Deliberately NOT told to treat this as automatically
-                # major — a quiet quarter with nothing real to report is
-                # itself a legitimate (small-move) outcome, same "don't
-                # force a number, let the market actually decide"
-                # principle this whole module already runs on.
+            if _employment_report.get("is_baseline"):
+                # Session request, the very first report ever filed:
+                # "this is technically not new data... I don't want my
+                # stock to jump ten percent tomorrow." Never surfaced as
+                # fresh, regardless of age — reads as settled background
+                # from the moment it lands, same as long-priced-in
+                # context. Real quarterly reports below still get the
+                # normal fresh-then-fades treatment.
                 facts.append(
-                    f"Just-filed {quarter} employment report (fresh, self-reported by "
-                    f"Brayden via his own LinkedIn export + a verbal update — weigh "
-                    f"like real news, not routine background): {summary}"
+                    f"Baseline employment context on file ({quarter}, backfilled career "
+                    f"snapshot — NOT new information, already fully priced in, do not "
+                    f"treat as a fresh catalyst on its own): {summary}"
                 )
             else:
-                facts.append(f"Last filed employment report ({quarter}, already priced in): {summary}")
+                age_days = (now.timestamp() - _employment_report["filed_at"]) / 86400
+                if age_days <= _EMPLOYMENT_REPORT_FRESH_DAYS:
+                    # Fresh — labeled explicitly as real, self-reported
+                    # news so the AI weighs it the way it would any
+                    # other genuinely new development, not routine
+                    # background. Deliberately NOT told to treat this as
+                    # automatically major — a quiet quarter with nothing
+                    # real to report is itself a legitimate (small-move)
+                    # outcome, same "don't force a number, let the
+                    # market actually decide" principle this whole
+                    # module already runs on.
+                    facts.append(
+                        f"Just-filed {quarter} employment report (fresh, self-reported by "
+                        f"Brayden via his own LinkedIn export + a verbal update — weigh "
+                        f"like real news, not routine background): {summary}"
+                    )
+                else:
+                    facts.append(f"Last filed employment report ({quarter}, already priced in): {summary}")
     except Exception:
         pass
 
@@ -690,14 +705,24 @@ def maybe_push_quarterly_report(now: datetime) -> None:
         pass
 
 
-def record_employment_report(summary: str, now: datetime) -> bool:
+def record_employment_report(summary: str, now: datetime, is_baseline: bool = False) -> bool:
     """Files THIS quarter's employment report — the actual content
     (LinkedIn highlights + verbal update) landing in persisted state so
-    _gather_signals can hand it to the next repricing cycle as a fresh,
-    real signal. False (no-op) on blank input; True on a genuine file.
+    _gather_signals can hand it to the next repricing cycle as a
+    signal. False (no-op) on blank input; True on a genuine file.
     Overwrites the same quarter's own prior entry if called again
     before the quarter rolls over (a correction/addition, not a second
-    report) rather than accumulating duplicates."""
+    report) rather than accumulating duplicates.
+
+    is_baseline — session request: the very first report ever filed,
+    built from Brayden's real LinkedIn profile, explicitly framed as
+    catch-up context rather than news: "this is technically not new
+    data... I don't want my stock to jump ten percent tomorrow." A
+    baseline report is NEVER surfaced as fresh/newsworthy in
+    _gather_signals regardless of how recently it was filed — it reads
+    the same as long-since-priced-in background from the moment it
+    lands. Ordinary quarterly reports (is_baseline=False, the default)
+    keep the normal fresh-then-fades behavior."""
     global _employment_report
     text = summary.strip()
     if not text:
@@ -706,6 +731,7 @@ def record_employment_report(summary: str, now: datetime) -> bool:
         "quarter_label": _quarter_label(now.date()),
         "summary": text,
         "filed_at": now.timestamp(),
+        "is_baseline": is_baseline,
     }
     persisted_state.save("brdn_employment_report", _employment_report)
     return True

@@ -200,9 +200,10 @@ def _render_employment_report_section() -> None:
     if status["filed_this_quarter"] and report:
         filed_at = datetime.fromtimestamp(report["filed_at"], tz=ZoneInfo(TIMEZONE))
         filed_label = f"{filed_at.strftime('%b')} {filed_at.day}"
+        baseline_tag = " (BASELINE — not treated as fresh news)" if report.get("is_baseline") else ""
         st.markdown(
             f'<div class="tile" style="margin-top:0.75rem;">'
-            f'<div class="tile-label">{quarter} EMPLOYMENT REPORT — ON FILE</div>'
+            f'<div class="tile-label">{quarter} EMPLOYMENT REPORT — ON FILE{html.escape(baseline_tag)}</div>'
             f'<div class="tile-prev" style="margin-top:0.4rem; line-height:1.5;">{html.escape(report["summary"])}</div>'
             f'<div class="tile-prev" style="margin-top:0.4rem; opacity:0.6;">Filed {filed_label} — '
             "editing below re-files this quarter's report.</div>"
@@ -227,9 +228,18 @@ def _render_employment_report_section() -> None:
             placeholder="e.g. Promoted to Senior Advisor, comp bump, hit Q3 targets, LinkedIn shows two new endorsements...",
             label_visibility="collapsed",
         )
+        # Session request, the very first report ever filed: "this is
+        # technically not new data... I don't want my stock to jump ten
+        # percent tomorrow." Unchecked by default — every ORDINARY
+        # quarterly filing after this one should read as real news, per
+        # the original design; baseline/catch-up filing is the
+        # exception, not the norm.
+        is_baseline = st.checkbox(
+            "This is catch-up/baseline context, not something new — don't treat it as fresh news"
+        )
         submitted = st.form_submit_button("File report")
     if submitted:
-        if brayden_index.record_employment_report(summary, now):
+        if brayden_index.record_employment_report(summary, now, is_baseline=is_baseline):
             st.success(f"{status['current_quarter']} report filed — folded into the next repricing.")
         else:
             st.warning("Enter something before filing.")
