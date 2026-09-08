@@ -18,7 +18,6 @@ from datetime import datetime, timedelta
 import streamlit as st
 
 import calendar_client
-import commute_client
 import commute_history
 import commute_reminder
 import road_conditions
@@ -157,16 +156,23 @@ def _commute_trend_html(current_duration_seconds: float) -> str:
 
 
 def _render_commute(now: datetime) -> None:
-    # Same destination resolution the leave headline uses (see
-    # commute_reminder.todays_destination) — today's shift's own
-    # calendar location if it has one, else the default commute. Keeps
-    # this tile and the headline always pointed at the same place
-    # rather than the tile silently still assuming Work.
-    destination = commute_reminder.todays_destination(now)
-    using_default = destination is COMMUTE_DESTINATION
-    data = commute_client.route(None if using_default else destination)
-    if not data:
+    # Session request: "update the commute logic to implement a hybrid
+    # approach... flash an amber/warning state on the Streamlit card so
+    # I can see it instantly at a glance." commute_status resolves the
+    # same destination the leave headline uses (today's shift's own
+    # calendar location if it has one, else the default commute — same
+    # as todays_destination always did) AND, whenever there's an active
+    # shift to actually plan a departure around, the hybrid predictive+
+    # live route (whichever of "baked-in recurring bottleneck" or
+    # "live-right-now" is genuinely worse) instead of a plain live-only
+    # one. See commute_reminder.commute_status's own docstring for why
+    # there's no target time to predict FOR without a real shift.
+    status = commute_reminder.commute_status(now)
+    if not status:
         return
+    data = status["route"]
+    destination = status["destination"]
+    using_default = destination is COMMUTE_DESTINATION
 
     minutes = round(data["duration_seconds"] / 60)
     delay_minutes = round(data["delay_seconds"] / 60)
@@ -194,8 +200,19 @@ def _render_commute(now: datetime) -> None:
     if delay_minutes >= 1:
         # "why", not just "how much" — TomTom's traffic sections say
         # what's actually causing the delay (accident, road work, ...)
-        # when it has that detail, not just the aggregate minutes.
-        reason = f" ({data['incident']})" if data.get("incident") else ""
+        # when it has that detail, not just the aggregate minutes. When
+        # there's no named incident but the hybrid comparison's own
+        # predictive call is what's actually driving this (see
+        # commute_reminder._hybrid_route's "predicted" tag) — a
+        # recurring pattern TomTom's historical profile already knows
+        # about, not something happening live right now — say that
+        # instead of leaving an unexplained number.
+        if data.get("incident"):
+            reason = f" ({data['incident']})"
+        elif data.get("predicted"):
+            reason = " (predicted)"
+        else:
+            reason = ""
         delay_text, delay_class = f"+{delay_minutes} min from traffic{reason}", "market-down"
     elif road_issues:
         issue = road_issues[0]
@@ -233,18 +250,37 @@ def _render_commute(now: datetime) -> None:
     if weather and road_conditions.ice_risk(weather["temp_c"], weather.get("forecast_low_c"), weather):
         ice_html = '<div class="severity-caption compact"><span class="market-down">⚠ Watch for ice</span></div>'
 
-    # trend_html/ice_html folded onto the closing tag's line rather than
-    # given their own — when either is "" (no comparison data yet, or
-    # no ice risk), a lone whitespace line ahead of an indented "</div>"
-    # reads to the markdown parser as a blank line followed by an
-    # indented code block, and it renders that closing tag as literal
-    # text instead of parsing it as HTML.
+    # Session request: "flash an amber/warning state on the Streamlit
+    # card so I can see it instantly at a glance." theme.py's own global
+    # animation kill switch (see its "Animations removed" comment) means
+    # a literal flash/pulse never actually plays — the .congested class
+    # below is a STATIC amber border/glow instead, same "an explicit
+    # resting state, not animation fill-mode" fix that switch already
+    # forced on every other alert surface in this app. Only spelled out
+    # in text when there's a real leave_by to be earlier than (a shift
+    # in progress) — with no shift at all, the border alone already
+    # says "traffic's bad right now," and there's no "your routine"
+    # for it to be earlier THAN.
+    congested_class = " congested" if status["is_congested"] else ""
+    congestion_html = ""
+    if status["is_congested"] and status["leave_by"] is not None:
+        congestion_html = (
+            '<div class="severity-caption compact"><span class="market-down">'
+            "⚠ Traffic is pushing your leave time earlier than usual</span></div>"
+        )
+
+    # trend_html/ice_html/congestion_html folded onto the closing tag's
+    # line rather than given their own — when any is "" (no comparison
+    # data yet, no ice risk, not congested), a lone whitespace line
+    # ahead of an indented "</div>" reads to the markdown parser as a
+    # blank line followed by an indented code block, and it renders
+    # that closing tag as literal text instead of parsing it as HTML.
     st.markdown(
-        f"""<div class="tile compact commute-tile">
+        f"""<div class="tile compact commute-tile{congested_class}">
             <div class="tile-label compact">{COMMUTE_ORIGIN['label'].upper()} → {destination['label'].upper()}</div>
             <div class="tile-value">{minutes} min</div>
             <div class="tile-prev">{data['distance_km']:.1f} km · <span class="{delay_class}">{delay_text}</span></div>
-            {trend_html}{ice_html}</div>""",
+            {trend_html}{ice_html}{congestion_html}</div>""",
         unsafe_allow_html=True,
     )
 

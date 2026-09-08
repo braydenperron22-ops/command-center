@@ -28,6 +28,27 @@ import ntfy_client
 import persisted_state
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
+# Session request: "update the commute logic to implement a hybrid
+# approach... query TomTom using a dynamic future departure time...
+# simultaneously pull live incident data... output the maximum (worse)
+# of the two values so my UI always takes the safer estimate." Two
+# real, separate gaps this closes: a LIVE-only call (the old behavior)
+# has no idea a recurring bottleneck is about to build if it hasn't
+# started yet (checked at 7am, an 8am jam doesn't show); a PREDICTIVE-
+# only call (TomTom's IQ Routes historical profile for a future time)
+# has no idea about a fresh, unprecedented anomaly today specifically
+# (an accident that just happened isn't in historical data). Taking
+# whichever is actually worse catches both. See _hybrid_route below.
+#
+# How much worse (TomTom's own trafficDelayInSeconds — real minutes
+# beyond free-flow, not a comparison against commute_history, which
+# only retains 2 hours and can't answer "what's normal for this route"
+# at all) counts as worth an amber warning on the Today page's commute
+# tile (see pages_today.py's own _render_commute) — half of the normal
+# EARLY_BUFFER_MINUTES felt like the right proportion: enough to
+# meaningfully eat into that buffer, not just routine noise.
+AMBER_DELAY_THRESHOLD_SECONDS = 5 * 60
+
 EARLY_BUFFER_MINUTES = 10
 # How volatile the default commute's been recently bumps the buffer
 # above the flat minimum — swinging readings suggest changing
@@ -319,6 +340,48 @@ def todays_destination(now: datetime) -> dict:
     return _destination_for_shift(current[0]) or COMMUTE_DESTINATION
 
 
+def commute_status(now: datetime) -> dict | None:
+    """{"route", "destination", "leave_by", "is_congested"} for
+    pages_today.py's own commute tile — None only if even a plain live
+    call fails outright (no API key, TomTom unreachable, etc).
+
+    Uses the hybrid predictive+live route (_hybrid_route_for_shift)
+    whenever there's an active shift to actually plan a departure
+    around — leave_by is real in that case, and route is whichever of
+    predictive/live is worse. With no active shift (or a home event,
+    which has no commute to route at all), there's no target departure
+    time to predict FOR, so this falls back to a plain live route to
+    todays_destination — same as the tile's own original behavior —
+    with leave_by as None and is_congested still meaningful (TomTom's
+    own live delay is real information even without a specific
+    deadline to weigh it against)."""
+    current = _current_shift(now)
+    if current is not None and not _is_home_event(current[0]):
+        shift = current[0]
+        # _current_shift's own leave_by (current[1]) is numerically the
+        # same as hybrid_leave_by below (both trace back to the same
+        # cached calls) — recomputed here rather than reused because
+        # this needs the ROUTE dict too (for is_congested/incident/
+        # predicted), which _current_shift's return doesn't carry.
+        result = _hybrid_route_for_shift(shift)
+        if result:
+            route, hybrid_leave_by = result
+            destination = _destination_for_shift(shift) or COMMUTE_DESTINATION
+            return {
+                "route": route,
+                "destination": destination,
+                "leave_by": hybrid_leave_by,
+                "is_congested": is_congested(route),
+            }
+
+    destination = todays_destination(now)
+    using_default = destination is COMMUTE_DESTINATION
+    route = commute_client.route(None if using_default else destination)
+    if not route:
+        return None
+    return {"route": route, "destination": destination, "leave_by": None, "is_congested": is_congested(route)}
+
+
 def _due_milestone(minutes_until_leave: float, shown_for_event: set[int], now_hour: float) -> int | None:
     """The largest not-yet-shown milestone we've now reached — skips
     (marks as shown without firing) any larger ones already blown past,
@@ -347,6 +410,60 @@ def _due_milestone(minutes_until_leave: float, shown_for_event: set[int], now_ho
     return due
 
 
+def _hybrid_route(destination: dict | None, live: dict, target_time: datetime) -> dict:
+    """The worse (by duration_seconds) of the already-fetched LIVE route
+    and a fresh predictive route for `target_time` — see this module's
+    own AMBER_DELAY_THRESHOLD_SECONDS comment for the two real gaps
+    this closes. Tags the result with "predicted": True when the
+    predictive call is the one that actually won, so a caller can tell
+    "this is worse because of a recurring pattern TomTom's historical
+    profile already knows about" apart from "this is worse because of
+    something happening live right now" — both real, just worth
+    labeling differently on screen. Never fails outright: a failed or
+    merely-not-worse predictive call just means the live route was
+    already the right (or the only available) answer."""
+    predictive = commute_client.route(destination, depart_at=target_time)
+    if predictive is None or predictive["duration_seconds"] <= live["duration_seconds"]:
+        return {**live, "predicted": False}
+    return {**predictive, "predicted": True}
+
+
+def _hybrid_route_for_shift(shift: dict) -> tuple[dict, datetime] | None:
+    """(route, leave_by) for one specific shift event, using the hybrid
+    predictive+live approach — None if the commute time to its
+    destination isn't available (or for a home event, which has no
+    commute at all — see _leave_by_for_shift's own docstring).
+
+    Bootstraps its own predictive target_time from a first live-only
+    estimate (this shift's own rough leave_by under live-only
+    conditions) — the predictive call needs a real time to predict FOR,
+    not an arbitrary guess. That bootstrap live call is the exact same
+    call _hybrid_route needs anyway, so it's fetched once here and
+    passed through rather than fetched twice."""
+    if _is_home_event(shift):
+        return None
+    destination = _destination_for_shift(shift)
+    live = commute_client.route(destination)
+    if not live:
+        return None
+    buffer_minutes = _adaptive_buffer_minutes(using_default_destination=destination is None)
+    rough_leave_by = shift["start"] - timedelta(seconds=live["duration_seconds"]) - timedelta(minutes=buffer_minutes)
+    route = _hybrid_route(destination, live, rough_leave_by)
+    leave_by = shift["start"] - timedelta(seconds=route["duration_seconds"]) - timedelta(minutes=buffer_minutes)
+    return route, leave_by
+
+
+def is_congested(route: dict | None) -> bool:
+    """Whether this route's own real traffic delay (TomTom's
+    trafficDelayInSeconds, whichever of live/predictive it came from)
+    is bad enough to earn the amber warning state — see
+    AMBER_DELAY_THRESHOLD_SECONDS' own comment for why the threshold is
+    what it is, and why this checks the delay itself rather than
+    comparing against commute_history (too short a retention window to
+    mean anything as a "what's normal" baseline)."""
+    return bool(route) and route.get("delay_seconds", 0) >= AMBER_DELAY_THRESHOLD_SECONDS
+
+
 def _leave_by_for_shift(shift: dict) -> datetime | None:
     """leave_by for one specific shift event — None if the commute
     time to its destination isn't available.
@@ -359,15 +476,17 @@ def _leave_by_for_shift(shift: dict) -> datetime | None:
     ticker) still works unchanged either way — the target instant they
     count down to is just the start time itself instead of a back-
     computed depart time, and _is_home_event/check() below handle
-    swapping "Leave" for "Starts" in what actually gets displayed."""
+    swapping "Leave" for "Starts" in what actually gets displayed.
+
+    Session request: "output the maximum (worse) of the two values so
+    my UI always takes the safer estimate" — uses _hybrid_route_for_
+    shift's own hybrid predictive+live duration instead of a plain
+    live-only route, so leave_by itself (not just the countdown display)
+    reflects whichever is genuinely worse."""
     if _is_home_event(shift):
         return shift["start"]
-    destination = _destination_for_shift(shift)
-    route = commute_client.route(destination)
-    if not route:
-        return None
-    buffer_minutes = _adaptive_buffer_minutes(using_default_destination=destination is None)
-    return shift["start"] - timedelta(seconds=route["duration_seconds"]) - timedelta(minutes=buffer_minutes)
+    result = _hybrid_route_for_shift(shift)
+    return result[1] if result else None
 
 
 def _current_shift(now: datetime) -> tuple[dict, datetime] | None:
@@ -615,18 +734,22 @@ def _countdown_info(now: datetime) -> tuple[int, str, str, bool] | None:
     Session request: "if there is a detour in effect, I should see a
     meaningful delay... the leave in timers should be reflective of
     this." The delay itself already was — _leave_by_for_shift (via
-    _current_shift above) subtracts commute_client.route's own real,
-    live, traffic-aware duration_seconds, which already accounts for
-    whatever detour TomTom's routing engine is actually taking around a
-    closure, not a fixed baseline. What was missing was the WHY: a
-    shifted number with no visible reason looks identical to a slow
-    rush hour. route()'s own already-computed "incident" label (e.g.
-    "road closed" — see commute_client._incident_label) gets appended
-    here so the countdown explains itself. Re-fetches route() rather
-    than threading it through _leave_by_for_shift's own return —
-    st.cache_data (5 min TTL) makes this a cache hit, not a second
-    network call, and keeps _leave_by_for_shift's existing contract
-    (and its other callers, leave_by_time/check()) untouched."""
+    _current_shift above) subtracts a real, traffic-aware duration_
+    seconds, which already accounts for whatever detour TomTom's
+    routing engine is actually taking around a closure, not a fixed
+    baseline (now the HYBRID predictive+live duration specifically —
+    see _hybrid_route_for_shift — so a baked-in future bottleneck shows
+    up here too, not just a live-right-now one). What was missing was
+    the WHY: a shifted number with no visible reason looks identical to
+    a slow rush hour. Whichever route (live or predictive) actually won
+    the hybrid comparison has its own already-computed "incident" label
+    (e.g. "road closed" — see commute_client._incident_label) appended
+    here so the countdown explains itself. Re-fetches the hybrid route
+    rather than threading it through _leave_by_for_shift's own return —
+    st.cache_data (5 min TTL) makes the underlying calls cache hits, not
+    a second round of real network calls, and keeps _leave_by_for_
+    shift's existing contract (and its other callers, leave_by_time/
+    check()) untouched."""
     current = _current_shift(now)
     if current is None:
         return None
@@ -640,9 +763,17 @@ def _countdown_info(now: datetime) -> tuple[int, str, str, bool] | None:
     verb = "Starts" if is_home else "Leave"
     text = f"{verb} now" if remaining <= 0 else f"{verb} in {_format_clock(remaining)}"
     if not is_home:
-        route = commute_client.route(_destination_for_shift(shift))
+        result = _hybrid_route_for_shift(shift)
+        route = result[0] if result else None
         if route and route.get("incident"):
             text += f" — {route['incident']}"
+        elif route and route.get("predicted") and is_congested(route):
+            # No named incident (see _incident_label — TomTom doesn't
+            # always have one), but the predictive call still won on a
+            # real delay: a recurring pattern rather than a fresh
+            # named event, worth saying differently than a silent
+            # number would.
+            text += " — predicted delay ahead"
     return target_ms, tier, text, is_home
 
 

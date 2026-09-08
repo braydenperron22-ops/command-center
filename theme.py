@@ -3283,6 +3283,24 @@ html, body, [class*="css"] {
     font-size: 1.25rem;
     margin-top: 0.5rem;
 }
+/* Session request: "flash an amber/warning state on the Streamlit card
+   so I can see it instantly at a glance" (commute_reminder.
+   is_congested — a hybrid predictive+live traffic delay real enough to
+   matter, not routine noise). A STATIC amber border/glow, not an
+   actual flash/pulse — the global `* { animation: none !important; }`
+   kill switch (see this file's own "Animations removed" note) would
+   silently drop a keyframe-only treatment the same way it already did
+   everywhere else, so the resting state alone has to read as a real
+   warning. Same amber family as .leave-headline.intensity-aware
+   (#FF9F0A) — one consistent "amber means traffic/commute warning"
+   color across the whole app, not a new one invented just for this
+   tile. box-shadow ADDS the glow onto the base .tile depth shadow
+   (comma-separated) rather than replacing it, so the card doesn't lose
+   its normal depth. */
+.commute-tile.congested {
+    border-color: rgba(255,159,10,0.55);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 28px rgba(255,159,10,0.28);
+}
 .agenda-feed-list .news-feed-row {
     padding: 1.2rem 0 1.2rem 1.1rem;
     border-left-width: 5px;

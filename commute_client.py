@@ -12,12 +12,15 @@ conditions, so it could never actually answer "how bad is traffic
 right now" — the entire point of this tile.
 """
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import requests
 import streamlit as st
 
 import commute_history
 import fetch_throttle
-from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
+from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN, TIMEZONE
 
 ROUTE_URL = "https://api.tomtom.com/routing/1/calculateRoute/{lat1},{lon1}:{lat2},{lon2}/json"
 GEOCODE_URL = "https://api.tomtom.com/search/2/geocode/{query}.json"
@@ -60,6 +63,21 @@ SEVERE_SPEED_KMH = 20
 # even running unattended 24/7 — 15 min was needlessly conservative and
 # let the shown time lag real conditions by up to a quarter hour.
 CACHE_TTL_SECONDS = 5 * 60
+# Session request: a predictive call using TomTom's departAt parameter
+# (IQ Routes historical speed profiles for a specific future time — the
+# recurring 8-8:30am bus jam this was built to catch is baked into that
+# profile whether or not it's actually happened yet today), run
+# alongside the existing live/right-now call — see route()'s own
+# depart_at param and commute_reminder._hybrid_route for how the two
+# get compared. Rounded to this bucket before being sent AND before
+# being used as a cache key: depart_at is normally a computed estimate
+# that drifts by seconds on every rerun (today's rough leave_by
+# recalculated fresh each time) — an unrounded value would cache-miss
+# on nearly every call, burning a real TomTom request every ~5s instead
+# of every CACHE_TTL_SECONDS like every other call here (see gemini_
+# client.generate's own docstring for the same "bucket, don't use a raw
+# timestamp as a cache key" discipline this mirrors).
+DEPART_AT_BUCKET_MINUTES = 5
 # Addresses don't move — cache geocoding results for a long time rather
 # than re-spending a request on the same event location every time it
 # comes up. Long enough to cover a recurring shift's whole run without
@@ -104,8 +122,18 @@ def _incident_label(route_data: dict) -> str | None:
     return ", ".join(sorted(labels))
 
 
+def _round_depart_at(depart_at: datetime) -> datetime:
+    """Floor `depart_at` to DEPART_AT_BUCKET_MINUTES — see that
+    constant's own comment for why this matters for caching, not just
+    tidiness."""
+    minute = (depart_at.minute // DEPART_AT_BUCKET_MINUTES) * DEPART_AT_BUCKET_MINUTES
+    return depart_at.replace(minute=minute, second=0, microsecond=0)
+
+
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_route_raw(api_key: str, dest_lat: float, dest_lon: float, record_history: bool) -> dict:
+def _fetch_route_raw(
+    api_key: str, dest_lat: float, dest_lon: float, record_history: bool, depart_at_iso: str | None = None
+) -> dict:
     url = ROUTE_URL.format(
         lat1=COMMUTE_ORIGIN["lat"], lon1=COMMUTE_ORIGIN["lon"],
         lat2=dest_lat, lon2=dest_lon,
@@ -126,11 +154,18 @@ def _fetch_route_raw(api_key: str, dest_lat: float, dest_lon: float, record_hist
     # call — confirmed live — so "anyRoute" is what's actually usable
     # here; the severity check below (reusing _incident_label) is what
     # decides whether an alternative is actually needed.
-    resp = requests.get(
-        url,
-        params={"key": api_key, "traffic": "true", "sectionType": "traffic", "maxAlternatives": 2, "alternativeType": "anyRoute"},
-        timeout=15,
-    )
+    #
+    # depart_at_iso — session request: "query TomTom using a dynamic
+    # future departure time... this ensures it utilizes TomTom's
+    # historical speed profiles (IQ Routes) to automatically bake in the
+    # recurring morning bus jam." Omitted entirely (TomTom's own default
+    # is "now") for the plain live call; set to a real ISO8601 timestamp
+    # (already bucketed by the caller — see route()) for the predictive
+    # one.
+    params = {"key": api_key, "traffic": "true", "sectionType": "traffic", "maxAlternatives": 2, "alternativeType": "anyRoute"}
+    if depart_at_iso:
+        params["departAt"] = depart_at_iso
+    resp = requests.get(url, params=params, timeout=15)
     resp.raise_for_status()
     routes = resp.json()["routes"]
     reference = routes[0]
@@ -186,23 +221,44 @@ def _fetch_route_raw(api_key: str, dest_lat: float, dest_lon: float, record_hist
     }
 
 
-def route(destination: dict | None = None) -> dict | None:
+def route(destination: dict | None = None, depart_at: datetime | None = None) -> dict | None:
     """`destination` is {"lat", "lon"} (a "label" key, if present, is
     ignored here) — None routes to the default COMMUTE_DESTINATION.
-    The last-good fallback only applies to that default: a stale route
-    to some other day's one-off event location would be actively
-    misleading rather than merely outdated."""
+    The last-good fallback only applies to the plain live default call
+    (destination AND depart_at both None): a stale route to some other
+    day's one-off event location, or a stale route standing in for a
+    genuinely failed PREDICTIVE call, would be actively misleading
+    rather than merely outdated — a failed predictive call should just
+    come back None and let the caller (see commute_reminder.
+    _hybrid_route) fall back to the live route it already has, not get
+    silently backfilled with some other route entirely.
+
+    `depart_at` — session request: a predictive call using TomTom's own
+    IQ Routes historical speed profiles for a specific future departure
+    time, instead of always querying for "right now." Naive or aware,
+    always reinterpreted as being in TIMEZONE (same "arrives already in
+    the local zone" convention every other datetime in this app uses)
+    and floored to DEPART_AT_BUCKET_MINUTES before being sent — see
+    that constant's own comment for why the rounding isn't optional.
+    Never recorded into commute_history even for the default
+    destination: that log is real OBSERVED conditions, not a
+    hypothetical future prediction."""
     global _last_good_route
     api_key = st.secrets.get("TOMTOM_API_KEY")
     if not api_key:
         return None
     is_default = destination is None
     dest = destination or COMMUTE_DESTINATION
+    depart_at_iso = None
+    if depart_at is not None:
+        localized = depart_at if depart_at.tzinfo else depart_at.replace(tzinfo=ZoneInfo(TIMEZONE))
+        depart_at_iso = _round_depart_at(localized).isoformat(timespec="seconds")
+    record_history = is_default and depart_at is None
     try:
-        result = _fetch_route_raw(api_key, dest["lat"], dest["lon"], is_default)
+        result = _fetch_route_raw(api_key, dest["lat"], dest["lon"], record_history, depart_at_iso)
     except Exception:
-        return _last_good_route if is_default else None
-    if is_default:
+        return _last_good_route if (is_default and depart_at is None) else None
+    if is_default and depart_at is None:
         _last_good_route = result
     return result
 
