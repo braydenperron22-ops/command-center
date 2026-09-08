@@ -812,42 +812,57 @@ def maybe_reprice(now: datetime, readings: dict | None = None, night_mode_active
 # what the catalyst is." A window, not an exact minute match — the
 # outer script's own rerun cadence (~65-120s) can't guarantee landing
 # on the literal 9:30:00 tick, same reasoning as every other clock-
-# time-gated feature in this app. Capped at _MORNING_BRIEF_LATEST_HOUR
-# rather than firing whenever the kiosk next wakes up — a "market open"
-# brief showing up mid-afternoon because the kiosk was asleep through
-# market open isn't the feature that was asked for; skipping for the
-# day is more honest than a stale late push (same reasoning
-# commute_reminder.LATEST_FIRE_MINUTES already uses).
+# time-gated feature in this app. _MORNING_BRIEF_LATEST_HOUR is the
+# "on time" window's own end, not a hard cutoff anymore — see the
+# catch-up constant/comment right below for why.
 _MORNING_BRIEF_HOUR = 9
 _MORNING_BRIEF_MINUTE = 30
 _MORNING_BRIEF_LATEST_HOUR = 11
+# Session report, a real missed brief: "I didn't receive a single
+# morning brief today." The original design deliberately gave the
+# on-time window no retry at all — skipping for the day, reasoned as
+# "more honest than a stale late push" (same shape as commute_reminder.
+# LATEST_FIRE_MINUTES). That reasoning holds for WHY the on-time window
+# itself stays a window, not an all-day free-for-all — but it also
+# meant a single Gemini hiccup anywhere in that one 90-minute stretch
+# silently killed the brief for the entire day, with nothing logging or
+# surfacing it. This adds a real same-day fallback instead of removing
+# the on-time framing: if _MORNING_BRIEF_LATEST_HOUR passes with
+# nothing sent, it keeps trying on the next successful cycle up to this
+# later cutoff — still cuts off well before end-of-day, since a
+# "morning brief" landing at 11pm would be its own kind of dishonest.
+_MORNING_BRIEF_CATCHUP_LATEST_HOUR = 18
 _MORNING_BRIEF_PUSHED_KEY = "brdn_morning_brief_pushed_date"
 
 
 def maybe_push_morning_brief(now: datetime, readings: dict | None = None) -> None:
-    """Once per real calendar day, in the 9:30-11:00am window. Calls
-    maybe_reprice first so market open gets a genuinely fresh read
-    rather than reusing however-old the last hourly cycle happens to
-    be — that call is itself a no-op if under an hour has passed since
-    the last real cycle (see its own docstring), so this never disturbs
-    the normal hourly rhythm or costs an extra AI call on its own.
-    Reuses the already-computed commentary/expectations from that
+    """Once per real calendar day: on time in the 9:30-11:00am window,
+    or as a same-day catch-up up to _MORNING_BRIEF_CATCHUP_LATEST_HOUR
+    if the on-time window was missed entirely (see that constant's own
+    comment). Calls maybe_reprice first so this gets a genuinely fresh
+    read rather than reusing however-old the last hourly cycle happens
+    to be — that call is itself a no-op if under an hour has passed
+    since the last real cycle (see its own docstring), so this never
+    disturbs the normal hourly rhythm or costs an extra AI call on its
+    own. Reuses the already-computed commentary/expectations from that
     cycle rather than asking the AI a second, separate question — the
     hourly prompt already produces exactly the "why it moved" reaction
     and "what's priced in" note this brief wants, no new reasoning call
     needed."""
     minutes_now = now.hour * 60 + now.minute
     window_start = _MORNING_BRIEF_HOUR * 60 + _MORNING_BRIEF_MINUTE
-    window_end = _MORNING_BRIEF_LATEST_HOUR * 60
-    if not (window_start <= minutes_now < window_end):
+    on_time_end = _MORNING_BRIEF_LATEST_HOUR * 60
+    catchup_end = _MORNING_BRIEF_CATCHUP_LATEST_HOUR * 60
+    if not (window_start <= minutes_now < catchup_end):
         return
     today = now.date().isoformat()
     if persisted_state.load(_MORNING_BRIEF_PUSHED_KEY, None) == today:
         return
+    is_catchup = minutes_now >= on_time_end
 
     # night_mode_active always False here on purpose, not just the
-    # default — this window (9:30-11am) can never genuinely overlap
-    # night mode, which always ends by sunrise.
+    # default — this window (9:30am-6pm at the latest) can never
+    # genuinely overlap night mode.
     maybe_reprice(now, readings)
     if _last_report is None:
         return
@@ -858,6 +873,13 @@ def maybe_push_morning_brief(now: datetime, readings: dict | None = None) -> Non
     title = f'BRDN ${data["price"]:.2f} {arrow} {sign}{data["pct_change"]:.2f}% — {data["sentiment"]}'
     commentary = _last_report.get("commentary", "")
     message = f"{commentary}\n\nPriced in: {_expectations}" if _expectations else commentary
+    if is_catchup:
+        # Honest framing, not silently pretending this is the normal
+        # 9:30am read — same reasoning the original "skip rather than
+        # send a stale late push" design already valued, just applied
+        # to a push that now genuinely goes out instead of an all-day
+        # silent gap.
+        message = "(This morning's window was missed — catching up now.)\n\n" + message
 
     # Marked before the send call, not conditioned on its success — same
     # convention commute_reminder's own milestone push dedup already
