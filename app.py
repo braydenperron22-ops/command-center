@@ -914,9 +914,31 @@ components.html(
         // inside the ticker/toast slot itself — document.body stays as
         // a fallback only for the case the anchor genuinely isn't found
         // yet at setup time, not the normal path.
-        "var kioskTickerAnchor = document.querySelector('.ticker-bar, ' + TOAST_SEL);",
-        "var kioskTickerObserveTarget = (kioskTickerAnchor && kioskTickerAnchor.parentElement) || document.body;",
-        "new MutationObserver(kioskPersistTicker).observe(kioskTickerObserveTarget, {childList: true, subtree: true});",
+        // Session report, recurring: "my entire Mac froze up... the
+        // Streamlit page is taking up a lot of data." Same freeze as
+        // the "Page Unresponsive" one above, resurfacing — the
+        // document.body fallback right below was only ever meant for
+        // "the anchor genuinely isn't found yet," but a real reconnect/
+        // redeploy can land this setup code running BEFORE Streamlit
+        // has finished its first paint of this area, hitting that
+        // fallback for real instead of the narrow scope. Retried up to
+        // 20 times (5s total) before ever accepting document.body — in
+        // every ordinary case Streamlit finishes rendering this slot
+        // well inside that window, so the wide scope should now never
+        // actually get used outside a genuinely broken page.
+        "function kioskFindTickerAnchor() {",
+        "  var el = document.querySelector('.ticker-bar, ' + TOAST_SEL);",
+        "  return (el && el.parentElement) || null;",
+        "}",
+        "function kioskSetupTickerObserver(attempt) {",
+        "  var target = kioskFindTickerAnchor();",
+        "  if (!target && attempt < 20) {",
+        "    setTimeout(function () { kioskSetupTickerObserver(attempt + 1); }, 250);",
+        "    return;",
+        "  }",
+        "  new MutationObserver(kioskPersistTicker).observe(target || document.body, {childList: true, subtree: true});",
+        "}",
+        "kioskSetupTickerObserver(0);",
       ].join('\\n');
       doc.head.appendChild(s);
     })();
@@ -1577,24 +1599,40 @@ components.html(
         "}",
         "kioskCheckToastChime();",
         // Session report, real kiosk: recurring Chrome "Page Unresponsive"
-        // freezes. Same root cause as kiosk-ticker-persist's own fix
+        // freezes, then again (this exact rewrite's own reason): "my
+        // entire Mac froze up... the Streamlit page is taking up a lot
+        // of data." Same root cause as kiosk-ticker-persist's own fix
         // above, worse here: this observer also watches characterData
         // (any text-node change anywhere on the page, not just elements
         // added/removed), and .live-countdown's own child rewrites its
         // text once a SECOND while any leave/leave-ticker countdown is
-        // showing — meaning this ran on document.body's entire subtree
-        // roughly once a second, continuously, each time doing up to 6
-        // separate whole-document querySelector calls. Every selector
-        // this function checks (weather/urgent/leave/sports/email/
-        // gentle) is a state of the exact same single bottom-bar slot
-        // kiosk-ticker-persist already found the real scope for — reuse
-        // that, not document.body.
-        "var kioskChimeAnchor = document.querySelector("
+        // showing — meaning a document.body-scoped version of this ran
+        // on the entire page's subtree roughly once a second,
+        // continuously, each time doing up to 6 separate whole-document
+        // querySelector calls. This used to fall back to document.body
+        // immediately the one time its own narrow anchor wasn't found
+        // yet (a real race on a fresh reconnect/redeploy, not just a
+        // hypothetical) — same retry-before-ever-falling-back fix as
+        // kiosk-ticker-persist's own, self-contained here rather than
+        // reused across the two independently-injected scripts (their
+        // execution order relative to each other isn't a contract
+        // either script should depend on).
+        "function kioskFindChimeAnchor() {",
+        "  var el = document.querySelector("
           + "'.ticker-bar, ' + KIOSK_CHIME_URGENT_SEL + ', ' + KIOSK_CHIME_GENTLE_SEL + ', '"
           + "+ KIOSK_LEAVE_VOICE_SEL + ', ' + KIOSK_WEATHER_VOICE_SEL + ', '"
           + "+ KIOSK_SPORTS_VOICE_SEL + ', ' + KIOSK_EMAIL_CHIME_SEL);",
-        "var kioskChimeObserveTarget = (kioskChimeAnchor && kioskChimeAnchor.parentElement) || document.body;",
-        "new MutationObserver(kioskCheckToastChime).observe(kioskChimeObserveTarget, {childList: true, subtree: true, characterData: true});",
+        "  return (el && el.parentElement) || null;",
+        "}",
+        "function kioskSetupChimeObserver(attempt) {",
+        "  var target = kioskFindChimeAnchor();",
+        "  if (!target && attempt < 20) {",
+        "    setTimeout(function () { kioskSetupChimeObserver(attempt + 1); }, 250);",
+        "    return;",
+        "  }",
+        "  new MutationObserver(kioskCheckToastChime).observe(target || document.body, {childList: true, subtree: true, characterData: true});",
+        "}",
+        "kioskSetupChimeObserver(0);",
         "kioskAudioKeepAlive();",
         "setInterval(kioskAudioKeepAlive, KIOSK_AUDIO_KEEPALIVE_MS);",
       ].join('\\n');
