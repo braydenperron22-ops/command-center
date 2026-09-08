@@ -132,10 +132,11 @@ def _round_depart_at(depart_at: datetime) -> datetime:
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_route_raw(
-    api_key: str, dest_lat: float, dest_lon: float, record_history: bool, depart_at_iso: str | None = None
+    api_key: str, origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float,
+    record_history: bool, depart_at_iso: str | None = None,
 ) -> dict:
     url = ROUTE_URL.format(
-        lat1=COMMUTE_ORIGIN["lat"], lon1=COMMUTE_ORIGIN["lon"],
+        lat1=origin_lat, lon1=origin_lon,
         lat2=dest_lat, lon2=dest_lon,
     )
     fetch_throttle.wait_turn()
@@ -221,17 +222,17 @@ def _fetch_route_raw(
     }
 
 
-def route(destination: dict | None = None, depart_at: datetime | None = None) -> dict | None:
+def route(destination: dict | None = None, depart_at: datetime | None = None, origin: dict | None = None) -> dict | None:
     """`destination` is {"lat", "lon"} (a "label" key, if present, is
     ignored here) — None routes to the default COMMUTE_DESTINATION.
     The last-good fallback only applies to the plain live default call
-    (destination AND depart_at both None): a stale route to some other
-    day's one-off event location, or a stale route standing in for a
-    genuinely failed PREDICTIVE call, would be actively misleading
-    rather than merely outdated — a failed predictive call should just
-    come back None and let the caller (see commute_reminder.
-    _hybrid_route) fall back to the live route it already has, not get
-    silently backfilled with some other route entirely.
+    (destination, depart_at, AND origin all None): a stale route to
+    some other day's one-off event location, or a stale route standing
+    in for a genuinely failed PREDICTIVE call, would be actively
+    misleading rather than merely outdated — a failed predictive call
+    should just come back None and let the caller (see commute_
+    reminder._hybrid_route) fall back to the live route it already has,
+    not get silently backfilled with some other route entirely.
 
     `depart_at` — session request: a predictive call using TomTom's own
     IQ Routes historical speed profiles for a specific future departure
@@ -242,20 +243,31 @@ def route(destination: dict | None = None, depart_at: datetime | None = None) ->
     that constant's own comment for why the rounding isn't optional.
     Never recorded into commute_history even for the default
     destination: that log is real OBSERVED conditions, not a
-    hypothetical future prediction."""
+    hypothetical future prediction.
+
+    `origin` — session request: "the estimated commute time home...
+    using the same guardrails and process that we use for the commute
+    there." None routes FROM the default COMMUTE_ORIGIN (home), same
+    as this always did; a caller building the reverse trip (work ->
+    home) passes {"lat", "lon"} for the actual starting point instead
+    — same hybrid predictive+live machinery, same incident detection,
+    same everything, just not hardcoded to always start from home
+    anymore. Distinct origin/destination pairs get their own cache
+    entries for free (both are now real @st.cache_data parameters)."""
     global _last_good_route
     api_key = st.secrets.get("TOMTOM_API_KEY")
     if not api_key:
         return None
-    is_default = destination is None
+    is_default = destination is None and origin is None
     dest = destination or COMMUTE_DESTINATION
+    org = origin or COMMUTE_ORIGIN
     depart_at_iso = None
     if depart_at is not None:
         localized = depart_at if depart_at.tzinfo else depart_at.replace(tzinfo=ZoneInfo(TIMEZONE))
         depart_at_iso = _round_depart_at(localized).isoformat(timespec="seconds")
     record_history = is_default and depart_at is None
     try:
-        result = _fetch_route_raw(api_key, dest["lat"], dest["lon"], record_history, depart_at_iso)
+        result = _fetch_route_raw(api_key, org["lat"], org["lon"], dest["lat"], dest["lon"], record_history, depart_at_iso)
     except Exception:
         return _last_good_route if (is_default and depart_at is None) else None
     if is_default and depart_at is None:

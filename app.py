@@ -3305,6 +3305,16 @@ try:
 except Exception:
     pass
 
+# Session request: "when my shift is about over... send me a
+# notification on my phone with the estimated commute time home using
+# the same guardrails and process that we use for the commute there."
+# maybe_push_commute_home owns its own once-per-shift window/dedup,
+# same shape as the two pushes just above.
+try:
+    commute_reminder.maybe_push_commute_home(now)
+except Exception:
+    pass
+
 # Session request: "a little ticker somewhere on the main page
 # regardless of what page I'm on... visible from across the room, but
 # not obstructive... even on the night page." A plain unconditional

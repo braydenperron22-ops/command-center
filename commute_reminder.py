@@ -410,7 +410,7 @@ def _due_milestone(minutes_until_leave: float, shown_for_event: set[int], now_ho
     return due
 
 
-def _hybrid_route(destination: dict | None, live: dict, target_time: datetime) -> dict:
+def _hybrid_route(destination: dict | None, live: dict, target_time: datetime, origin: dict | None = None) -> dict:
     """The worse (by duration_seconds) of the already-fetched LIVE route
     and a fresh predictive route for `target_time` — see this module's
     own AMBER_DELAY_THRESHOLD_SECONDS comment for the two real gaps
@@ -421,8 +421,11 @@ def _hybrid_route(destination: dict | None, live: dict, target_time: datetime) -
     something happening live right now" — both real, just worth
     labeling differently on screen. Never fails outright: a failed or
     merely-not-worse predictive call just means the live route was
-    already the right (or the only available) answer."""
-    predictive = commute_client.route(destination, depart_at=target_time)
+    already the right (or the only available) answer. `origin`
+    defaults to home (commute_client.route's own default) — a caller
+    building the reverse commute (see maybe_push_commute_home) passes
+    the actual starting point instead."""
+    predictive = commute_client.route(destination, depart_at=target_time, origin=origin)
     if predictive is None or predictive["duration_seconds"] <= live["duration_seconds"]:
         return {**live, "predicted": False}
     return {**predictive, "predicted": True}
@@ -462,6 +465,87 @@ def is_congested(route: dict | None) -> bool:
     comparing against commute_history (too short a retention window to
     mean anything as a "what's normal" baseline)."""
     return bool(route) and route.get("delay_seconds", 0) >= AMBER_DELAY_THRESHOLD_SECONDS
+
+
+# Session request: "when my shift is about over, it's about eight
+# hours, probably around the seven and a half hour mark after my shift
+# starts... send me a notification on my phone with the estimated
+# commute time home using the same guardrails and process that we use
+# for the commute there." Computed from the shift's own START time, not
+# read from the calendar event's own "end" field — that field is a
+# known placeholder, not real data, the exact reason this needed a
+# self-reported offset instead of just reading when the shift ends.
+SHIFT_HOME_NOTICE_HOURS = 7.5
+# The predictive call's own target — the real expected departure
+# moment, not "now" (this notice fires ~30 min before that, not at it).
+SHIFT_ASSUMED_LENGTH_HOURS = 8.0
+# A window, not an exact minute match — same reasoning every other
+# clock-time-gated feature in this app already uses (the outer rerun's
+# own ~65-75s cadence can't guarantee landing on the literal minute).
+SHIFT_HOME_NOTICE_WINDOW_MINUTES = 15
+_COMMUTE_HOME_PUSHED_KEY = "commute_home_pushed_date"
+
+
+def _todays_work_shift(now: datetime) -> dict | None:
+    """Today's actual Work shift — summary == "Work" after calendar_
+    client's own normalization (same check _alert_label already makes),
+    not just any shift-type event (an appointment, a golf tee time).
+    The "7.5 hours after start" rule only means anything for a real
+    work shift. First one if, somehow, more than one exists today."""
+    for shift in _todays_shift_events(now):
+        if shift["summary"] == "Work" and not _is_home_event(shift):
+            return shift
+    return None
+
+
+def maybe_push_commute_home(now: datetime) -> None:
+    """Once per real work shift, ~7.5 hours after it starts. Same
+    hybrid predictive+live TomTom approach as the leave-for-work
+    countdown (_hybrid_route) — just reversed: origin is today's real
+    work location, destination is home. Predictive target is shift_
+    start + SHIFT_ASSUMED_LENGTH_HOURS (the real expected departure
+    moment, not "now" — this notice fires while he's still at work) —
+    same "predict for the actual future moment, not whenever this
+    happens to run" reasoning _hybrid_route_for_shift's own bootstrap
+    already uses. Congestion framing reuses is_congested — same
+    AMBER_DELAY_THRESHOLD_SECONDS bar the Today page's own amber card
+    and BRDN's own commute signal already use, not a separate one."""
+    shift = _todays_work_shift(now)
+    if shift is None:
+        return
+    work_location = _destination_for_shift(shift) or COMMUTE_DESTINATION
+    notice_time = shift["start"] + timedelta(hours=SHIFT_HOME_NOTICE_HOURS)
+    now_aware = now.replace(tzinfo=notice_time.tzinfo)
+    if not (notice_time <= now_aware < notice_time + timedelta(minutes=SHIFT_HOME_NOTICE_WINDOW_MINUTES)):
+        return
+    today = now.date().isoformat()
+    if persisted_state.load(_COMMUTE_HOME_PUSHED_KEY, None) == today:
+        return
+
+    live = commute_client.route(COMMUTE_ORIGIN, origin=work_location)
+    if not live:
+        return
+    predicted_departure = shift["start"] + timedelta(hours=SHIFT_ASSUMED_LENGTH_HOURS)
+    route = _hybrid_route(COMMUTE_ORIGIN, live, predicted_departure, origin=work_location)
+
+    minutes = round(route["duration_seconds"] / 60)
+    if route.get("incident"):
+        reason = f" ({route['incident']})"
+    elif route.get("predicted") and is_congested(route):
+        reason = " — heavier than usual, predicted"
+    else:
+        reason = ""
+    message = f"~{minutes} min home{reason}"
+
+    # Marked before the send call, not conditioned on its success — same
+    # convention every other push dedup in this app already uses: a
+    # transient ntfy failure shouldn't turn into a retry-storm for the
+    # rest of the window.
+    persisted_state.save(_COMMUTE_HOME_PUSHED_KEY, today)
+    try:
+        ntfy_client.send(title="Commute home", message=message, priority="default", tags="car")
+    except Exception:
+        pass
 
 
 def _leave_by_for_shift(shift: dict) -> datetime | None:
