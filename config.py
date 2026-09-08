@@ -214,6 +214,14 @@ PAGE_DURATION_OVERRIDES = {}
 COMMUTE_ORIGIN = {"label": "Home", "lat": 46.228058, "lon": -79.245407}
 COMMUTE_DESTINATION = {"label": "Work", "lat": 46.3185464, "lon": -79.4386137}
 
+# Session request: "anything that has gym in it, whether it's push, pull,
+# or legs" should route the leave-in timer here regardless of whatever
+# (if anything) the calendar event's own location field says — see
+# commute_reminder._destination_for_shift, which checks the event
+# summary for "gym" before ever looking at the location. Geocoded via
+# commute_client.geocode, same as COMMUTE_DESTINATION.
+GYM_DESTINATION = {"label": "Gym", "lat": 46.1850958, "lon": -79.2857841}
+
 # Markets page refresh — yfinance has no key/rate-limit tier to work
 # around, so this can just be "how fresh do we want it," not "how rarely
 # can we afford to ask."

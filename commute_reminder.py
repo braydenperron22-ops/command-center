@@ -26,7 +26,7 @@ import commute_history
 import kiosk_tts
 import ntfy_client
 import persisted_state
-from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
+from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN, GYM_DESTINATION
 
 # Session request: "update the commute logic to implement a hybrid
 # approach... query TomTom using a dynamic future departure time...
@@ -288,7 +288,17 @@ def _destination_for_shift(shift: dict) -> dict | None:
     """{"lat", "lon", "label"} from the shift's own calendar location,
     or None if it doesn't have one or geocoding fails — None means
     "use the default COMMUTE_DESTINATION" to every caller here, so a
-    shift with no location (or a bad one) behaves exactly as before."""
+    shift with no location (or a bad one) behaves exactly as before.
+
+    Session request: "anything that has gym in it, whether it's push,
+    pull, or legs" routes to the fixed GYM_DESTINATION instead — checked
+    by summary, not location, since the gym auto-scheduler's own events
+    (titled "Gym" or "Gym - Push"/"Pull"/"Legs", see the RemoteTrigger
+    prompt) carry no location field at all, and even if one were added
+    later a typo'd/differently-formatted address shouldn't silently
+    reroute the leave-in timer somewhere wrong."""
+    if "gym" in shift["summary"].lower():
+        return GYM_DESTINATION
     if not shift.get("location"):
         return None
     # Geocoding gets the full address (better match quality), but the
