@@ -1860,12 +1860,19 @@ try:
         # as jumbotron. Session request: "add a maintenance tab... by
         # pressing D." See pages_maintenance.py.
         page = "maintenance"
-    elif _requested_page == "terminal":
-        # Same "hidden unless asked for" treatment as jumbotron/
-        # maintenance — session request: "make a shortcut for p...
-        # bring up the full institutional analysis on my stock in a
-        # Bloomberg terminal style." See pages_brdn_terminal.py.
-        page = "terminal"
+    # "terminal" (pages_brdn_terminal.py) temporarily DISABLED live —
+    # session incident: the page hung in Streamlit's own "running"
+    # state for minutes on the real kiosk even after the fix that made
+    # its own render() measure at 0.04s locally against real data.
+    # Something specific to reaching this route on the actual
+    # deployment is still wrong and not yet understood — rather than
+    # attempt a third blind live patch, this route now falls through to
+    # the normal PAGES/rotation logic below (same as any unrecognized
+    # ?page= value) until the real cause is found offline. The module,
+    # its CSS, and the P hotkey/picker entries are all left in place —
+    # only this one routing branch is off.
+    # elif _requested_page == "terminal":
+    #     page = "terminal"
     elif _requested_page in PAGES:
         page = _requested_page
     elif _takeover or _ufc_takeover:
