@@ -428,6 +428,67 @@ def maybe_reprice(now: datetime, readings: dict | None = None) -> None:
             pass
 
 
+# Session request: "every morning, I want to get a brief of what's
+# going on with my stock price, probably around market open — nine
+# thirty would be sick... why it's moving, what they're pricing in,
+# what the catalyst is." A window, not an exact minute match — the
+# outer script's own rerun cadence (~65-120s) can't guarantee landing
+# on the literal 9:30:00 tick, same reasoning as every other clock-
+# time-gated feature in this app. Capped at _MORNING_BRIEF_LATEST_HOUR
+# rather than firing whenever the kiosk next wakes up — a "market open"
+# brief showing up mid-afternoon because the kiosk was asleep through
+# market open isn't the feature that was asked for; skipping for the
+# day is more honest than a stale late push (same reasoning
+# commute_reminder.LATEST_FIRE_MINUTES already uses).
+_MORNING_BRIEF_HOUR = 9
+_MORNING_BRIEF_MINUTE = 30
+_MORNING_BRIEF_LATEST_HOUR = 11
+_MORNING_BRIEF_PUSHED_KEY = "brdn_morning_brief_pushed_date"
+
+
+def maybe_push_morning_brief(now: datetime, readings: dict | None = None) -> None:
+    """Once per real calendar day, in the 9:30-11:00am window. Calls
+    maybe_reprice first so market open gets a genuinely fresh read
+    rather than reusing however-old the last hourly cycle happens to
+    be — that call is itself a no-op if under an hour has passed since
+    the last real cycle (see its own docstring), so this never disturbs
+    the normal hourly rhythm or costs an extra AI call on its own.
+    Reuses the already-computed commentary/expectations from that
+    cycle rather than asking the AI a second, separate question — the
+    hourly prompt already produces exactly the "why it moved" reaction
+    and "what's priced in" note this brief wants, no new reasoning call
+    needed."""
+    minutes_now = now.hour * 60 + now.minute
+    window_start = _MORNING_BRIEF_HOUR * 60 + _MORNING_BRIEF_MINUTE
+    window_end = _MORNING_BRIEF_LATEST_HOUR * 60
+    if not (window_start <= minutes_now < window_end):
+        return
+    today = now.date().isoformat()
+    if persisted_state.load(_MORNING_BRIEF_PUSHED_KEY, None) == today:
+        return
+
+    maybe_reprice(now, readings)
+    if _last_report is None:
+        return
+
+    data = current()
+    arrow = "▲" if data["change"] > 0 else "▼" if data["change"] < 0 else "●"
+    sign = "+" if data["pct_change"] >= 0 else ""
+    title = f'BRDN ${data["price"]:.2f} {arrow} {sign}{data["pct_change"]:.2f}% — {data["sentiment"]}'
+    commentary = _last_report.get("commentary", "")
+    message = f"{commentary}\n\nPriced in: {_expectations}" if _expectations else commentary
+
+    # Marked before the send call, not conditioned on its success — same
+    # convention commute_reminder's own milestone push dedup already
+    # uses (see its own comment): a transient ntfy failure shouldn't
+    # turn into a retry-storm on every rerun for the rest of the window.
+    persisted_state.save(_MORNING_BRIEF_PUSHED_KEY, today)
+    try:
+        ntfy_client.send(title=title, message=message, priority="default", tags="bar_chart")
+    except Exception:
+        pass
+
+
 def big_move_headline_candidate(now: datetime) -> dict | None:
     """Red-headline rotation candidate — same shape every source in
     headline_rotation.py uses (see market_circuit_breaker.
