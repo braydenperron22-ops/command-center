@@ -56,6 +56,7 @@ from datetime import datetime
 import streamlit as st
 
 import brayden_index
+import sleep_tracker
 import tiles
 
 # Bloomberg's own real signature palette — black, amber labels, a
@@ -237,3 +238,15 @@ def render(now: datetime, benchmark_symbol: str | None = None, benchmark_pct: fl
         'PRESS P TO EXIT</div>',
         unsafe_allow_html=True,
     )
+
+    # Session request: "make sure [the bedtime timer] appears... on all
+    # screens." This page isn't gated on _jumbotron_active (see this
+    # module's own docstring — it's its own independent takeover mode),
+    # so app.py's jumbotron-only bedtime branch never covers it; a big
+    # market move auto-takeover landing inside the bedtime window used
+    # to blank the countdown same as an untreated jumbotron game once
+    # did. Self-guarding (no-ops when bedtime isn't active) and position:
+    # fixed to the bottom, same slot the normal dashboard's own ticker/
+    # leave-timer use — no conflict with this page's own normal-flow
+    # footer above, just a brief overlay on it while genuinely active.
+    sleep_tracker.render_ticker_bedtime_bar(now)

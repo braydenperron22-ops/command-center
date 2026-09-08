@@ -6341,6 +6341,32 @@ html, body, [class*="css"] {
     margin: 0 0.9rem;
     vertical-align: middle;
 }
+/* Session request: "make sure [the bedtime timer] appears on all
+   screens" — night mode used to have no bedtime content at all (it
+   starts at a flat 9:30pm, which can land BEFORE a later real bedtime,
+   see app.py's own _night_mode_day_end comment), and .night-mode's own
+   z-index:10001 sits well above .jumbo-leave-ticker's 10, so that
+   element would've rendered invisibly underneath this screen anyway —
+   night_mode.py embeds sleep_tracker.countdown_span_html's raw span
+   directly inside this view's own single markdown call instead. Same
+   "without the red or the colors" rule .night-ticker's own comment
+   already established for this screen — no severity-tiered blue/amber/
+   red gradient here, just this screen's one warm family throughout;
+   .night-bedtime-cta (added once the real 10-minute call-to-action
+   window starts, see BEDTIME_CTA_MINUTES) only brightens/glows within
+   that same red, the same escalation language .night-clock's own glow
+   already uses for "this is the important thing on screen." */
+.night-bedtime {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 1.6rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #D9382A;
+}
+.night-bedtime-cta {
+    color: #FF3B30;
+    text-shadow: 0 0 20px rgba(255, 59, 48, 0.6), 0 0 44px rgba(255, 59, 48, 0.3);
+}
 
 /* Phone breakpoint. Everything above this point is untouched at any
    width above it (including the kiosk monitor, always far wider) —

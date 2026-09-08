@@ -27,6 +27,7 @@ from datetime import datetime
 import streamlit as st
 
 import road_conditions_511
+import sleep_tracker
 import weather_alerts_bar
 from icons import icon_for, label_for
 
@@ -175,11 +176,42 @@ def render(now: datetime, weather: dict | None, category: str, phase: str, dim: 
         separator = '<span class="night-ticker-dot"></span>'
         ticker_html = f'<div class="night-ticker">{separator.join(html.escape(item) for item in attention_items)}</div>'
 
+    # Session request: "make sure [the bedtime timer] appears... on all
+    # screens." This view used to have no bedtime content at all —
+    # night_mode's own start (a flat 9:30pm) can land well before a
+    # later real bedtime, and even once bedtime forces jumbotron/game
+    # coverage to end early (app.py's own bedtime-vs-jumbotron override),
+    # this screen is exactly where you'd land right as the window opens.
+    # Embedded directly in THIS view's own single markdown call rather
+    # than a separate sleep_tracker.render_ticker_bedtime_bar() call —
+    # that renders its own position:fixed div at z-index:10, well under
+    # .night-mode's own 10001, so it would've painted invisibly
+    # underneath this screen (same class of bug the BRDN terminal's own
+    # wrapper-div incident already taught this app once — see that
+    # page's own docstring). countdown_span_html hands back just the
+    # raw live-countdown span so it can live inside this view's own
+    # stacking context instead.
+    bedtime_html = ""
+    try:
+        _bedtime_info = sleep_tracker.countdown_span_html(now)
+    except Exception:
+        _bedtime_info = None
+    if _bedtime_info is not None:
+        _tier, _span_html = _bedtime_info
+        # "without the red or the colors" (.night-ticker's own rule,
+        # still in force) — no severity-tiered coloring here, just this
+        # screen's one warm family; .night-bedtime-cta only brightens
+        # within that same red once the real call-to-action window
+        # starts (tier "critical" or "overdue" — see BEDTIME_CTA_MINUTES).
+        _cta_class = " night-bedtime-cta" if _tier in ("critical", "overdue") else ""
+        bedtime_html = f'<div class="night-bedtime{_cta_class}">{_span_html}</div>'
+
     st.markdown(
         f'<div class="night-mode">'
         f'<div class="night-clock">{time_str}<span class="night-ampm">{ampm}</span></div>'
         f'<div class="night-date">{date_str}</div>'
         f"{weather_html}"
+        f"{bedtime_html}"
         f"{ticker_html}"
         f"{overlay_html}"
         f"</div>",

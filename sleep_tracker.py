@@ -69,6 +69,19 @@ HEADLINE_WINDOW_MINUTES = 120
 # rather than lingering.
 OVERDUE_GRACE_MINUTES = 60
 
+# Session request: "when there's ten minutes left on the timer, I want
+# to say, like, get into bed... in order to get the full eight hours of
+# sleep, I need to be asleep when that timer hits zero." The countdown
+# itself (bedtime_for) is already backed off by WAKE_BUFFER_MINUTES from
+# the actual commitment, but that buffer covers waking up and getting
+# moving — it says nothing about the minutes it takes to physically stop
+# what you're doing and get in bed BEFORE the target, which is the whole
+# point of "asleep by zero." Same 600-second boundary the leave-timer's
+# own client-side script (app.py's kiosk-live-countdown) already uses
+# for ITS "critical" tier — not a coincidence, reusing that exact
+# vocabulary/threshold rather than inventing bedtime's own.
+BEDTIME_CTA_MINUTES = 10
+
 
 def _shift_events_for(calendars: list[dict], day: date) -> list[dict]:
     events = calendar_client.todays_events(calendars, day)
@@ -182,20 +195,42 @@ def _format_clock(remaining_seconds: float) -> str:
 # headline-rotation candidate AND the jumbotron ticker-slot renderer,
 # so the two can never disagree. Tier values are the SAME intensity-*
 # vocabulary .jumbo-leave-ticker's own CSS (theme.py) already defines
-# for the leave timer (calm/aware/urgent/critical/overdue) — bedtime
-# only ever needs 3 of the 5 (no distinct "aware" or "critical" phase),
-# not a vocabulary of its own, so render_ticker_bedtime_bar can reuse
-# that CSS directly with no new rules.
-_TIER_TO_ROTATION_CLASS = {"calm": "rotation-calm", "urgent": "rotation-notice", "overdue": "rotation-warning"}
+# for the leave timer (calm/aware/urgent/critical/overdue). Used to only
+# need 3 of the 5 (no distinct "aware" or "critical" phase) — now uses
+# "critical" too, for the real "get into bed" call-to-action window (see
+# BEDTIME_CTA_MINUTES) — still no new CSS, .intensity-critical already
+# exists for the leave timer's own identical 10-minute boundary.
+_TIER_TO_ROTATION_CLASS = {
+    "calm": "rotation-calm",
+    "urgent": "rotation-notice",
+    "critical": "rotation-critical",
+    "overdue": "rotation-warning",
+}
+# The live-countdown ticker's per-second text is a client-side JS
+# substitution into this template (app.py's kiosk-live-countdown script)
+# — a *static* string baked in at whatever Streamlit rerun last ran, not
+# re-evaluated against tier logic every second. That's fine: a rerun
+# lands well inside a minute in practice, so the wording change at the
+# CTA boundary shows up with the same small, expected lag every other
+# tier transition already has here.
+_TIER_TEMPLATE = {
+    "calm": "Bedtime in {}",
+    "urgent": "Bedtime in {}",
+    "critical": "Get into bed — {}",
+}
+_ZERO_TEXT = "Get into bed now"
 
 
 def _countdown_info(now: datetime) -> tuple[int, str, str] | None:
     """(target_ms, intensity tier, first-frame text) — bedtime's own
     version of commute_reminder._countdown_info. Active from
     HEADLINE_WINDOW_MINUTES before bedtime through OVERDUE_GRACE_MINUTES
-    after it; "urgent" once inside the last 30 minutes, "overdue" once
-    actually past bedtime — a real escalation, not a flat calm color
-    the whole span."""
+    after it. Tiers: "calm" (>30min), "urgent" (<=30min, still just a
+    countdown — plenty of time to wrap up whatever you're doing),
+    "critical" (<=BEDTIME_CTA_MINUTES, the actual "stop and go" moment —
+    text becomes the call-to-action, not just a number), "overdue" (past
+    bedtime, within the grace window — same CTA, framed as already
+    late)."""
     bedtime = bedtime_for(now)
     if bedtime is None:
         return None
@@ -206,11 +241,16 @@ def _countdown_info(now: datetime) -> tuple[int, str, str] | None:
     target_ms = int(bedtime.timestamp() * 1000)
     if remaining <= 0:
         tier = "overdue"
+        text = _ZERO_TEXT
+    elif remaining <= BEDTIME_CTA_MINUTES * 60:
+        tier = "critical"
+        text = f"Get into bed — {_format_clock(remaining)}"
     elif remaining <= 30 * 60:
         tier = "urgent"
+        text = f"Bedtime in {_format_clock(remaining)}"
     else:
         tier = "calm"
-    text = "Bedtime now" if remaining <= 0 else f"Bedtime in {_format_clock(remaining)}"
+        text = f"Bedtime in {_format_clock(remaining)}"
     return target_ms, tier, text
 
 
@@ -233,9 +273,30 @@ def bedtime_headline_candidate(now: datetime) -> dict | None:
         "text": text,
         "css_class": _TIER_TO_ROTATION_CLASS[tier],
         "target_ms": target_ms,
-        "template": "Bedtime in {}",
-        "zero_text": "Bedtime now",
+        "template": _TIER_TEMPLATE.get(tier, "Bedtime in {}"),
+        "zero_text": _ZERO_TEXT,
     }
+
+
+def countdown_span_html(now: datetime) -> tuple[str, str] | None:
+    """(tier, html) for the raw live-countdown <span> — same underlying
+    data as bedtime_headline_candidate/render_ticker_bedtime_bar, just
+    without a fixed wrapper div baked in, so a caller with its own
+    layout (night_mode's single-markdown full-screen view, the BRDN
+    terminal's own panel grid) can place and style it itself rather than
+    being stuck with the jumbotron ticker's own bottom-bar shape. None
+    when there's nothing to show right now, same as every other public
+    check in this module."""
+    info = _countdown_info(now)
+    if info is None:
+        return None
+    target_ms, tier, text = info
+    template = _TIER_TEMPLATE.get(tier, "Bedtime in {}")
+    html_snippet = (
+        f'<span class="live-countdown" data-intensity data-target-ms="{target_ms}" '
+        f'data-format="clock" data-template="{template}" data-zero-text="{_ZERO_TEXT}">{text}</span>'
+    )
+    return tier, html_snippet
 
 
 def render_ticker_bedtime_bar(now: datetime) -> None:
@@ -245,17 +306,16 @@ def render_ticker_bedtime_bar(now: datetime) -> None:
     instead of the leave timer's. See this function's own call site in
     app.py for the real reason it exists: a 10pm game running past
     bedtime used to leave the countdown invisible for hours, same
-    problem the leave-timer ticker was originally built to solve."""
-    info = _countdown_info(now)
-    if info is None:
+    problem the leave-timer ticker was originally built to solve.
+    Session follow-up: also called unconditionally (self-guarding, same
+    as here) from pages_brdn_terminal.py's own footer — the BRDN
+    terminal is the other full-screen takeover mode that used to blank
+    this out, since it isn't gated on _jumbotron_active either."""
+    result = countdown_span_html(now)
+    if result is None:
         return
-    target_ms, tier, text = info
-    st.markdown(
-        f'<div class="jumbo-leave-ticker intensity-{tier}"><span class="live-countdown" data-intensity '
-        f'data-target-ms="{target_ms}" data-format="clock" data-template="Bedtime in {{}}" '
-        f'data-zero-text="Bedtime now">{text}</span></div>',
-        unsafe_allow_html=True,
-    )
+    tier, span_html = result
+    st.markdown(f'<div class="jumbo-leave-ticker intensity-{tier}">{span_html}</div>', unsafe_allow_html=True)
 
 
 # Session follow-up: "a phone ping, not just a screen countdown... the
