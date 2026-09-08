@@ -407,16 +407,25 @@ def sync_lights(
     alert (see sports_alerts.py) — session request: "a blue govee flash"
     for the Jays, red for the Habs. Same brief alternating pulse as the
     breaking-news flash, just the caller's own team color instead of
-    red — and unlike every other override here, this one is checked
-    BEFORE the night gate rather than after: session request, a
-    scoring play should flash even overnight. It reverts to night's
-    own power-off automatically once the alert ends (score_flash goes
-    back to None the very next rerun — the caller only sets it while
-    the alert's own elapsed stays under FLASH_SECONDS), so this doesn't
-    keep the room lit all night, just for the flash itself. Breaking
-    news still fully respects night (unchanged, no exception) — this
-    is a scoped, deliberate exception for sports alerts specifically,
-    not a general "wake for alerts" policy.
+    red. Originally checked BEFORE the night gate, bypassing it same as
+    storm_phase — session request, a scoring play should flash even
+    overnight. It reverts to night's own power-off automatically once
+    the alert ends (score_flash goes back to None the very next rerun —
+    the caller only sets it while the alert's own elapsed stays under
+    FLASH_SECONDS), so this doesn't keep the room lit all night, just
+    for the flash itself. Breaking news still fully respects night
+    (unchanged, no exception) — this was always a scoped exception for
+    sports alerts specifically, not a general "wake for alerts" policy.
+
+    UPDATE — session request: "I don't want blue jays toasts... and I
+    want the LED lights off during night mode." That original overnight
+    exception is gone now, specifically for night_mode_active (see its
+    own updated paragraph below) — score_flash still bypasses plain
+    astronomical phase=="night" same as before (an early-evening game
+    after real sunset but before night mode's own official window), but
+    once night_mode_active is genuinely up, it no longer overrides it.
+    storm_phase is untouched — that exception was never what this
+    request was about.
 
     `jumbotron_active` — session request: "same rule with the lights"
     (as app.py's own night_dim exemption for the screen, right after
@@ -434,9 +443,11 @@ def sync_lights(
     genuinely live, traced to exactly that mismatch — a phone checking
     the score from any other page believed jumbotron_active was False
     and kept pushing the shared light back to its normal state, fighting
-    the kiosk's own session every few reruns. Bypasses the night
-    power-off gate, but not into DAY_BRIGHTNESS or the market/condition
-    color that'd normally apply — session feedback right after: "make
+    the kiosk's own session every few reruns. Bypasses the plain
+    phase=="night" power-off gate (not night_mode_active — see that
+    parameter's own updated paragraph below), but not into DAY_
+    BRIGHTNESS or the market/condition color that'd normally apply —
+    session feedback right after: "make
     it a more dim warmer neutral colour so its easier on the eyes."
     Settles on GAME_MODE_COLOR/GAME_MODE_BRIGHTNESS instead, a plain
     warm white dim enough to watch a bright screen by in an otherwise
@@ -465,13 +476,37 @@ def sync_lights(
     mode is already on screen but astronomical phase hasn't reached
     "night" yet, and the light stayed on. app.py passes its own
     `_night_mode_active` here so the light's off gate now fires on
-    EITHER real night OR night mode being up, whichever comes first —
-    still fully overridden by jumbotron_active/score_flash/storm_phase
-    above, same as the existing phase=="night" gate always was.
+    EITHER real night OR night mode being up, whichever comes first.
+
+    UPDATE — session request: "I want the LED lights off during night
+    mode," reported the same night bedtime was taught to end a live
+    game's jumbotron takeover early (see app.py's own night-mode-
+    overrides-jumbotron block). Originally this gate was still fully
+    overridden by jumbotron_active/score_flash, same as the plain
+    phase=="night" gate always was — meaning a live game kept the light
+    in warm GAME_MODE_COLOR for its whole remaining duration even with
+    night mode genuinely up on screen. night_mode_active is now checked
+    as its own absolute gate, ahead of jumbotron_active entirely (score_
+    flash's own paragraph above covers that half) — once night mode is
+    active, the light goes dark regardless of whether a game is still
+    live, not just regardless of which page any one session happens to
+    show. storm_phase alone still bypasses this, unchanged — a real,
+    separately-requested safety exception, not something this ask
+    touched.
     """
     if not st.secrets.get("GOVEE_API_KEY"):
         return
-    if score_flash is not None:
+    # Session request: "I want the LED lights off during night mode" —
+    # score_flash used to bypass the night gate entirely (see its own
+    # history in the comment below), and separately, the general
+    # jumbotron_active "game mode" warm-light state (further down) had
+    # no night_mode_active check of its own at all, so the light just
+    # stayed lit in game mode for a whole live game regardless of night
+    # mode being up on screen. Both are scoped out here, explicitly
+    # NOT touching storm — that exception stays exactly as-is (a real,
+    # separately-requested safety carve-out, not something this ask was
+    # about).
+    if score_flash is not None and not night_mode_active:
         if not _apply_power(True):
             return
         flash_elapsed, flash_color = score_flash
@@ -516,7 +551,21 @@ def sync_lights(
         _apply_color(FLASH_RED)
         _apply_brightness_immediate(STORM_HERE_BRIGHTNESS)
         return
-    if (phase == "night" or night_mode_active) and not jumbotron_active:
+    # night_mode_active is an ABSOLUTE gate now, checked ahead of
+    # jumbotron_active entirely (unlike the plain phase=="night" case
+    # just below, which still steps aside for a live game) — session
+    # request above: night mode should turn the lights off regardless
+    # of whether a game happens to still be going in the background,
+    # not just regardless of which page any one session shows (that
+    # distinction is exactly why jumbotron_active is passed as the
+    # page-independent "is a game truly live" signal — see this
+    # function's own docstring — night_mode_active needing to win over
+    # it anyway is a deliberate, different priority order, not an
+    # oversight in that design).
+    if night_mode_active:
+        _apply_power(False)
+        return
+    if phase == "night" and not jumbotron_active:
         _apply_power(False)
         return
     if not _apply_power(True):

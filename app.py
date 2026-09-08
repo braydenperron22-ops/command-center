@@ -3610,7 +3610,9 @@ def _render_bottom_ticker(now: datetime, readings: dict) -> None:
         st.markdown(ticker.render_html(stats), unsafe_allow_html=True)
 
 
-def _gather_new_alerts(now: datetime, weather: dict | None, air_quality: dict | None) -> list[dict]:
+def _gather_new_alerts(
+    now: datetime, weather: dict | None, air_quality: dict | None, night_mode_active: bool = False
+) -> list[dict]:
     """Every toast-alert source, checked fresh — news, the leave-for-
     work reminder, Jays/Habs/Saints scoring plays, EC weather alerts
     (new + storm-proximity), lightning, rain-nowcast, road closures,
@@ -3631,7 +3633,14 @@ def _gather_new_alerts(now: datetime, weather: dict | None, air_quality: dict | 
     `weather`/`air_quality` are passed in (not re-fetched here) purely
     so the leave-timer's own spoken-morning-brief augmentation below
     can generate a fresh brief on the rare tick it needs to — see
-    morning_briefing.spoken_brief_for_leave_timer's own docstring."""
+    morning_briefing.spoken_brief_for_leave_timer's own docstring.
+
+    `night_mode_active` — session report: "I don't want blue jays
+    toasts... during night mode." Scoped to sports specifically (see
+    the sports_alerts_new block below) — storm/breaking-news/leave-
+    timer alerts are untouched and still fire overnight same as
+    always, this is only about the one source that was genuinely just
+    entertainment leaking through at bedtime."""
     alerts: list[dict] = []
     try:
         alerts = news.get_new_alerts()
@@ -3675,9 +3684,15 @@ def _gather_new_alerts(now: datetime, weather: dict | None, air_quality: dict | 
     # a cold tick's combined worst case for these two stays bounded to
     # one shared ceiling rather than stacking. Unchanged from before
     # this moved — same pool, same reasoning, just running more often.
+    #
+    # Skipped entirely during night mode (session request: "I don't
+    # want blue jays toasts... during night mode") — not just filtered
+    # after the fact, so a live game doesn't cost this fetch's own real
+    # network round trip for a toast that would never show anyway.
     _toast_budget_start = time.time()
     try:
         alerts.extend(
+            [] if night_mode_active else
             fetch_throttle.run_bounded("sports_alerts_new", lambda: sports_alerts.get_new_alerts(now), _toast_budget_start, default=[])
         )
     except Exception:
@@ -3838,7 +3853,7 @@ def _toast_fragment(
     st.markdown(f'<div id="dashboard-pulse-ts" data-ts="{time.time()}" style="display:none;"></div>', unsafe_allow_html=True)
     current_alert, elapsed = None, None
     try:
-        new_alerts = _gather_new_alerts(now, weather, air_quality)
+        new_alerts = _gather_new_alerts(now, weather, air_quality, night_mode_active=_night_mode_active)
         new_alerts.sort(key=_alert_priority)
         if len(new_alerts) > MAX_BURST_ALERTS:
             overflow = len(new_alerts) - MAX_BURST_ALERTS
