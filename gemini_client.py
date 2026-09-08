@@ -199,7 +199,14 @@ def periodic_cache_status() -> dict[str, float]:
     return {key: entry[0] for key, entry in _periodic_cache.items()}
 
 
-def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, temperature: float = 0.7, max_output_tokens: int = 200) -> str | None:
+def generate_periodic(
+    feature_key: str,
+    refresh_seconds: int,
+    prompt: str,
+    temperature: float = 0.7,
+    max_output_tokens: int = 200,
+    allow_during_game: bool = False,
+) -> str | None:
     """Same as generate(), but throttled by a caller-chosen cadence
     instead of by exact-prompt-text matching. Session request: "I don't
     need second by second updates... by limiting the amount of calls we
@@ -231,12 +238,22 @@ def generate_periodic(feature_key: str, refresh_seconds: int, prompt: str, tempe
     feature that's ever succeeded once, on any past run this filesystem
     has seen, already has real fallback content from the moment this
     process starts, not just from whenever its next real success
-    happens to land."""
+    happens to land.
+
+    `allow_during_game` — passed straight through to generate() (see
+    its own docstring on the game-time pause). False by default, same
+    as generate() itself; every existing generate_periodic caller
+    (morning_briefing, evening_briefing, pages_conflicts via
+    groq_client) keeps the same behavior it always had. Session
+    request, for brayden_index specifically: "exempt [BRDN] from
+    jumbotron" — it isn't competing for the same screen real estate a
+    toast/jumbotron takeover is, and its own call volume (at most
+    hourly) is nowhere near what the pause exists to protect."""
     now = time.time()
     cached = _periodic_cache.get(feature_key)
     if cached and now - cached[0] < refresh_seconds:
         return cached[1]
-    text = generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens)
+    text = generate(prompt, temperature=temperature, max_output_tokens=max_output_tokens, allow_during_game=allow_during_game)
     if text is not None:
         _periodic_cache[feature_key] = (now, text)
         persisted_state.save("gemini_periodic_cache", _periodic_cache)

@@ -3199,8 +3199,11 @@ if FRED_API_KEY:
 # rerun regardless of page — same pattern as sleep_tracker.
 # maybe_push_wind_down further down. Needs `readings` (just computed
 # above) for the optional macro-regime signal fed into its prompt.
+# night_mode_active=_night_mode_active — see NIGHT_REFRESH_SECONDS'
+# own comment in brayden_index.py for the deliberate 3hr-not-fully-
+# paused overnight cadence this drives.
 try:
-    brayden_index.maybe_reprice(now, readings)
+    brayden_index.maybe_reprice(now, readings, night_mode_active=_night_mode_active)
 except Exception:
     pass
 
@@ -3256,7 +3259,7 @@ try:
     # (see the BRDN page for a real visible gauge; this is just the raw
     # number available for a future readout or a live diagnostic check,
     # same reasoning as data-brdn-price above).
-    _brdn_reprice = brayden_index.next_reprice_estimate()
+    _brdn_reprice = brayden_index.next_reprice_estimate(night_mode_active=_night_mode_active)
     st.markdown(
         f'<div class="brdn-ticker {_brdn_tone_class}" id="brdn-ticker-live" '
         f'data-brdn-price="{_brdn_now["price"]:.4f}" '

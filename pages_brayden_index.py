@@ -77,7 +77,12 @@ def render() -> None:
     # for something this coarse. No CSS transition on the fill bar
     # below on purpose — theme.py's own global animation kill switch
     # would just neuter it anyway (see that file's own docstring), so
-    # it's left out rather than shipped as dead code.
+    # it's left out rather than shipped as dead code. night_mode_active
+    # defaults to False here on purpose, not threaded through from
+    # app.py — this page can only ever actually render while night mode
+    # is NOT active (night mode overrides page routing before this
+    # dispatch branch is ever reached), so False is always correct by
+    # construction, not an assumption.
     reprice = brayden_index.next_reprice_estimate()
     minutes_until = int(reprice["seconds_until"] // 60)
     if reprice["due"]:

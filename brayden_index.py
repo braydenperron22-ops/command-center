@@ -58,6 +58,22 @@ import weather_client
 
 LAUNCH_PRICE = 10.00
 REFRESH_SECONDS = 60 * 60  # hourly — session request: "as frequently as hourly"
+# Session request: "exempt [BRDN] from jumbotron and periodic updates
+# (every 3 hours) in night mode." Two separate, deliberate departures
+# from how every other Gemini-routed feature in this app behaves
+# (see gemini_client.generate_periodic's own allow_during_game
+# docstring for the jumbotron half):
+#   - jumbotron/game-time pause: exempt entirely, not just slowed —
+#     BRDN isn't competing for the same screen real estate a toast or
+#     the jumbotron itself is, so there's no reason for a game to
+#     silence it the way it silences things that WOULD compete.
+#   - overnight pause (groq_client.ai_pulls_paused, dusk-to-dawn):
+#     deliberately NOT wired in as a hard block the way morning_
+#     briefing/every other feature respects it. Explicit user choice —
+#     a genuinely quiet night still gets a couple of real updates
+#     instead of going fully dark until dawn, at roughly a third of
+#     the daytime call volume.
+NIGHT_REFRESH_SECONDS = 3 * 60 * 60  # 3 hours, only while night mode is active
 MAX_HISTORY_POINTS = 2000  # comfortably years of hourly history before ever needing to trim further
 
 # A single bad/unbounded AI response can never be allowed to send the
@@ -141,20 +157,23 @@ def expectations() -> str:
     return _expectations
 
 
-def next_reprice_estimate() -> dict:
+def next_reprice_estimate(night_mode_active: bool = False) -> dict:
     """{"seconds_until", "pct_elapsed", "due"} — an ESTIMATE, not a
     guarantee. Session request: "when does the AI reprice... a little
     gauge to show when the next reprice is." The real next cycle fires
-    on the first outer rerun after REFRESH_SECONDS has genuinely
-    elapsed since the last one (see maybe_reprice/gemini_client.
-    generate_periodic) — that check only runs on the outer script's own
-    ~65-120s rerun cadence, so the real cycle can land up to a minute
-    or two after this estimate's own zero-mark, never to the literal
-    second. Anchored to the last successfully APPLIED cycle
+    on the first outer rerun after the real cadence (REFRESH_SECONDS,
+    or NIGHT_REFRESH_SECONDS while night_mode_active — must match
+    whatever maybe_reprice itself is actually using, or this estimate
+    would be flatly wrong for a third of every day) has genuinely
+    elapsed since the last one — that check only runs on the outer
+    script's own ~65-120s rerun cadence, so the real cycle can land up
+    to a minute or two after this estimate's own zero-mark, never to
+    the literal second. Anchored to the last successfully APPLIED cycle
     (_last_report["updated_at"]) — not generate_periodic's own internal
     cache timestamp, which is captured a moment earlier in the same
     call and close enough not to matter for a countdown display — or
     the IPO timestamp if no real cycle has landed yet."""
+    refresh_seconds = NIGHT_REFRESH_SECONDS if night_mode_active else REFRESH_SECONDS
     if _last_report is not None:
         anchor = _last_report["updated_at"]
     elif _history:
@@ -162,8 +181,8 @@ def next_reprice_estimate() -> dict:
     else:
         anchor = time.time()
     elapsed = time.time() - anchor
-    seconds_until = max(0.0, REFRESH_SECONDS - elapsed)
-    pct_elapsed = min(1.0, max(0.0, elapsed / REFRESH_SECONDS)) if REFRESH_SECONDS else 1.0
+    seconds_until = max(0.0, refresh_seconds - elapsed)
+    pct_elapsed = min(1.0, max(0.0, elapsed / refresh_seconds)) if refresh_seconds else 1.0
     return {"seconds_until": seconds_until, "pct_elapsed": pct_elapsed, "due": seconds_until <= 0}
 
 
@@ -393,19 +412,28 @@ def _parse(raw: str) -> dict | None:
     }
 
 
-def maybe_reprice(now: datetime, readings: dict | None = None) -> None:
+def maybe_reprice(now: datetime, readings: dict | None = None, night_mode_active: bool = False) -> None:
     """Call once per rerun, unconditional of page (see app.py's own call
     site, right next to sleep_tracker.maybe_push_wind_down). Cheap on
-    almost every call — gemini_client.generate_periodic's own
-    REFRESH_SECONDS throttle means the real reasoning call only actually
-    fires once an hour regardless of how often this runs, and the
-    _last_applied_raw guard below means even a genuine new response is
-    only ever applied to price/history once."""
+    almost every call — gemini_client.generate_periodic's own throttle
+    (REFRESH_SECONDS normally, NIGHT_REFRESH_SECONDS while
+    night_mode_active — see that constant's own comment for why BRDN
+    slows down rather than fully stopping overnight) means the real
+    reasoning call only actually fires that often regardless of how
+    often this runs, and the _last_applied_raw guard below means even a
+    genuine new response is only ever applied to price/history once.
+    `night_mode_active` should be app.py's own already-computed
+    _night_mode_active — not re-derived here, see NIGHT_REFRESH_SECONDS'
+    own comment for why this doesn't just call groq_client.
+    ai_pulls_paused directly the way every other Gemini feature does."""
     # _history is mutated in place (append/del below), never reassigned
     # wholesale, so it doesn't need to be declared global here.
     global _price, _last_report, _expectations, _last_applied_raw
     prompt = _build_prompt(now, readings)
-    raw = gemini_client.generate_periodic("brayden_index", REFRESH_SECONDS, prompt, temperature=0.4, max_output_tokens=600)
+    refresh_seconds = NIGHT_REFRESH_SECONDS if night_mode_active else REFRESH_SECONDS
+    raw = gemini_client.generate_periodic(
+        "brayden_index", refresh_seconds, prompt, temperature=0.4, max_output_tokens=600, allow_during_game=True
+    )
     if raw is None or raw == _last_applied_raw:
         return  # AI unavailable this call, or this hour's cycle was already applied — nothing new to do
 
@@ -493,6 +521,9 @@ def maybe_push_morning_brief(now: datetime, readings: dict | None = None) -> Non
     if persisted_state.load(_MORNING_BRIEF_PUSHED_KEY, None) == today:
         return
 
+    # night_mode_active always False here on purpose, not just the
+    # default — this window (9:30-11am) can never genuinely overlap
+    # night mode, which always ends by sunrise.
     maybe_reprice(now, readings)
     if _last_report is None:
         return
