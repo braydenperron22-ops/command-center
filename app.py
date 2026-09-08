@@ -3250,9 +3250,17 @@ try:
     _brdn_tone_class = "market-up" if _brdn_now["change"] > 0 else "market-down" if _brdn_now["change"] < 0 else ""
     _brdn_arrow = "▲" if _brdn_now["change"] > 0 else "▼" if _brdn_now["change"] < 0 else "●"
     _brdn_sign = "+" if _brdn_now["pct_change"] >= 0 else ""
+    # data-brdn-next-reprice-sec — same estimate the BRDN page's own
+    # gauge shows, exposed here too since this corner ticker is the one
+    # element guaranteed visible regardless of page/night-mode/jumbotron
+    # (see the BRDN page for a real visible gauge; this is just the raw
+    # number available for a future readout or a live diagnostic check,
+    # same reasoning as data-brdn-price above).
+    _brdn_reprice = brayden_index.next_reprice_estimate()
     st.markdown(
         f'<div class="brdn-ticker {_brdn_tone_class}" id="brdn-ticker-live" '
-        f'data-brdn-price="{_brdn_now["price"]:.4f}">'
+        f'data-brdn-price="{_brdn_now["price"]:.4f}" '
+        f'data-brdn-next-reprice-sec="{_brdn_reprice["seconds_until"]:.0f}">'
         f'<span class="brdn-ticker-symbol">BRDN</span>'
         f'<span class="brdn-ticker-price">${_brdn_now["price"]:.2f}</span> '
         f'{_brdn_arrow} {_brdn_sign}{_brdn_now["pct_change"]:.2f}%'
