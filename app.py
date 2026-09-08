@@ -3180,9 +3180,10 @@ except Exception:
 # outer rerun is already enough, same shape as .ai-status-bar just
 # below. Deliberately NOT gated on _jumbotron_active/_night_mode_active
 # the way that one is — the whole point here was "regardless of what
-# page... even on the night page." Fixed top-right (bottom-right is
-# already .ai-status-bar's corner) — see theme.py's own .brdn-ticker
-# for the "visible from across the room" sizing and the mobile-only
+# page... even on the night page." Fixed bottom-right, stacked above
+# .ai-status-bar — see theme.py's own .brdn-ticker for why top-right
+# was tried first and didn't work (headline-rotation silently covers
+# it), the "visible from across the room" sizing, and the mobile-only
 # display:none twin to .ai-status-bar's (a position:fixed element on a
 # genuinely scrolling phone page overlaps content, same bug that one
 # already had fixed for it).

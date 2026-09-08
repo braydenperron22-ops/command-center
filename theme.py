@@ -3207,17 +3207,24 @@ html, body, [class*="css"] {
 }
 
 /* Session request: "a little ticker... visible from across the room,
-   but not obstructive... regardless of what page I'm on." Top-right —
-   .ai-status-bar already owns bottom-right (bottom:60px/right:14px);
-   no element currently claims top-right, confirmed by checking every
-   other position:fixed rule in this file. Sized and weighted to
-   actually read at a glance from across a room (unlike .ai-status-
-   text's deliberately-subtle 0.68rem debug telemetry just above) while
-   staying a small corner pill, not a banner — "not obstructive" is the
-   backdrop-blur + modest padding, not a smaller font. */
+   but not obstructive... regardless of what page I'm on." First tried
+   top-right — confirmed live that was wrong: .headline-rotation is
+   position:fixed, top:0, left:0, right:0 (genuinely full-width) at
+   z-index:502, well above this element's own z-index, and it's active
+   often enough (bedtime countdown, leave-in timer, any weather/storm
+   alert) that it silently covered this corner outright, not just
+   overlapped it. Moved to bottom-right instead, stacked directly above
+   .ai-status-bar (measured live: bottom:60px, ~71.5px tall for its
+   typical 4-row stack) rather than sharing that corner — bottom:145px
+   clears even a slightly taller stack with real breathing room. Sized
+   and weighted to actually read at a glance from across a room (unlike
+   .ai-status-text's deliberately-subtle 0.68rem debug telemetry just
+   above) while staying a small corner pill, not a banner — "not
+   obstructive" is the backdrop-blur + modest padding, not a smaller
+   font. */
 .brdn-ticker {
     position: fixed;
-    top: 14px;
+    bottom: 145px;
     right: 14px;
     z-index: 401;
     padding: 0.5rem 1.1rem;
