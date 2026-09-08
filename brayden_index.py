@@ -468,6 +468,32 @@ def _gather_signals(now: datetime, readings: dict | None) -> str:
     return "\n".join(f"- {f}" for f in facts)
 
 
+def track_record_summary(limit: int = _HISTORY_DIGEST_LIMIT) -> dict | None:
+    """{"n", "bullish_n", "bearish_n", "flat_n", "net_drift_pct"} over
+    the last `limit` real cycles, or None with no history yet. Shared
+    by _recent_history_digest (the AI's own view, at _HISTORY_DIGEST_
+    LIMIT) and pages_brayden_index.py (Brayden's view — pass the SAME
+    limit the page's own row list uses, so the summary always matches
+    what's actually shown beneath it, not some other window). net_drift
+    _pct is the real price ratio across the window (recent[-1] vs.
+    recent[0]'s own price), not a naive sum of the individual per-cycle
+    percentages — summing would overstate real compounding."""
+    if not _report_history:
+        return None
+    recent = _report_history[-limit:]
+    bullish_n = sum(1 for e in recent if e["pct_change"] > 0)
+    bearish_n = sum(1 for e in recent if e["pct_change"] < 0)
+    start_price = recent[0]["price"]
+    net_drift_pct = (recent[-1]["price"] / start_price - 1) * 100 if start_price else 0.0
+    return {
+        "n": len(recent),
+        "bullish_n": bullish_n,
+        "bearish_n": bearish_n,
+        "flat_n": len(recent) - bullish_n - bearish_n,
+        "net_drift_pct": net_drift_pct,
+    }
+
+
 def _recent_history_digest(limit: int = _HISTORY_DIGEST_LIMIT) -> str:
     """A compact, chronological digest of the last `limit` real cycles —
     timestamp, move, sentiment, and named catalysts — fed into every
@@ -478,11 +504,29 @@ def _recent_history_digest(limit: int = _HISTORY_DIGEST_LIMIT) -> str:
     real memory to build those expectations FROM. Catalyst labels only,
     not full commentary — this is meant to read as a track record (what
     happened, how big, how it was framed), not a re-read of the
-    original prose each time."""
-    if not _report_history:
+    original prose each time.
+
+    Follow-up session request: an aggregate self-awareness stat on top
+    of the itemized list — "make it smarter." A cycle-by-cycle list
+    alone still makes the AI eyeball drift by hand; track_record_
+    summary's real net-drift number plus a bullish/bearish/flat tally
+    gives it — and the critique pass, which reuses this same digest —
+    a genuine "have I been drifting one direction without enough new
+    reasons to justify it" check, not just raw material to notice that
+    itself."""
+    stats = track_record_summary(limit)
+    if stats is None:
         return "(no cycle history yet — this is early in the index's life)"
+    recent = _report_history[-limit:]
+    drift_sign = "+" if stats["net_drift_pct"] >= 0 else ""
+    summary = (
+        f"Summary of these {stats['n']} cycles: net cumulative drift {drift_sign}{stats['net_drift_pct']:.2f}%, "
+        f"{stats['bullish_n']} bullish / {stats['bearish_n']} bearish / {stats['flat_n']} flat cycles. If that "
+        f"drift has been building steadily in one direction without a real new reason each time, be honest with "
+        f"yourself about whether it's still justified or the market's just been drifting on its own momentum."
+    )
     lines = []
-    for entry in _report_history[-limit:]:
+    for entry in recent:
         when = datetime.fromtimestamp(entry["ts"], tz=ZoneInfo(TIMEZONE)).strftime("%b %d %H:%M")
         sign = "+" if entry["pct_change"] >= 0 else ""
         catalysts = entry.get("catalysts") or []
@@ -491,7 +535,7 @@ def _recent_history_digest(limit: int = _HISTORY_DIGEST_LIMIT) -> str:
         else:
             cat_text = "no named catalysts"
         lines.append(f"{when}: {sign}{entry['pct_change']:.2f}% ({entry['sentiment']}) — {cat_text}")
-    return "\n".join(f"- {l}" for l in lines)
+    return summary + "\n\n" + "\n".join(f"- {l}" for l in lines)
 
 
 def _gather_context(now: datetime, readings: dict | None) -> dict:

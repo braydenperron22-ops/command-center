@@ -71,6 +71,9 @@ def _history_row(entry: dict) -> str:
     )
 
 
+_TRACK_RECORD_LIMIT = 6
+
+
 def _render_track_record() -> None:
     """Session request: "I want it to catch on to patterns... build
     expectations before data comes out." The actual mechanism lives in
@@ -78,17 +81,33 @@ def _render_track_record() -> None:
     every prompt) — this is just letting Brayden see the same track
     record the AI is now reasoning from, same transparency reasoning as
     the "what the market believes" blurb above. Capped short (6 rows)
-    on purpose — no scroll container, see _history_row's own docstring."""
-    entries = brayden_index.report_history(limit=6)
+    on purpose — no scroll container, see _history_row's own docstring.
+
+    Follow-up session request: the aggregate drift/bullish-bearish
+    summary the AI now also sees. track_record_summary is called with
+    the SAME limit as the row list below it — a summary computed over
+    15 cycles sitting above only 6 visible rows would look like it
+    doesn't match what's actually shown."""
+    entries = brayden_index.report_history(limit=_TRACK_RECORD_LIMIT)
     if not entries:
         return
+    stats = brayden_index.track_record_summary(limit=_TRACK_RECORD_LIMIT)
+    drift = stats["net_drift_pct"]
+    drift_color = "#32D74B" if drift > 0 else "#FF6961" if drift < 0 else "#9BA0AC"
+    drift_sign = "+" if drift >= 0 else ""
+    summary_html = (
+        f'<div class="tile-prev" style="margin-top:0.3rem;">'
+        f'Net drift: <span style="color:{drift_color}; font-weight:600;">{drift_sign}{drift:.2f}%</span> '
+        f'&nbsp;·&nbsp; {stats["bullish_n"]} bullish, {stats["bearish_n"]} bearish, {stats["flat_n"]} flat'
+        f'</div>'
+    )
     rows = "".join(_history_row(e) for e in entries)
     st.markdown(
         f'<div class="tile" style="margin-top:0.75rem;">'
         f'<div class="tile-label">RECENT TRACK RECORD</div>'
         f'<div class="tile-prev" style="margin-top:0.2rem; opacity:0.6;">'
         "What the AI is now reasoning from as precedent, cycle by cycle."
-        f'</div><div style="margin-top:0.4rem;">{rows}</div></div>',
+        f'</div>{summary_html}<div style="margin-top:0.4rem;">{rows}</div></div>',
         unsafe_allow_html=True,
     )
 
