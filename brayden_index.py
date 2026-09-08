@@ -33,7 +33,7 @@ how often this runs.
 
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import streamlit as st
@@ -330,6 +330,21 @@ def _gather_signals(now: datetime, readings: dict | None) -> str:
         quarter = td_quarter_schedule.next_quarter_start(now.date())
         if quarter["days_until"] <= 3:
             facts.append(f"New TD fiscal quarter (his own sales counter resets) in {quarter['days_until']} day(s)")
+    except Exception:
+        pass
+    try:
+        next_report = _next_report_due(now.date())
+        if next_report["days_until"] <= _QUARTERLY_REPORT_LOOKAHEAD_DAYS:
+            # A known, scheduled, dated event — same shape as a real
+            # market knowing an FOMC meeting date in advance. Purely a
+            # calendar fact; nothing here tells the model to hedge,
+            # de-risk, or hold conviction ahead of it — see this
+            # constant's own comment for why that's deliberate.
+            facts.append(
+                f"Next quarterly employment report due in {next_report['days_until']} day(s) "
+                f"({next_report['quarter_label']}) — a scheduled, anticipated check-in on "
+                f"Brayden's career/professional standing, not a surprise event"
+            )
     except Exception:
         pass
     try:
@@ -660,6 +675,20 @@ _QUARTERLY_REPORT_PUSHED_KEY = "brdn_quarterly_report_pushed_quarter"
 # _gather_signals before fading to quiet already-priced-in background —
 # see that function's own employment-report block below.
 _EMPLOYMENT_REPORT_FRESH_DAYS = 14
+# Session request: "I would argue the employment report is probably the
+# biggest catalyst by far... my own little Federal Reserve decision...
+# I wonder if the AI is gonna try and hedge the result." Answered
+# honestly first — it structurally couldn't, since nothing ever told it
+# a report was coming — then built on request. How far ahead the NEXT
+# report's due date gets surfaced as a known, scheduled fact in
+# _gather_signals (see that function's own block below), same "surfaced
+# only if within N days" discipline as payday/CPP/TD-quarter, just a
+# longer window since this is a quarterly event, not a biweekly one.
+# Deliberately just a calendar fact, not an instruction to hedge or
+# dampen volatility — the model decides what, if anything, to do with
+# "this is scheduled and anticipated," same "market decides" principle
+# every other signal in this module already runs on.
+_QUARTERLY_REPORT_LOOKAHEAD_DAYS = 7
 
 
 def _quarter_label(d) -> str:
@@ -669,6 +698,22 @@ def _quarter_label(d) -> str:
     a normal employment report, not a TD-specific one."""
     quarter_num = (d.month - 1) // 3 + 1
     return f"Q{quarter_num} {d.year}"
+
+
+def _next_report_due(today: date) -> dict:
+    """{"date", "days_until", "quarter_label"} for the NEXT quarter
+    boundary strictly after `today` — same construction as
+    td_quarter_schedule.next_quarter_start (build this-year's and next-
+    year's own candidate dates, take the smallest one still ahead)
+    rather than walking forward from an anchor. Strictly `> today`, not
+    `>=` — once today IS a boundary day, that quarter's own filing
+    window/push/status machinery already covers "due now"; this helper
+    is only ever about the one still ahead, so it doesn't double up
+    with that on the boundary day itself."""
+    candidates = [date(today.year, m, 1) for m in _QUARTERLY_REPORT_MONTHS]
+    candidates += [date(today.year + 1, m, 1) for m in _QUARTERLY_REPORT_MONTHS]
+    due = min(c for c in candidates if c > today)
+    return {"date": due, "days_until": (due - today).days, "quarter_label": _quarter_label(due)}
 
 
 def maybe_push_quarterly_report(now: datetime) -> None:
