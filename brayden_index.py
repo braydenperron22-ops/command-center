@@ -43,6 +43,7 @@ import calendar_client
 import commute_reminder
 import cpp_payment_dates
 import ec_alerts
+import email_client
 import fuel_price_client
 import gemini_client
 import market_internals
@@ -345,6 +346,24 @@ def _gather_signals(now: datetime, readings: dict | None) -> str:
                         upcoming.append(f"{e['summary']} ({day.isoformat()})")
             if upcoming:
                 facts.append("Upcoming non-work events (next 7 days): " + "; ".join(upcoming[:8]))
+    except Exception:
+        pass
+    try:
+        # Session request, following up on the road/ice-conditions
+        # additions: "important emails should be included." Reuses
+        # email_client.morning_brief_summary — already exactly this
+        # shape (subject + sender for genuinely important mail only,
+        # same classifier the toast system uses, 24h lookback, capped)
+        # rather than building a second reader; None cleanly covers
+        # "unconfigured" and "nothing important came through" alike, no
+        # separate check needed. Deliberately the classified/filtered
+        # feed, not email_client.interest_signal_block's raw unfiltered
+        # one (built for a different consumer, morning_briefing's
+        # hobby-pattern inference) — subject+sender only here too, never
+        # full message content.
+        email_summary = email_client.morning_brief_summary(now)
+        if email_summary:
+            facts.append(f"Email: {email_summary}")
     except Exception:
         pass
     try:
