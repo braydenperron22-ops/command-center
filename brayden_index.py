@@ -89,6 +89,21 @@ MAX_PCT_CHANGE = 10.0
 # big_move_headline_candidate and maybe_reprice's own push call below.
 BIG_MOVE_THRESHOLD_PCT = 4.0
 
+# Session request: "I want it to catch on to patterns... shareholders
+# in real life don't wait for data to come out, they build expectations
+# before it actually comes out." That only works with real memory —
+# _last_report used to be overwritten every cycle with nothing kept
+# from before it, so the AI was reasoning fresh with zero precedent
+# every single time. _report_history is the fix: every real cycle's
+# outcome (move, sentiment, catalysts) gets appended here, not just the
+# latest one — see maybe_reprice's own persistence block below. Capped
+# generously (500 ≈ a few weeks of hourly cycles) since this is cheap
+# structured data, not prose; _HISTORY_DIGEST_LIMIT is the much smaller
+# slice actually fed into any one prompt (see _recent_history_digest),
+# keeping token cost sane regardless of how long the full archive gets.
+MAX_REPORT_HISTORY = 500
+_HISTORY_DIGEST_LIMIT = 15
+
 _SENTIMENTS = {"Bullish", "Bearish", "Neutral", "Mixed"}
 _DIRECTIONS = {"bullish", "bearish"}
 _MAGNITUDES = {"minor", "moderate", "major"}
@@ -108,6 +123,9 @@ _expectations: str = persisted_state.load("brdn_expectations", "")
 # for the rest of that hour, compounding it each time. Only a genuinely
 # NEW cached string (a real new cycle) is ever applied.
 _last_applied_raw: str | None = persisted_state.load("brdn_last_applied_raw", None)
+# {"ts", "price", "pct_change", "sentiment", "catalysts"} per real cycle,
+# oldest first — see MAX_REPORT_HISTORY's own comment above.
+_report_history: list[dict] = persisted_state.load("brdn_report_history", [])
 
 # Session request: "let's do it, the quarterly notification... a copy
 # of my data on LinkedIn as well as a little verbal update... framed as
@@ -205,6 +223,18 @@ def last_report() -> dict | None:
 
 def expectations() -> str:
     return _expectations
+
+
+def report_history(limit: int = 8) -> list[dict]:
+    """Last `limit` real cycles, MOST RECENT FIRST — for
+    pages_brayden_index.py's own recent-history section. Cheap, no
+    AI/network cost. Deliberately a small default (8) — this renders
+    without a scroll container (kiosk is non-interactive; anything
+    below the fold in a scrolling list is permanently invisible on a
+    TV), so it stays a short glanceable list, not a full log — the
+    full archive (see MAX_REPORT_HISTORY) is what actually feeds the
+    AI's own pattern-recognition, not what's shown on screen."""
+    return list(reversed(_report_history[-limit:]))
 
 
 def employment_report() -> dict | None:
@@ -438,6 +468,32 @@ def _gather_signals(now: datetime, readings: dict | None) -> str:
     return "\n".join(f"- {f}" for f in facts)
 
 
+def _recent_history_digest(limit: int = _HISTORY_DIGEST_LIMIT) -> str:
+    """A compact, chronological digest of the last `limit` real cycles —
+    timestamp, move, sentiment, and named catalysts — fed into every
+    prompt so the AI can reason by PRECEDENT instead of reacting fresh
+    every cycle with no memory of the last one. Session request:
+    "shareholders in real life don't wait for data to come out... they
+    build expectations before it comes out" — that only works with a
+    real memory to build those expectations FROM. Catalyst labels only,
+    not full commentary — this is meant to read as a track record (what
+    happened, how big, how it was framed), not a re-read of the
+    original prose each time."""
+    if not _report_history:
+        return "(no cycle history yet — this is early in the index's life)"
+    lines = []
+    for entry in _report_history[-limit:]:
+        when = datetime.fromtimestamp(entry["ts"], tz=ZoneInfo(TIMEZONE)).strftime("%b %d %H:%M")
+        sign = "+" if entry["pct_change"] >= 0 else ""
+        catalysts = entry.get("catalysts") or []
+        if catalysts:
+            cat_text = "; ".join(f"{c['label']} ({c['direction']}, {c['magnitude']})" for c in catalysts)
+        else:
+            cat_text = "no named catalysts"
+        lines.append(f"{when}: {sign}{entry['pct_change']:.2f}% ({entry['sentiment']}) — {cat_text}")
+    return "\n".join(f"- {l}" for l in lines)
+
+
 def _build_prompt(now: datetime, readings: dict | None) -> str:
     signals = _gather_signals(now, readings)
     recent = _history[-8:]
@@ -446,6 +502,7 @@ def _build_prompt(now: datetime, readings: dict | None) -> str:
     else:
         recent_prices = "none yet — just IPO'd at $10.00, this is the first real pricing decision"
     expectations_text = _expectations or "(no prior expectations recorded yet — this is early in the index's history)"
+    history_digest = _recent_history_digest()
     return (
         "You are the collective market — the pooled judgment of every hypothetical shareholder and analyst — "
         "pricing BRDN, a fictional publicly traded \"stock\" that represents one real person, Brayden, as if his "
@@ -458,6 +515,13 @@ def _build_prompt(now: datetime, readings: dict | None) -> str:
         f"Current price: ${_price:.2f}. Recent price history, oldest to newest: {recent_prices}.\n\n"
         f"What the market currently believes about Brayden / already has priced in (your own note from last "
         f"cycle): {expectations_text}\n\n"
+        f"Your own recent cycle-by-cycle track record, oldest to newest — this is real memory, not a log to "
+        f"ignore. A real market that's seen a pattern before reacts to it differently the next time: less "
+        f"surprised, already half-expecting it, sometimes barely moving at all. If a similar catalyst shows up "
+        f"below and you can see it (or something like it) already happened recently in this history, treat it "
+        f"as familiar, not fresh news — react the way a market that remembers would. If nothing like the current "
+        f"signals has shown up recently, that absence is itself informative — this genuinely would be new:\n"
+        f"{history_digest}\n\n"
         f"Fresh signals since the last cycle:\n{signals}\n\n"
         "Decide: (1) a percentage price move for this cycle, between -10 and +10, (2) overall sentiment, "
         "(3) up to 4 named catalysts (bullish or bearish) that actually drove this cycle's move, each with a "
@@ -539,8 +603,9 @@ def maybe_reprice(now: datetime, readings: dict | None = None, night_mode_active
     _night_mode_active — not re-derived here, see NIGHT_REFRESH_SECONDS'
     own comment for why this doesn't just call groq_client.
     ai_pulls_paused directly the way every other Gemini feature does."""
-    # _history is mutated in place (append/del below), never reassigned
-    # wholesale, so it doesn't need to be declared global here.
+    # _history/_report_history are mutated in place (append/del below),
+    # never reassigned wholesale, so neither needs to be declared global
+    # here.
     global _price, _last_report, _expectations, _last_applied_raw
     prompt = _build_prompt(now, readings)
     refresh_seconds = NIGHT_REFRESH_SECONDS if night_mode_active else REFRESH_SECONDS
@@ -576,10 +641,27 @@ def maybe_reprice(now: datetime, readings: dict | None = None, night_mode_active
     }
     _expectations = parsed["updated_expectations"]
 
+    # Session request: "I want it to catch on to patterns... build
+    # expectations before data comes out." Every real cycle's outcome
+    # gets appended here — not just kept in _last_report, which the
+    # very next cycle would overwrite — so _recent_history_digest (see
+    # _build_prompt) has real precedent to reason from. Catalysts only,
+    # not the full commentary prose — see that function's own docstring
+    # for why.
+    _report_history.append({
+        "ts": ts,
+        "price": new_price,
+        "pct_change": pct,
+        "sentiment": parsed["sentiment"],
+        "catalysts": parsed["catalysts"],
+    })
+    del _report_history[:-MAX_REPORT_HISTORY]
+
     persisted_state.save("brdn_price", _price)
     persisted_state.save("brdn_history", _history)
     persisted_state.save("brdn_last_report", _last_report)
     persisted_state.save("brdn_expectations", _expectations)
+    persisted_state.save("brdn_report_history", _report_history)
 
     if abs(pct) >= BIG_MOVE_THRESHOLD_PCT:
         try:

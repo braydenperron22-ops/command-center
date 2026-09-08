@@ -47,6 +47,52 @@ def _catalyst_row(catalyst: dict) -> str:
     )
 
 
+def _history_row(entry: dict) -> str:
+    """One row of the track-record section — same visual language as
+    _catalyst_row (direction color, hairline divider) but compact
+    enough for several rows without needing a scroll container (kiosk
+    is non-interactive — anything below the fold in a scrolling list
+    would be permanently invisible)."""
+    pct = entry["pct_change"]
+    color = "#32D74B" if pct > 0 else "#FF6961" if pct < 0 else "#9BA0AC"
+    sign = "+" if pct >= 0 else ""
+    when = datetime.fromtimestamp(entry["ts"], tz=ZoneInfo(TIMEZONE))
+    when_label = f"{when.strftime('%b')} {when.day}, {when.strftime('%H:%M')}"
+    catalysts = entry.get("catalysts") or []
+    cat_label = html.escape(catalysts[0]["label"]) if catalysts else "No named catalysts"
+    extra = f" +{len(catalysts) - 1} more" if len(catalysts) > 1 else ""
+    return (
+        f'<div style="padding:0.4rem 0; border-bottom:1px solid rgba(255,255,255,0.08); '
+        f'display:flex; justify-content:space-between; align-items:baseline; gap:0.75rem;">'
+        f'<span class="tile-prev" style="opacity:0.6; white-space:nowrap;">{when_label}</span>'
+        f'<span style="flex:1; text-align:left; padding-left:0.75rem;">{cat_label}{extra}</span>'
+        f'<span style="color:{color}; font-weight:600; white-space:nowrap;">{sign}{pct:.2f}%</span>'
+        f'</div>'
+    )
+
+
+def _render_track_record() -> None:
+    """Session request: "I want it to catch on to patterns... build
+    expectations before data comes out." The actual mechanism lives in
+    brayden_index.py (_report_history / _recent_history_digest feeding
+    every prompt) — this is just letting Brayden see the same track
+    record the AI is now reasoning from, same transparency reasoning as
+    the "what the market believes" blurb above. Capped short (6 rows)
+    on purpose — no scroll container, see _history_row's own docstring."""
+    entries = brayden_index.report_history(limit=6)
+    if not entries:
+        return
+    rows = "".join(_history_row(e) for e in entries)
+    st.markdown(
+        f'<div class="tile" style="margin-top:0.75rem;">'
+        f'<div class="tile-label">RECENT TRACK RECORD</div>'
+        f'<div class="tile-prev" style="margin-top:0.2rem; opacity:0.6;">'
+        "What the AI is now reasoning from as precedent, cycle by cycle."
+        f'</div><div style="margin-top:0.4rem;">{rows}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render() -> None:
     st.markdown('<div class="page-title page-title-portfolio">Brayden Index</div>', unsafe_allow_html=True)
 
@@ -181,6 +227,8 @@ def render() -> None:
             f'<div style="margin-top:0.4rem;">{rows}</div></div>',
             unsafe_allow_html=True,
         )
+
+    _render_track_record()
 
     st.markdown(
         '<div class="tile-prev" style="text-align:center; margin-top:0.4rem; opacity:0.6;">'
