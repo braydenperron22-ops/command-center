@@ -1660,58 +1660,6 @@ components.html(
       doc.head.appendChild(s);
     })();
 
-    // Session request: "it only updates once per hour... add some
-    // client side animation... bounces between like a 0.1-0.15% range
-    // so it looks like it's actively being traded... when the AI
-    // actually changes the value, that's when the structural repricing
-    // happens." Purely cosmetic and purely client-side: reads the two
-    // real numbers (#brdn-ticker-live's own data-brdn-price/data-brdn-
-    // pct-change, stamped fresh by app.py every outer rerun) and
-    // displays a small random wobble around each every 2.5s — never
-    // writes anything back, never touches persisted_state, never
-    // affects the real price a genuine maybe_reprice() cycle sets.
-    // setInterval, not requestAnimationFrame (same reasoning as every
-    // other kiosk timer here — rAF can get suspended on a backgrounded
-    // tab, silently freezing this).
-    //
-    // Follow-up session request: "make the percentage value move with
-    // the dollar value when it shifts around." The SAME jitterPct draws
-    // both the price wobble and the % wobble each tick — not two
-    // independent random numbers — so they visibly move together rather
-    // than one looking alive while the other sits dead next to it. The
-    // arrow stays its own untouched span: flipping direction on pure
-    // noise every 2.5s would read as broken, not alive, so only the
-    // price and the % NUMBER are jitter targets, never the framing
-    // around them (arrow/color — still the real day's cumulative
-    // change, see brayden_index._day_open_price).
-    (function () {
-      var doc = window.parent.document;
-      if (doc.getElementById('brdn-jitter')) return;
-      var s = doc.createElement('script');
-      s.id = 'brdn-jitter';
-      s.textContent = [
-        "setInterval(function () {",
-        "  var el = document.getElementById('brdn-ticker-live');",
-        "  if (!el) return;",
-        "  var basePrice = parseFloat(el.getAttribute('data-brdn-price'));",
-        "  var basePct = parseFloat(el.getAttribute('data-brdn-pct-change'));",
-        "  if (isNaN(basePrice)) return;",
-        "  var jitterPct = (Math.random() - 0.5) * 0.3;",
-        "  var priceEl = el.querySelector('.brdn-ticker-price');",
-        "  if (priceEl) {",
-        "    var displayedPrice = basePrice * (1 + jitterPct / 100);",
-        "    priceEl.textContent = '$' + displayedPrice.toFixed(2);",
-        "  }",
-        "  var pctEl = el.querySelector('.brdn-ticker-pct');",
-        "  if (pctEl && !isNaN(basePct)) {",
-        "    var displayedPct = basePct + jitterPct;",
-        "    var sign = displayedPct >= 0 ? '+' : '';",
-        "    pctEl.textContent = sign + displayedPct.toFixed(2) + '%';",
-        "  }",
-        "}, 2500);",
-      ].join('\\n');
-      doc.head.appendChild(s);
-    })();
     </script>
     """,
     height=0,
@@ -3347,23 +3295,14 @@ except Exception:
 # genuinely scrolling phone page overlaps content, same bug that one
 # already had fixed for it).
 #
-# Session request: "it only updates once per hour... add some client
-# side animation... bounces between like a 0.1-0.15% range so it looks
-# like it's actively being traded... when the AI actually changes the
-# value, that's when the structural repricing happens." Follow-up:
-# "make the percentage value move with the dollar value when it shifts
-# around." data-brdn-price/data-brdn-pct-change carry the two real
-# numbers this jitter is ever allowed to read — the brdn-jitter script
-# (consolidated kiosk script block above) reads them fresh off THIS
-# element every tick and displays a small random wobble around each,
-# purely client-side, every ~2.5s, drawn from the SAME random draw so
-# the price and % move together; it never writes anything back, never
-# touches persisted_state, and the real price/pct here are still only
-# ever set by a genuine maybe_reprice() cycle. The arrow/color remain
-# the real day's cumulative change (see brayden_index._day_open_price),
-# untouched by the jitter — only the price and % NUMBERS wobble, not
-# the direction framing around them (see .brdn-ticker-arrow's own span
-# in the markup below for why that one's excluded).
+# Session request, after trying the client-side wobble described
+# below for a while: "can we actually remove the little jitter... I
+# don't know if I like it that much. It kinda just adds a bunch of
+# noise. Just showing you when my stock is actually priced at." Back
+# to a plain, static readout of the real server-computed price/change
+# every rerun — no client-side script involved at all anymore (the
+# brdn-jitter script that used to live in the consolidated kiosk script
+# block above is gone, not just disabled).
 try:
     _brdn_now = brayden_index.current()
     _brdn_tone_class = "market-up" if _brdn_now["change"] > 0 else "market-down" if _brdn_now["change"] < 0 else ""
@@ -3373,26 +3312,14 @@ try:
     # gauge shows, exposed here too since this corner ticker is the one
     # element guaranteed visible regardless of page/night-mode/jumbotron
     # (see the BRDN page for a real visible gauge; this is just the raw
-    # number available for a future readout or a live diagnostic check,
-    # same reasoning as data-brdn-price above).
+    # number available for a future readout or a live diagnostic check).
     _brdn_reprice = brayden_index.next_reprice_estimate(night_mode_active=_night_mode_active)
-    # data-brdn-pct-change — session request: "make the percentage value
-    # move with the dollar value when it shifts around." Same real
-    # server-computed number the %/arrow used to render statically from;
-    # now also read fresh by the jitter script (below) every tick so the
-    # displayed % wobbles in step with the displayed price instead of
-    # sitting frozen next to a moving number. The arrow itself stays its
-    # own untouched span — only the price and the % NUMBER are jitter
-    # targets, so the direction indicator never flickers on pure noise.
     st.markdown(
         f'<div class="brdn-ticker {_brdn_tone_class}" id="brdn-ticker-live" '
-        f'data-brdn-price="{_brdn_now["price"]:.4f}" '
-        f'data-brdn-pct-change="{_brdn_now["pct_change"]:.4f}" '
         f'data-brdn-next-reprice-sec="{_brdn_reprice["seconds_until"]:.0f}">'
         f'<span class="brdn-ticker-symbol">BRDN</span>'
         f'<span class="brdn-ticker-price">${_brdn_now["price"]:.2f}</span> '
-        f'<span class="brdn-ticker-arrow">{_brdn_arrow}</span> '
-        f'<span class="brdn-ticker-pct">{_brdn_sign}{_brdn_now["pct_change"]:.2f}%</span>'
+        f'{_brdn_arrow} {_brdn_sign}{_brdn_now["pct_change"]:.2f}%'
         f'</div>',
         unsafe_allow_html=True,
     )
