@@ -3480,6 +3480,15 @@ try:
 except Exception:
     pass
 
+# Session request: "can I receive a push notification when the
+# scheduler throws a gym session on my calendar... I would be
+# blindsided with an early wake up." Own once-per-date dedup, same
+# shape as every push above.
+try:
+    commute_reminder.maybe_push_new_gym_session(now)
+except Exception:
+    pass
+
 # Session request: "a little ticker somewhere on the main page
 # regardless of what page I'm on... visible from across the room, but
 # not obstructive... even on the night page." A plain unconditional

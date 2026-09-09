@@ -26,6 +26,7 @@ import commute_history
 import kiosk_tts
 import ntfy_client
 import persisted_state
+import sleep_tracker
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN, GYM_DESTINATION
 
 # Session request: "update the commute logic to implement a hybrid
@@ -556,6 +557,81 @@ def maybe_push_commute_home(now: datetime) -> None:
         ntfy_client.send(title="Commute home", message=message, priority="default", tags="car")
     except Exception:
         pass
+
+
+# Session request: "can I receive a push notification when the
+# scheduler throws a gym session on my calendar. Because on a normal
+# day where I'm not really paying attention, I would be blindsided
+# with an early wake up." Scoped to "gym" the same way _destination_
+# for_shift already matches it (a substring check on the summary, so
+# "Gym", "Gym - Push"/"Pull"/"Legs" — and anything the auto-scheduler
+# calls itself later — all qualify without a whitelist to keep in
+# sync). Not tied to the auto-scheduler specifically: this fires on
+# ANY new gym event, whichever way it got onto the calendar (the
+# scheduler, or added by hand and forgotten about) — the actual thing
+# being guarded against is the same either way, a bedtime that quietly
+# moved earlier without anyone noticing.
+_GYM_NOTIFIED_DATES_KEY = "gym_event_notified_dates"
+_gym_notified_dates: list[str] = persisted_state.load(_GYM_NOTIFIED_DATES_KEY, [])
+# Comfortably more than a year of daily notifications — this is a
+# "have I already pushed for this date" list, not meaningful history,
+# so a generous flat cap (matching every other persisted list in this
+# app) is all it needs.
+_GYM_NOTIFIED_DATES_CAP = 400
+
+
+def maybe_push_new_gym_session(now: datetime) -> None:
+    """Checks the exact same two-day window (today, tomorrow) sleep_
+    tracker._next_commitment already uses to compute bedtime — a gym
+    session on either day is exactly the kind of thing that silently
+    pulls tonight's bedtime/wake time earlier (see sleep_tracker.py's
+    own module docstring), so this fires the moment a gym event is
+    FIRST seen there. Includes the resulting real bedtime in the push
+    itself (reuses sleep_tracker.bedtime_for, which is already reacting
+    to this same event) so the notification answers "what does this
+    actually mean for tonight," not just "something got added."
+
+    Dedup keyed by the event's own calendar DATE (persisted, same
+    "mark it seen so we never push twice" shape every other push in
+    this app already uses) — fires once per date the first time a gym
+    event is ever seen scheduled for it, never again for that same
+    date even across many reruns, and correctly fires again on a
+    genuinely different date later."""
+    calendars = st.secrets.get("CALENDARS")
+    if not calendars:
+        return
+    for day_offset in (0, 1):
+        day = (now + timedelta(days=day_offset)).date()
+        try:
+            events = calendar_client.todays_events(calendars, day)
+        except Exception:
+            continue
+        for event in events:
+            if event["all_day"] or event["show_end_time"]:
+                continue
+            if "gym" not in event["summary"].lower():
+                continue
+            date_key = day.isoformat()
+            if date_key in _gym_notified_dates:
+                continue
+
+            _gym_notified_dates.append(date_key)
+            del _gym_notified_dates[:-_GYM_NOTIFIED_DATES_CAP]
+            persisted_state.save(_GYM_NOTIFIED_DATES_KEY, _gym_notified_dates)
+
+            when = "today" if day_offset == 0 else "tomorrow"
+            start_str = event["start"].strftime("%-I:%M %p")
+            message = f"{event['summary']} {when} at {start_str}"
+            try:
+                bedtime = sleep_tracker.bedtime_for(now)
+                if bedtime is not None:
+                    message += f" — bedtime tonight: {bedtime.strftime('%-I:%M %p')}"
+            except Exception:
+                pass
+            try:
+                ntfy_client.send(title="Gym scheduled", message=message, priority="default", tags="muscle")
+            except Exception:
+                pass
 
 
 def _leave_by_for_shift(shift: dict) -> datetime | None:
