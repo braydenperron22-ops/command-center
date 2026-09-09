@@ -2480,6 +2480,13 @@ weather_wake_recent = weather_worth_waking_for and (
 # scope later in the script regardless.
 night_dim = 0.0
 warm_tint = 0.0
+# Same "defined outside the try so a failure above can't leave it
+# undefined" discipline as night_dim itself — govee_lighting.sync_
+# lights (much further down this script, its own separate try/except)
+# reads _pre_bedtime_phase_active too, and needs it to exist even if
+# an unrelated exception fires earlier in the block below.
+_pre_bedtime_phase_active = False
+_pre_bedtime_ramp_active = False
 try:
     # The sky fade is computed here (not left to a CSS transition, which
     # can't survive this app's 1-second autorefresh — confirmed it snaps
@@ -4215,6 +4222,14 @@ def _toast_fragment(
             phase, market_intraday_pct, breaking_elapsed, now, weather["sunset"] if weather else None,
             aqi_for_lights, category, score_flash, _game_takeover_live, storm_phase_name,
             night_mode_active=_night_mode_active,
+            # Session request: "completely kill the govee lights within
+            # thirty minutes [of bedtime]... that way if I want to go to
+            # bed earlier, I can." Same flag already driving the screen's
+            # own warm-tint/dim ramp (see the pre-bedtime dim block
+            # above) — one computation, so "screen starts winding down"
+            # and "lights go dark" can't disagree on when 30-minutes-out
+            # actually is.
+            pre_bedtime_active=_pre_bedtime_phase_active,
         )
         # sync_plug used to run here (a fixed 4:30am/9:30pm on/off window
         # for the monitor's own smart plug) — removed along with the plug

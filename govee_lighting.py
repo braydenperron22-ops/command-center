@@ -351,6 +351,7 @@ def sync_lights(
     jumbotron_active: bool = False,
     storm_phase: str | None = None,
     night_mode_active: bool = False,
+    pre_bedtime_active: bool = False,
 ) -> None:
     """Call once per rerun. Light follows the exact same sunset/sunrise
     pattern as the plug — off at night, no exceptions. Every override
@@ -493,6 +494,25 @@ def sync_lights(
     show. storm_phase alone still bypasses this, unchanged — a real,
     separately-requested safety exception, not something this ask
     touched.
+
+    `pre_bedtime_active` — session request: "completely kill the govee
+    lights within thirty minutes [of bedtime]... that way if I want to go
+    to bed earlier, I can, then the lights won't wake me up." Genuinely
+    earlier than night_mode_active's own trigger (sleep_tracker.
+    BEDTIME_CTA_MINUTES, 10 minutes before bedtime, unchanged — this
+    doesn't touch when the SCREEN switches over) precisely because the
+    whole point is covering the window where you might already be trying
+    to sleep before the dashboard's own countdown would otherwise dim
+    anything. app.py passes its own _pre_bedtime_phase_active here — same
+    flag driving the screen's warm-tint/dim ramp, computed once and
+    shared, so "screen starts warming up" and "lights go dark" always
+    agree on when 30-minutes-out actually is. Folded into the exact same
+    absolute gate as night_mode_active (checked below, same line) rather
+    than a separate branch — same priority, same exceptions: storm_phase/
+    score_flash above this still win, because a genuine incoming storm or
+    a scoring play is a real reason to override "lights off for sleep,"
+    the same reasoning that already lets them override night_mode_active
+    itself.
     """
     if not st.secrets.get("GOVEE_API_KEY"):
         return
@@ -562,7 +582,7 @@ def sync_lights(
     # function's own docstring — night_mode_active needing to win over
     # it anyway is a deliberate, different priority order, not an
     # oversight in that design).
-    if night_mode_active:
+    if night_mode_active or pre_bedtime_active:
         _apply_power(False)
         return
     if phase == "night" and not jumbotron_active:
