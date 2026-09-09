@@ -78,7 +78,24 @@ REFRESH_SECONDS = 60 * 60  # hourly — session request: "as frequently as hourl
 #     instead of going fully dark until dawn, at roughly a third of
 #     the daytime call volume.
 NIGHT_REFRESH_SECONDS = 3 * 60 * 60  # 3 hours, only while night mode is active
-MAX_HISTORY_POINTS = 2000  # comfortably years of hourly history before ever needing to trim further
+# Session request: "I can use [the terminal] to look back on my
+# progression in life... does the price history have unlimited
+# history, or is there a fixed lookback?" The honest answer at the time
+# this was asked: the old value here (2000) was never actually "years"
+# despite its own comment claiming that — real cadence is REFRESH_
+# SECONDS by day but NIGHT_REFRESH_SECONDS overnight (~19-20 reprices/
+# day once that throttle is accounted for), so 2000 points was really
+# only ~3-4 months of runway before the oldest points started silently
+# dropping off — a genuine bug in the comment's own math, not just a
+# stale number. This is meant to be a real long-term personal record
+# ("still very early in life"), so sized generously: 450,000 points is
+# ~50 years even at a WORST-CASE hourly-24/7 cadence (no credit taken
+# for the night-mode throttle actually applying) — realistically far
+# longer than that in practice. Still a hard ceiling, not truly
+# unbounded — a safety net against a future bug that reprices far more
+# often than intended ever silently growing this (and the single JSON
+# blob persisted_state writes on every append) without limit.
+MAX_HISTORY_POINTS = 450_000
 
 # A single bad/unbounded AI response can never be allowed to send the
 # price to $0 or to $9,000 — this clamp applies regardless of what the
