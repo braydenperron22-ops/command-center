@@ -6356,16 +6356,27 @@ html, body, [class*="css"] {
    window starts, see BEDTIME_CTA_MINUTES) only brightens/glows within
    that same red, the same escalation language .night-clock's own glow
    already uses for "this is the important thing on screen." */
+/* Session request: "make the get into bed timer on the night page
+   bigger so I can actually see it... I wanna know exactly when I need
+   to be in bed." 1.6rem read as an afterthought next to .night-clock's
+   own 13rem — this IS the actionable thing on this screen once it's
+   showing, same "sized up so it's actually readable at kiosk viewing
+   distance" fix .jumbo-leave-ticker's own CSS comment already
+   documents for the exact same complaint on the leave timer. Still
+   deliberately smaller than the clock itself (that stays the one
+   unmissable focal point of this screen) but now closer in weight to
+   .night-ampm than to .night-weather-cond. */
 .night-bedtime {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
-    font-size: 1.6rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    font-size: 4rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
     color: #D9382A;
+    font-variant-numeric: tabular-nums;
 }
 .night-bedtime-cta {
     color: #FF3B30;
-    text-shadow: 0 0 20px rgba(255, 59, 48, 0.6), 0 0 44px rgba(255, 59, 48, 0.3);
+    text-shadow: 0 0 26px rgba(255, 59, 48, 0.65), 0 0 56px rgba(255, 59, 48, 0.35);
 }
 
 /* Phone breakpoint. Everything above this point is untouched at any
