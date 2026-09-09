@@ -2061,22 +2061,38 @@ if _bedtime is not None:
     # want." A live game normally has absolute priority over night mode
     # (see _night_mode_active's own "not _jumbotron_active"/"not
     # game_live" terms just below) — this is the one deliberate
-    # exception: once bedtime has genuinely arrived, it wins outright
-    # and ends the takeover early instead of waiting for the game to
-    # finish. Same date-safety check as _bedtime_valid_tonight just
-    # above (this bedtime has to actually belong to tonight, not a
-    # stale/future value borrowed in from a lookahead — see the two
-    # real live bugs this exact pattern already caught, comments
-    # further up this block). Deliberately leaves _night_mode_leave_
-    # active/_night_mode_storm_active alone — an imminent leave-time or
-    # an active storm are their own real reasons to keep the screen
-    # awake, not something "go to bed" should override the way a mere
-    # game should. Also deliberately does NOT touch _game_takeover_live
-    # (the Govee light sync signal, a separate real-world device
-    # concern from what this one session's own screen shows — see that
-    # variable's own comment above for why the two were kept
+    # exception: once night mode's own trigger has genuinely arrived, it
+    # wins outright and ends the takeover early instead of waiting for
+    # the game to finish. Same date-safety check as _bedtime_valid_
+    # tonight just above (this bedtime has to actually belong to
+    # tonight, not a stale/future value borrowed in from a lookahead —
+    # see the two real live bugs this exact pattern already caught,
+    # comments further up this block). Deliberately leaves _night_mode_
+    # leave_active/_night_mode_storm_active alone — an imminent
+    # leave-time or an active storm are their own real reasons to keep
+    # the screen awake, not something "go to bed" should override the
+    # way a mere game should. Also deliberately does NOT touch _game_
+    # takeover_live (the Govee light sync signal, a separate real-world
+    # device concern from what this one session's own screen shows —
+    # see that variable's own comment above for why the two were kept
     # independent before).
-    if _bedtime_valid_tonight and now >= _bedtime_naive and (_jumbotron_active or game_live):
+    #
+    # Session bug report, live, at exactly T-10: "there's no night
+    # shift. the screen is [unaffected]... let's see if we actually go
+    # to night mode." This used to compare against the literal bedtime
+    # instant (`now >= _bedtime_naive`) — a full 10 minutes AFTER
+    # _night_mode_day_end (bedtime minus sleep_tracker.BEDTIME_CTA_
+    # MINUTES) already says night mode should be up. A live game
+    # bypassed the whole approach entirely until that literal instant,
+    # so the warm-tint/dim ramp (which also force-clears itself during
+    # jumbotron, see the override further down this script) never got a
+    # chance to run, and night mode itself never took over until 10
+    # minutes later than every other night this system now promises.
+    # Compares against _night_mode_day_end instead — the exact same
+    # boundary night mode's own gate below already uses — so a live
+    # game now ends at precisely the moment night mode was always
+    # supposed to take over, not 10 minutes after it.
+    if _bedtime_valid_tonight and now >= _night_mode_day_end and (_jumbotron_active or game_live):
         _jumbotron_active = False
         game_live = False
         if page == "jumbotron":
@@ -2743,12 +2759,17 @@ try:
     # game happens to be live in the background during the normal
     # rotation. Takes final precedence over quiet hours/night too —
     # game mode is for actually watching, not for sleeping through.
-    # Also clears warm_tint — a live game rendered through the pre-
-    # bedtime blue-light filter isn't what "the screen does not dim in
-    # game mode" was ever asking for.
+    #
+    # warm_tint is deliberately NOT cleared here anymore (session bug
+    # report: "there's no night shift" at T-10 during a live game — this
+    # used to zero it out unconditionally, the other half of that same
+    # bug alongside the jumbotron-force-off timing fixed above). A tint
+    # doesn't stop you from watching the game the way dimming the
+    # picture would — it just recolors it — so it's let through the same
+    # 30-to-10-minute wind-down window as any other night, right up
+    # until _night_mode_day_end actually ends the takeover.
     if _jumbotron_active:
         night_dim = 0.0
-        warm_tint = 0.0
 
     # Session request: an early shift's leave-in countdown can start
     # ticking well before the phase/quiet-hours fade naturally
