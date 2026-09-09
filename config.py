@@ -5,22 +5,41 @@
 USER_FIRST_NAME = "Brayden"
 
 # Standing personal context fed into the morning briefing's own prompt
-# (morning_briefing._ai_sentence) — session question: "would it benefit
-# to train the ai on who i am?" Fine-tuning isn't the right lever for
-# facts that don't change call to call (see that discussion) — this is
-# just a richer, persistent context block the same prompt already
-# draws on for genuine connections, not a model retrain. Hand-maintained
-# here; update by hand if anything in it changes.
+# (morning_briefing._ai_sentence) AND into brayden_index's own signal
+# gathering (_gather_signals reads this verbatim every reprice cycle,
+# see that module's own docstring) — session question: "would it
+# benefit to train the ai on who i am?" Fine-tuning isn't the right
+# lever for facts that don't change call to call (see that discussion)
+# — this is just a richer, persistent context block the same prompt
+# already draws on for genuine connections, not a model retrain.
+# Hand-maintained here; update by hand if anything in it changes.
+#
+# UPDATE 2026-09-08: "give BRDN the fact that I'm living alone. My
+# targeted move-in date is October 1st, and it coincides perfectly with
+# my loan payoff date... $800/month rent... we'll see what it does with
+# it." Unlike the LinkedIn baseline report (deliberately framed as NOT
+# new information, so it wouldn't move the price), this one is
+# deliberately left as real, fresh news — this text update means the
+# VERY NEXT reprice cycle is the first one that ever sees it, so
+# whatever reaction it earns (bullish/bearish/neutral, priced-in or
+# not) is the AI's own genuine first read, not something forced here in
+# code. The two facts (loan payoff, move date) used to be two
+# unconnected sentences — merged now that they're actually the same
+# date, on purpose, rather than making the AI notice that itself.
+# "Lives with parents" is now "currently lives with parents... targeting
+# a move" since the move hasn't happened yet as of this update — revisit
+# once it actually does.
 USER_PROFILE = (
     "Personal Banking Associate at TD Bank in North Bay, Ontario. Born September 22, 2006. "
-    "Drives a 2014 Honda Civic LX. Long-term relationship with girlfriend Chloe. Lives with "
-    "parents; has a Golden Retriever (Auggie) and a cat (Wicket). Plays goaltender in hockey, "
-    "1st base in co-ed softball and on TD's own corporate team, and golf (scramble format). "
-    "Manages the Halifax Huskies in a virtual hockey sim league and follows the UFC. Tracks a "
-    "personal loan payoff target for October 1, 2026. At TD, a shift starting at 8:30 AM is an "
-    "opening shift; a shift starting or ending at an odd time like 6:30 or 8:30 PM is typically "
-    "a closing shift — worth naming as such (not just reading out the raw start time) when it's "
-    "actually one of these."
+    "Drives a 2014 Honda Civic LX. Long-term relationship with girlfriend Chloe. Currently lives "
+    "with parents; targeting a move into his own apartment on October 1, 2026 — his first time "
+    "living independently, $800/month rent, deliberately timed to land the same day as his "
+    "personal loan payoff target. Has a Golden Retriever (Auggie) and a cat (Wicket). Plays "
+    "goaltender in hockey, 1st base in co-ed softball and on TD's own corporate team, and golf "
+    "(scramble format). Manages the Halifax Huskies in a virtual hockey sim league and follows "
+    "the UFC. At TD, a shift starting at 8:30 AM is an opening shift; a shift starting or ending "
+    "at an odd time like 6:30 or 8:30 PM is typically a closing shift — worth naming as such (not "
+    "just reading out the raw start time) when it's actually one of these."
 )
 
 # Session report: "[radar] data just looks wrong, says there should be
