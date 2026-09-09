@@ -1205,17 +1205,46 @@ def big_move_takeover_active(now: datetime) -> bool:
     """Whether BRDN just had a genuinely big move recent enough to
     justify app.py pulling up the full terminal page automatically,
     in place of whatever the passive rotation would otherwise be
-    showing. Self-expiring the same way big_move_headline_candidate
-    already is: once the NEXT cycle replaces _last_report — big or not
-    — this naturally goes false on its own, no separate "have I shown
-    this already" state needed. app.py is the one that decides how this
-    ranks against an actual live jumbotron game or night mode (see its
-    own routing comment) — this only ever answers "is BRDN itself
-    currently in a big-move moment," nothing about screen priority."""
+    showing.
+
+    Session correction: "I feel like you should be based on a daily
+    threshold... my stock is down almost two percent today, shareholders
+    don't like me." Used to only ever look at the last cycle's own move
+    (_last_report["pct_change"]) — real for one sharp single-hour swing,
+    but blind to a day that just grinds steadily down across many
+    smaller cycles without any single one ever crossing the bar on its
+    own, which is exactly as real a "big move" to an actual shareholder.
+    Now checks BOTH: the last cycle's own move AND today's cumulative
+    move (current()["pct_change"] — the same day-open-anchored figure
+    every other display in this app, corner ticker included, already
+    shows), taking whichever is larger in magnitude. Deliberately NOT
+    extended to big_move_headline_candidate or the push notification in
+    maybe_reprice (both still last-cycle-only, unchanged) — a
+    persistently bad day would otherwise re-fire an hourly phone push
+    all day, a real, higher-cost channel this wasn't asked to make
+    noisier; this takeover and the headline banner are both cheap to
+    repeat/self-expiring, a push to your phone is not. Ask if you want
+    the same daily-move check on either of those too.
+
+    Self-expiring the same way big_move_headline_candidate already is:
+    once the NEXT cycle replaces _last_report — big or not — this
+    naturally goes false on its own, no separate "have I shown this
+    already" state needed. Still gated on a FRESH cycle having just
+    landed (updated_at within TAKEOVER_DURATION_SECONDS) even though the
+    day-cumulative half of this check isn't itself tied to any one
+    cycle — a persistently bad day will keep re-earning a brief takeover
+    once per hourly cycle for as long as it stays bad, same "hand
+    rotation back quickly" cadence as before, just able to trigger more
+    often now. app.py is the one that decides how this ranks against an
+    actual live jumbotron game or night mode (see its own routing
+    comment) — this only ever answers "is BRDN itself currently in a
+    big-move moment," nothing about screen priority."""
     if _last_report is None:
         return False
-    pct = _last_report.get("pct_change", 0.0)
-    if abs(pct) < BIG_MOVE_THRESHOLD_PCT:
+    cycle_pct = _last_report.get("pct_change", 0.0)
+    day_pct = current()["pct_change"]
+    move_pct = day_pct if abs(day_pct) >= abs(cycle_pct) else cycle_pct
+    if abs(move_pct) < BIG_MOVE_THRESHOLD_PCT:
         return False
     updated_at = _last_report.get("updated_at")
     if updated_at is None:
