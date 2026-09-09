@@ -59,6 +59,30 @@ SEVERE_MAGNITUDE = 3
 # Well below any real highway/arterial free-flow speed — confirmed
 # live at 7 km/h on the actual closure's own worst section.
 SEVERE_SPEED_KMH = 20
+# Session report: "is there any quicker route? or is this the
+# quickest?" — checked the real live TomTom response and found a real
+# bug: the reference route (magnitudeOfDelay: 3, a real but ordinary
+# JAM) was genuinely the FASTEST of all 3 routes TomTom returned
+# (27.9min vs 31.4/33.0min for the two alternatives), but _fetch_route_
+# raw's own alternative-switch logic (below) only ever compared the
+# ALTERNATIVES against each other, never against the reference itself
+# — so it was picking the fastest of the two WORSE options instead of
+# the genuinely fastest of all three, costing several real minutes.
+# UNDEFINED_MAGNITUDE (4) is specifically what a genuine impassable
+# closure's own section looks like (see SEVERE_MAGNITUDE's own comment
+# above — TomTom can't express "how much slower than normal" as a
+# real fraction for a road that literally can't be driven, so it comes
+# back "undefined" instead of a real major/moderate/minor grade) —
+# THAT specific case is the one where the reference route's own
+# reported time is genuinely fictional (TomTom excludes the closure's
+# real cost from routes[0]'s own summary by design, the original "24
+# minutes, tomtom is lying to me" bug), so it's the only case that
+# still needs to be excluded from the "pick whichever is actually
+# fastest" comparison below. A magnitude-3 "major" jam, even a bad one,
+# still has its real delay correctly included in the reference route's
+# own numbers — nothing fictional about it, so there's no reason to
+# blind the comparison to it.
+UNDEFINED_MAGNITUDE = 4
 # 5 min still only burns ~288 calls/day (11.5% of the free-tier quota)
 # even running unattended 24/7 — 15 min was needlessly conservative and
 # let the shown time lag real conditions by up to a quarter hour.
@@ -122,6 +146,29 @@ def _incident_label(route_data: dict) -> str | None:
     return ", ".join(sorted(labels))
 
 
+def _reference_time_trustworthy(route_data: dict) -> bool:
+    """False only when the reference route's own reported time can't
+    be trusted as a real drivable estimate — a genuine impassable
+    closure (see UNDEFINED_MAGNITUDE's own comment above): TomTom
+    excludes a closure's real time cost from the route's own summary
+    by design, so its number is a genuinely fictional, too-low figure
+    whenever one is active — not something a "pick whichever route is
+    actually fastest" comparison should ever trust. True for
+    everything else, ordinary traffic however severe included — an
+    ordinary jam's real delay IS genuinely included in the reference's
+    own reported time (confirmed against a real live magnitude-3 JAM:
+    the reference route was still the genuinely fastest of 3 real
+    routes TomTom returned), so there's nothing fictional to guard
+    against there."""
+    sections = [s for s in route_data.get("sections", []) if s.get("sectionType") == "TRAFFIC"]
+    for s in sections:
+        if s.get("simpleCategory") == "ROAD_CLOSURE":
+            return False
+        if (s.get("magnitudeOfDelay") or 0) >= UNDEFINED_MAGNITUDE:
+            return False
+    return True
+
+
 def _round_depart_at(depart_at: datetime) -> datetime:
     """Floor `depart_at` to DEPART_AT_BUCKET_MINUTES — see that
     constant's own comment for why this matters for caching, not just
@@ -174,15 +221,32 @@ def _fetch_route_raw(
     # MAGNITUDE/SEVERE_SPEED_KMH — this is exactly what a genuine
     # closure's own TomTom section looks like, confirmed live against
     # the real Highway 17 closure) means the reference route's own
-    # duration/delay can't be trusted as actually drivable. Switch to
+    # duration/delay MIGHT not be trustworthy — see _reference_time_
+    # trustworthy for exactly which case that actually is (a genuine
+    # closure specifically, not ordinary severe traffic). Switch to
     # whichever real alternative is fastest — still a real, genuinely
     # calculated route, not an invented number. `incident` itself stays
     # sourced from the reference route either way, since that's what's
     # actually explaining why the number changed.
+    #
+    # Session report, live: "is there any quicker route? or is this
+    # the quickest?" — this used to compare the alternatives ONLY
+    # against each other (routes[1:]), never against the reference
+    # itself, so an ordinary jam on the reference (real, correctly-
+    # priced-in delay, nothing fictional about it — see _reference_
+    # time_trustworthy) could still end up picking a genuinely SLOWER
+    # alternative just because an incident was detected at all. Real,
+    # confirmed live: the reference was the fastest of 3 real TomTom
+    # routes (27.9min) while this bug had it running the 31.4min
+    # alternative instead. The reference only gets excluded from the
+    # comparison now when its own time is actually untrustworthy (a
+    # genuine closure) — every other case picks the real fastest of
+    # ALL the routes TomTom returned, reference included.
     incident = _incident_label(reference)
     chosen = reference
     if incident and len(routes) > 1:
-        chosen = min(routes[1:], key=lambda r: r["summary"]["travelTimeInSeconds"])
+        pool = routes if _reference_time_trustworthy(reference) else routes[1:]
+        chosen = min(pool, key=lambda r: r["summary"]["travelTimeInSeconds"])
     summary = chosen["summary"]
     # Inside the cached function, not in route() below — st.cache_data
     # only re-executes this body on an actual cache miss, so this
