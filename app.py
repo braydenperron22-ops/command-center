@@ -2024,23 +2024,37 @@ if _wake_time is not None:
 _night_mode_day_end = now.replace(hour=21, minute=30, second=0, microsecond=0)
 # Session follow-up: "the evening side isn't adaptive like the morning
 # side now is... night mode still only dims at a flat 9:30pm regardless
-# of your actual bedtime." Mirror of the morning-side fix above, same
-# date-safety lesson already learned there: only pull tonight's cutoff
-# EARLIER than 9:30pm, and only using a bedtime that actually belongs
-# to tonight (sleep_tracker.bedtime_for's own cap already normalizes an
-# after-midnight value back onto the right evening — see its own
-# _apply_bedtime_cap docstring) — never later, never a different day's
-# value borrowed in. A normal night (bedtime later than 9:30 anyway,
-# the common case) is completely unaffected; this only ever fires on a
-# genuinely early-wake day whose 8-hours-back math lands before 9:30pm.
+# of your actual bedtime," later made fully explicit: "with ten minutes
+# left, turn it into night mode... have the countdown to bed on night
+# mode." Night mode itself now starts exactly sleep_tracker.
+# BEDTIME_CTA_MINUTES before a real bedtime — the same boundary where
+# the countdown's own text switches to "Get into bed" (see sleep_
+# tracker.py's own _countdown_info) — not just pulled earlier than
+# 9:30pm the way this used to work (that used to be a deliberate "never
+# push later" restriction; a later real bedtime, the common case, now
+# genuinely pushes night mode's start later too, matching what was
+# asked). Same date-safety lesson already learned on the morning side:
+# only use a bedtime that actually belongs to tonight (sleep_tracker.
+# bedtime_for's own cap already normalizes an after-midnight value back
+# onto the right evening — see its own _apply_bedtime_cap docstring),
+# never a stale/different day's value borrowed in.
 try:
     _bedtime = sleep_tracker.bedtime_for(now)
 except Exception:
     _bedtime = None
+# Stashed here (not just used locally) so the pre-bedtime dim/warm-tint
+# ramp further down this script can share the exact same bedtime/
+# minutes-remaining values night mode's own start time just used —
+# one computation, every consumer agrees, same discipline as reusing
+# game_live/_takeover elsewhere in this file instead of re-deriving.
+_bedtime_valid_tonight = False
+_minutes_to_bedtime = None
 if _bedtime is not None:
     _bedtime_naive = _bedtime.replace(tzinfo=None)
-    if _bedtime_naive.date() == _night_mode_day_end.date() and _bedtime_naive < _night_mode_day_end:
-        _night_mode_day_end = _bedtime_naive
+    if _bedtime_naive.date() == now.date():
+        _bedtime_valid_tonight = True
+        _minutes_to_bedtime = (_bedtime_naive - now).total_seconds() / 60
+        _night_mode_day_end = _bedtime_naive - timedelta(minutes=sleep_tracker.BEDTIME_CTA_MINUTES)
     # Session request: "when it's officially bedtime... kill the
     # jumbotron and go straight to night mode... it's a ten PM game...
     # gonna keep going until two in the morning, which is not what I
@@ -2049,20 +2063,20 @@ if _bedtime is not None:
     # game_live" terms just below) — this is the one deliberate
     # exception: once bedtime has genuinely arrived, it wins outright
     # and ends the takeover early instead of waiting for the game to
-    # finish. Same date-safety check as the _night_mode_day_end
-    # adjustment just above (this bedtime has to actually belong to
-    # tonight, not a stale/future value borrowed in from a lookahead —
-    # see the two real live bugs this exact pattern already caught,
-    # comments further up this block). Deliberately leaves
-    # _night_mode_leave_active/_night_mode_storm_active alone — an
-    # imminent leave-time or an active storm are their own real
-    # reasons to keep the screen awake, not something "go to bed"
-    # should override the way a mere game should. Also deliberately
-    # does NOT touch _game_takeover_live (the Govee light sync signal,
-    # a separate real-world device concern from what this one
-    # session's own screen shows — see that variable's own comment
-    # above for why the two were kept independent before).
-    if _bedtime_naive.date() == now.date() and now >= _bedtime_naive and (_jumbotron_active or game_live):
+    # finish. Same date-safety check as _bedtime_valid_tonight just
+    # above (this bedtime has to actually belong to tonight, not a
+    # stale/future value borrowed in from a lookahead — see the two
+    # real live bugs this exact pattern already caught, comments
+    # further up this block). Deliberately leaves _night_mode_leave_
+    # active/_night_mode_storm_active alone — an imminent leave-time or
+    # an active storm are their own real reasons to keep the screen
+    # awake, not something "go to bed" should override the way a mere
+    # game should. Also deliberately does NOT touch _game_takeover_live
+    # (the Govee light sync signal, a separate real-world device
+    # concern from what this one session's own screen shows — see that
+    # variable's own comment above for why the two were kept
+    # independent before).
+    if _bedtime_valid_tonight and now >= _bedtime_naive and (_jumbotron_active or game_live):
         _jumbotron_active = False
         game_live = False
         if page == "jumbotron":
@@ -2458,12 +2472,14 @@ weather_wake_recent = weather_worth_waking_for and (
 # Background/scenery rendering never touches the network (weather is
 # already fetched above), but this whole block still runs before any page
 # content — wrapped so a bug here can't blank the entire dashboard, only
-# lose the decorative background for that one render. night_dim defaults
-# here, outside the try, so it's always defined even if something above
-# the real assignment below throws — night_mode.render() and
-# govee_lighting.sync_lights's own night gate both need this variable
-# in scope later in the script regardless.
+# lose the decorative background for that one render. night_dim (and
+# warm_tint, the new pre-bedtime blue-light-reduction overlay) default
+# here, outside the try, so they're always defined even if something
+# above the real assignment below throws — night_mode.render() and
+# govee_lighting.sync_lights's own night gate both need night_dim in
+# scope later in the script regardless.
 night_dim = 0.0
+warm_tint = 0.0
 try:
     # The sky fade is computed here (not left to a CSS transition, which
     # can't survive this app's 1-second autorefresh — confirmed it snaps
@@ -2529,43 +2545,126 @@ try:
     # the plug itself is gone), a separate thing from this dim overlay
     # — this overlay only even applies when night_mode ISN'T active in
     # the first place (game_live suppresses both).
-    # Session request: "gradual screen warming... not a hard cutover."
-    # night_dim used to snap straight to full dim the instant quiet_hours
-    # (defined above, only true starting exactly at QUIET_HOURS_START_
-    # HOUR) went true. quiet_hours itself is untouched — still means
-    # exactly what it always has, and its own definition/every other
-    # comment referencing it stays accurate — this only widens the
-    # CONDITION guarding this one dim assignment to also cover the hour
-    # immediately before it, so there's actually a window for a ramp to
-    # run in. (First pass here gated this on quiet_hours alone, which
-    # doesn't go true until QUIET_HOURS_START_HOUR itself — the ramp
-    # code was correct but unreachable during the hour it needed to run
-    # in; caught before shipping by directly testing the boundary values.)
+    # Session request: "make it so my dashboard stays bright and alert
+    # until the thirty minute mark. Then... stay bright, but add an
+    # orange hue... like a night shift style thing... to remove the
+    # blue light... With twenty minutes left, dim the screen. With ten
+    # minutes left, turn it into night mode." Supersedes the old flat,
+    # schedule-agnostic evening ramp (that ramp's own comment used to
+    # say "deliberately NOT tied to sleep_tracker's own bedtime-aware
+    # boundary... this is the general evening wind-down everyone gets
+    # regardless of tomorrow's schedule" — true right up until this
+    # request asked for exactly the opposite) WHENEVER a real bedtime is
+    # known for tonight (_bedtime_valid_tonight/_minutes_to_bedtime,
+    # computed above alongside _night_mode_day_end — same values, so the
+    # countdown, this ramp, and night mode's own start time can never
+    # disagree). Falls back to the untouched old flat schedule only when
+    # there's no real bedtime to be relative to (sleep_tracker.
+    # bedtime_for returns None on a genuine day off with no morning
+    # commitment) — the one case the old comment's "regardless of
+    # tomorrow's schedule" reasoning still actually applies to.
+    WARM_TINT_START_MINUTES = 30
+    DIM_START_MINUTES = 20
+    # Night mode itself takes over at sleep_tracker.BEDTIME_CTA_MINUTES
+    # (10) before bedtime, per _night_mode_day_end above — the ramp
+    # below reaches exactly 1.0 right as that handoff happens, so
+    # there's no visible jump between "dashboard, fully dimmed" and
+    # "night mode's own screen."
+    #
+    # _pre_bedtime_phase_active also gates the morning-undim override
+    # further below — without it, a genuinely EARLY bedtime (before
+    # ~9pm) would have its dim ramp immediately stomped back to bright
+    # by that block, which assumes evening dimming never starts before
+    # QUIET_HOURS_START_HOUR. _pre_bedtime_ramp_active (the OLD system's
+    # own 8-9pm approach window) is hoisted up here for the exact same
+    # reason — computed unconditionally now rather than only inside the
+    # `else` branch below, so it's always in scope for that same guard
+    # regardless of which branch actually runs this rerun.
+    #
+    # Real bug found testing THIS change, pre-existing before it: the
+    # morning-undim block's own guard was only `now.hour < QUIET_HOURS_
+    # START_HOUR` (21) — true for hour 20 too, so on a no-bedtime-
+    # tonight day it was silently overwriting the 8-9pm ramp's own
+    # nonzero value back to 0.0 for the entire hour, only ever letting
+    # the ramp's real value survive at the exact instant it also hit
+    # 1.0 (hour==21, when the guard itself finally goes false). The
+    # ramp's own comment claimed morning-undim "stops applying" past
+    # 9pm and doesn't fight it — true for 9pm itself, but not for the
+    # approach hour before it, which is exactly when the ramp needed to
+    # be running. Net effect: the "gradual ramp" almost certainly read
+    # as a hard snap-to-dark at 9pm in practice, the exact thing it was
+    # built to avoid. Fixed the same way as the new bedtime-relative
+    # phase: morning-undim now also skips itself while this old ramp is
+    # active.
+    _pre_bedtime_phase_active = _bedtime_valid_tonight and _minutes_to_bedtime <= WARM_TINT_START_MINUTES
     _pre_bedtime_ramp_active = QUIET_HOURS_START_HOUR - 1 <= now.hour < QUIET_HOURS_START_HOUR
-    if (quiet_hours or _pre_bedtime_ramp_active) and not weather_wake_recent:
-        # Ramps over PRE_BEDTIME_DIM_RAMP_MINUTES leading up to
-        # QUIET_HOURS_START_HOUR, reaching the exact same 1.0 by the
-        # exact same clock time quiet_hours itself always has. Scoped to
-        # the evening approach specifically — quiet_hours' own full span
-        # (which also covers the whole overnight-through-noon stretch)
-        # keeps the flat 1.0 it's always had past that point; only the
-        # initial approach into it is new. Deliberately NOT tied to
-        # sleep_tracker's own bedtime-aware boundary (unlike night_mode's
-        # switch below) — this is the general evening wind-down everyone
-        # gets regardless of tomorrow's schedule specifics, same
-        # separation of concerns quiet_hours vs. night_mode already had
-        # before tonight.
-        PRE_BEDTIME_DIM_RAMP_MINUTES = 60
-        if _pre_bedtime_ramp_active:
-            ramp_start = now.replace(hour=QUIET_HOURS_START_HOUR, minute=0, second=0, microsecond=0) - timedelta(
-                minutes=PRE_BEDTIME_DIM_RAMP_MINUTES
-            )
-            minutes_into_ramp = (now - ramp_start).total_seconds() / 60
-            night_dim = max(0.0, min(1.0, minutes_into_ramp / PRE_BEDTIME_DIM_RAMP_MINUTES))
-        else:
-            night_dim = 1.0
-    elif severe_weather_active:
-        night_dim = 0.0
+    warm_tint = 0.0
+    if _bedtime_valid_tonight:
+        if not weather_wake_recent:
+            if _minutes_to_bedtime > WARM_TINT_START_MINUTES:
+                night_dim = 0.0
+            elif _minutes_to_bedtime > DIM_START_MINUTES:
+                # Bright, but warm — the blue-light-reduction step.
+                # Stays fully readable/alert, just recolored (see the
+                # warm_tint overlay render below), same idea as macOS
+                # Night Shift/f.lux but applied as a flat overlay div
+                # rather than a `filter` on an ancestor — filter on a
+                # container breaks position:fixed descendants (the
+                # ticker/toast bars), a real live bug already found and
+                # fixed once in this exact file (see the night_dim
+                # overlay's own comment just below).
+                night_dim = 0.0
+                warm_tint = 1.0
+            else:
+                # DIM_START_MINUTES down through sleep_tracker.
+                # BEDTIME_CTA_MINUTES — same "gradual, not a hard
+                # cutover" preference the old ramp already established,
+                # just relative to bedtime instead of a flat clock time.
+                _dim_ramp_span = DIM_START_MINUTES - sleep_tracker.BEDTIME_CTA_MINUTES
+                _dim_ramp_progress = DIM_START_MINUTES - _minutes_to_bedtime
+                night_dim = max(0.0, min(1.0, _dim_ramp_progress / _dim_ramp_span))
+                warm_tint = 1.0
+        # weather_wake_recent True: leave night_dim/warm_tint at their
+        # already-bright defaults so a genuinely new severe-weather
+        # moment stays fully visible even mid-wind-down — same
+        # reasoning the old flat system already established for this
+        # flag, just extended to cover these new phases too.
+    else:
+        # Session request: "gradual screen warming... not a hard
+        # cutover." night_dim used to snap straight to full dim the
+        # instant quiet_hours (defined above, only true starting
+        # exactly at QUIET_HOURS_START_HOUR) went true. quiet_hours
+        # itself is untouched — still means exactly what it always has,
+        # and its own definition/every other comment referencing it
+        # stays accurate — this only widens the CONDITION guarding this
+        # one dim assignment to also cover the hour immediately before
+        # it, so there's actually a window for a ramp to run in. (First
+        # pass here gated this on quiet_hours alone, which doesn't go
+        # true until QUIET_HOURS_START_HOUR itself — the ramp code was
+        # correct but unreachable during the hour it needed to run in;
+        # caught before shipping by directly testing the boundary
+        # values.) _pre_bedtime_ramp_active itself is now computed
+        # above, unconditionally, so the morning-undim guard further
+        # below can also see it — see that hoist's own comment.
+        if (quiet_hours or _pre_bedtime_ramp_active) and not weather_wake_recent:
+            # Ramps over PRE_BEDTIME_DIM_RAMP_MINUTES leading up to
+            # QUIET_HOURS_START_HOUR, reaching the exact same 1.0 by the
+            # exact same clock time quiet_hours itself always has.
+            # Scoped to the evening approach specifically — quiet_hours'
+            # own full span (which also covers the whole overnight-
+            # through-noon stretch) keeps the flat 1.0 it's always had
+            # past that point; only the initial approach into it is new.
+            PRE_BEDTIME_DIM_RAMP_MINUTES = 60
+            if _pre_bedtime_ramp_active:
+                ramp_start = now.replace(
+                    hour=QUIET_HOURS_START_HOUR, minute=0, second=0, microsecond=0
+                ) - timedelta(minutes=PRE_BEDTIME_DIM_RAMP_MINUTES)
+                minutes_into_ramp = (now - ramp_start).total_seconds() / 60
+                night_dim = max(0.0, min(1.0, minutes_into_ramp / PRE_BEDTIME_DIM_RAMP_MINUTES))
+            else:
+                night_dim = 1.0
+        elif severe_weather_active:
+            night_dim = 0.0
 
     MORNING_UNDIM_MINUTES = 120  # "an hour and a half, two hours... i mean slowly" — the longer end of that range, pacing unchanged
 
@@ -2612,7 +2711,21 @@ try:
     MORNING_UNDIM_START_HOUR = 5
     undim_start = now.replace(hour=MORNING_UNDIM_START_HOUR, minute=0, second=0, microsecond=0)
     minutes_since_undim_start = (now - undim_start).total_seconds() / 60
-    if minutes_since_undim_start >= 0 and now.hour < QUIET_HOURS_START_HOUR:
+    # `and not (_pre_bedtime_phase_active or _pre_bedtime_ramp_active)`
+    # — without it, this block would stomp BOTH pre-bedtime ramps back
+    # to bright during the hour they actually need to be running (see
+    # _pre_bedtime_ramp_active's own hoisted-comment above for the real,
+    # pre-existing bug this half of the guard fixes; _pre_bedtime_phase_
+    # active covers the new bedtime-relative case, e.g. a genuinely
+    # early bedtime before ~9pm). Past 9pm this condition is always
+    # False anyway (now.hour < 21 fails), so the normal/late-bedtime
+    # case (including tonight's 10:15pm, and the ordinary no-bedtime
+    # night past 9pm) is completely unaffected either way.
+    if (
+        minutes_since_undim_start >= 0
+        and now.hour < QUIET_HOURS_START_HOUR
+        and not (_pre_bedtime_phase_active or _pre_bedtime_ramp_active)
+    ):
         night_dim = max(0.0, 1.0 - minutes_since_undim_start / MORNING_UNDIM_MINUTES)
 
     # Session request: "make it so the screen does not dim in game
@@ -2623,8 +2736,12 @@ try:
     # game happens to be live in the background during the normal
     # rotation. Takes final precedence over quiet hours/night too —
     # game mode is for actually watching, not for sleeping through.
+    # Also clears warm_tint — a live game rendered through the pre-
+    # bedtime blue-light filter isn't what "the screen does not dim in
+    # game mode" was ever asking for.
     if _jumbotron_active:
         night_dim = 0.0
+        warm_tint = 0.0
 
     # Session request: an early shift's leave-in countdown can start
     # ticking well before the phase/quiet-hours fade naturally
@@ -2660,6 +2777,26 @@ try:
         st.markdown(
             f'<div style="position:fixed; inset:0; background:rgba(0,0,0,{overlay_alpha:.3f}); '
             f'pointer-events:none; z-index:20;"></div>',
+            unsafe_allow_html=True,
+        )
+
+    if warm_tint > 0:
+        # The blue-light-reduction step (30-to-20-minutes-before-bedtime
+        # phase, see WARM_TINT_START_MINUTES above) — a real Night-
+        # Shift/f.lux-style warm cast, not a `filter` (see the night_dim
+        # overlay's own comment just above for why that specifically
+        # breaks position:fixed descendants elsewhere in this app).
+        # mix-blend-mode:multiply on a plain sibling overlay div doesn't
+        # have that problem — it only affects how THIS div's own pixels
+        # composite with what's under it, it doesn't turn this element
+        # into a containing block for anyone else's fixed children.
+        # z-index just under the black dim overlay (20) so once both are
+        # active together (the dim phase, 20-to-10-minutes-before-
+        # bedtime) the result reads as "dim AND warm," not one replacing
+        # the other.
+        st.markdown(
+            '<div style="position:fixed; inset:0; background:rgba(255,140,20,0.22); '
+            'mix-blend-mode:multiply; pointer-events:none; z-index:19;"></div>',
             unsafe_allow_html=True,
         )
 except Exception:
