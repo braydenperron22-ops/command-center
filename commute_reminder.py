@@ -892,14 +892,41 @@ def leave_headline_active(now: datetime) -> bool:
     return remaining is not None and -HEADLINE_GRACE_MINUTES * 60 <= remaining <= HEADLINE_WINDOW_MINUTES * 60
 
 
-def _countdown_info(now: datetime) -> tuple[int, str, str, bool] | None:
-    """(target_ms, intensity tier, first-frame text, is_home) shared by
-    leave_headline_candidate below and render_ticker_leave_bar further
-    down — same window/gating logic, just two different places it ends
-    up on screen (the unified top-of-screen rotation vs. the jumbotron's
-    own compact ticker slot). is_home (_is_home_event) is what lets
-    both callers swap "Leave" for "Starts" without each re-deriving it
-    themselves.
+# Session request: "next to the leave in timer, tell me what highway
+# you want me to take. The first one, Highway 17. The other one,
+# Highway 11. And the third, Derland." Brayden's own three real routes
+# to work, each identified by one street name TomTom's own turn-by-turn
+# guidance only ever includes when that specific route is the one
+# actually chosen (see commute_client._fetch_route_raw's own "streets"
+# field) — Derland Rd only appears on the Callander Bay/Lakeshore
+# detour, Big Moose Rd/Lake Nosbonsing Rd only on the straight run
+# toward Highway 11; anything else (the usual case, Corbeil Rd ->
+# Highway 94 -> Highway 17 -> merges onto 11 near town) is his default,
+# "Highway 17." Checked against a real live TomTom response for all
+# three before picking these specific street names, not guessed.
+_ROUTE_NICKNAMES = (
+    ("Derland Rd", "Derland"),
+    ("Big Moose Rd", "Highway 11"),
+    ("Lake Nosbonsing Rd", "Highway 11"),
+)
+
+
+def _route_nickname(route: dict) -> str:
+    streets = route.get("streets") or set()
+    for street, nickname in _ROUTE_NICKNAMES:
+        if street in streets:
+            return nickname
+    return "Highway 17"
+
+
+def _countdown_info(now: datetime) -> tuple[int, str, str, str, bool] | None:
+    """(target_ms, intensity tier, first-frame text, template, is_home)
+    shared by leave_headline_candidate below and render_ticker_leave_bar
+    further down — same window/gating logic, just two different places
+    it ends up on screen (the unified top-of-screen rotation vs. the
+    jumbotron's own compact ticker slot). is_home (_is_home_event) is
+    what lets both callers swap "Leave" for "Starts" without each
+    re-deriving it themselves.
 
     Session request: "if there is a detour in effect, I should see a
     meaningful delay... the leave in timers should be reflective of
@@ -913,13 +940,28 @@ def _countdown_info(now: datetime) -> tuple[int, str, str, bool] | None:
     the WHY: a shifted number with no visible reason looks identical to
     a slow rush hour. Whichever route (live or predictive) actually won
     the hybrid comparison has its own already-computed "incident" label
-    (e.g. "road closed" — see commute_client._incident_label) appended
-    here so the countdown explains itself. Re-fetches the hybrid route
-    rather than threading it through _leave_by_for_shift's own return —
-    st.cache_data (5 min TTL) makes the underlying calls cache hits, not
-    a second round of real network calls, and keeps _leave_by_for_
-    shift's existing contract (and its other callers, leave_by_time/
-    check()) untouched."""
+    (e.g. "road closed" — see commute_client._incident_label), and (for
+    the real Work commute specifically — see _route_nickname) which of
+    Brayden's own three named routes it actually is, both folded into a
+    single suffix.
+
+    `template` (not just `text`) carries that same suffix now — real
+    bug found live shipping this: app.py's shared live-countdown ticker
+    rewrites this element's on-screen text every second straight from
+    `data-template`, discarding anything in the FIRST-FRAME `text` that
+    template itself doesn't also contain. The incident suffix had
+    quietly had this same problem since it was first added — visible
+    for under a second after each real rerender, then wiped by the very
+    next tick — never actually caught until the route-nickname feature
+    needed the exact same persistence and made the gap obvious. Both
+    callers now render from `template`, not a template they build
+    themselves from a bare verb.
+
+    Re-fetches the hybrid route rather than threading it through
+    _leave_by_for_shift's own return — st.cache_data (5 min TTL) makes
+    the underlying calls cache hits, not a second round of real network
+    calls, and keeps _leave_by_for_shift's existing contract (and its
+    other callers, leave_by_time/check()) untouched."""
     current = _current_shift(now)
     if current is None:
         return None
@@ -931,20 +973,30 @@ def _countdown_info(now: datetime) -> tuple[int, str, str, bool] | None:
     tier = _intensity_tier(remaining)
     is_home = _is_home_event(shift)
     verb = "Starts" if is_home else "Leave"
-    text = f"{verb} now" if remaining <= 0 else f"{verb} in {_format_clock(remaining)}"
+    suffix = ""
     if not is_home:
         result = _hybrid_route_for_shift(shift)
         route = result[0] if result else None
-        if route and route.get("incident"):
-            text += f" — {route['incident']}"
-        elif route and route.get("predicted") and is_congested(route):
-            # No named incident (see _incident_label — TomTom doesn't
-            # always have one), but the predictive call still won on a
-            # real delay: a recurring pattern rather than a fresh
-            # named event, worth saying differently than a silent
-            # number would.
-            text += " — predicted delay ahead"
-    return target_ms, tier, text, is_home
+        if route:
+            # The nickname only means anything for the real home<->work
+            # commute this session actually mapped out three real
+            # routes for — a one-off appointment's own custom
+            # destination gets no route label, same as it's always
+            # gotten no "via" anything.
+            if shift["summary"] == "Work":
+                suffix = f" — via {_route_nickname(route)}"
+            if route.get("incident"):
+                suffix += f", {route['incident']}" if suffix else f" — {route['incident']}"
+            elif route.get("predicted") and is_congested(route):
+                # No named incident (see _incident_label — TomTom
+                # doesn't always have one), but the predictive call
+                # still won on a real delay: a recurring pattern rather
+                # than a fresh named event, worth saying differently
+                # than a silent number would.
+                suffix += ", predicted delay ahead" if suffix else " — predicted delay ahead"
+    template = f"{verb} in {{}}{suffix}"
+    text = (f"{verb} now" if remaining <= 0 else f"{verb} in {_format_clock(remaining)}") + suffix
+    return target_ms, tier, text, template, is_home
 
 
 # Session request: "make it so all the red headlines within the last 2
@@ -970,13 +1022,13 @@ def leave_headline_candidate(now: datetime) -> dict | None:
     info = _countdown_info(now)
     if info is None:
         return None
-    target_ms, tier, text, is_home = info
+    target_ms, tier, text, template, is_home = info
     verb = "Starts" if is_home else "Leave"
     return {
         "text": text,
         "css_class": _TIER_TO_ROTATION_CLASS[tier],
         "target_ms": target_ms,
-        "template": f"{verb} in {{}}",
+        "template": template,
         "zero_text": f"{verb} now",
     }
 
@@ -1009,11 +1061,11 @@ def render_ticker_leave_bar(now: datetime) -> None:
     info = _countdown_info(now)
     if info is None:
         return
-    target_ms, tier, text, is_home = info
+    target_ms, tier, text, template, is_home = info
     verb = "Starts" if is_home else "Leave"
     st.markdown(
         f'<div class="jumbo-leave-ticker intensity-{tier}"><span class="live-countdown" data-intensity '
-        f'data-target-ms="{target_ms}" data-format="clock" data-template="{verb} in {{}}" '
+        f'data-target-ms="{target_ms}" data-format="clock" data-template="{template}" '
         f'data-zero-text="{verb} now">{text}</span></div>',
         unsafe_allow_html=True,
     )

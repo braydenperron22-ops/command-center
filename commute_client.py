@@ -210,7 +210,20 @@ def _fetch_route_raw(
     # is "now") for the plain live call; set to a real ISO8601 timestamp
     # (already bucketed by the caller — see route()) for the predictive
     # one.
-    params = {"key": api_key, "traffic": "true", "sectionType": "traffic", "maxAlternatives": 2, "alternativeType": "anyRoute"}
+    # instructionsType — session request: "tell me what highway you
+    # want me to take... which route." Same request, no extra API call
+    # (TomTom returns turn-by-turn guidance alongside the summary/
+    # sections data already being fetched here) — just pulls out the
+    # real street/highway names for whichever route ends up `chosen`
+    # below, generically (this module has no opinion on what any of
+    # them are "called" — see commute_reminder._route_nickname for
+    # where Brayden's own route nicknames actually live, since those
+    # only make sense for his specific home<->work commute, not every
+    # destination this function ever routes to).
+    params = {
+        "key": api_key, "traffic": "true", "sectionType": "traffic", "maxAlternatives": 2,
+        "alternativeType": "anyRoute", "instructionsType": "text",
+    }
     if depart_at_iso:
         params["departAt"] = depart_at_iso
     resp = requests.get(url, params=params, timeout=15)
@@ -265,12 +278,20 @@ def _fetch_route_raw(
     # blunt radius around either endpoint. Confirmed live: a real
     # ~24km route returns 250 real lat/lon points.
     points = [(p["latitude"], p["longitude"]) for p in chosen.get("legs", [{}])[0].get("points", [])]
+    # Real named streets/highways the CHOSEN route actually drives —
+    # generic, no business logic here (see this function's own
+    # instructionsType comment above). A plain set: order doesn't
+    # matter to any caller, only "does this route pass through X."
+    streets = {
+        instr["street"] for instr in chosen.get("guidance", {}).get("instructions", []) if instr.get("street")
+    }
     return {
         "duration_seconds": summary["travelTimeInSeconds"],
         "delay_seconds": summary["trafficDelayInSeconds"],
         "distance_km": summary["lengthInMeters"] / 1000,
         "incident": incident,
         "points": points,
+        "streets": streets,
         # Session report: "it's still delayed from my regular route
         # tho. so compute it from my normal routes time to the
         # detour." The reference route's own time IS genuinely "what
