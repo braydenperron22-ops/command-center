@@ -16,6 +16,7 @@ asleep through the whole window.
 """
 
 import html
+import time
 from datetime import datetime, timedelta
 
 import streamlit as st
@@ -135,6 +136,37 @@ HEADLINE_GRACE_MINUTES = 10
 # phone-push dedup) stays on its single shared key on purpose — the
 # same phone must never buzz twice for one milestone.
 _shown_state: dict = persisted_state.load_per_instance("commute_reminder_shown", {"date": None, "events": {}})
+
+# Session request: "anytime there's traffic added or clearing to my
+# commute, I want a toast alert... the amount of traffic and where it
+# is... same thing when it clears." The leave-in countdown already
+# absorbs traffic into its number silently — this is the active,
+# "you don't have to be looking" layer. The whole thing lives or dies
+# on not flapping: TomTom's delay figure jitters constantly (confirmed
+# live — 26->32->26 min inside 10 minutes), so a naive version would
+# be a firehose of "+2 min / -2 min" all morning and you'd tune out
+# the leave-in system entirely.
+#
+# - Only a >= this swing vs the delay when the window first opened
+#   (catches both a sudden crash AND a gradual ramp a consecutive-
+#   reading delta would miss). Same 5-min bar as AMBER_DELAY_THRESHOLD.
+TRAFFIC_CHANGE_THRESHOLD_SECONDS = 5 * 60
+# - Only inside this much of leave-by (a change 2h out usually resolves
+#   before it matters; matches SCREEN_WAKE_BEFORE_LEAVE_MINUTES).
+TRAFFIC_ALERT_WINDOW_MINUTES = 90
+# - Never two traffic toasts closer than this, either direction.
+TRAFFIC_ALERT_COOLDOWN_SECONDS = 10 * 60
+# - Never chime a traffic toast before this hour (an early shift's
+#   window can open pre-dawn; the countdown number still reflects
+#   traffic then, you just don't get woken by a chime about it).
+TRAFFIC_ALERT_EARLIEST_HOUR = 5
+_TRAFFIC_STATE_KEY = "commute_traffic_state"
+# Loaded once at import, saved ONLY on a genuine state transition (see
+# check_traffic_change) — never every rerun, same Upstash-budget
+# discipline as _shown_state above. Shared (not per-instance): the
+# state machine has to stay coherent, and the phone push must not
+# double-fire.
+_traffic_state: dict = persisted_state.load(_TRAFFIC_STATE_KEY, {"date": None, "events": {}})
 
 
 def _is_home_event(shift: dict) -> bool:
@@ -891,6 +923,133 @@ def check(now: datetime) -> dict | None:
         # spoken-brief override to attach to.
         "is_first_leave_alert_today": is_first_leave_alert_today and not is_home,
     }
+
+
+def _short_road(name: str) -> str:
+    """'Highway 17 E' -> 'Hwy 17', 'Trans-Canada Highway W' -> 'Trans-
+    Canada Hwy' — just tightens the common verbose forms for a toast,
+    leaves anything it doesn't recognise alone."""
+    return name.replace("Highway", "Hwy").replace(" E", "").replace(" W", "").replace(" N", "").replace(" S", "").strip()
+
+
+def _join_roads(roads: list[str]) -> str:
+    short = [_short_road(r) for r in roads[:2]]
+    return " and ".join(short) if len(short) == 2 else (short[0] if short else "")
+
+
+def check_traffic_change(now: datetime) -> dict | None:
+    """Call once per rerun, right after check(). A toast the moment
+    traffic is meaningfully ADDED to (or CLEARED from) whichever shift's
+    commute is currently relevant.
+
+    Gated hard so it can't flap (see the TRAFFIC_* constants above): a
+    >= TRAFFIC_CHANGE_THRESHOLD_SECONDS swing vs the delay when the
+    window first opened, only inside TRAFFIC_ALERT_WINDOW_MINUTES of
+    leave-by, never before TRAFFIC_ALERT_EARLIEST_HOUR, never twice
+    inside TRAFFIC_ALERT_COOLDOWN_SECONDS, and a per-shift clear/
+    congested state machine — "added" only ever fires from clear,
+    "cleared" only from congested (so it can only ever close the loop
+    on an alert it actually raised, never announce traffic easing that
+    it never announced building).
+
+    Reads the LIVE route's own delay specifically, not the hybrid one —
+    the hybrid can be the predictive route (a historical time-of-day
+    pattern), which isn't a live change worth a toast. "Added" gets a
+    chime + phone push (leave-earlier is real, actionable). "Cleared"
+    is a quiet, no-push toast — you're never going to leave LATER than
+    the safe time, so it's nice-to-know, not act-on."""
+    global _traffic_state
+    if now.hour < TRAFFIC_ALERT_EARLIEST_HOUR:
+        return None
+    current = _current_shift(now)
+    if current is None:
+        return None
+    shift, leave_by = current
+    now_aware = now.replace(tzinfo=leave_by.tzinfo)
+    minutes_until_leave = (leave_by - now_aware).total_seconds() / 60
+    if not (LATEST_FIRE_MINUTES <= minutes_until_leave <= TRAFFIC_ALERT_WINDOW_MINUTES):
+        return None
+
+    destination = _destination_for_shift(shift)
+    live = commute_client.route(destination)  # cache hit — _hybrid_route_for_shift already fetched this this rerun
+    if not live:
+        return None
+    delay = live.get("delay_seconds", 0)
+
+    if _traffic_state.get("date") != now.date().isoformat():
+        _traffic_state = {"date": now.date().isoformat(), "events": {}}
+    event_key = f"{shift['summary']}|{shift['start'].isoformat()}"
+    ev = _traffic_state["events"].get(event_key)
+    if ev is None:
+        # First check inside the window for this shift — baseline is
+        # whatever traffic looks like right now. Only ADDITIONAL delay
+        # beyond this earns an alert; traffic that was already there
+        # when the window opened is the countdown number's job, not a
+        # toast's.
+        _traffic_state["events"][event_key] = {
+            "baseline_delay": delay, "state": "clear", "last_alert_ts": 0.0,
+        }
+        persisted_state.save(_TRAFFIC_STATE_KEY, _traffic_state)
+        return None
+
+    baseline = ev["baseline_delay"]
+    ts = time.time()
+    if ts - ev["last_alert_ts"] < TRAFFIC_ALERT_COOLDOWN_SECONDS:
+        return None
+
+    over_threshold = delay - baseline >= TRAFFIC_CHANGE_THRESHOLD_SECONDS
+    leave_by_str = leave_by.strftime("%-I:%M %p")
+    alert = None
+
+    if ev["state"] == "clear" and over_threshold:
+        added_min = round((delay - baseline) / 60)
+        roads = live.get("traffic_roads") or []
+        where = f" on {_join_roads(roads)}" if roads else ""
+        kind = live.get("incident")
+        what = f" — {kind}" if kind else ""
+        headline = f"+{added_min} min traffic{where}{what}"
+        # Same "don't blast the bedroom while it's still just advance
+        # notice" gate the leave milestones use (LEAVE_ALERT_SILENT_
+        # ABOVE_MINUTES) — outside the last hour the toast still shows
+        # and the phone still buzzes, it just doesn't chime.
+        early = minutes_until_leave > LEAVE_ALERT_SILENT_ABOVE_MINUTES
+        alert = {
+            "headline": headline,
+            "category": "Commute",
+            "important": True,
+            "kind": "commute",
+            "label": "Traffic added",
+            "summary": "" if early else f"Traffic added to your commute — {added_min} more minutes{where}. Leave by {leave_by_str}.",
+            "volume": _leave_volume_ceiling(now_aware, leave_by),
+            "silent": early,
+        }
+        ev.update(state="congested", last_alert_ts=ts)
+        try:
+            ntfy_client.send(
+                title="Traffic added",
+                message=f"{headline} — leave by {leave_by_str}",
+                priority="high",
+                tags="vertical_traffic_light",
+            )
+        except Exception:
+            pass
+    elif ev["state"] == "congested" and not over_threshold:
+        back_to_min = round(live.get("duration_seconds", 0) / 60)
+        alert = {
+            "headline": f"Traffic cleared — commute back to ~{back_to_min} min",
+            "category": "Commute",
+            "important": False,
+            "kind": "commute",
+            "label": "Traffic cleared",
+            "summary": "",
+            "volume": 0.0,
+            "silent": True,
+        }
+        ev.update(state="clear", last_alert_ts=ts)
+
+    if alert is not None:
+        persisted_state.save(_TRAFFIC_STATE_KEY, _traffic_state)
+    return alert
 
 
 def _format_clock(remaining_seconds: float) -> str:

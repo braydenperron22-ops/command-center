@@ -146,6 +146,34 @@ def _incident_label(route_data: dict) -> str | None:
     return ", ".join(sorted(labels))
 
 
+def _traffic_road_names(route_data: dict) -> list[str]:
+    """The named road(s) wherever the route currently has a TRAFFIC
+    section — each section's own startPointIndex correlated against the
+    turn-by-turn guidance (which carries a pointIndex + street per
+    instruction) to name the road you're actually on when you hit it.
+    Empty list on a clean route (TomTom only emits `sections` at all
+    when there's something to report). De-duped, in route order."""
+    sections = [s for s in route_data.get("sections", []) if s.get("sectionType") == "TRAFFIC"]
+    if not sections:
+        return []
+    instrs = sorted(
+        (i for i in route_data.get("guidance", {}).get("instructions", []) if i.get("street")),
+        key=lambda i: i.get("pointIndex", 0),
+    )
+    names: list[str] = []
+    for s in sections:
+        start_idx = s.get("startPointIndex", 0)
+        road = None
+        for i in instrs:
+            if i.get("pointIndex", 0) <= start_idx:
+                road = i["street"]
+            else:
+                break
+        if road and road not in names:
+            names.append(road)
+    return names
+
+
 def _reference_time_trustworthy(route_data: dict) -> bool:
     """False only when the reference route's own reported time can't
     be trusted as a real drivable estimate — a genuine impassable
@@ -292,6 +320,12 @@ def _fetch_route_raw(
         "incident": incident,
         "points": points,
         "streets": streets,
+        # Which named road(s) the CHOSEN route currently has a traffic
+        # section ON (not just passes through) — for the "traffic added
+        # to your commute, on Hwy 11" toast (commute_reminder.check_
+        # traffic_change). Empty on a clean route. See _traffic_road_
+        # names for the section<->guidance correlation.
+        "traffic_roads": _traffic_road_names(chosen),
         # Session report: "it's still delayed from my regular route
         # tho. so compute it from my normal routes time to the
         # detour." The reference route's own time IS genuinely "what

@@ -3921,6 +3921,17 @@ def _gather_new_alerts(
     except Exception:
         pass
 
+    # Session request: "anytime there's traffic added or clearing to my
+    # commute, I want a toast alert." Owns its own flap-proof state
+    # machine + cooldown + threshold — see check_traffic_change's own
+    # docstring. Same append-to-the-queue shape as check() above.
+    try:
+        _traffic_alert = commute_reminder.check_traffic_change(now)
+        if _traffic_alert:
+            alerts.append(_traffic_alert)
+    except Exception:
+        pass
+
     # sports_alerts_new and email_alerts_new share one wall-clock
     # budget (fetch_throttle.run_bounded) — real, measured cold-cache
     # cost for each (~4.7s, a live fetch_status()/IMAP round trip), so
