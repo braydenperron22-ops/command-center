@@ -26,6 +26,7 @@ from datetime import datetime
 
 import streamlit as st
 
+import commute_reminder
 import road_conditions_511
 import sleep_tracker
 import weather_alerts_bar
@@ -206,12 +207,31 @@ def render(now: datetime, weather: dict | None, category: str, phase: str, dim: 
         _cta_class = " night-bedtime-cta" if _tier in ("critical", "overdue") else ""
         bedtime_html = f'<div class="night-bedtime{_cta_class}">{_span_html}</div>'
 
+    # Session request: "you can have the leave in timer show up during
+    # the night screen... just a heads up, you're gonna be waking up
+    # soon, buddy, but not in a very serious way." Same embed-the-raw-
+    # span-directly-in-this-view's-own-markdown-call approach as
+    # bedtime just above (and the same reason: a separate fixed-
+    # position element from commute_reminder would render at a lower
+    # z-index than .night-mode's own 10001 and never actually show).
+    # Deliberately the plainest, calmest element on this screen — see
+    # .night-wakeup's own theme.py comment for why it never brightens
+    # the way .night-bedtime-cta does.
+    wakeup_html = ""
+    try:
+        _wakeup_span = commute_reminder.night_countdown_span_html(now)
+    except Exception:
+        _wakeup_span = None
+    if _wakeup_span is not None:
+        wakeup_html = f'<div class="night-wakeup">{_wakeup_span}</div>'
+
     st.markdown(
         f'<div class="night-mode">'
         f'<div class="night-clock">{time_str}<span class="night-ampm">{ampm}</span></div>'
         f'<div class="night-date">{date_str}</div>'
         f"{weather_html}"
         f"{bedtime_html}"
+        f"{wakeup_html}"
         f"{ticker_html}"
         f"{overlay_html}"
         f"</div>",

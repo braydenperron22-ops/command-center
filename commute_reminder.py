@@ -1071,6 +1071,42 @@ def render_ticker_leave_bar(now: datetime) -> None:
     )
 
 
+# Session request: "you can have the leave in timer show up during the
+# night screen... just a heads up, you're gonna be waking up soon,
+# buddy, but not in a very serious... wake the fuck up type of way."
+# Deliberately a much SHORTER window than the daytime version's full
+# HEADLINE_WINDOW_MINUTES (2 hours) — "waking up soon" means soon, not
+# a two-hour-early warning; this stays off the night screen until it's
+# actually close.
+NIGHT_HEADS_UP_MINUTES = 60
+
+
+def night_countdown_span_html(now: datetime) -> str | None:
+    """Raw <span> for night_mode.py's own single markdown call — same
+    underlying _countdown_info text (the leave-in clock, plus the
+    Highway 17/incident suffix where it applies) as the daytime
+    version, but no `data-intensity` — night mode renders this with
+    its own flat, calm styling (see theme.py's .night-wakeup), not the
+    daytime urgent/critical color escalation. Same "one calm family,
+    no severity tiers" rule sleep_tracker.countdown_span_html's own
+    night_mode integration already established for this screen. None
+    outside NIGHT_HEADS_UP_MINUTES of leave time (or past the grace
+    window entirely) — this isn't meant to sit on screen half the
+    night."""
+    info = _countdown_info(now)
+    if info is None:
+        return None
+    target_ms, tier, text, template, is_home = info
+    remaining = _remaining_until_leave(now)
+    if remaining is None or remaining > NIGHT_HEADS_UP_MINUTES * 60:
+        return None
+    verb = "Starts" if is_home else "Leave"
+    return (
+        f'<span class="live-countdown" data-target-ms="{target_ms}" data-format="clock" '
+        f'data-template="{template}" data-zero-text="{verb} now">{text}</span>'
+    )
+
+
 def render_bar(alert: dict) -> None:
     """Same plain, immediately-visible bar as news.render_alert_bar (see
     its own docstring for why the old stretch-then-slide intro was

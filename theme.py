@@ -6378,6 +6378,21 @@ html, body, [class*="css"] {
     color: #FF3B30;
     text-shadow: 0 0 26px rgba(255, 59, 48, 0.65), 0 0 56px rgba(255, 59, 48, 0.35);
 }
+/* Session request: "the leave in timer [can] show up during the night
+   screen... just a heads up, you're gonna be waking up soon, buddy,
+   but not in a very serious... way." Deliberately the plainest
+   treatment on this screen — no glow, no brightening tier the way
+   .night-bedtime-cta gets in its final stretch — this is explicitly
+   NOT meant to read as urgent, just a quiet fact sitting there. Same
+   warm family, dimmer than .night-bedtime since it's the lesser of
+   the two on the rare occasion both could theoretically show at once. */
+.night-wakeup {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 1.5rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: #9C2E24;
+}
 
 /* Phone breakpoint. Everything above this point is untouched at any
    width above it (including the kiosk monitor, always far wider) —

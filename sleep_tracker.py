@@ -42,7 +42,19 @@ import calendar_client
 import ntfy_client
 import persisted_state
 
-WAKE_BUFFER_MINUTES = 90
+# Session correction: "I don't think it takes me ninety minutes to get
+# ready for the gym. Sixty at most. Get up, get some breakfast, have a
+# quick shower, go... I think waking up ninety minutes is just
+# sacrificing some sleep." Worth being precise about what this actually
+# costs, since it doesn't cost sleep at all: wake_time_for's own
+# formula is commitment.start - WAKE_BUFFER_MINUTES, and bedtime_for is
+# wake - SLEEP_TARGET_HOURS (fixed at 8) — shrinking the buffer pushes
+# BOTH wake time and bedtime later by the same amount, so the actual
+# hours of sleep between them stay exactly 8 either way (until/unless
+# the BEDTIME_CAP_HOUR/MINUTE ceiling starts binding on a given night,
+# which this change doesn't touch). What it actually buys him is a
+# later, more honest bedtime for the same wake-up, not less rest.
+WAKE_BUFFER_MINUTES = 60
 SLEEP_TARGET_HOURS = 8
 
 # Session follow-up, live: "it's gonna tell me to go to about twelve
