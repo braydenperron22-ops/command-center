@@ -32,10 +32,20 @@ CACHE_TTL_SECONDS = 15 * 60
 # Central, Sales", "CEA Central - Sales", "CEA - Central, Sales" — that
 # needed a new entry every time the calendar import produced yet
 # another punctuation/wording variant); now a substring match instead,
-# so any shift title containing either phrase gets caught regardless of
-# how it's otherwise punctuated or abbreviated. Nothing else about the
-# event (start/end/location) is touched.
-_WORK_KEYWORDS = ("customer experience associate", "sales")
+# so any shift title containing any of these phrases gets caught
+# regardless of how it's otherwise punctuated or abbreviated. Nothing
+# else about the event (start/end/location) is touched.
+#
+# "working at" — the TD CloudCords auto-sync format, "Working at 3110"
+# (3110 = the branch number). Session request 2026-09-10: "make it so
+# that working at 3110 also brings it to my work address" — normalizing
+# the title to "Work" is what makes every downstream "is this a work
+# shift" check (the via-Highway-17 route label, maybe_push_commute_
+# home, the toast label) recognize it. The routing itself already
+# falls back to the real work address once commute_reminder._
+# destination_for_shift refuses to geocode the bare "3110" — see that
+# function's own comment.
+_WORK_KEYWORDS = ("customer experience associate", "sales", "working at")
 # Teller/CEA coverage used to get its own separate is_teller_coverage
 # flag here too (session context: "that basically means I have to be a
 # teller for like a couple hours... make sure the AI knows that"), fed
