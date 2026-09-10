@@ -285,11 +285,40 @@ def _todays_shift_events(now: datetime) -> list[dict]:
     )
 
 
+# Real bug, confirmed live 2026-09-10 morning: TD's auto-synced shift
+# calendar (CloudCords) titles events "Working at 3110" and puts the
+# bare branch NUMBER — "3110" — in the location field, not an address.
+# geocode("3110") returns a postal-code match in Austria; routing
+# North Bay -> Austria fails, _hybrid_route_for_shift returns None, and
+# the ENTIRE leave-in countdown (headline, milestone toasts/pushes,
+# Today-page commute tile, morning-brief commute clause) silently
+# collapses to nothing for a real work shift. Two guards below: never
+# geocode a location that's only digits (always a branch/store code),
+# and reject any geocode result absurdly far from home. Either way ->
+# None -> callers fall back to the real COMMUTE_DESTINATION, exactly
+# how a shift with no location already behaves.
+_MAX_PLAUSIBLE_COMMUTE_KM = 300
+
+
+def _crow_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle km — same haversine as road_conditions_511._
+    distance_km, inlined here to avoid importing that module just for
+    a sanity check."""
+    from math import asin, cos, radians, sin, sqrt
+
+    p1, p2 = radians(lat1), radians(lat2)
+    dl = radians(lon2 - lon1)
+    dp = radians(lat2 - lat1)
+    a = sin(dp / 2) ** 2 + cos(p1) * cos(p2) * sin(dl / 2) ** 2
+    return 2 * 6371 * asin(sqrt(a))
+
+
 def _destination_for_shift(shift: dict) -> dict | None:
     """{"lat", "lon", "label"} from the shift's own calendar location,
-    or None if it doesn't have one or geocoding fails — None means
-    "use the default COMMUTE_DESTINATION" to every caller here, so a
-    shift with no location (or a bad one) behaves exactly as before.
+    or None if it doesn't have one, it's not a real address, or
+    geocoding gives an implausible result — None means "use the default
+    COMMUTE_DESTINATION" to every caller here, so a shift with no
+    location (or a bad one) behaves exactly as before.
 
     Session request: "anything that has gym in it, whether it's push,
     pull, or legs" routes to the fixed GYM_DESTINATION instead — checked
@@ -300,17 +329,27 @@ def _destination_for_shift(shift: dict) -> dict | None:
     reroute the leave-in timer somewhere wrong."""
     if "gym" in shift["summary"].lower():
         return GYM_DESTINATION
-    if not shift.get("location"):
+    location = (shift.get("location") or "").strip()
+    if not location:
+        return None
+    # A location that's nothing but digits is a branch/store code
+    # ("3110"), never a routable address — don't waste a geocode on it.
+    if location.replace(" ", "").isdigit():
         return None
     # Geocoding gets the full address (better match quality), but the
     # label is just the venue/first segment ("Highview Golf Course",
     # not the whole street address) — this ends up in a tile-label
     # ("HOME → ...") alongside the short "Work" it usually reads, and a
     # full address there would wrap across several lines instead.
-    geocoded = commute_client.geocode(" ".join(shift["location"].splitlines()))
+    geocoded = commute_client.geocode(" ".join(location.splitlines()))
     if not geocoded:
         return None
-    label = shift["location"].splitlines()[0].split(",")[0].strip()
+    # A real work/errand commute is local. A geocode result hundreds
+    # of km away is a bad match (ambiguous name, wrong continent) —
+    # trust the default destination over it.
+    if _crow_km(COMMUTE_ORIGIN["lat"], COMMUTE_ORIGIN["lon"], geocoded["lat"], geocoded["lon"]) > _MAX_PLAUSIBLE_COMMUTE_KM:
+        return None
+    label = location.splitlines()[0].split(",")[0].strip()
     return {**geocoded, "label": label}
 
 
