@@ -688,6 +688,37 @@ def leave_by_time(now: datetime) -> datetime | None:
     return current[1] if current else None
 
 
+# Session request: "make [the screen wake] 90 min before I need to
+# leave." app.py's _night_mode_day_start used to key off sleep_tracker.
+# wake_time_for — the commitment's START minus a fixed getting-ready
+# buffer — which for a 9am shift left the screen coming out of night
+# mode only ~15 minutes before the real leave-by, barely any runway to
+# glance at the dashboard/leave timer before heading out. This anchors
+# it to the real leave-by time instead (the same live-traffic-aware
+# target the leave countdown itself counts down to), minus this.
+# Deliberately NOT reused for _wake_time (app.py's alert-volume ramp
+# marker) — that one still tracks when boots hit the ground, not when
+# the screen lights up, or alerts get loud while he's still asleep.
+SCREEN_WAKE_BEFORE_LEAVE_MINUTES = 90
+
+
+def screen_wake_time(now: datetime) -> datetime | None:
+    """When the kiosk should come out of night mode this morning:
+    SCREEN_WAKE_BEFORE_LEAVE_MINUTES before today's real leave-by time,
+    or sleep_tracker.wake_time_for as the fallback whenever there's no
+    leave-by available (no shift today, or the commute estimate isn't
+    up — a slightly-less-early default, degrading to exactly the old
+    behavior, never nothing). Aware datetime, same as both underlying
+    sources."""
+    leave_by = leave_by_time(now)
+    if leave_by is not None:
+        return leave_by - timedelta(minutes=SCREEN_WAKE_BEFORE_LEAVE_MINUTES)
+    try:
+        return sleep_tracker.wake_time_for(now)
+    except Exception:
+        return None
+
+
 def check(now: datetime) -> dict | None:
     """Call once per rerun. Returns a news_queue-shaped alert dict the
     moment a new milestone is due for whichever shift is currently

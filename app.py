@@ -1992,35 +1992,36 @@ try:
     _wake_time = sleep_tracker.wake_time_for(now)
 except Exception:
     _wake_time = None
-if _wake_time is not None:
-    # sleep_tracker.wake_time_for stays timezone-aware on purpose (see
-    # its own docstring — target_ms below needs that); `now` and every
-    # _night_mode_day_* boundary here are deliberately naive (module
-    # top: now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)).
-    # A real live crash the first time this shipped (TypeError, aware
-    # vs naive) — strip tzinfo on a throwaway copy for JUST this
-    # comparison rather than changing what wake_time_for returns.
-    _wake_time_naive = _wake_time.replace(tzinfo=None)
-    # Second real live bug, caught right after the first fix: wake_time_
-    # for looks at the NEXT real commitment, which by early evening is
-    # already tomorrow's — using that to push _night_mode_day_start
-    # (meant as "when night mode ends THIS morning") into tomorrow made
-    # it later than _night_mode_day_end (tonight's 9:30pm), so the
-    # night-mode-active check (now outside [day_start, day_end)) was
-    # true for literally the entire rest of today, confirmed live (a
-    # 6:54pm rerun showing the night-mode clock). Only apply this when
-    # the computed wake time actually falls on the SAME calendar date
-    # as `now` — i.e. only when it's genuinely about to matter (a real
-    # commitment today), never a future date borrowed in from an
-    # evening lookahead.
-    #
-    # A real commitment REPLACES sunrise outright now (not just "if
-    # later than it" — that was the right rule for a flat clock-time
-    # floor, wrong for this one): "unless i have other commitments"
-    # means an early one should end night mode BEFORE sunrise same as
-    # a late one should hold it past sunrise, not just push later.
-    if _wake_time_naive.date() == now.date():
-        _night_mode_day_start = _wake_time_naive
+# Session request: "make [the screen wake] 90 min before I need to
+# leave." _night_mode_day_start keys off the real leave-by time now
+# (commute_reminder.screen_wake_time — leave_by_time minus SCREEN_WAKE_
+# BEFORE_LEAVE_MINUTES, with sleep_tracker.wake_time_for as its own
+# fallback), not the commitment's start minus a getting-ready buffer.
+# For a 9am shift that used to leave only ~15 min of dashboard time
+# before the real leave-by; now it's a full 90. `_wake_time` above is
+# left exactly as it was — it feeds the alert-volume ramp marker
+# (#kiosk-wake-time, further down), which has to track boots-on-the-
+# ground, not screen-lights-up, or alerts get loud while he's asleep.
+#
+# Same two date-safety lessons already learned here: `now` and every
+# _night_mode_day_* boundary are naive (module top), so strip tzinfo
+# on a throwaway copy for JUST this comparison (a real aware-vs-naive
+# TypeError crash the first time this pattern shipped); and only apply
+# it when it actually falls on today — leave/wake lookups return the
+# NEXT commitment, which by evening is already tomorrow's, and using
+# that would push _night_mode_day_start past _night_mode_day_end and
+# pin night mode on for the whole rest of the day (confirmed live once,
+# a 6:54pm rerun showing the night-mode clock). A real commitment
+# REPLACES sunrise outright — an early one ends night mode before
+# sunrise, a late one holds it past.
+try:
+    _screen_wake_time = commute_reminder.screen_wake_time(now)
+except Exception:
+    _screen_wake_time = None
+if _screen_wake_time is not None:
+    _screen_wake_naive = _screen_wake_time.replace(tzinfo=None)
+    if _screen_wake_naive.date() == now.date():
+        _night_mode_day_start = _screen_wake_naive
 _night_mode_day_end = now.replace(hour=21, minute=30, second=0, microsecond=0)
 # Session follow-up: "the evening side isn't adaptive like the morning
 # side now is... night mode still only dims at a flat 9:30pm regardless
