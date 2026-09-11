@@ -81,20 +81,36 @@ LATEST_FIRE_MINUTES = -30
 # smoothly between a floor and a ceiling," not a pile of hardcoded
 # temperature brackets:
 #   - At/above WARMUP_NONE_ABOVE_C: no warm-up needed at all, skip the
-#     whole feature entirely for the day — this isn't really about
-#     engine temperature (a modern engine warms up fine driving), it's
-#     about frost/cabin comfort, and above 5°C neither is a real
-#     concern in North Bay.
+#     whole feature entirely for the day.
 #   - At/below WARMUP_MAX_AT_C: cap at WARMUP_MAX_MINUTES — real winter
 #     cold (frost that needs clearing, a cabin that needs real time)
 #     tops out here; more idling past this buys nothing.
-#   - Linear in between.
-# Deliberately a MODEST ceiling (12 min, not 20+) — the alert always
-# fires that many minutes before leave_by regardless (see
-# check_car_warmup below), so a longer cap would just mean an earlier
-# alert, not a warmer car; 12 real minutes of idling is already past
-# where returns on frost-clearing/cabin-heat flatten out.
-WARMUP_NONE_ABOVE_C = 5.0
+#   - Linear in between, but with a real MINIMUM the moment it's below
+#     the no-warmup line (see WARMUP_MIN_MINUTES) rather than starting
+#     at 0 there — see the session-report comment below for why.
+#
+# Session bug report: "it didn't go this morning" — real archived
+# weather for that morning (checked directly, Open-Meteo hourly
+# archive for this exact location): 7.0-8.4°C, 5-9am. The ORIGINAL
+# WARMUP_NONE_ABOVE_C was 5.0, reasoned from "a modern engine warms up
+# fine driving, this is really about frost/cabin comfort, and neither
+# is a real concern above 5°C in North Bay" — technically correct
+# about frost, but wrong about what actually prompted this feature: a
+# 7°C morning still feels like "I'd like the car warm before I get in,"
+# well before literal frost is on the table. Raised to 10°C. Deliberately
+# NOT touching the code path itself (the bug report sounded like one at
+# first) — this was the threshold being wrong, not a mechanism failure;
+# see check_car_warmup's own docstring, unchanged, for the actual
+# trigger logic.
+#
+# Second problem the same real morning exposed: even a temp that DID
+# clear the old 5°C line barely above it rounded down to 1-2 minutes —
+# a warm-up so short it's not really a warm-up. WARMUP_MIN_MINUTES is
+# the floor the ramp now starts FROM the instant it's below the
+# no-warmup line, not 0 — a "just chilly" morning like the 7°C one
+# above still gets a real, worthwhile few minutes, not a token gesture.
+WARMUP_NONE_ABOVE_C = 10.0
+WARMUP_MIN_MINUTES = 4
 WARMUP_MAX_AT_C = -20.0
 WARMUP_MAX_MINUTES = 12
 CAR_WARMUP_GRACE_MINUTES = 15
@@ -103,14 +119,15 @@ CAR_WARMUP_GRACE_MINUTES = 15
 def warmup_minutes_for(temp_c: float) -> int:
     """How many minutes before leave_by the car should get started,
     for this outside temperature — see the constants above for the
-    real methodology. 0 means don't bother at all."""
+    real methodology. 0 means don't bother at all; otherwise never
+    less than WARMUP_MIN_MINUTES."""
     if temp_c >= WARMUP_NONE_ABOVE_C:
         return 0
     if temp_c <= WARMUP_MAX_AT_C:
         return WARMUP_MAX_MINUTES
     span = WARMUP_NONE_ABOVE_C - WARMUP_MAX_AT_C
     frac = (WARMUP_NONE_ABOVE_C - temp_c) / span
-    return round(WARMUP_MAX_MINUTES * frac)
+    return round(WARMUP_MIN_MINUTES + (WARMUP_MAX_MINUTES - WARMUP_MIN_MINUTES) * frac)
 
 # Session report: "picking my friend up... it's pinging me two hours
 # before I have to leave... they woke me up every single time... make
