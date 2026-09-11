@@ -3601,11 +3601,23 @@ with st.container(key="page_body"):
         # Independent of `page` — night mode is a screen MODE, not a
         # rotation page, so it overrides whatever page would otherwise
         # be showing rather than being one more entry in this chain.
-        # night_dim (computed above, same value/formula as the regular
-        # dashboard's own sleep overlay) is passed through so night mode
-        # is dimmed to the same degree — see night_mode.render's own
-        # `dim` param docstring for why this was invisible before.
-        _safe_render(night_mode.render, now, weather, category, phase, night_dim)
+        #
+        # Session request: "my kiosk is now in the living room so the
+        # night mode dim isn't necessary, in fact it makes it hard to
+        # read from across the room." Used to pass night_dim through
+        # (same value/formula as the regular dashboard's own sleep
+        # overlay) so night mode dimmed to match — that was the right
+        # call for a bedroom nightstand, read from inches away in a
+        # dark room. A living room kiosk gets read from across the
+        # room instead, where the priority flips to staying legible,
+        # not matching room darkness. Hardcoded to 0.0 (always full
+        # brightness) rather than ripping the dim mechanism out of
+        # night_mode.py itself — a real, easy toggle back if the kiosk
+        # ever moves to a bedroom again. night_dim itself is untouched
+        # everywhere else (the evening wind-down tint/dim ramp on the
+        # regular dashboard, the Govee lights kill-switch) — none of
+        # that was reported as a problem, only night mode's own screen.
+        _safe_render(night_mode.render, now, weather, category, phase, 0.0)
     elif page == "home":
         if not FRED_API_KEY:
             # Themed to match the rest of the app rather than Streamlit's
