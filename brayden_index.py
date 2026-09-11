@@ -97,12 +97,22 @@ NIGHT_REFRESH_SECONDS = 3 * 60 * 60  # 3 hours, only while night mode is active
 # blob persisted_state writes on every append) without limit.
 MAX_HISTORY_POINTS = 450_000
 
-# A single bad/unbounded AI response can never be allowed to send the
-# price to $0 or to $9,000 — this clamp applies regardless of what the
-# model itself returns, same "never trust a raw AI number without a
-# sanity bound" discipline morning_briefing/pages_conflicts already use
-# elsewhere in this app.
-MAX_PCT_CHANGE = 10.0
+# Session request: "the stock AI has been extremely conservative and
+# cant really express itself outside of moves with a denomination of
+# 0.05%... make it smarter and more decisive as well as give it free
+# range to trade my index without limits." The old ±10% symmetric
+# clamp here is gone — it wasn't actually what was producing the tiny
+# 0.05%-ish moves (the model itself was choosing those, see _build_
+# prompt's own comment on what changed there), but it WAS an explicit
+# ceiling with no upside for genuine conviction on real news, and
+# removing it is the literal ask. What's left below isn't a limit on
+# decisiveness, it's basic math: price * (1 + pct/100) hits zero or
+# goes negative once pct reaches -100%, which would corrupt every
+# downstream $ format/sparkline/cycle_pct_change calc, not just
+# produce "a big move." -99% is as close to that wall as a move can
+# get while the price stays a real, nonzero, positive number.
+# Deliberately NO ceiling at all on the upside.
+MIN_PCT_CHANGE = -99.0
 
 # A move at or above this, from the MOST RECENT cycle specifically,
 # earns the headline-rotation/push treatment — see
@@ -697,8 +707,13 @@ def _build_prompt(context: dict) -> str:
         "inputs below. React the way a real market reprices a real stock on news: something already priced in "
         "should barely move the price at all; a genuinely new or unexpected development (good or bad) should move "
         "it more; a temporary/noisy blip should move it less than a real structural change to his actual "
-        "trajectory. Most cycles, with nothing major happening, should be small moves (well under 1-2%) — save "
-        "bigger moves for genuinely significant news.\n\n"
+        "trajectory. The SIZE of the move should track the SIZE of the news, in both directions — a quiet cycle "
+        "with nothing real happening can and should be tiny (even 0.0%), but don't default to a small number out "
+        "of habit or hedge every cycle down to a fraction of a percent just to feel safe. When the signals below "
+        "actually support it, move the price decisively — real markets swing hard on real news, and a "
+        "shareholder base watching this ticker should be able to tell, just from the size of the move, that "
+        "something genuinely happened. There is no fixed ceiling or floor on how far this can move in a single "
+        "cycle — trade with real conviction, not caution for its own sake.\n\n"
         f"Current price: ${_price:.2f}. Recent price history, oldest to newest: {context['recent_prices']}.\n\n"
         f"What the market currently believes about Brayden / already has priced in (your own note from last "
         f"cycle): {context['expectations_text']}\n\n"
@@ -707,10 +722,14 @@ def _build_prompt(context: dict) -> str:
         f"surprised, already half-expecting it, sometimes barely moving at all. If a similar catalyst shows up "
         f"below and you can see it (or something like it) already happened recently in this history, treat it "
         f"as familiar, not fresh news — react the way a market that remembers would. If nothing like the current "
-        f"signals has shown up recently, that absence is itself informative — this genuinely would be new:\n"
+        f"signals has shown up recently, that absence is itself informative — this genuinely would be new. If "
+        f"you notice your own recent moves clustering tightly around the same tiny magnitude cycle after cycle "
+        f"even though the underlying signals are actually shifting, that's a sign you've been under-expressing "
+        f"conviction, not a pattern to keep matching:\n"
         f"{context['history_digest']}\n\n"
         f"Fresh signals since the last cycle:\n{context['signals']}\n\n"
-        "Decide: (1) a percentage price move for this cycle, between -10 and +10, (2) overall sentiment, "
+        "Decide: (1) a percentage price move for this cycle — no fixed range, whatever magnitude the evidence "
+        "actually supports, positive or negative, (2) overall sentiment, "
         "(3) up to 4 named catalysts (bullish or bearish) that actually drove this cycle's move, each with a "
         "magnitude, (4) one or two sentences of shareholder/analyst commentary in the voice of a real market "
         "reacting to real news — not a summary of the facts, a REACTION to them, (5) an updated version of your "
@@ -747,27 +766,35 @@ def _build_critique_prompt(context: dict, proposal: dict) -> str:
         "updated_expectations": proposal["updated_expectations"],
     })
     return (
-        "You are a skeptical risk manager reviewing another analyst's just-proposed repricing of BRDN, a "
-        "fictional \"stock\" representing one real person, Brayden. Your job is NOT to write a fresh take — "
-        "it's to sanity-check THIS specific proposal against the same evidence they had, and either confirm it "
-        "or correct it if it doesn't actually hold up.\n\n"
+        "You are a risk manager reviewing another analyst's just-proposed repricing of BRDN, a fictional "
+        "\"stock\" representing one real person, Brayden. Your job is NOT to write a fresh take — it's to "
+        "sanity-check THIS specific proposal against the same evidence they had, and either confirm it or "
+        "correct it if it doesn't actually hold up. Session note, because a past version of this review "
+        "consistently erred one direction: this is NOT a mandate to be cautious or to shrink numbers by default "
+        "— an analyst who's too timid to size a move to the real news is making the same mistake as one who "
+        "overreacts, just in the other direction, and you should correct it exactly as readily.\n\n"
         f"Current price: ${_price:.2f}. Recent price history, oldest to newest: {context['recent_prices']}.\n\n"
         f"What the market already believed going into this cycle: {context['expectations_text']}\n\n"
         f"Recent cycle-by-cycle track record, oldest to newest — use this to judge whether the proposal is "
         f"properly weighing precedent (has something like this happened before and already been mostly priced "
-        f"in?) rather than treating everything as equally fresh:\n{context['history_digest']}\n\n"
+        f"in?) rather than treating everything as equally fresh. If these recent moves are all clustered near "
+        f"zero regardless of what the signals said, that's itself evidence of under-reaction to correct, not "
+        f"a baseline to protect:\n{context['history_digest']}\n\n"
         f"Fresh signals this cycle was reacting to:\n{context['signals']}\n\n"
         f"The proposed repricing you're reviewing:\n{proposed_json}\n\n"
-        "Check specifically: (1) does the pct_change actually match the direction and combined magnitude of the "
-        "named catalysts — not a rigid sum, but a real gut-check, is a big number backed by only minor catalysts, "
-        "or a tiny number attached to something that reads as major? (2) does it properly account for the "
-        "recent track record — is it overreacting to something that's already happened repeatedly and should be "
-        "mostly priced in by now, or underreacting to something genuinely new? (3) is the move proportionate — "
-        "most cycles with nothing major happening should be small (well under 1-2%).\n\n"
+        "Check specifically, weighing both directions equally: (1) does the pct_change actually match the "
+        "direction and combined magnitude of the named catalysts — not a rigid sum, but a real gut-check, is a "
+        "big number backed by only minor catalysts, or is a small, hedged number attached to something that "
+        "actually reads as major? (2) does it properly account for the recent track record — is it overreacting "
+        "to something that's already happened repeatedly and should be mostly priced in by now, or "
+        "underreacting/playing it safe on something genuinely new? (3) is the move proportionate to what's "
+        "actually in the signals, in EITHER direction — a quiet cycle should stay small, but a cycle with real "
+        "news deserves a real, decisive number, not a fraction of a percent out of habit.\n\n"
         "If the proposal genuinely holds up, return it back essentially unchanged. If it doesn't, return your "
         "own corrected version — you're not required to preserve any of its numbers or wording, only to be "
-        "consistent with the same evidence. Respond with ONLY JSON, no markdown fences, no other text, in "
-        "exactly this shape:\n"
+        "consistent with the same evidence; correcting an under-sized move upward is just as valid an outcome "
+        "of this review as correcting an oversized one down. Respond with ONLY JSON, no markdown fences, no "
+        "other text, in exactly this shape:\n"
         '{"pct_change": 0.0, "sentiment": "Bullish", "catalysts": '
         '[{"label": "...", "direction": "bullish", "magnitude": "minor", "note": "..."}], '
         '"commentary": "...", "updated_expectations": "..."}'
@@ -860,8 +887,16 @@ def maybe_reprice(now: datetime, readings: dict | None = None, night_mode_active
     context = _gather_context(now, readings)
     prompt = _build_prompt(context)
     refresh_seconds = NIGHT_REFRESH_SECONDS if night_mode_active else REFRESH_SECONDS
+    # Session request: "make it smarter and more decisive" — 0.4 was
+    # low enough to keep producing near-identical, tightly hedged
+    # numbers cycle after cycle (the actual "0.05% denomination"
+    # complaint). Bumped alongside the prompt rewrite above — this
+    # alone wouldn't fix an anchored prompt, but a decisive prompt at a
+    # low temperature can still keep collapsing back toward the same
+    # safe-looking number every time; more headroom for real variance
+    # is the other half of the fix.
     raw = gemini_client.generate_periodic(
-        "brayden_index", refresh_seconds, prompt, temperature=0.4, max_output_tokens=600, allow_during_game=True
+        "brayden_index", refresh_seconds, prompt, temperature=0.75, max_output_tokens=600, allow_during_game=True
     )
     if raw is None or raw == _last_applied_raw:
         return  # AI unavailable this call, or this hour's cycle was already applied — nothing new to do
@@ -879,13 +914,21 @@ def maybe_reprice(now: datetime, readings: dict | None = None, night_mode_active
     # The critique call is a plain generate(), not generate_periodic —
     # it's tied to THIS specific new cycle (already confirmed genuinely
     # new by the guard above), not its own separate wall-clock cadence.
+    # Bumped alongside the prompt rewrite above (see _build_critique_
+    # prompt's own comment) — 0.3 on a role explicitly framed as
+    # "skeptical risk manager" was a second, compounding pull toward
+    # small numbers on top of an already-low-temperature first pass.
+    # Still a bit steadier than the primary call's 0.75 (its actual job
+    # is a consistency check against the same evidence, not fresh
+    # creative reaction), but no longer stacking two separate
+    # conservatism levers on every cycle.
     critique_raw = gemini_client.generate(
-        _build_critique_prompt(context, proposal), temperature=0.3, max_output_tokens=600, allow_during_game=True
+        _build_critique_prompt(context, proposal), temperature=0.55, max_output_tokens=600, allow_during_game=True
     )
     critique = _parse(critique_raw) if critique_raw else None
     parsed = critique if critique is not None else proposal
 
-    pct = max(-MAX_PCT_CHANGE, min(MAX_PCT_CHANGE, parsed["pct_change"]))
+    pct = max(MIN_PCT_CHANGE, parsed["pct_change"])
     new_price = round(_price * (1 + pct / 100), 4)
     ts = time.time()
 
