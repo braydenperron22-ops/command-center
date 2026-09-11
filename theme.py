@@ -6226,6 +6226,12 @@ html, body, [class*="css"] {
 .night-clock {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
     font-size: 13rem;
+    /* Session request: "keep the background black but the red should
+       pop like a bedside alarm clock — easy to see numbers, big pop
+       bright digits." Follow-up: "keep fonts the same" — weight stays
+       300 exactly as it was; the "pop" here comes entirely from the
+       glow below (a third, hotter inner shadow layer), not from
+       thickening the strokes. */
     font-weight: 300;
     line-height: 1;
     letter-spacing: -0.02em;
@@ -6237,12 +6243,24 @@ html, body, [class*="css"] {
        for a different lever instead of just tweaking the hex again: a
        real glow, the same way an actual LED alarm clock or a neon sign
        "pops" against a dark room — light bleeding outward, not just a
-       brighter fill. Static (two fixed shadow layers, tight + wide
-       bloom), no animation — this app's own global kill-switch would
-       drop a pulsing version anyway, and a steady glow is the more
-       honest read for a display that's just sitting there being a
-       clock, not alerting about anything. */
-    text-shadow: 0 0 25px rgba(255, 59, 48, 0.75), 0 0 60px rgba(255, 59, 48, 0.4);
+       brighter fill. Static (three fixed shadow layers, tight + mid +
+       wide bloom), no animation — this app's own global kill-switch
+       would drop a pulsing version anyway, and a steady glow is the
+       more honest read for a display that's just sitting there being a
+       clock, not alerting about anything.
+
+       Session follow-up 2: "the red should pop like a bedside alarm
+       clock — easy to see numbers, big pop bright digits." Added a
+       tight, near-opaque inner layer (10px @ .95) on top of the
+       original two — that's what actually reads as a hot, lit source
+       right at the stroke edge up close; the original 25px/60px pair
+       is the softer bloom that carries the glow out to kiosk viewing
+       distance. Kept both, this only adds the missing third layer
+       rather than replacing what was already tuned; weight stays
+       exactly as it was per the same follow-up ("keep fonts the
+       same"). Background stays pure #000000 either way — this is
+       glow radius/opacity, not a background change. */
+    text-shadow: 0 0 10px rgba(255, 59, 48, 0.95), 0 0 34px rgba(255, 59, 48, 0.8), 0 0 75px rgba(255, 59, 48, 0.45);
 }
 .night-ampm {
     font-size: 3rem;
@@ -6278,7 +6296,12 @@ html, body, [class*="css"] {
     font-size: 2rem;
     font-weight: 500;
     color: #FF3B30;
-    text-shadow: 0 0 14px rgba(255, 59, 48, 0.7), 0 0 32px rgba(255, 59, 48, 0.35);
+    /* Same "pop like a bedside alarm clock" pass as .night-clock just
+       above — the other digit readout on this screen, so it gets the
+       same third, tighter inner-glow layer for consistency. Weight
+       untouched (see .night-clock's own comment — "keep fonts the
+       same"). */
+    text-shadow: 0 0 7px rgba(255, 59, 48, 0.9), 0 0 18px rgba(255, 59, 48, 0.6), 0 0 40px rgba(255, 59, 48, 0.3);
     font-variant-numeric: tabular-nums;
 }
 .night-weather-cond {
