@@ -3944,6 +3944,19 @@ def _gather_new_alerts(
     except Exception:
         pass
 
+    # Session request: "give me a toast and visible cue to go start my
+    # car based on the conditions to give it adequate time to warm up."
+    # One-shot toast, same append-to-the-queue shape as the two above —
+    # the persistent "visible cue" half lives in commute_reminder.
+    # _countdown_info itself (the leave-timer headline/ticker), not
+    # here.
+    try:
+        _warmup_alert = commute_reminder.check_car_warmup(now)
+        if _warmup_alert:
+            alerts.append(_warmup_alert)
+    except Exception:
+        pass
+
     # sports_alerts_new and email_alerts_new share one wall-clock
     # budget (fetch_throttle.run_bounded) — real, measured cold-cache
     # cost for each (~4.7s, a live fetch_status()/IMAP round trip), so

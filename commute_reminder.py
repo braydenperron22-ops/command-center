@@ -28,6 +28,7 @@ import kiosk_tts
 import ntfy_client
 import persisted_state
 import sleep_tracker
+import weather_client
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN, GYM_DESTINATION
 
 # Session request: "update the commute logic to implement a hybrid
@@ -70,6 +71,46 @@ MILESTONES_MINUTES = [120, 90, 60, 45, 30, 20, 15, 10, 5, 3, 0]
 # past this, the dashboard was probably asleep through the whole
 # window, and "Leave now" 40 minutes after the fact isn't useful.
 LATEST_FIRE_MINUTES = -30
+
+# Session request: "give me a toast and visible cue to go start my car
+# based on the conditions to give it adequate time to warm up... warmer
+# weather shorter time, colder weather longer time... full discretion
+# to design the methodology." A straight linear ramp between two real
+# points, same shape as govee_lighting._brightness_envelope/sleep_
+# tracker._volume_ramp already use elsewhere in this app for "scale
+# smoothly between a floor and a ceiling," not a pile of hardcoded
+# temperature brackets:
+#   - At/above WARMUP_NONE_ABOVE_C: no warm-up needed at all, skip the
+#     whole feature entirely for the day — this isn't really about
+#     engine temperature (a modern engine warms up fine driving), it's
+#     about frost/cabin comfort, and above 5°C neither is a real
+#     concern in North Bay.
+#   - At/below WARMUP_MAX_AT_C: cap at WARMUP_MAX_MINUTES — real winter
+#     cold (frost that needs clearing, a cabin that needs real time)
+#     tops out here; more idling past this buys nothing.
+#   - Linear in between.
+# Deliberately a MODEST ceiling (12 min, not 20+) — the alert always
+# fires that many minutes before leave_by regardless (see
+# check_car_warmup below), so a longer cap would just mean an earlier
+# alert, not a warmer car; 12 real minutes of idling is already past
+# where returns on frost-clearing/cabin-heat flatten out.
+WARMUP_NONE_ABOVE_C = 5.0
+WARMUP_MAX_AT_C = -20.0
+WARMUP_MAX_MINUTES = 12
+CAR_WARMUP_GRACE_MINUTES = 15
+
+
+def warmup_minutes_for(temp_c: float) -> int:
+    """How many minutes before leave_by the car should get started,
+    for this outside temperature — see the constants above for the
+    real methodology. 0 means don't bother at all."""
+    if temp_c >= WARMUP_NONE_ABOVE_C:
+        return 0
+    if temp_c <= WARMUP_MAX_AT_C:
+        return WARMUP_MAX_MINUTES
+    span = WARMUP_NONE_ABOVE_C - WARMUP_MAX_AT_C
+    frac = (WARMUP_NONE_ABOVE_C - temp_c) / span
+    return round(WARMUP_MAX_MINUTES * frac)
 
 # Session report: "picking my friend up... it's pinging me two hours
 # before I have to leave... they woke me up every single time... make
@@ -167,6 +208,12 @@ _TRAFFIC_STATE_KEY = "commute_traffic_state"
 # state machine has to stay coherent, and the phone push must not
 # double-fire.
 _traffic_state: dict = persisted_state.load(_TRAFFIC_STATE_KEY, {"date": None, "events": {}})
+
+# check_car_warmup's own "already alerted this event" tracker — same
+# once-per-event, date-scoped, save-only-on-a-genuine-fire shape as
+# every other dedup state in this module.
+_CAR_WARMUP_STATE_KEY = "commute_car_warmup_state"
+_warmup_state: dict = persisted_state.load(_CAR_WARMUP_STATE_KEY, {"date": None, "events": []})
 
 
 def _is_home_event(shift: dict) -> bool:
@@ -1052,6 +1099,84 @@ def check_traffic_change(now: datetime) -> dict | None:
     return alert
 
 
+def check_car_warmup(now: datetime) -> dict | None:
+    """Call once per rerun, right after check_traffic_change. A one-shot
+    toast the moment it's cold enough outside that the car should get
+    started before leaving — see warmup_minutes_for's own comment
+    (above, alongside the WARMUP_* constants) for the temperature-to-
+    minutes methodology. Skipped entirely for a home event (see
+    _is_home_event) — nothing to drive to, nothing to warm up.
+
+    Fires once, at leave_by - warmup_minutes_for(temp), inside a
+    CAR_WARMUP_GRACE_MINUTES-wide catch-up window past that ideal
+    moment (same shape as every other milestone/dedup in this module —
+    covers a rerun cadence gap or a restart skipping right over the
+    exact minute), never twice for the same event. This is only the
+    one-shot nudge; _countdown_info (below) carries the persistent
+    "visible cue" half of the session request across the whole warm-up
+    window, not just the moment this toast fires."""
+    global _warmup_state
+    current = _current_shift(now)
+    if current is None:
+        return None
+    shift, leave_by = current
+    if _is_home_event(shift):
+        return None
+    now_aware = now.replace(tzinfo=leave_by.tzinfo)
+    minutes_until_leave = (leave_by - now_aware).total_seconds() / 60
+
+    try:
+        weather = weather_client.fetch_weather()
+    except Exception:
+        weather = None
+    temp_c = weather.get("temp_c") if weather else None
+    if temp_c is None:
+        return None
+    warmup_min = warmup_minutes_for(temp_c)
+    if warmup_min <= 0:
+        return None
+    if not (warmup_min - CAR_WARMUP_GRACE_MINUTES <= minutes_until_leave <= warmup_min):
+        return None
+
+    if _warmup_state.get("date") != now.date().isoformat():
+        _warmup_state = {"date": now.date().isoformat(), "events": []}
+    event_key = f"{shift['summary']}|{shift['start'].isoformat()}"
+    if event_key in _warmup_state["events"]:
+        return None
+
+    _warmup_state["events"].append(event_key)
+    persisted_state.save(_CAR_WARMUP_STATE_KEY, _warmup_state)
+
+    temp_display = f"{round(temp_c)}°C"
+    headline = f"Start your car — {temp_display}, ~{warmup_min} min to warm up"
+    try:
+        ntfy_client.send(
+            title="Start your car",
+            message=headline,
+            priority="high",
+            tags="snowflake",
+        )
+    except Exception:
+        pass
+
+    return {
+        "headline": headline,
+        "category": "Commute",
+        "important": True,
+        "kind": "commute",
+        "label": "Start your car",
+        "summary": f"It's {temp_display} out — go start your car so it has time to warm up before you leave.",
+        "volume": _leave_volume_ceiling(now_aware, leave_by),
+        # Same quiet-final-stretch gate every other leave-window toast
+        # uses. In practice warmup_min is capped modest (12 min, see
+        # WARMUP_MAX_MINUTES) so this almost always lands well inside
+        # LEAVE_ALERT_SILENT_ABOVE_MINUTES anyway — kept for the same
+        # reason as check_traffic_change's own "silent" field: correct
+        # by construction if either constant ever changes later.
+        "silent": minutes_until_leave > LEAVE_ALERT_SILENT_ABOVE_MINUTES,
+    }
+
+
 def _format_clock(remaining_seconds: float) -> str:
     """H:MM:SS (or MM:SS under an hour) — session request: "why do they
     not show seconds like our other client side timer in the jumbotron
@@ -1223,6 +1348,25 @@ def _countdown_info(now: datetime) -> tuple[int, str, str, str, bool] | None:
                 # than a fresh named event, worth saying differently
                 # than a silent number would.
                 suffix += ", predicted delay ahead" if suffix else " — predicted delay ahead"
+        # Car warm-up "visible cue" — session request: "give me a toast
+        # AND visible cue to go start my car." check_car_warmup (above)
+        # is the one-shot toast; this is the persistent half, parked
+        # right on the countdown itself for the whole window between
+        # "you should've started it by now" and actually leaving —
+        # not just the single minute the toast fires. weather_client.
+        # fetch_weather() is cache-backed (15 min TTL) and already
+        # called every rerun elsewhere in the app, so this is a cache
+        # hit, not an extra network call.
+        try:
+            weather = weather_client.fetch_weather()
+        except Exception:
+            weather = None
+        temp_c = weather.get("temp_c") if weather else None
+        if temp_c is not None:
+            warmup_min = warmup_minutes_for(temp_c)
+            minutes_until_leave = remaining / 60
+            if warmup_min > 0 and 0 <= minutes_until_leave <= warmup_min:
+                suffix += ", start your car" if suffix else " — start your car"
     template = f"{verb} in {{}}{suffix}"
     text = (f"{verb} now" if remaining <= 0 else f"{verb} in {_format_clock(remaining)}") + suffix
     return target_ms, tier, text, template, is_home
