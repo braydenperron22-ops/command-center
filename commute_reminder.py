@@ -75,71 +75,87 @@ LATEST_FIRE_MINUTES = -30
 # Session request: "give me a toast and visible cue to go start my car
 # based on the conditions to give it adequate time to warm up... warmer
 # weather shorter time, colder weather longer time... full discretion
-# to design the methodology." Below the no-warmup line, a genuine
-# per-degree rate — same "scale smoothly" spirit as govee_lighting.
-# _brightness_envelope/sleep_tracker._volume_ramp elsewhere in this
-# app, but those both plateau at a real ceiling on purpose (a light
-# can't get brighter than "on"); this doesn't, per session follow-up:
-# "make the car thing based on a formula and make it so theres no
-# fixed cap -40 should not be treated the same as -20." A flat cap
-# used to sit at -20°C/12 min — real winter cold does eventually make
-# more idling pointless in reality, but a hardcoded ceiling was exactly
-# the wrong way to express that: it made -40°C indistinguishable from
-# -20°C, which is a much colder, much longer warm-up in reality.
-# Replaced with an open-ended rate (WARMUP_MINUTES_PER_DEGREE_C) that
-# keeps climbing for as long as the temperature keeps dropping — no
-# plateau, ever.
-#   - At/above WARMUP_NONE_ABOVE_C: no warm-up needed at all, skip the
-#     whole feature entirely for the day.
-#   - Below it: WARMUP_MIN_MINUTES right away (see the session-report
-#     comment below for why that's a real floor, not 0), plus
-#     WARMUP_MINUTES_PER_DEGREE_C more for every degree colder than
-#     that, with no ceiling.
+# to design the methodology." Followed by two refinements:
 #
-# Session bug report: "it didn't go this morning" — real archived
-# weather for that morning (checked directly, Open-Meteo hourly
-# archive for this exact location): 7.0-8.4°C, 5-9am. The ORIGINAL
-# WARMUP_NONE_ABOVE_C was 5.0, reasoned from "a modern engine warms up
-# fine driving, this is really about frost/cabin comfort, and neither
-# is a real concern above 5°C in North Bay" — technically correct
-# about frost, but wrong about what actually prompted this feature: a
-# 7°C morning still feels like "I'd like the car warm before I get in,"
-# well before literal frost is on the table. Raised to 10°C. Deliberately
-# NOT touching the code path itself (the bug report sounded like one at
-# first) — this was the threshold being wrong, not a mechanism failure;
-# see check_car_warmup's own docstring, unchanged, for the actual
-# trigger logic.
+# (1) "make the car thing based on a formula and make it so theres no
+# fixed cap -40 should not be treated the same as -20" — a flat cap
+# used to sit at -20°C/12 min; replaced with an open-ended per-degree
+# rate that keeps climbing for as long as the temperature keeps
+# dropping, no plateau, ever. Same "scale smoothly" spirit as
+# govee_lighting._brightness_envelope/sleep_tracker._volume_ramp
+# elsewhere in this app, but those both plateau at a real ceiling on
+# purpose (a light can't get brighter than "on") — this one shouldn't,
+# real cold just keeps being real cold.
 #
-# Second problem the same real morning exposed: even a temp that DID
-# clear the old 5°C line barely above it rounded down to 1-2 minutes —
-# a warm-up so short it's not really a warm-up. WARMUP_MIN_MINUTES is
-# the floor the ramp now starts FROM the instant it's below the
-# no-warmup line, not 0 — a "just chilly" morning like the 7°C one
-# above still gets a real, worthwhile few minutes, not a token gesture.
+# (2) "i want the car to be warm (or cool) when i get in it even if it
+# means idling a little longer" — two real changes: this now covers
+# HOT weather too (pre-cooling on a real summer day, not just cold-
+# weather warm-up — the whole feature was cold-only until this point),
+# and every floor/rate below was deliberately pushed toward MORE lead
+# time rather than the bare minimum, per "even if it means idling a
+# little longer" — this is explicitly not trying to minimize idle time,
+# it's trying to maximize actual comfort the moment you get in.
 #
-# The rate itself: 0.25 min/°C — chosen to land close to the OLD
-# cap's own numbers right around where that cap used to sit (-20°C
-# now comes out to 11.5 -> 12 min, identical to the old fixed cap
-# there), so ordinary winter mornings read the same as before; the
-# real change only shows up once it gets colder than that, which is
-# exactly the point — -40°C now comes out to ~16.5 -> 17 min, genuinely
-# more than -20°C, not clamped equal to it.
-WARMUP_NONE_ABOVE_C = 10.0
-WARMUP_MIN_MINUTES = 4
-WARMUP_MINUTES_PER_DEGREE_C = 0.25
-CAR_WARMUP_GRACE_MINUTES = 15
+# Shape: a comfort band (COMFORT_LOW_C to COMFORT_HIGH_C) where the car
+# needs nothing at all. Below it, warm up at COLD_MINUTES_PER_DEGREE_C
+# per degree colder, starting from COLD_MIN_MINUTES the instant it dips
+# below the band (not 0 — see the session bug report below for why a
+# real floor matters, not a token gesture). Above it, the mirror image
+# for cooling: START_MIN_MINUTES... (see HOT_MIN_MINUTES/HOT_MINUTES_
+# PER_DEGREE_C). Neither side has a ceiling.
+#
+# Session bug report that shaped the cold side's own threshold: "it
+# didn't go this morning" — real archived weather for that morning
+# (checked directly, Open-Meteo hourly archive for this exact
+# location): 7.0-8.4°C, 5-9am. The ORIGINAL no-warmup line was 5°C,
+# reasoned from "a modern engine warms up fine driving, this is really
+# about frost/cabin comfort, and neither is a real concern above 5°C in
+# North Bay" — technically correct about frost, but wrong about what
+# actually prompted this feature: a 7°C morning still feels like "I'd
+# like the car warm before I get in," well before literal frost is on
+# the table. Raised to 10°C (COMFORT_LOW_C).
+#
+# COMFORT_HIGH_C (25°C) is the mirror reasoning for the new hot side:
+# a car that's been sitting in real sun on a 25°C+ day gets genuinely
+# uncomfortable well before it "feels dangerously hot" — same logic as
+# the cold side not waiting for literal frost.
+#
+# The rates/floors themselves, all pushed generous per "idling a little
+# longer" rather than tuned to the bare minimum: COLD_MIN_MINUTES=5 and
+# COLD_MINUTES_PER_DEGREE_C=0.3 (was 4 and 0.25) still lands close to
+# the old fixed cap's own numbers right around where that cap used to
+# sit (-20°C now comes out to 14 min, up from the old flat 12 — a bit
+# more, not less, per the "idling longer" ask) while continuing to
+# climb past there instead of plateauing (-40°C: 20 min, genuinely more
+# than -20°C, never clamped equal to it). HOT_MIN_MINUTES=6 and
+# HOT_MINUTES_PER_DEGREE_C=0.3 mirror that same generosity for cooling
+# — real AC takes real time to pull a sun-baked cabin back down,
+# arguably more so than a cold-soaked one, so this isn't tuned lighter
+# just because it's the newer half.
+COMFORT_LOW_C = 10.0
+COMFORT_HIGH_C = 25.0
+COLD_MIN_MINUTES = 5
+COLD_MINUTES_PER_DEGREE_C = 0.3
+HOT_MIN_MINUTES = 6
+HOT_MINUTES_PER_DEGREE_C = 0.3
+CAR_PREP_GRACE_MINUTES = 15
 
 
-def warmup_minutes_for(temp_c: float) -> int:
-    """How many minutes before leave_by the car should get started,
-    for this outside temperature — see the constants above for the
-    real methodology. 0 means don't bother at all; otherwise never
-    less than WARMUP_MIN_MINUTES, and deliberately uncapped on the
-    cold end — there is no temperature at which this stops climbing."""
-    if temp_c >= WARMUP_NONE_ABOVE_C:
-        return 0
-    degrees_below = WARMUP_NONE_ABOVE_C - temp_c
-    return round(WARMUP_MIN_MINUTES + WARMUP_MINUTES_PER_DEGREE_C * degrees_below)
+def car_prep_minutes_for(temp_c: float) -> tuple[int, str | None]:
+    """(minutes, mode) for this outside temperature — mode is "warm"
+    (cold out, run the heat), "cool" (hot out, run the AC), or None
+    (comfortable, don't bother — minutes is always 0 in that case).
+    See the constants above for the real methodology. Never less than
+    COLD_MIN_MINUTES/HOT_MIN_MINUTES the instant it's outside the
+    comfort band, and deliberately uncapped in both directions — there
+    is no temperature, hot or cold, at which this stops climbing."""
+    if temp_c < COMFORT_LOW_C:
+        degrees_below = COMFORT_LOW_C - temp_c
+        return round(COLD_MIN_MINUTES + COLD_MINUTES_PER_DEGREE_C * degrees_below), "warm"
+    if temp_c > COMFORT_HIGH_C:
+        degrees_above = temp_c - COMFORT_HIGH_C
+        return round(HOT_MIN_MINUTES + HOT_MINUTES_PER_DEGREE_C * degrees_above), "cool"
+    return 0, None
 
 # Session report: "picking my friend up... it's pinging me two hours
 # before I have to leave... they woke me up every single time... make
@@ -238,11 +254,16 @@ _TRAFFIC_STATE_KEY = "commute_traffic_state"
 # double-fire.
 _traffic_state: dict = persisted_state.load(_TRAFFIC_STATE_KEY, {"date": None, "events": {}})
 
-# check_car_warmup's own "already alerted this event" tracker — same
+# check_car_prep's own "already alerted this event" tracker — same
 # once-per-event, date-scoped, save-only-on-a-genuine-fire shape as
-# every other dedup state in this module.
-_CAR_WARMUP_STATE_KEY = "commute_car_warmup_state"
-_warmup_state: dict = persisted_state.load(_CAR_WARMUP_STATE_KEY, {"date": None, "events": []})
+# every other dedup state in this module. Renamed from commute_car_
+# warmup_state when the feature grew to cover hot-weather cooling too
+# (car_prep_minutes_for's own comment) — the old key is simply left
+# behind unused rather than migrated; it's a same-day dedup list with
+# no long-term value once the day rolls over, not history worth
+# preserving under its old name.
+_CAR_PREP_STATE_KEY = "commute_car_prep_state"
+_car_prep_state: dict = persisted_state.load(_CAR_PREP_STATE_KEY, {"date": None, "events": []})
 
 
 def _is_home_event(shift: dict) -> bool:
@@ -1128,23 +1149,24 @@ def check_traffic_change(now: datetime) -> dict | None:
     return alert
 
 
-def check_car_warmup(now: datetime) -> dict | None:
+def check_car_prep(now: datetime) -> dict | None:
     """Call once per rerun, right after check_traffic_change. A one-shot
-    toast the moment it's cold enough outside that the car should get
-    started before leaving — see warmup_minutes_for's own comment
-    (above, alongside the WARMUP_* constants) for the temperature-to-
-    minutes methodology. Skipped entirely for a home event (see
-    _is_home_event) — nothing to drive to, nothing to warm up.
+    toast the moment it's cold OR hot enough outside that the car
+    should get started before leaving (heat running, or AC running) —
+    see car_prep_minutes_for's own comment (above, alongside the
+    COMFORT_*/COLD_*/HOT_* constants) for the temperature-to-minutes
+    methodology. Skipped entirely for a home event (see _is_home_event)
+    — nothing to drive to, nothing to prep.
 
-    Fires once, at leave_by - warmup_minutes_for(temp), inside a
-    CAR_WARMUP_GRACE_MINUTES-wide catch-up window past that ideal
-    moment (same shape as every other milestone/dedup in this module —
-    covers a rerun cadence gap or a restart skipping right over the
-    exact minute), never twice for the same event. This is only the
-    one-shot nudge; _countdown_info (below) carries the persistent
-    "visible cue" half of the session request across the whole warm-up
-    window, not just the moment this toast fires."""
-    global _warmup_state
+    Fires once, at leave_by - car_prep_minutes_for(temp), inside a
+    CAR_PREP_GRACE_MINUTES-wide catch-up window past that ideal moment
+    (same shape as every other milestone/dedup in this module — covers
+    a rerun cadence gap or a restart skipping right over the exact
+    minute), never twice for the same event. This is only the one-shot
+    nudge; _countdown_info (below) carries the persistent "visible cue"
+    half of the session request across the whole prep window, not just
+    the moment this toast fires."""
+    global _car_prep_state
     current = _current_shift(now)
     if current is None:
         return None
@@ -1161,29 +1183,30 @@ def check_car_warmup(now: datetime) -> dict | None:
     temp_c = weather.get("temp_c") if weather else None
     if temp_c is None:
         return None
-    warmup_min = warmup_minutes_for(temp_c)
-    if warmup_min <= 0:
+    prep_min, mode = car_prep_minutes_for(temp_c)
+    if prep_min <= 0 or mode is None:
         return None
-    if not (warmup_min - CAR_WARMUP_GRACE_MINUTES <= minutes_until_leave <= warmup_min):
+    if not (prep_min - CAR_PREP_GRACE_MINUTES <= minutes_until_leave <= prep_min):
         return None
 
-    if _warmup_state.get("date") != now.date().isoformat():
-        _warmup_state = {"date": now.date().isoformat(), "events": []}
+    if _car_prep_state.get("date") != now.date().isoformat():
+        _car_prep_state = {"date": now.date().isoformat(), "events": []}
     event_key = f"{shift['summary']}|{shift['start'].isoformat()}"
-    if event_key in _warmup_state["events"]:
+    if event_key in _car_prep_state["events"]:
         return None
 
-    _warmup_state["events"].append(event_key)
-    persisted_state.save(_CAR_WARMUP_STATE_KEY, _warmup_state)
+    _car_prep_state["events"].append(event_key)
+    persisted_state.save(_CAR_PREP_STATE_KEY, _car_prep_state)
 
+    verb = "warm up" if mode == "warm" else "cool down"
     temp_display = f"{round(temp_c)}°C"
-    headline = f"Start your car — {temp_display}, ~{warmup_min} min to warm up"
+    headline = f"Start your car — {temp_display}, ~{prep_min} min to {verb}"
     try:
         ntfy_client.send(
             title="Start your car",
             message=headline,
             priority="high",
-            tags="snowflake",
+            tags="snowflake" if mode == "warm" else "sunny",
         )
     except Exception:
         pass
@@ -1194,15 +1217,15 @@ def check_car_warmup(now: datetime) -> dict | None:
         "important": True,
         "kind": "commute",
         "label": "Start your car",
-        "summary": f"It's {temp_display} out — go start your car so it has time to warm up before you leave.",
+        "summary": f"It's {temp_display} out — go start your car so it has time to {verb} before you leave.",
         "volume": _leave_volume_ceiling(now_aware, leave_by),
         # Same quiet-final-stretch gate every other leave-window toast
-        # uses. warmup_minutes_for is uncapped on the cold end now (see
-        # its own comment), but the rate is gentle enough (0.25 min/°C)
-        # that no real-world temperature gets anywhere close to
-        # LEAVE_ALERT_SILENT_ABOVE_MINUTES (60) — kept for the same
-        # reason as check_traffic_change's own "silent" field: correct
-        # by construction regardless of how either constant is tuned
+        # uses. car_prep_minutes_for is uncapped in both directions
+        # (see its own comment), but the rates are gentle enough that no
+        # real-world temperature gets anywhere close to LEAVE_ALERT_
+        # SILENT_ABOVE_MINUTES (60) — kept for the same reason as
+        # check_traffic_change's own "silent" field: correct by
+        # construction regardless of how either constant is tuned
         # later.
         "silent": minutes_until_leave > LEAVE_ALERT_SILENT_ABOVE_MINUTES,
     }
@@ -1379,24 +1402,26 @@ def _countdown_info(now: datetime) -> tuple[int, str, str, str, bool] | None:
                 # than a fresh named event, worth saying differently
                 # than a silent number would.
                 suffix += ", predicted delay ahead" if suffix else " — predicted delay ahead"
-        # Car warm-up "visible cue" — session request: "give me a toast
-        # AND visible cue to go start my car." check_car_warmup (above)
-        # is the one-shot toast; this is the persistent half, parked
-        # right on the countdown itself for the whole window between
-        # "you should've started it by now" and actually leaving —
-        # not just the single minute the toast fires. weather_client.
-        # fetch_weather() is cache-backed (15 min TTL) and already
-        # called every rerun elsewhere in the app, so this is a cache
-        # hit, not an extra network call.
+        # Car prep "visible cue" — session request: "give me a toast
+        # AND visible cue to go start my car." check_car_prep (above) is
+        # the one-shot toast; this is the persistent half, parked right
+        # on the countdown itself for the whole window between "you
+        # should've started it by now" and actually leaving — not just
+        # the single minute the toast fires. Same "start your car"
+        # wording either way (warm or cool) — the toast/push already
+        # explains WHY, this is just the standing reminder to act.
+        # weather_client.fetch_weather() is cache-backed (15 min TTL)
+        # and already called every rerun elsewhere in the app, so this
+        # is a cache hit, not an extra network call.
         try:
             weather = weather_client.fetch_weather()
         except Exception:
             weather = None
         temp_c = weather.get("temp_c") if weather else None
         if temp_c is not None:
-            warmup_min = warmup_minutes_for(temp_c)
+            prep_min, _prep_mode = car_prep_minutes_for(temp_c)
             minutes_until_leave = remaining / 60
-            if warmup_min > 0 and 0 <= minutes_until_leave <= warmup_min:
+            if prep_min > 0 and 0 <= minutes_until_leave <= prep_min:
                 suffix += ", start your car" if suffix else " — start your car"
     template = f"{verb} in {{}}{suffix}"
     text = (f"{verb} now" if remaining <= 0 else f"{verb} in {_format_clock(remaining)}") + suffix
