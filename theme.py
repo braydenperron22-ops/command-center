@@ -3772,36 +3772,6 @@ html, body, [class*="css"] {
    instead of breaking. */
 .block-container:has(.jumbo) {
     max-width: 100% !important;
-    /* Session report, new Ubuntu kiosk: "the lower third of the screen
-       is just cut out black... every other page sizes properly, except
-       for this one." Real cause: the stepped max-height media queries
-       below (.block-container { zoom: 0.94/0.86/0.78 }, added for the
-       normal pages' own short-viewport fix — see that rule's own
-       comment) still apply here too, since :has() doesn't opt this
-       selector OUT of a plain `.block-container { zoom }` rule
-       elsewhere in the cascade, only add MORE specific rules of its
-       own. Every normal page's content is plain flowing text/tiles, so
-       it shrinks uniformly with that zoom and still looks right — but
-       .jumbo (below) computes its own height directly against the REAL
-       viewport (`calc(100vh - 7rem)`), then that already-correct box
-       gets shrunk AGAIN by the ancestor zoom on top of it, leaving a
-       gap below it exactly the size of the shrink — which reads as
-       solid black, since the page's own base background (config.toml)
-       is already black. Explains every symptom reported: only this
-       page (the only one anchored to 100vh), the gap specifically at
-       the BOTTOM (zoom shrinks from the top-left origin, so the loss
-       shows up trailing, not leading), lowering the real browser zoom
-       "fixing" it (pushes the true viewport back above the 1040px
-       breakpoint, turning this rule off entirely) at the cost of
-       shrinking everything else too. `.jumbo` doesn't need this crutch
-       at all — 100vh already IS the adaptive-to-a-shorter-viewport fix
-       for this page, the exact thing zoom exists to approximate for
-       everyone else. Pinned to 1 here, at equal-or-higher specificity
-       than the plain `.block-container` media queries below regardless
-       of viewport height, so jumbotron is never touched by them again.
-       No effect on any other page — this selector only ever matches
-       while jumbotron is showing. */
-    zoom: 1 !important;
     /* Session report on the real TV (post zoom-fix): "slightly cut off
        at the top, just the slightest little bit." 0.4rem (~6px) left
        almost no real margin above the marquee — bumped for genuine
