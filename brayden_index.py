@@ -1241,7 +1241,18 @@ def big_move_headline_candidate(now: datetime) -> dict | None:
 # hour-long hold, though — hijacking the entire screen is a far bigger
 # interruption than one more rotating banner, so this needs to hand
 # normal rotation back on its own quickly rather than camping there.
-TAKEOVER_DURATION_SECONDS = 5 * 60
+#
+# Session follow-up: "make it so the Bloomberg style BRDN thing only
+# shows up for, like, ten or fifteen minutes when a meaningful move
+# happens." 5 minutes read as barely-there for something meant to feel
+# like a real event — bumped to 12, the midpoint of that range. The
+# self-expiring mechanism itself (big_move_takeover_active, below) is
+# unchanged: this only widens the window, it doesn't change what earns
+# one. The other half of this same complaint — the plain "brdn" page
+# ALSO showing up on its own fixed rotation timer regardless of any
+# move — was config.py's PAGES list, not this constant; see that list's
+# own comment for that fix.
+TAKEOVER_DURATION_SECONDS = 12 * 60
 
 
 def big_move_takeover_active(now: datetime) -> bool:

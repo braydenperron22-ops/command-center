@@ -1862,6 +1862,12 @@ try:
         page = "maintenance"
     elif _requested_page == "terminal":
         page = "terminal"
+    elif _requested_page == "brdn":
+        # No longer in PAGES (config.py) — same "not part of the
+        # ambient rotation, still reachable on purpose" treatment as
+        # maintenance/terminal just above, see PAGES' own comment for
+        # why this one page was pulled out.
+        page = "brdn"
     elif _requested_page in PAGES:
         page = _requested_page
     elif _takeover or _ufc_takeover:
@@ -2179,7 +2185,7 @@ _PAGE_LABELS = {
     "home": "Home", "conflicts": "Conflicts", "news": "News", "email": "Email", "markets": "Markets",
     "internals": "Internals", "today": "Today", "household": "Household",
     "weather": "Weather", "hourly": "Hourly", "radar": "Radar", "sports": "Sports", "scores": "Scores",
-    "portfolio": "Portfolio", "predictions": "Predictions", "brdn": "BRDN",
+    "portfolio": "Portfolio", "predictions": "Predictions",
 }
 
 # Invisible on the kiosk monitor — theme.py hides .mobile-nav entirely
@@ -2194,7 +2200,7 @@ _nav_items = "".join(
     f'href="?page={key}">{_PAGE_LABELS[key]}</a>'
     for key in PAGES
 )
-_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES and _requested_page not in ("maintenance", "terminal") else ""
+_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES and _requested_page not in ("maintenance", "terminal", "brdn") else ""
 # Separate from the PAGES loop above (same reasoning as jumbotron —
 # not part of the normal rotation, so it doesn't belong in that list).
 # Session request: "add a maintenance tab for the mobile version."
@@ -2227,7 +2233,8 @@ st.markdown(
 # route around.
 _picker_open = st.query_params.get("picker") == "open"
 _picker_entries = [(key, _PAGE_LABELS[key]) for key in PAGES] + [
-    ("jumbotron", "Jumbotron"), ("maintenance", "Dev / Maintenance"), ("terminal", "BRDN Terminal"),
+    ("jumbotron", "Jumbotron"), ("maintenance", "Dev / Maintenance"),
+    ("brdn", "BRDN"), ("terminal", "BRDN Terminal"),
 ]
 _picker_tiles = "".join(
     f'<a class="screen-picker-item{" screen-picker-item-active" if key == page else ""}" href="?page={key}">{label}</a>'

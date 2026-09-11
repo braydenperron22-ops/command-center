@@ -215,8 +215,23 @@ YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 # another swap.
 PAGES = [
     "home", "conflicts", "news", "email", "markets", "internals", "today", "household",
-    "weather", "hourly", "radar", "sports", "scores", "portfolio", "predictions", "brdn",
+    "weather", "hourly", "radar", "sports", "scores", "portfolio", "predictions",
 ]
+# "brdn" (pages_brayden_index.py) used to be in the list above, cycling
+# through the ambient rotation on the same footing as Weather/Sports/
+# Portfolio — session request: "make it so the Bloomberg style BRDN
+# thing only shows up for, like, ten or fifteen minutes when a
+# meaningful move happens. it shouldn't still be here." That's really
+# describing the OTHER BRDN surface, pages_brdn_terminal.py (the actual
+# Bloomberg-style full takeover — see brayden_index.
+# TAKEOVER_DURATION_SECONDS), but this ordinary page showing up on a
+# fixed timer regardless of whether anything happened was the same
+# complaint in miniature — pulled out of the ambient rotation entirely
+# rather than just left to coexist with the fixed, event-driven
+# takeover. Still a real, reachable page — see app.py's own explicit
+# "brdn" branch and its picker entry (same "not in PAGES, still
+# reachable" treatment as jumbotron/maintenance/terminal) — just no
+# longer something that shows up on its own schedule.
 PAGE_ROTATION_SECONDS = 5 * 60
 
 # PAGE_DURATION_OVERRIDES lets a specific page hold the screen longer
