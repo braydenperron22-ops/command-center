@@ -2787,6 +2787,24 @@ try:
         except Exception:
             pass
 
+    # Session request: "still so dim. get rid of the dimming rule across
+    # the entire board. its useless when the kiosk isnt in my bedroom."
+    # Same reasoning, same fix shape as night_mode.render()'s own dim
+    # param a few sessions back (see that call site's comment further
+    # down, and commit e5566fe) — every ramp above this line exists to
+    # protect eyes a few feet from the screen overnight, which stopped
+    # applying the moment the kiosk moved to the living room. Forced to
+    # 0.0 right here, after all of that math has already run, rather
+    # than ripping the ramp computation out — same "easily reversible if
+    # this kiosk ever sits in a bedroom again" reasoning as that earlier
+    # fix. _pre_bedtime_phase_active/_pre_bedtime_ramp_active are
+    # deliberately NOT touched here — those still drive govee_lighting.
+    # sync_lights's own "kill the physical lights near bedtime" behavior
+    # further down this script, a real room light on real hardware,
+    # unrelated to how bright THIS screen renders.
+    night_dim = 0.0
+    warm_tint = 0.0
+
     if night_dim > 0:
         # This runs 24/7 in a bedroom — night needs to be genuinely dim
         # enough to sleep next to, not just "a bit darker." Used to be a
