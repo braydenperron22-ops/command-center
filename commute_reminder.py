@@ -75,19 +75,26 @@ LATEST_FIRE_MINUTES = -30
 # Session request: "give me a toast and visible cue to go start my car
 # based on the conditions to give it adequate time to warm up... warmer
 # weather shorter time, colder weather longer time... full discretion
-# to design the methodology." A straight linear ramp between two real
-# points, same shape as govee_lighting._brightness_envelope/sleep_
-# tracker._volume_ramp already use elsewhere in this app for "scale
-# smoothly between a floor and a ceiling," not a pile of hardcoded
-# temperature brackets:
+# to design the methodology." Below the no-warmup line, a genuine
+# per-degree rate — same "scale smoothly" spirit as govee_lighting.
+# _brightness_envelope/sleep_tracker._volume_ramp elsewhere in this
+# app, but those both plateau at a real ceiling on purpose (a light
+# can't get brighter than "on"); this doesn't, per session follow-up:
+# "make the car thing based on a formula and make it so theres no
+# fixed cap -40 should not be treated the same as -20." A flat cap
+# used to sit at -20°C/12 min — real winter cold does eventually make
+# more idling pointless in reality, but a hardcoded ceiling was exactly
+# the wrong way to express that: it made -40°C indistinguishable from
+# -20°C, which is a much colder, much longer warm-up in reality.
+# Replaced with an open-ended rate (WARMUP_MINUTES_PER_DEGREE_C) that
+# keeps climbing for as long as the temperature keeps dropping — no
+# plateau, ever.
 #   - At/above WARMUP_NONE_ABOVE_C: no warm-up needed at all, skip the
 #     whole feature entirely for the day.
-#   - At/below WARMUP_MAX_AT_C: cap at WARMUP_MAX_MINUTES — real winter
-#     cold (frost that needs clearing, a cabin that needs real time)
-#     tops out here; more idling past this buys nothing.
-#   - Linear in between, but with a real MINIMUM the moment it's below
-#     the no-warmup line (see WARMUP_MIN_MINUTES) rather than starting
-#     at 0 there — see the session-report comment below for why.
+#   - Below it: WARMUP_MIN_MINUTES right away (see the session-report
+#     comment below for why that's a real floor, not 0), plus
+#     WARMUP_MINUTES_PER_DEGREE_C more for every degree colder than
+#     that, with no ceiling.
 #
 # Session bug report: "it didn't go this morning" — real archived
 # weather for that morning (checked directly, Open-Meteo hourly
@@ -109,10 +116,17 @@ LATEST_FIRE_MINUTES = -30
 # the floor the ramp now starts FROM the instant it's below the
 # no-warmup line, not 0 — a "just chilly" morning like the 7°C one
 # above still gets a real, worthwhile few minutes, not a token gesture.
+#
+# The rate itself: 0.25 min/°C — chosen to land close to the OLD
+# cap's own numbers right around where that cap used to sit (-20°C
+# now comes out to 11.5 -> 12 min, identical to the old fixed cap
+# there), so ordinary winter mornings read the same as before; the
+# real change only shows up once it gets colder than that, which is
+# exactly the point — -40°C now comes out to ~16.5 -> 17 min, genuinely
+# more than -20°C, not clamped equal to it.
 WARMUP_NONE_ABOVE_C = 10.0
 WARMUP_MIN_MINUTES = 4
-WARMUP_MAX_AT_C = -20.0
-WARMUP_MAX_MINUTES = 12
+WARMUP_MINUTES_PER_DEGREE_C = 0.25
 CAR_WARMUP_GRACE_MINUTES = 15
 
 
@@ -120,14 +134,12 @@ def warmup_minutes_for(temp_c: float) -> int:
     """How many minutes before leave_by the car should get started,
     for this outside temperature — see the constants above for the
     real methodology. 0 means don't bother at all; otherwise never
-    less than WARMUP_MIN_MINUTES."""
+    less than WARMUP_MIN_MINUTES, and deliberately uncapped on the
+    cold end — there is no temperature at which this stops climbing."""
     if temp_c >= WARMUP_NONE_ABOVE_C:
         return 0
-    if temp_c <= WARMUP_MAX_AT_C:
-        return WARMUP_MAX_MINUTES
-    span = WARMUP_NONE_ABOVE_C - WARMUP_MAX_AT_C
-    frac = (WARMUP_NONE_ABOVE_C - temp_c) / span
-    return round(WARMUP_MIN_MINUTES + (WARMUP_MAX_MINUTES - WARMUP_MIN_MINUTES) * frac)
+    degrees_below = WARMUP_NONE_ABOVE_C - temp_c
+    return round(WARMUP_MIN_MINUTES + WARMUP_MINUTES_PER_DEGREE_C * degrees_below)
 
 # Session report: "picking my friend up... it's pinging me two hours
 # before I have to leave... they woke me up every single time... make
@@ -1185,11 +1197,13 @@ def check_car_warmup(now: datetime) -> dict | None:
         "summary": f"It's {temp_display} out — go start your car so it has time to warm up before you leave.",
         "volume": _leave_volume_ceiling(now_aware, leave_by),
         # Same quiet-final-stretch gate every other leave-window toast
-        # uses. In practice warmup_min is capped modest (12 min, see
-        # WARMUP_MAX_MINUTES) so this almost always lands well inside
-        # LEAVE_ALERT_SILENT_ABOVE_MINUTES anyway — kept for the same
+        # uses. warmup_minutes_for is uncapped on the cold end now (see
+        # its own comment), but the rate is gentle enough (0.25 min/°C)
+        # that no real-world temperature gets anywhere close to
+        # LEAVE_ALERT_SILENT_ABOVE_MINUTES (60) — kept for the same
         # reason as check_traffic_change's own "silent" field: correct
-        # by construction if either constant ever changes later.
+        # by construction regardless of how either constant is tuned
+        # later.
         "silent": minutes_until_leave > LEAVE_ALERT_SILENT_ABOVE_MINUTES,
     }
 
