@@ -107,6 +107,7 @@ import streamlit as st
 from astral import LocationInfo
 from astral.sun import sun
 
+import commute_reminder
 import fetch_throttle
 import gemini_client
 import ntfy_client
@@ -238,9 +239,36 @@ def _in_pause_window(now: datetime.datetime) -> bool:
     confirmed live this matters: comparing aware against naive raises
     TypeError, which app.py's blanket try/except around the badge's
     render call was silently swallowing, making the whole badge vanish
-    with no visible error at all rather than a wrong-but-visible one."""
+    with no visible error at all rather than a wrong-but-visible one.
+
+    Session request: "if i have an early morning event the ai's should
+    wake up with me." Civil dawn is a fine DEFAULT wake boundary for an
+    ordinary day, but it's blind to a real early commitment — a 5am
+    shift in December (dawn well past 7am) would leave the morning
+    brief and every other Groq/Gemini feature still "paused" for the
+    first couple hours he's genuinely up reading the dashboard.
+    commute_reminder.screen_wake_time already answers "when does the
+    real day start today" for exactly this reason (see its own
+    docstring — leave_by minus a getting-ready buffer, falling back to
+    sleep_tracker.wake_time_for) — night mode's own screen-wake timing
+    has used it all session; this is the last piece of the app that
+    was still only counting on plain dawn. Reused here as an EARLIER-
+    ONLY override: never pushes the pause window's start LATER than
+    civil dawn (an ordinary day with nothing scheduled shouldn't wake
+    the AI up any later than it always has), only ever pulls it
+    earlier for a real early day — and only when that real wake time
+    actually falls on TODAY (same "don't let a lookahead into tomorrow
+    leak backward" guard app.py's own _night_mode_day_start already
+    learned the hard way), so checking this at 11pm the night before
+    an early shift doesn't prematurely end tonight's own pause window."""
     first_light, last_light = _first_last_light(now.date())
     naive_now = now.replace(tzinfo=None)
+    try:
+        real_wake = commute_reminder.screen_wake_time(naive_now)
+        if real_wake is not None and real_wake.replace(tzinfo=None).date() == naive_now.date():
+            first_light = min(first_light, real_wake.replace(tzinfo=None))
+    except Exception:
+        pass
     return not (first_light <= naive_now < last_light)
 
 
