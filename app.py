@@ -1849,6 +1849,20 @@ try:
 except Exception:
     pass
 
+# Session request: "remove the jumbotron takeover mechanic since the
+# jumbotron isnt working rn. and ill fix it later" — a temporary kill
+# switch, not a removal of the feature. Only stops the automatic
+# hijack below (a real live game silently switching the whole kiosk
+# over to the board) — manual access is untouched: ?page=jumbotron
+# still works, and so does the S-key picker's own "Jumbotron" entry,
+# so it's still reachable to keep working on. Nothing else about
+# _resolve_takeover/_jumbotron_active/pages_jumbotron.py is touched —
+# game_live/Govee light sync still react to a real game exactly as
+# before, this is purely about which PAGE the kiosk shows. Flip back
+# to True to restore the old automatic behavior, no other changes
+# needed.
+JUMBOTRON_AUTO_TAKEOVER_ENABLED = False
+
 _takeover, _ufc_takeover = _resolve_takeover(now, _requested_page == "jumbotron")
 
 try:
@@ -1870,7 +1884,7 @@ try:
         page = "brdn"
     elif _requested_page in PAGES:
         page = _requested_page
-    elif _takeover or _ufc_takeover:
+    elif JUMBOTRON_AUTO_TAKEOVER_ENABLED and (_takeover or _ufc_takeover):
         page = "jumbotron"
     elif brayden_index.big_move_takeover_active(now):
         # Session request: "during big market-shifting moments... we
