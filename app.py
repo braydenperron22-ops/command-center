@@ -1862,6 +1862,13 @@ except Exception:
 # to True to restore the old automatic behavior, no other changes
 # needed.
 JUMBOTRON_AUTO_TAKEOVER_ENABLED = False
+# Session follow-up: "get rid of the terminal one too" — same kill
+# switch shape as JUMBOTRON_AUTO_TAKEOVER_ENABLED just above, applied
+# to the OTHER automatic full-screen hijack (a big BRDN move switching
+# the kiosk to pages_brdn_terminal.py). Manual access is untouched:
+# ?page=terminal and the picker's "BRDN Terminal" entry both still
+# route there directly. Flip back to True to restore it.
+TERMINAL_AUTO_TAKEOVER_ENABLED = False
 
 _takeover, _ufc_takeover = _resolve_takeover(now, _requested_page == "jumbotron")
 
@@ -1886,7 +1893,7 @@ try:
         page = _requested_page
     elif JUMBOTRON_AUTO_TAKEOVER_ENABLED and (_takeover or _ufc_takeover):
         page = "jumbotron"
-    elif brayden_index.big_move_takeover_active(now):
+    elif TERMINAL_AUTO_TAKEOVER_ENABLED and brayden_index.big_move_takeover_active(now):
         # Session request: "during big market-shifting moments... we
         # can see the dashboard, like the Bloomberg terminal." Only
         # reached once a real live game (above) has already lost —
