@@ -229,6 +229,54 @@ _LEAGUES = [
     },
 ]
 
+# Session request: "we have the score on the main page... just instead
+# of having all the details, just have the main status show on the top
+# bar... make it rotate for all the active sports right now [e.g.] the
+# blue jays [and] the saints are playing at the same time, so [it
+# should] rotate between them. the only thing that should give me
+# updates on the game are the toast alerts." headline_rotation.py's
+# existing unified top-bar rotation already handles "however many
+# sources are active right now, cycle through them" — this just needs
+# to hand it one candidate PER currently-live tracked team, keyed
+# distinctly (headline_rotation._candidates is a dict, so same-shaped
+# entries under different keys coexist and rotate together with zero
+# changes needed there). Deliberately just the score — no inning/
+# count/period detail, that's the "all the details" this was asked to
+# stop showing; get_new_alerts below already covers every real scoring
+# play via its own toast, unaffected by this.
+def live_score_headline_candidates(now: datetime) -> dict[str, dict]:
+    """{key: candidate} for every tracked team (see _LEAGUES) whose
+    game is genuinely live right now — same candidate shape every
+    other headline_rotation.py source uses ({"text", "css_class",
+    "target_ms", "template", "zero_text"}), target_ms always None (a
+    score has no natural countdown). rotation-notice tier: real and
+    worth a look, but not an urgent/hazard-tier event the way a storm
+    or road closure is. `now` accepted for signature symmetry with
+    every other *_candidate function in this app, even though the live
+    status/score itself doesn't need it — a fetch failure on any one
+    team is swallowed and simply omits that team's key rather than
+    losing every other currently-live team's entry too."""
+    out = {}
+    for league in _LEAGUES:
+        try:
+            status = league["fetch_status"]()
+        except Exception:
+            continue
+        game = status.get("game") if status else None
+        if not game or game.get("state") != "live":
+            continue
+        team_score, opp_score = game.get("team_score"), game.get("opp_score")
+        if team_score is None or opp_score is None:
+            continue
+        connector = "vs" if game.get("is_home") else "@"
+        text = f'{league["label"].title()} {team_score}-{opp_score} {connector} {game["opponent"]}'
+        out[f'live_score_{league["sport"]}'] = {
+            "text": text, "css_class": "rotation-notice", "target_ms": None,
+            "template": "{}", "zero_text": None,
+        }
+    return out
+
+
 # Session request: "during the semis and the finals... regardless of
 # if my team is out or not, I wanna watch every game of those series...
 # as the featured game." Below the tracked Jays/Habs/Saints games

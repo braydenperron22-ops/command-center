@@ -43,6 +43,7 @@ import market_circuit_breaker
 import persisted_state
 import road_conditions_511
 import sleep_tracker
+import sports_alerts
 import weather_alerts_bar
 from config import TOP_ALERT_HOLD_SECONDS
 
@@ -121,6 +122,14 @@ def _candidates(now: datetime, weather: dict | None) -> dict[str, dict]:
     brdn_move = brayden_index.big_move_headline_candidate(now)
     if brdn_move is not None:
         out["brdn_move"] = brdn_move
+    # Session request: "just have the main status show on the top bar
+    # [for] all of the sports I follow... make it rotate for all the
+    # active sports right now." One entry per currently-live tracked
+    # team (Jays/Habs/Saints) — a dict update, not a single key, since
+    # more than one can genuinely be live at once (the request's own
+    # example: Jays and Saints playing simultaneously) and this
+    # rotation already cycles through however many keys are eligible.
+    out.update(sports_alerts.live_score_headline_candidates(now))
     # Session request: "breaking news should get its own toast alert"
     # — no longer a candidate here at all. news.get_new_alerts's own
     # one-shot toast (already wired independently into app.py's toast
