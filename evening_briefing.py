@@ -62,7 +62,7 @@ def _tomorrow_agenda_block(now: datetime) -> str | None:
     if not events:
         return None
     events.sort(key=lambda e: e["start"])
-    return morning_briefing.format_agenda_list(events)
+    return morning_briefing.format_agenda_list(events, now)
 
 
 def _ai_evening_sentence(agenda_block: str) -> tuple[str, str] | None:

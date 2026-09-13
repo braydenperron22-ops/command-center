@@ -454,12 +454,53 @@ def _is_shift_summary(summary: str) -> bool:
     return summary == "Work" or summary.lower().startswith("working")
 
 
-def format_agenda_list(events: list[dict]) -> str:
+# Session bug report, live at 7:42 AM with a 9:00 AM gym session still
+# hours out: "the morning brief is saying that I have completed my gym
+# session. Even though I haven't... on certain refreshes." Root cause:
+# the fact string only ever gave the AI an event's scheduled clock time
+# ("Gym - Legs at 9:00 AM") and never told it what time it actually IS
+# right now (only the date/weekday get that treatment elsewhere in this
+# prompt — see today_date/weekday above) — so whether that 9:00 AM was
+# already in the past was pure guesswork on the model's part, and it
+# guessed wrong. Same class of bug this app has fixed before by moving
+# a fact FROM the model's own judgment INTO deterministic code (see
+# e.g. the EC alert type-prefix fix) — comparing a clock reading to a
+# real "now" is exactly the kind of arithmetic an LLM gets wrong, not
+# something worth trusting it with when the real answer is one
+# datetime comparison away.
+def _event_status(now: datetime, start: datetime, end: datetime | None) -> str:
+    """completed / in progress / upcoming — computed in code, never
+    left for the model to infer from a bare clock time. `now` is naive-
+    local (this app's own convention); `start`/`end` are timezone-aware
+    (calendar_client's own events), so `now` is reinterpreted into that
+    same zone rather than compared directly — the exact "reinterpret,
+    don't convert" pattern pages_today.py's _row_class and commute_
+    reminder.py's own now_aware already use for this identical
+    naive-vs-aware mismatch."""
+    now_aware = now.replace(tzinfo=start.tzinfo)
+    if now_aware < start:
+        return "upcoming"
+    if end is not None and now_aware < end:
+        return "in progress"
+    if end is not None:
+        return "completed"
+    # No real end time to compare against (a plain personal event with
+    # no duration data) — once its own start has passed, "completed" is
+    # still the more honest read than silently saying nothing, but
+    # without an end time this is a courtesy label, not a precise one.
+    return "completed"
+
+
+def format_agenda_list(events: list[dict], now: datetime) -> str:
     """Public — evening_briefing.py's own tomorrow-preview reuses this
     exact formatting (shift end-time math, location/description
     inclusion, the "plus N more" cap) rather than re-deriving it, so a
     real work shift reads identically whether it's showing up in
-    today's agenda or tomorrow's preview."""
+    today's agenda or tomorrow's preview. `now` only ever changes what
+    each event's own [status] tag reads (see _event_status) — every
+    event in a tomorrow-preview call is necessarily still in the future
+    relative to today's `now`, so it naturally always comes out
+    "upcoming" there without any special-casing needed."""
     shown = events[:AGENDA_LIST_CAP]
     parts = []
     for e in shown:
@@ -468,6 +509,7 @@ def format_agenda_list(events: list[dict]) -> str:
             end = e["start"] + timedelta(hours=SHIFT_LENGTH_HOURS)
             part = f'{e["summary"]} at {start_text} – {end.strftime("%I:%M %p").lstrip("0")}'
         else:
+            end = e["end"] if isinstance(e.get("end"), datetime) else None
             part = f'{e["summary"]} at {start_text}'
         if e.get("location"):
             part += f' @ {e["location"]}'
@@ -476,6 +518,15 @@ def format_agenda_list(events: list[dict]) -> str:
             if len(desc) > _DESCRIPTION_FACT_CHARS:
                 desc = desc[:_DESCRIPTION_FACT_CHARS].rstrip() + "…"
             part += f' ("{desc}")'
+        # Parentheses, not brackets — this same string can reach the
+        # user completely raw on the plain-text degraded-mode fallback
+        # (render()'s own "AI call itself failed" path, and evening_
+        # briefing's identical fallback), so it has to read as normal,
+        # grammatical English on its own, not a template-looking tag.
+        # "(upcoming)"/"(in progress)"/"(completed)" all hold up fine
+        # unstyled — genuinely an improvement on that fallback path too,
+        # which previously carried no tense information at all.
+        part += f' ({_event_status(now, e["start"], end)})'
         parts.append(part)
     joined = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + f", and {parts[-1]}"
     remaining = len(events) - len(shown)
@@ -490,7 +541,7 @@ def _agenda_clause(now: datetime) -> tuple[int, str] | None:
     if not events:
         return 1, "calendar: nothing scheduled today"
     events.sort(key=lambda e: e["start"])
-    agenda_list = format_agenda_list(events)
+    agenda_list = format_agenda_list(events, now)
     priority = {1: 3, 2: 4}.get(len(events), 5)
     return priority, f"calendar: {agenda_list}"
 
@@ -1355,6 +1406,15 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
         "days record, the upcoming holidays, the upcoming season change, the environmental trend "
         "data above, and the raw data below. Always write numbers as actual digits, never spelled "
         "out as words — '18 minutes' and '0.8%', not 'eighteen minutes' or 'zero point eight percent'.\n\n"
+        "The calendar fact below tags each event with its own real (upcoming)/(in progress)/"
+        "(completed) status, already computed against the actual current time — session bug report, "
+        "live: 'the morning brief is saying that I have completed my gym session, even though I "
+        "haven't,' because nothing ever told you what time it actually is, so tense was a guess. Use "
+        "that tag to get your OWN tense right (upcoming -> future tense, 'you've got X coming up at "
+        "9:00 AM'; in progress -> present tense, 'X is going on right now'; completed -> past tense, "
+        "'you finished X at 9:00 AM') — never guess tense from the clock time alone. Don't just copy "
+        "the parenthetical word itself into your sentence verbatim; write it naturally in your own "
+        "words the way the examples just above do.\n\n"
         "All of today's real raw data — everything computed for today, nothing hidden and nothing "
         "invented. Some facts share real physical "
         f"cause and effect worth naming directly — cold enough and wet enough together on "
