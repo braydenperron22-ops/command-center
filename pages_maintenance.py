@@ -259,6 +259,32 @@ def _pulse_rows() -> str:
     return "".join(rows)
 
 
+def _kiosk_watchdog_rows() -> str:
+    """Session request: make the physical kiosk self-healing rather than
+    just a dashboard someone has to notice is broken. A systemd --user
+    timer on the kiosk box itself (2-minute cycle, outside this app
+    entirely) checks Firefox is actually alive, the dashboard is
+    actually reachable, and disk isn't filling up — relaunching/
+    restarting whatever's broken on its own — and records what it found
+    under this same Upstash store so it survives being read from a
+    different device. Same shape as _toast_health_rows/_govee_health_
+    rows above: a background process's own record surfaced here, no
+    live probe of the kiosk from this page itself."""
+    report = persisted_state.load("kiosk_watchdog_status", None)
+    if report is None:
+        return _row("Kiosk watchdog", "No reports yet", "neutral")
+    at = report.get("at")
+    age = time.time() - at if at else None
+    if age is not None and age > 600:  # more than 5x its own 2-min cycle since last check-in
+        return _row("Kiosk watchdog", "Not reporting", "low", _relative_time(at))
+    issues = report.get("issues") or []
+    if not issues:
+        return _row("Kiosk watchdog", "Healthy", "good", _relative_time(at))
+    return _row("Kiosk watchdog", "Recovering", "medium", _relative_time(at)) + "".join(
+        f'<div class="maint-row-meta">{issue}</div>' for issue in issues
+    )
+
+
 def render() -> None:
     st.markdown('<div class="page-title page-title-maintenance">Maintenance</div>', unsafe_allow_html=True)
     row1 = st.columns(3)
@@ -282,3 +308,6 @@ def render() -> None:
         st.markdown(_tile("Govee", _govee_health_rows()), unsafe_allow_html=True)
     with row3[2]:
         st.markdown(_tile("Dashboard Pulse", _pulse_rows()), unsafe_allow_html=True)
+    row4 = st.columns(3)
+    with row4[0]:
+        st.markdown(_tile("Kiosk Watchdog", _kiosk_watchdog_rows()), unsafe_allow_html=True)

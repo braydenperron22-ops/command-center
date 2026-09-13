@@ -2132,6 +2132,7 @@ _night_mode_active = (
     and not _night_mode_storm_active
     and not (_night_mode_day_start <= now < _night_mode_day_end)
 )
+night_mode.sync_active_state(_night_mode_active)
 
 # Transition overlay — session feedback: the hard cut between the
 # everyday dashboard and the jumbotron "feels dystopian," worth a real

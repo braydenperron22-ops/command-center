@@ -22,15 +22,45 @@ f.lux's own night shift, but applied to fixed content rather than a
 color-temperature filter over the normal busy dashboard."""
 
 import html
+import time
 from datetime import datetime
 
 import streamlit as st
 
 import commute_reminder
+import persisted_state
 import road_conditions_511
 import sleep_tracker
 import weather_alerts_bar
 from icons import icon_for, label_for
+
+_last_pushed_active: bool | None = None
+
+
+def sync_active_state(active: bool) -> None:
+    """Session request: when night mode engages, also dim the kiosk's
+    actual monitor backlight and switch on GNOME's Night Light color-
+    temperature filter — real OS/hardware-level effects this Streamlit
+    process can't reach directly from inside a browser tab. Handed off
+    through the same shared Upstash store persisted_state.py already
+    uses for the kiosk's own watchdog, so a separate poller running on
+    the kiosk box itself (outside this app entirely) can pick it up and
+    act on it.
+
+    Edge-triggered against a module-level global rather than st.
+    session_state — this is one shared fact true for the whole app, not
+    per-browser-session, the same reasoning persisted_state.py's own
+    docstring gives for when a shared key is correct instead of a
+    per-instance one — so a write only happens on a genuine flip, never
+    on every rerun this stays the same."""
+    global _last_pushed_active
+    if active == _last_pushed_active:
+        return
+    try:
+        persisted_state.save("night_mode_active", {"active": active, "at": time.time()})
+        _last_pushed_active = active
+    except Exception:
+        pass
 
 
 def _overnight_attention_items(now: datetime) -> list[str]:
