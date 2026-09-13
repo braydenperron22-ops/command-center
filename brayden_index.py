@@ -157,6 +157,44 @@ _last_applied_raw: str | None = persisted_state.load("brdn_last_applied_raw", No
 # oldest first — see MAX_REPORT_HISTORY's own comment above.
 _report_history: list[dict] = persisted_state.load("brdn_report_history", [])
 
+# Session report, live, a real ~27% two-day decline: "I think we need
+# to reevaluate how the AI ranks these things because it's in a
+# negative feedback loop... it's continually making the downward
+# spiral worse without the information necessarily changing... right
+# now it's processing the stock price going down as a bearish event,
+# which is causing a negative feedback loop of crash." Confirmed real,
+# not a guess — two genuine mechanisms both feed the SAME stale fact
+# back in as if it were fresh news every single cycle:
+#
+# 1. portfolio_client.daily_change() is a continuously-recomputed
+#    "today so far" snapshot — a portfolio that was already down 12%
+#    at the last cycle and is still down 13% an hour later hasn't
+#    given the model one new reason to be bearish, but the raw fact
+#    string looked identical either way: "Portfolio change today:
+#    -13%." _last_cycle_daily_pct (below) is what the same fact was
+#    LAST cycle, so _gather_signals can hand the model the actual
+#    delta instead of a bare snapshot it has no way to tell apart from
+#    fresh news.
+# 2. portfolio_client.fetch_activities(limit=8) can keep surfacing the
+#    SAME real transaction (a FanDuel withdrawal, a bill payment) for
+#    many consecutive hourly cycles just because it's still recent
+#    enough to be in the last-8 window — each re-appearance reading as
+#    a brand new catalyst to react to again. _seen_activity_keys
+#    (below) is which of those this feature has already shown the
+#    model at least once, so a repeat sighting can be filtered out
+#    instead of re-cited as new.
+#
+# Both persisted the same way everything else here is — loaded once,
+# mutated in place, saved only alongside a genuine new cycle in
+# maybe_reprice (never on every rerun).
+_last_cycle_daily_pct: float | None = persisted_state.load("brdn_last_cycle_daily_pct", None)
+_seen_activity_keys: list[str] = persisted_state.load("brdn_seen_activity_keys", [])
+# Capped generously — a real activity key is a short string, and this
+# only ever needs to remember "have I shown this one before," not the
+# full transaction detail (that still lives in _report_history's own
+# catalyst text once it's actually been reacted to).
+MAX_SEEN_ACTIVITY_KEYS = 200
+
 # Session request: "let's do it, the quarterly notification... a copy
 # of my data on LinkedIn as well as a little verbal update... framed as
 # a quarterly employment report." No live LinkedIn/social feed exists
@@ -305,6 +343,17 @@ def next_reprice_estimate(night_mode_active: bool = False) -> dict:
     return {"seconds_until": seconds_until, "pct_elapsed": pct_elapsed, "due": seconds_until <= 0}
 
 
+def _activity_key(activity: dict) -> str:
+    """A stable-enough identity for one real cash-flow activity, purely
+    for "have I already shown myself this one" dedup (see
+    _seen_activity_keys' own module-level comment) — not a real
+    transaction id (portfolio_client's own activity dicts don't carry
+    one), just type+amount+account+date, which collides only in the
+    rare case of two genuinely identical transactions on the same
+    account the same day, an edge case not worth more machinery for."""
+    return f"{activity.get('type')}|{activity.get('amount')}|{activity.get('account')}|{activity.get('date')}"
+
+
 def current_signals(now: datetime, readings: dict | None = None) -> str:
     """Public read-only wrapper around _gather_signals — the exact same
     fact sheet the AI reasons from this cycle, for a caller that wants
@@ -338,7 +387,22 @@ def _gather_signals(now: datetime, readings: dict | None) -> str:
     try:
         daily = portfolio_client.daily_change()
         if daily:
-            facts.append(f"Portfolio change today: {daily['pct']:+.2f}% (${daily['amount']:+,.0f})")
+            base = f"Portfolio change today: {daily['pct']:+.2f}% (${daily['amount']:+,.0f})"
+            # Session bug report, live, a real ~27% two-day spiral: this
+            # used to be a bare snapshot, re-served identically whether
+            # the underlying situation had moved at all since the last
+            # cycle or not — the model had no way to tell "still -13%,
+            # same as an hour ago" apart from genuinely fresh bad news,
+            # and kept reacting to it as if it were new each time. Now
+            # explicit about the delta since last cycle specifically —
+            # see _last_cycle_daily_pct's own module-level comment.
+            if _last_cycle_daily_pct is not None:
+                delta = daily["pct"] - _last_cycle_daily_pct
+                base += (
+                    f" — was already {_last_cycle_daily_pct:+.2f}% as of your last cycle, so the actual NEW "
+                    f"move since then is {delta:+.2f} points, not the full {daily['pct']:+.2f}%"
+                )
+            facts.append(base)
     except Exception:
         pass
     try:
@@ -356,12 +420,29 @@ def _gather_signals(now: datetime, readings: dict | None) -> str:
     try:
         activities = portfolio_client.fetch_activities(limit=8) or []
         real_activity = [a for a in activities if not a.get("is_transfer")]
-        if real_activity:
+        # Session bug report, live, a real ~27% two-day spiral: the same
+        # real transaction (a FanDuel withdrawal, a bill payment) can
+        # sit inside this last-8 window for many consecutive hourly
+        # cycles just by still being recent — each re-appearance was
+        # getting cited as a fresh catalyst to react to again, not
+        # recognized as the same one already priced in. _activity_key/
+        # _seen_activity_keys (module-level) is this feature's own
+        # memory of which specific transactions it's already shown
+        # itself at least once.
+        new_activity = [a for a in real_activity if _activity_key(a) not in _seen_activity_keys]
+        if new_activity:
             lines = "; ".join(
                 f"{a['type'].title()} ${abs(a['amount']):,.0f} ({a['account']}, {a['date']})"
-                for a in real_activity[:6]
+                for a in new_activity[:6]
             )
-            facts.append(f"Recent real cash-flow activity (transfers between his own accounts excluded): {lines}")
+            facts.append(f"NEW real cash-flow activity since your last cycle (transfers between his own accounts excluded): {lines}")
+        elif real_activity:
+            # Deliberately still said explicitly, not just omitted —
+            # silence here read ambiguously (no data fetched vs.
+            # genuinely nothing new), and the whole point of this fix
+            # is giving the model an honest "nothing changed" signal to
+            # act on instead of falling back to the raw activity list.
+            facts.append("No new real cash-flow activity since your last cycle — same transactions as before, already priced in.")
     except Exception:
         pass
     try:
@@ -714,6 +795,20 @@ def _build_prompt(context: dict) -> str:
         "shareholder base watching this ticker should be able to tell, just from the size of the move, that "
         "something genuinely happened. There is no fixed ceiling or floor on how far this can move in a single "
         "cycle — trade with real conviction, not caution for its own sake.\n\n"
+        "One real failure mode this has hit before, worth being explicit about: the price's OWN recent direction "
+        "is never itself a reason to keep moving it that way. A real market that's already down doesn't keep "
+        "falling on its own momentum — it falls (or rises) only in response to genuinely NEW information since "
+        "last cycle, and otherwise holds. If a fact below is described as unchanged/still-true/already-priced-in "
+        "since your last cycle (the signals block below says so explicitly where this applies — e.g. a portfolio "
+        "metric framed as \"was already X, so the actual new move is only Y\", or cash-flow activity explicitly "
+        "labeled as nothing new), that fact has ALREADY been reacted to — do not react to it again just because "
+        "it's still true. Reacting to the same standing situation a second, third, or tenth time in a row, with "
+        "no new information, is exactly the self-reinforcing spiral a real efficient market doesn't have — a "
+        "confirmed live failure here was a real, genuinely bad daily portfolio drawdown getting treated as fresh "
+        "bearish news on every single hourly cycle for almost a full day straight, compounding roughly 27% off a "
+        "SINGLE real event that should have been priced in within one or two cycles. A stretch of genuinely new, "
+        "still-bad news IS a real reason to keep falling — the test is always \"is there something here I "
+        "haven't already reacted to,\" never \"is the number still negative.\"\n\n"
         f"Current price: ${_price:.2f}. Recent price history, oldest to newest: {context['recent_prices']}.\n\n"
         f"What the market currently believes about Brayden / already has priced in (your own note from last "
         f"cycle): {context['expectations_text']}\n\n"
@@ -789,7 +884,15 @@ def _build_critique_prompt(context: dict, proposal: dict) -> str:
         "to something that's already happened repeatedly and should be mostly priced in by now, or "
         "underreacting/playing it safe on something genuinely new? (3) is the move proportionate to what's "
         "actually in the signals, in EITHER direction — a quiet cycle should stay small, but a cycle with real "
-        "news deserves a real, decisive number, not a fraction of a percent out of habit.\n\n"
+        "news deserves a real, decisive number, not a fraction of a percent out of habit. (4) A confirmed live "
+        "failure mode to specifically guard against: is this proposal reacting to the price's OWN recent "
+        "direction, or to a fact the signals block itself already flagged as unchanged/already-priced-in since "
+        "last cycle, rather than to something genuinely new? A real, still-bad-but-not-worsening situation "
+        "restated with no new development is not a reason for another move in the same direction — that's "
+        "exactly the self-reinforcing spiral that once compounded a single real event into a ~27% multi-cycle "
+        "crash. If the named catalysts don't point to anything actually new since last cycle, correct the "
+        "proposal toward something much smaller (or zero), regardless of how bad the standing situation still "
+        "looks.\n\n"
         "If the proposal genuinely holds up, return it back essentially unchanged. If it doesn't, return your "
         "own corrected version — you're not required to preserve any of its numbers or wording, only to be "
         "consistent with the same evidence; correcting an under-sized move upward is just as valid an outcome "
@@ -852,6 +955,41 @@ def _parse(raw: str) -> dict | None:
         "commentary": commentary,
         "updated_expectations": updated_expectations,
     }
+
+
+def _update_signal_memory() -> None:
+    """Called once, right after a genuinely new cycle actually lands
+    (maybe_reprice's own persistence block) — records what _gather_
+    signals should treat as "already seen" starting next cycle, so the
+    same still-negative daily % or the same real transaction can't keep
+    reading as fresh bearish news forever (see _last_cycle_daily_pct/
+    _seen_activity_keys' own module-level comment for the real spiral
+    this closes). Re-fetches daily_change/fetch_activities rather than
+    threading the values through from _gather_signals — both are
+    st.cache_data-backed (15 min TTL), so this is a cache hit, not a
+    second real network round-trip; keeps _gather_signals itself
+    read-only and simple to reason about. Best-effort: a fetch failure
+    here just means next cycle's delta framing falls back to a bare
+    snapshot again, not a broken cycle."""
+    global _last_cycle_daily_pct, _seen_activity_keys
+    try:
+        daily = portfolio_client.daily_change()
+        if daily:
+            _last_cycle_daily_pct = daily["pct"]
+            persisted_state.save("brdn_last_cycle_daily_pct", _last_cycle_daily_pct)
+    except Exception:
+        pass
+    try:
+        activities = portfolio_client.fetch_activities(limit=8) or []
+        new_keys = [_activity_key(a) for a in activities if not a.get("is_transfer")]
+        if new_keys:
+            # Append then de-dupe-preserving-order, not a set — insertion
+            # order matters for the trim below (oldest first out).
+            merged = _seen_activity_keys + [k for k in new_keys if k not in _seen_activity_keys]
+            _seen_activity_keys = merged[-MAX_SEEN_ACTIVITY_KEYS:]
+            persisted_state.save("brdn_seen_activity_keys", _seen_activity_keys)
+    except Exception:
+        pass
 
 
 def maybe_reprice(now: datetime, readings: dict | None = None, night_mode_active: bool = False) -> None:
@@ -965,6 +1103,11 @@ def maybe_reprice(now: datetime, readings: dict | None = None, night_mode_active
     persisted_state.save("brdn_last_report", _last_report)
     persisted_state.save("brdn_expectations", _expectations)
     persisted_state.save("brdn_report_history", _report_history)
+    # Anti-feedback-loop memory (see _last_cycle_daily_pct/_seen_
+    # activity_keys' own module-level comment) — updated only here,
+    # alongside every other genuine-new-cycle save, never on a rerun
+    # that didn't actually apply a new cycle.
+    _update_signal_memory()
 
     if abs(pct) >= BIG_MOVE_THRESHOLD_PCT:
         try:
