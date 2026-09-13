@@ -1156,6 +1156,50 @@ def apply_pending_admin_correction(now: datetime, readings: dict | None = None) 
         pass  # flag already claimed above -- this correction just doesn't happen, and that's fine
 
 
+# Cleanup for the real duplicate _report_history entries the race
+# condition above produced before it was fixed — confirmed live, "Why
+# BRDN moved" (a plain reflection of _last_report, one dict, was never
+# duplicated) was always correct, but the "Recent Track Record" panel
+# showed the same corrective entry 2-3 times at nearly the same
+# timestamp, quietly inflating its own bullish/bearish counts and drift
+# stat. Also a one-shot, same pattern as the correction itself, and
+# also has to ship as real code for the same real-Upstash-credentials
+# reason. Collapses any RUN of consecutive entries that share the same
+# pct_change and same first catalyst label within a 10-minute window
+# down to just the LAST one in that run — general enough to clean up
+# this specific incident without hardcoding today's exact numbers.
+_DEDUPE_REPORT_HISTORY_FLAG_KEY = "brdn_dedupe_report_history_2026_09_13_done"
+_DEDUPE_WINDOW_SECONDS = 10 * 60
+
+
+def dedupe_pending_report_history() -> None:
+    """Call once per rerun, alongside apply_pending_admin_correction.
+    True no-op after the one time it actually runs."""
+    if persisted_state.load(_DEDUPE_REPORT_HISTORY_FLAG_KEY, False):
+        return
+    persisted_state.save(_DEDUPE_REPORT_HISTORY_FLAG_KEY, True)
+    global _report_history
+    try:
+        cleaned: list[dict] = []
+        for entry in _report_history:
+            if cleaned:
+                prev = cleaned[-1]
+                same_move = entry["pct_change"] == prev["pct_change"]
+                same_lead_catalyst = (
+                    (entry.get("catalysts") or [{}])[0].get("label") == (prev.get("catalysts") or [{}])[0].get("label")
+                )
+                close_in_time = entry["ts"] - prev["ts"] <= _DEDUPE_WINDOW_SECONDS
+                if same_move and same_lead_catalyst and close_in_time:
+                    cleaned[-1] = entry  # keep the LAST of this run, drop the earlier duplicate(s)
+                    continue
+            cleaned.append(entry)
+        if len(cleaned) != len(_report_history):
+            _report_history = cleaned
+            persisted_state.save("brdn_report_history", _report_history)
+    except Exception:
+        pass
+
+
 def maybe_reprice(now: datetime, readings: dict | None = None, night_mode_active: bool = False) -> None:
     """Call once per rerun, unconditional of page (see app.py's own call
     site, right next to sleep_tracker.maybe_push_wind_down). Cheap on

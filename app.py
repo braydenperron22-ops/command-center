@@ -3512,6 +3512,15 @@ try:
 except Exception:
     pass
 
+# Cleanup for the real duplicate track-record entries a race condition
+# in the correction above produced the first time it ran (fixed, see
+# apply_pending_admin_correction's own comment) — also one-shot, also
+# a true no-op after the one time it actually runs.
+try:
+    brayden_index.dedupe_pending_report_history()
+except Exception:
+    pass
+
 # Session request: "every morning... around market open, nine thirty."
 # maybe_push_morning_brief owns its own once-per-day window/dedup — see
 # its own docstring.
