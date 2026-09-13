@@ -3499,6 +3499,19 @@ try:
 except Exception:
     pass
 
+# Session request, live: "bump the price back up... tell it to
+# reprice today based on today's events... from today's opening price
+# because twenty six percent is a fucking joke." One-shot admin
+# correction for the real damage the now-fixed feedback-loop bug did
+# to today's price — see brayden_index.apply_pending_admin_correction's
+# own docstring/module comment for the full story, including why this
+# has to ship as real code rather than run as a one-off local script.
+# True no-op on every rerun after the one time it actually applies.
+try:
+    brayden_index.apply_pending_admin_correction(now, readings)
+except Exception:
+    pass
+
 # Session request: "every morning... around market open, nine thirty."
 # maybe_push_morning_brief owns its own once-per-day window/dedup — see
 # its own docstring.

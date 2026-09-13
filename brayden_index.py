@@ -992,6 +992,154 @@ def _update_signal_memory() -> None:
         pass
 
 
+# Session request, live, right after the anti-feedback-loop fix
+# shipped: "bump the price back up... tell it to reprice today based
+# on today's events... from today's opening price because twenty six
+# percent is a fucking joke." The fix above stops this from recurring,
+# but doesn't retroactively undo the real damage the bug already did
+# to today's price. A ONE-SHOT admin correction, not a new standing
+# feature — guarded by _CORRECTIVE_REPRICE_FLAG_KEY so it runs exactly
+# once, ever, then becomes a true no-op (one cheap persisted_state.
+# load, no AI call) every rerun after that.
+#
+# Has to run inside the real deployed app, not as a one-off local
+# script — confirmed live this session: this Mac's own .streamlit/
+# secrets.toml has never carried UPSTASH_REDIS_REST_URL/TOKEN at all
+# (checked directly), so every local diagnostic script run against
+# persisted_state this session was silently reading/writing a local
+# JSON fallback file, completely disconnected from the real Upstash
+# store the actual deployed kiosk reads — the real credentials only
+# exist in Streamlit Cloud's own secrets. This function ships as
+# ordinary code instead, wired into app.py right alongside maybe_
+# reprice, so it runs for real with real credentials the next time the
+# actual deployed app renders.
+_CORRECTIVE_REPRICE_FLAG_KEY = "brdn_corrective_reprice_2026_09_13_done"
+
+
+def _build_corrective_prompt(context: dict, day_open: float) -> str:
+    return (
+        "You are the collective market — the pooled judgment of every hypothetical shareholder and analyst — "
+        "reassessing BRDN, a fictional \"stock\" representing one real person, Brayden. This is a ONE-TIME, "
+        "deliberate correction, not an ordinary cycle.\n\n"
+        "What happened: a real bug in this pricing engine was just found and fixed. For most of today, the "
+        "engine had been re-reacting to the SAME real but non-worsening daily portfolio drawdown, and the SAME "
+        "couple of real transactions, as if each hourly check were fresh bad news — compounding one real, "
+        "genuinely bad day into a roughly 26-27% intraday crash that overstates what actually happened. The bug "
+        "is now fixed: the signals below already correctly distinguish genuinely new information from stale, "
+        "already-priced-in facts (a portfolio metric framed as \"was already X, actual new move is only Y\", "
+        "cash-flow activity explicitly marked as new-or-not).\n\n"
+        f"Your job: reassess TODAY's entire net move fresh, from today's real opening price of ${day_open:.2f}, "
+        "not by compounding further on the current, bug-inflated price. Think about this the way a real market "
+        "would the morning after a flash crash caused by a technical glitch — the real underlying news (his "
+        "portfolio genuinely did have a rough day, net worth is genuinely thin right now, real spending "
+        "genuinely happened) still matters and should still show up as a real, meaningful decline from the "
+        "open. This is NOT a full bounce back to \"nothing happened\" — it should reflect the actual, honest, "
+        "ONE-TIME magnitude of today's real news, not a number artificially inflated by reacting to the same "
+        "facts many times over.\n\n"
+        f"What the market currently believes about Brayden / already has priced in: {context['expectations_text']}\n\n"
+        f"Recent cycle-by-cycle track record, oldest to newest (this includes the buggy spiral itself — use it "
+        f"to see how much of the current price is real news vs. repeated reaction to the same news):\n"
+        f"{context['history_digest']}\n\n"
+        f"Today's real, current signals:\n{context['signals']}\n\n"
+        "Decide: (1) a percentage move for TODAY overall, measured from today's opening price (not from the "
+        "current price) — no fixed range, whatever a fair, one-time, honest reassessment of today's real net "
+        "news actually supports, (2) overall sentiment, (3) up to 4 named catalysts (bullish or bearish) that "
+        "genuinely explain today's real net move, each with a magnitude, (4) one or two sentences of "
+        "shareholder/analyst commentary — explicitly acknowledging this is a corrective reassessment, in the "
+        "voice of a real market that just found out its own prior pricing was distorted by a feedback loop, "
+        "not hiding that, (5) an updated \"what the market now believes\" note for next cycle, reflecting the "
+        "corrected picture.\n\n"
+        "Respond with ONLY JSON, no markdown fences, no other text, in exactly this shape:\n"
+        '{"pct_change": 0.0, "sentiment": "Bullish", "catalysts": '
+        '[{"label": "...", "direction": "bullish", "magnitude": "minor", "note": "..."}], '
+        '"commentary": "...", "updated_expectations": "..."}'
+    )
+
+
+def _build_corrective_critique_prompt(context: dict, day_open: float, raw_proposal: str) -> str:
+    return (
+        "You are a risk manager reviewing a ONE-TIME corrective reassessment of BRDN, a fictional \"stock\" "
+        "representing one real person, Brayden. A real bug (repeatedly reacting to the same stale daily-"
+        "drawdown figure and the same couple of real transactions as if each hourly check were fresh news) had "
+        "compounded one real bad day into a roughly 26-27% intraday crash. Your job: sanity-check whether this "
+        "proposed correction is honest — neither erasing the real news (this should NOT bounce back to "
+        "\"nothing happened\") nor still carrying leftover inflation from the bug it's meant to correct.\n\n"
+        f"Today's real opening price: ${day_open:.2f}. The proposed correction is measured from THAT price, "
+        f"not the current bug-inflated one.\n\n"
+        f"Today's real, current signals:\n{context['signals']}\n\n"
+        f"Recent cycle-by-cycle track record (includes the buggy spiral itself):\n{context['history_digest']}\n\n"
+        f"The proposed correction:\n{raw_proposal}\n\n"
+        "If it genuinely holds up as an honest, one-time reassessment of today's real net news, return it back "
+        "essentially unchanged. If it doesn't, return your own corrected version. Respond with ONLY JSON, no "
+        "markdown fences, no other text, in exactly this shape:\n"
+        '{"pct_change": 0.0, "sentiment": "Bullish", "catalysts": '
+        '[{"label": "...", "direction": "bullish", "magnitude": "minor", "note": "..."}], '
+        '"commentary": "...", "updated_expectations": "..."}'
+    )
+
+
+def apply_pending_admin_correction(now: datetime, readings: dict | None = None) -> None:
+    """Call once per rerun, right alongside maybe_reprice — see this
+    function's own preceding module-level comment for the full story.
+    A true no-op every time after the one real time it actually runs:
+    one cheap persisted_state.load, no AI call, no network, once the
+    flag is set. Best-effort on the way to setting that flag too — an
+    AI failure/timeout on the app's very first post-deploy render just
+    means the next render tries again, not a permanently skipped
+    correction."""
+    if persisted_state.load(_CORRECTIVE_REPRICE_FLAG_KEY, False):
+        return
+    global _price, _last_report, _expectations
+    try:
+        day_open = _day_open_price()
+        context = _gather_context(now, readings)
+        raw = gemini_client.generate(_build_corrective_prompt(context, day_open), temperature=0.5, max_output_tokens=600)
+        if raw is None:
+            return
+        proposal = _parse(raw)
+        if proposal is None:
+            return
+        critique_raw = gemini_client.generate(
+            _build_corrective_critique_prompt(context, day_open, raw), temperature=0.4, max_output_tokens=600
+        )
+        critique = _parse(critique_raw) if critique_raw else None
+        parsed = critique if critique is not None else proposal
+
+        pct = max(MIN_PCT_CHANGE, parsed["pct_change"])
+        new_price = round(day_open * (1 + pct / 100), 4)
+        ts = time.time()
+
+        _price = new_price
+        _history.append({"ts": ts, "price": new_price})
+        del _history[:-MAX_HISTORY_POINTS]
+        _last_report = {
+            "sentiment": parsed["sentiment"],
+            "pct_change": pct,
+            "catalysts": parsed["catalysts"],
+            "commentary": parsed["commentary"],
+            "updated_at": ts,
+        }
+        _expectations = parsed["updated_expectations"]
+        _report_history.append({
+            "ts": ts,
+            "price": new_price,
+            "pct_change": pct,
+            "sentiment": parsed["sentiment"],
+            "catalysts": parsed["catalysts"],
+        })
+        del _report_history[:-MAX_REPORT_HISTORY]
+
+        persisted_state.save("brdn_price", _price)
+        persisted_state.save("brdn_history", _history)
+        persisted_state.save("brdn_last_report", _last_report)
+        persisted_state.save("brdn_expectations", _expectations)
+        persisted_state.save("brdn_report_history", _report_history)
+        _update_signal_memory()
+        persisted_state.save(_CORRECTIVE_REPRICE_FLAG_KEY, True)
+    except Exception:
+        pass  # flag never set on any failure -- next rerun just tries again
+
+
 def maybe_reprice(now: datetime, readings: dict | None = None, night_mode_active: bool = False) -> None:
     """Call once per rerun, unconditional of page (see app.py's own call
     site, right next to sleep_tracker.maybe_push_wind_down). Cheap on
