@@ -1083,12 +1083,29 @@ def apply_pending_admin_correction(now: datetime, readings: dict | None = None) 
     function's own preceding module-level comment for the full story.
     A true no-op every time after the one real time it actually runs:
     one cheap persisted_state.load, no AI call, no network, once the
-    flag is set. Best-effort on the way to setting that flag too — an
-    AI failure/timeout on the app's very first post-deploy render just
-    means the next render tries again, not a permanently skipped
-    correction."""
+    flag is set.
+
+    Real bug, caught live the first time this actually ran: the flag
+    used to be saved only at the very end, AFTER both AI calls — a
+    multi-second window where a concurrent rerun (this kiosk has more
+    than one real connected session, and a couple of my own browser
+    reloads while verifying this landed at the same moment) could load
+    the same "not yet done" flag and start its OWN independent
+    correction before the first one finished. The PRICE stayed correct
+    either way (both runs reasoned from the same real day-open and
+    landed on the same honest number), but _report_history ended up
+    with the same real correction logged 2-3 times over — confirmed
+    live, cleaned up by hand once. Fixed by claiming the flag
+    IMMEDIATELY, before either AI call, not after — trades "a failed
+    attempt retries next rerun" for "this can never double-apply,"
+    which is the right tradeoff for a one-shot correction: this only
+    ever needs to actually succeed once, ever, ANY correct run
+    satisfies that, and a claimed-but-failed attempt just means this
+    particular correction doesn't happen — acceptable for something
+    this deliberately rare, not acceptable for it to apply twice."""
     if persisted_state.load(_CORRECTIVE_REPRICE_FLAG_KEY, False):
         return
+    persisted_state.save(_CORRECTIVE_REPRICE_FLAG_KEY, True)
     global _price, _last_report, _expectations
     try:
         day_open = _day_open_price()
@@ -1135,9 +1152,8 @@ def apply_pending_admin_correction(now: datetime, readings: dict | None = None) 
         persisted_state.save("brdn_expectations", _expectations)
         persisted_state.save("brdn_report_history", _report_history)
         _update_signal_memory()
-        persisted_state.save(_CORRECTIVE_REPRICE_FLAG_KEY, True)
     except Exception:
-        pass  # flag never set on any failure -- next rerun just tries again
+        pass  # flag already claimed above -- this correction just doesn't happen, and that's fine
 
 
 def maybe_reprice(now: datetime, readings: dict | None = None, night_mode_active: bool = False) -> None:
