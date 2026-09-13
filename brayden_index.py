@@ -1128,14 +1128,29 @@ def apply_pending_admin_correction(now: datetime, readings: dict | None = None) 
     try:
         day_open = _day_open_price()
         context = _gather_context(now, readings)
-        raw = gemini_client.generate(_build_corrective_prompt(context, day_open), temperature=0.5, max_output_tokens=600)
+        # allow_during_game=True: real, live bug — gemini_client.generate
+        # silently returns None during any tracked team's pregame/live/
+        # postgame window (see that function's own docstring), which is
+        # exactly why this one-shot correction showed no visible effect
+        # for several real minutes the first time it deployed (a Sunday
+        # evening, prime NFL time — the Saints were almost certainly in
+        # that window). A one-time, explicitly user-requested admin
+        # correction is exactly the kind of exception game_blurb.
+        # get_postgame_blurb already carved out for itself ("the one AI
+        # call this pause exists around, not despite") — this is the
+        # same case, not the routine hourly cycle the pause is actually
+        # meant to protect.
+        raw = gemini_client.generate(
+            _build_corrective_prompt(context, day_open), temperature=0.5, max_output_tokens=600, allow_during_game=True
+        )
         if raw is None:
             return
         proposal = _parse(raw)
         if proposal is None:
             return
         critique_raw = gemini_client.generate(
-            _build_corrective_critique_prompt(context, day_open, raw), temperature=0.4, max_output_tokens=600
+            _build_corrective_critique_prompt(context, day_open, raw),
+            temperature=0.4, max_output_tokens=600, allow_during_game=True,
         )
         critique = _parse(critique_raw) if critique_raw else None
         parsed = critique if critique is not None else proposal
@@ -1247,7 +1262,16 @@ def dedupe_pending_report_history() -> None:
 # why). Rather than guess, bumped to a fresh key so this gets one
 # guaranteed clean attempt regardless of what happened to the first
 # one — the original key is simply abandoned, not reused.
-_VOLATILITY_RECAL_FLAG_KEY = "brdn_volatility_recal_2026_09_13_done_v2"
+#
+# "_v3": found the REAL cause the v2 attempt also silently hit —
+# gemini_client.generate returns None outright during any tracked
+# team's pregame/live/postgame window (a Sunday evening, prime NFL
+# time), and neither v1 nor v2 passed allow_during_game=True. That's
+# now fixed at both call sites below. Bumped the key once more for the
+# same reason as _v2 — v2's own slot is already burned (claimed, zero
+# effect), so this needs one more guaranteed-fresh attempt, now with
+# the actual bug fixed underneath it.
+_VOLATILITY_RECAL_FLAG_KEY = "brdn_volatility_recal_2026_09_13_done_v3"
 
 
 def _build_recalibration_prompt(context: dict, day_open: float, current_price: float) -> str:
@@ -1323,8 +1347,17 @@ def apply_pending_volatility_recalibration(now: datetime, readings: dict | None 
         day_open = _day_open_price()
         current_price = _price
         context = _gather_context(now, readings)
+        # allow_during_game=True — same real bug/fix as apply_pending_
+        # admin_correction's own identical comment: gemini_client.
+        # generate silently returns None during any tracked team's
+        # pregame/live/postgame window, which is exactly why this
+        # showed no visible effect the first time it deployed (a Sunday
+        # evening, prime NFL time). A one-shot, explicitly requested
+        # correction is meant to be an exception to that pause, not
+        # bound by it.
         raw = gemini_client.generate(
-            _build_recalibration_prompt(context, day_open, current_price), temperature=0.5, max_output_tokens=600
+            _build_recalibration_prompt(context, day_open, current_price),
+            temperature=0.5, max_output_tokens=600, allow_during_game=True,
         )
         if raw is None:
             return
@@ -1332,7 +1365,8 @@ def apply_pending_volatility_recalibration(now: datetime, readings: dict | None 
         if proposal is None:
             return
         critique_raw = gemini_client.generate(
-            _build_recalibration_critique_prompt(context, day_open, raw), temperature=0.4, max_output_tokens=600
+            _build_recalibration_critique_prompt(context, day_open, raw),
+            temperature=0.4, max_output_tokens=600, allow_during_game=True,
         )
         critique = _parse(critique_raw) if critique_raw else None
         parsed = critique if critique is not None else proposal
