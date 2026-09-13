@@ -3521,6 +3521,18 @@ try:
 except Exception:
     pass
 
+# Session request, live, direct pushback on the first correction's own
+# result: "Today should have a negative day... it's kinda silly that
+# I'm up fourteen point seven five percent today... this is now three
+# days of ten percent gains... it's just not realistic." A second,
+# distinct one-shot correction — see brayden_index.apply_pending_
+# volatility_recalibration's own module comment. True no-op after the
+# one time it actually runs.
+try:
+    brayden_index.apply_pending_volatility_recalibration(now, readings)
+except Exception:
+    pass
+
 # Session request: "every morning... around market open, nine thirty."
 # maybe_push_morning_brief owns its own once-per-day window/dedup — see
 # its own docstring.

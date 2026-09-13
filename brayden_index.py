@@ -809,6 +809,18 @@ def _build_prompt(context: dict) -> str:
         "SINGLE real event that should have been priced in within one or two cycles. A stretch of genuinely new, "
         "still-bad news IS a real reason to keep falling — the test is always \"is there something here I "
         "haven't already reacted to,\" never \"is the number still negative.\"\n\n"
+        "A second real failure mode, the mirror image of \"trade with conviction\" above going too far: session "
+        "report, live, after three straight cycles each swinging several points and one landing near +15% — "
+        "\"this is now three days of ten percent gains... it's just not realistic to how an actual stock moves.\" "
+        "Correct. A real stock's ordinary day is small — most real trading days move under 1-2%, a good number "
+        "move under 0.5%, and a double-digit single-day move is a genuinely rare, headline-grade event (a real "
+        "earnings shock, a regulatory bombshell), not something that happens three days running. \"No fixed "
+        "ceiling\" was never meant to mean \"reach for a big number often\" — it means the SIZE should track the "
+        "size of the news with NO ARTIFICIAL CAP holding it back on the rare day that genuinely deserves 10%+, "
+        "not that big moves should be a routine feature of this ticker. If your own recent track record below "
+        "shows several large moves in a row, treat that itself as a signal to actively pull back toward a "
+        "smaller, more typical number this cycle unless there is something genuinely exceptional (not just "
+        "\"still real and still bad\" — see the failure mode just above) to justify another big one.\n\n"
         f"Current price: ${_price:.2f}. Recent price history, oldest to newest: {context['recent_prices']}.\n\n"
         f"What the market currently believes about Brayden / already has priced in (your own note from last "
         f"cycle): {context['expectations_text']}\n\n"
@@ -892,7 +904,13 @@ def _build_critique_prompt(context: dict, proposal: dict) -> str:
         "exactly the self-reinforcing spiral that once compounded a single real event into a ~27% multi-cycle "
         "crash. If the named catalysts don't point to anything actually new since last cycle, correct the "
         "proposal toward something much smaller (or zero), regardless of how bad the standing situation still "
-        "looks.\n\n"
+        "looks. (5) Session report, live, after three straight cycles each swinging several points: \"this is "
+        "now three days of ten percent gains... it's just not realistic to how an actual stock moves.\" A real "
+        "stock's ordinary day is small (under 1-2% most of the time); a double-digit single-day move is a rare, "
+        "headline-grade event, not a routine occurrence. If the track record below shows several large moves in "
+        "a row, that itself is a reason to pull this proposal back toward something smaller, not license to "
+        "keep matching that pattern — check whether today's catalysts are genuinely exceptional enough to earn "
+        "another big move, or whether this is just decisiveness overshooting into unrealistic volatility.\n\n"
         "If the proposal genuinely holds up, return it back essentially unchanged. If it doesn't, return your "
         "own corrected version — you're not required to preserve any of its numbers or wording, only to be "
         "consistent with the same evidence; correcting an under-sized move upward is just as valid an outcome "
@@ -1198,6 +1216,147 @@ def dedupe_pending_report_history() -> None:
             persisted_state.save("brdn_report_history", _report_history)
     except Exception:
         pass
+
+
+# Session request, live, right after the first corrective reprice
+# landed at +14.75%: "Today should have a negative day. Based on many
+# factors. I think it's kinda silly that I'm up fourteen point seven
+# five percent today. It should have been down. This is now three
+# days of ten percent gains gains gains. It's just not realistic to
+# how an actual stock moves." A second, distinct one-shot correction —
+# not a retry of the first one (that one genuinely fixed the real bug
+# it was aimed at), this is a real, separate disagreement: both the
+# DIRECTION (should be negative, not positive) and the general
+# MAGNITUDE discipline (realistic markets don't run double-digit moves
+# three days straight — see the same calibration now added to _build_
+# prompt/_build_critique_prompt above, for every future ordinary
+# cycle). Same one-shot-admin-correction shape as apply_pending_
+# admin_correction above (own flag, claimed immediately to avoid that
+# same race, real code shipped for the same real-credentials reason),
+# reused rather than re-explained here — see that function's own
+# module comment for why this can't run as a local script.
+_VOLATILITY_RECAL_FLAG_KEY = "brdn_volatility_recal_2026_09_13_done"
+
+
+def _build_recalibration_prompt(context: dict, day_open: float, current_price: float) -> str:
+    return (
+        "You are the collective market — the pooled judgment of every hypothetical shareholder and analyst — "
+        "reassessing BRDN, a fictional \"stock\" representing one real person, Brayden. This is a SECOND "
+        "one-time correction, following direct, specific pushback on the first one.\n\n"
+        f"What happened: an earlier correction today reassessed the day's move at +14.75% (to ${current_price:.2f}) "
+        "from the real opening price, fixing a real feedback-loop bug. Brayden directly disagrees with that "
+        "result, on two separate grounds: \"Today should have a negative day based on many factors... it's kinda "
+        "silly that I'm up fourteen point seven five percent today. It should have been down. This is now three "
+        "days of ten percent gains gains gains. It's just not realistic to how an actual stock moves.\"\n\n"
+        "Take both parts of that seriously: (1) DIRECTION — weigh the genuinely bad real news (a real ~16% "
+        "portfolio drawdown, a genuinely thin net worth right now) as real, material, bearish information, not "
+        "something a strong medium-term trend should simply out-vote. A person having a real bad financial day "
+        "is bearish for his own \"stock,\" full stop. (2) MAGNITUDE — a real stock's ordinary day moves under "
+        "1-2%; a double-digit move three days running is not realistic market behavior, and that's exactly what "
+        "this ticker has been doing. Being right that today should be negative doesn't mean reaching for another "
+        "double-digit swing in the other direction — a real, honest, but realistically SIZED move is what's "
+        "being asked for here, not a manufactured number to please anyone.\n\n"
+        f"Reassess ONE more time, from the SAME real opening price of ${day_open:.2f} (not compounding further "
+        f"on the current ${current_price:.2f}) — this is not a retraction of the earlier bug fix, it's an "
+        "independent, more careful pass at the same honest question: what should today's real net move actually "
+        "be, given the real facts, at a realistic size.\n\n"
+        f"What the market currently believes about Brayden / already has priced in: {context['expectations_text']}\n\n"
+        f"Recent cycle-by-cycle track record, oldest to newest:\n{context['history_digest']}\n\n"
+        f"Today's real, current signals:\n{context['signals']}\n\n"
+        "Decide: (1) a percentage move for TODAY overall, measured from today's opening price, sized realistically "
+        "— most real trading days move under 1-2%, so don't default to another double-digit number just because "
+        "recent cycles have been large, (2) overall sentiment, (3) up to 4 named catalysts, each with a "
+        "magnitude, (4) one or two sentences of shareholder/analyst commentary acknowledging this is a second, "
+        "more careful correction, (5) an updated \"what the market now believes\" note for next cycle.\n\n"
+        "Respond with ONLY JSON, no markdown fences, no other text, in exactly this shape:\n"
+        '{"pct_change": 0.0, "sentiment": "Bullish", "catalysts": '
+        '[{"label": "...", "direction": "bullish", "magnitude": "minor", "note": "..."}], '
+        '"commentary": "...", "updated_expectations": "..."}'
+    )
+
+
+def _build_recalibration_critique_prompt(context: dict, day_open: float, raw_proposal: str) -> str:
+    return (
+        "You are a risk manager reviewing a SECOND one-time correction to BRDN, a fictional \"stock\" "
+        "representing one real person, Brayden. The first correction today (+14.75%) was directly challenged: "
+        "he believes today should genuinely be negative given real bad news (a ~16% portfolio drawdown, thin "
+        "net worth), AND separately flagged that three straight double-digit-magnitude cycles isn't realistic "
+        "market behavior at all. Your job: sanity-check whether THIS proposal actually addresses both — real "
+        "negative direction where the real news warrants it, AND a realistically small size (most real trading "
+        "days move under 1-2%; this should not just be another double-digit swing in the opposite direction).\n\n"
+        f"Today's real opening price: ${day_open:.2f}.\n\n"
+        f"Today's real, current signals:\n{context['signals']}\n\n"
+        f"Recent cycle-by-cycle track record:\n{context['history_digest']}\n\n"
+        f"The proposed correction:\n{raw_proposal}\n\n"
+        "If it genuinely reflects real negative news at a realistic, non-dramatic size, return it back "
+        "essentially unchanged. If it's still too large in magnitude, or still not negative despite genuinely "
+        "bad real news, return your own corrected version. Respond with ONLY JSON, no markdown fences, no other "
+        "text, in exactly this shape:\n"
+        '{"pct_change": 0.0, "sentiment": "Bullish", "catalysts": '
+        '[{"label": "...", "direction": "bullish", "magnitude": "minor", "note": "..."}], '
+        '"commentary": "...", "updated_expectations": "..."}'
+    )
+
+
+def apply_pending_volatility_recalibration(now: datetime, readings: dict | None = None) -> None:
+    """Call once per rerun, alongside apply_pending_admin_correction —
+    same one-shot shape, own flag, claimed immediately (see that
+    function's own comment for why the flag is claimed BEFORE either
+    AI call, not after)."""
+    if persisted_state.load(_VOLATILITY_RECAL_FLAG_KEY, False):
+        return
+    persisted_state.save(_VOLATILITY_RECAL_FLAG_KEY, True)
+    global _price, _last_report, _expectations
+    try:
+        day_open = _day_open_price()
+        current_price = _price
+        context = _gather_context(now, readings)
+        raw = gemini_client.generate(
+            _build_recalibration_prompt(context, day_open, current_price), temperature=0.5, max_output_tokens=600
+        )
+        if raw is None:
+            return
+        proposal = _parse(raw)
+        if proposal is None:
+            return
+        critique_raw = gemini_client.generate(
+            _build_recalibration_critique_prompt(context, day_open, raw), temperature=0.4, max_output_tokens=600
+        )
+        critique = _parse(critique_raw) if critique_raw else None
+        parsed = critique if critique is not None else proposal
+
+        pct = max(MIN_PCT_CHANGE, parsed["pct_change"])
+        new_price = round(day_open * (1 + pct / 100), 4)
+        ts = time.time()
+
+        _price = new_price
+        _history.append({"ts": ts, "price": new_price})
+        del _history[:-MAX_HISTORY_POINTS]
+        _last_report = {
+            "sentiment": parsed["sentiment"],
+            "pct_change": pct,
+            "catalysts": parsed["catalysts"],
+            "commentary": parsed["commentary"],
+            "updated_at": ts,
+        }
+        _expectations = parsed["updated_expectations"]
+        _report_history.append({
+            "ts": ts,
+            "price": new_price,
+            "pct_change": pct,
+            "sentiment": parsed["sentiment"],
+            "catalysts": parsed["catalysts"],
+        })
+        del _report_history[:-MAX_REPORT_HISTORY]
+
+        persisted_state.save("brdn_price", _price)
+        persisted_state.save("brdn_history", _history)
+        persisted_state.save("brdn_last_report", _last_report)
+        persisted_state.save("brdn_expectations", _expectations)
+        persisted_state.save("brdn_report_history", _report_history)
+        _update_signal_memory()
+    except Exception:
+        pass  # flag already claimed above -- this correction just doesn't happen, and that's fine
 
 
 def maybe_reprice(now: datetime, readings: dict | None = None, night_mode_active: bool = False) -> None:
