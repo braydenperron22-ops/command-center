@@ -1353,15 +1353,26 @@ def big_move_headline_candidate(now: datetime) -> dict | None:
     """Red-headline rotation candidate — same shape every source in
     headline_rotation.py uses (see market_circuit_breaker.
     circuit_breaker_headline_candidate for an identical static, non-
-    countdown precedent). No age check of its own: this is only ever
-    true off the MOST RECENT cycle's move, and the next hourly cycle
-    naturally replaces _last_report with that cycle's own (almost
-    always much smaller) move — so this self-expires within one hour on
-    its own, tighter than headline_rotation's shared 2-hour hold would
-    be anyway."""
-    if _last_report is None:
-        return None
-    pct = _last_report.get("pct_change", 0.0)
+    countdown precedent).
+
+    Session request: "I'm talking about the red bar at the top of the
+    screen that activates after a five percent move. Make it so it's
+    not about the individual move and about the whole day... I don't
+    really care if it goes one time in a little period. If it's more
+    than five percent in a day, show the alert." Used to key off the
+    MOST RECENT cycle's own pct_change — a real single-cycle swing, but
+    exactly the kind of one-off blip the request says not to care
+    about. Now keys off current()'s own day-open-anchored pct_change
+    instead — the SAME cumulative-since-open figure the corner ticker
+    and every other "today" display in this app already shows, so this
+    banner agrees with what he'd see if he actually looked. No age
+    check needed either way: current() is computed fresh every render
+    directly from real price history, not a snapshot that goes stale —
+    it clears itself the moment the day's real cumulative move genuinely
+    recovers back under the threshold, and resets naturally at the next
+    day's own open."""
+    day = current()
+    pct = day["pct_change"]
     if abs(pct) < BIG_MOVE_THRESHOLD_PCT:
         return None
     direction = "surges" if pct > 0 else "plunges"
