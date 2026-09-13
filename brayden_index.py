@@ -1235,7 +1235,19 @@ def dedupe_pending_report_history() -> None:
 # same race, real code shipped for the same real-credentials reason),
 # reused rather than re-explained here — see that function's own
 # module comment for why this can't run as a local script.
-_VOLATILITY_RECAL_FLAG_KEY = "brdn_volatility_recal_2026_09_13_done"
+#
+# "_v2": the "claim the flag before either AI call" fix (see apply_
+# pending_admin_correction's own comment on why that's the right
+# tradeoff) has a real cost — a transient failure on the very FIRST
+# attempt (a network hiccup, a momentary AI pause) claims the one-shot
+# slot with zero visible effect, silently. That's exactly what this
+# session's own first deploy of this function looked like live (no
+# price change after several real minutes, no way to inspect the
+# original flag's real value from outside the deployed app to confirm
+# why). Rather than guess, bumped to a fresh key so this gets one
+# guaranteed clean attempt regardless of what happened to the first
+# one — the original key is simply abandoned, not reused.
+_VOLATILITY_RECAL_FLAG_KEY = "brdn_volatility_recal_2026_09_13_done_v2"
 
 
 def _build_recalibration_prompt(context: dict, day_open: float, current_price: float) -> str:
