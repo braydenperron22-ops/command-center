@@ -3387,6 +3387,29 @@ if not _jumbotron_active and not _night_mode_active and not _terminal_active:
             '<span class="ai-status-text" id="dashboard-pulse-text">Dashboard: Live</span>'
             "</div>"
         )
+        # Session request: "a little tab with the performance stats of
+        # the computer... if anything is bad, flag it red." Real
+        # hardware numbers (CPU/RAM/temp) only exist on the physical
+        # kiosk box, not this Streamlit process — same handoff as the
+        # watchdog/night-mode sync above, read from the same shared
+        # Upstash store the kiosk's own watchdog already writes to
+        # every 2 minutes. Requested placement was top-right, but that
+        # corner is where .headline-rotation already lives — full-width,
+        # z-index:502, up often enough (any weather alert, leave-in
+        # timer, bedtime countdown) that a fixed element there gets
+        # silently covered, not just overlapped, the exact bug
+        # .ai-status-bar's own history above already found and fixed
+        # once. Joins this proven bottom-right corner instead, as one
+        # more row in the same small stack.
+        _perf = persisted_state.load("kiosk_perf_stats", None)
+        if _perf is not None:
+            _perf_tone = "low" if _perf.get("bad") else "good"
+            _ai_rows_html += (
+                '<div class="ai-status-row">'
+                f'<span class="ai-status-dot ai-status-dot-{_perf_tone}"></span>'
+                f'<span class="ai-status-text">Kiosk: {_perf["cpu_pct"]}% CPU · {_perf["ram_pct"]}% RAM · {_perf["temp_c"]}°C</span>'
+                "</div>"
+            )
         st.markdown(f'<div class="ai-status-bar">{_ai_rows_html}</div>', unsafe_allow_html=True)
     except Exception:
         pass
