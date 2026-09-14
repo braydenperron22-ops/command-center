@@ -16,6 +16,7 @@ asleep through the whole window.
 """
 
 import html
+import re
 import time
 from datetime import datetime, timedelta
 
@@ -1324,36 +1325,67 @@ _ROUTE_NICKNAMES = (
 # on the top bar... what highway I'm taking, and if there's any
 # delays." This used to only ever run for the literal Work commute
 # (shift["summary"] == "Work"), with a hardcoded "Highway 17" default
-# for the usual case ("Corbeil Rd -> Highway 94 -> Highway 17 -> merges
-# onto 11" — Highway 17 is the recognizable one, even though Highway
-# 94 is technically the first highway-named street on the route) — so
-# any OTHER real drive (an appointment, taking someone to school)
-# showed no road at all, no matter how obviously it used a real
-# highway. Generalized to any destination: still checks _ROUTE_
-# NICKNAMES first (the same known detours are still worth their
+# for the usual case — so any OTHER real drive (an appointment, taking
+# someone to school) showed no road at all, no matter how obviously it
+# used a real highway. Generalized to any destination: still checks
+# _ROUTE_NICKNAMES first (the same known detours are still worth their
 # friendly names whenever they genuinely apply, to ANY destination
-# that happens to route through them, not just Work); `is_work` keeps
-# the Work commute's own specific, already-tuned "Highway 17" default
-# byte-for-byte unchanged rather than risking it picking a technically-
-# first-but-less-representative highway off the ordered list instead.
-# Any OTHER destination falls back to scanning the route's own real,
-# ordered street list (commute_client._ordered_street_names) for the
-# first one that actually looks like a highway — "Highway 17 E",
-# "Trans-Canada Highway", tightened the same way check_traffic_
-# change's own toast text already does (_short_road) — and returns
-# None on a genuine miss (an all-local-streets trip) rather than
-# fabricating a highway that trip never actually used.
-def _main_road_for_route(route: dict, is_work: bool) -> str | None:
+# that happens to route through them, not just Work), then falls back
+# to scanning the route's own real, ordered street list (commute_
+# client._ordered_street_names) for every genuinely highway-named
+# street — "Highway 17 E", "Trans-Canada Highway" — and returns None
+# on a genuine miss (an all-local-streets trip) rather than
+# fabricating one.
+#
+# Session follow-up, after hearing the Work commute's own "usual"
+# route genuinely spends real distance on TWO highways (Highway 94,
+# then Highway 17): "if it's two highways, make it via Highway ninety
+# four, comma, seventeen... I don't know if you have a way to
+# distinguish the bigger highway, but—". Real answer: not reliably,
+# not from this data alone (guidance instructions don't carry lane
+# count/road-class) — so rather than guess which one is "bigger" and
+# risk silently dropping a real one, this lists every distinct highway
+# actually driven, in the order actually driven (which is exactly what
+# was asked for: 94 before 17, matching the real route). The single-
+# highway case is unchanged; multi-highway is new. Genuinely more than
+# 2 would be unusual for any real route this app has ever seen — capped
+# at 2 so this stays a short, glanceable suffix rather than growing
+# without bound on some future edge case.
+_MAX_HIGHWAYS_SHOWN = 2
+
+
+def _join_highway_names(names: list[str]) -> str:
+    """"Highway 94"/"Highway 17" -> "Hwy 94, 17" — one shared prefix
+    instead of repeating "Highway"/"Hwy" per number, matching exactly
+    how the session request said it out loud. Only collapses that far
+    when EVERY name is the plain "Highway N" pattern (this app's own
+    region names its highways that way); any name that doesn't fit
+    (a named highway with no number, say) falls back to each name
+    tightened independently and joined — nothing is ever silently
+    dropped just because it doesn't match the common case."""
+    numbers = []
+    for name in names:
+        match = re.fullmatch(r"Highway (\d+)(?: [NSEW])?", name.strip())
+        if not match:
+            return ", ".join(_short_road(n) for n in names)
+        numbers.append(match.group(1))
+    return "Hwy " + ", ".join(numbers)
+
+
+def _main_road_for_route(route: dict) -> str | None:
     streets = route.get("streets") or set()
     for street, nickname in _ROUTE_NICKNAMES:
         if street in streets:
             return nickname
-    if is_work:
-        return "Highway 17"
+    highways: list[str] = []
     for name in route.get("streets_ordered") or []:
-        if "highway" in name.lower() or "hwy" in name.lower():
-            return _short_road(name)
-    return None
+        if ("highway" in name.lower() or "hwy" in name.lower()) and name not in highways:
+            highways.append(name)
+    if not highways:
+        return None
+    if len(highways) == 1:
+        return _short_road(highways[0])
+    return _join_highway_names(highways[:_MAX_HIGHWAYS_SHOWN])
 
 
 def _countdown_info(now: datetime) -> tuple[int, str, str, str, bool] | None:
@@ -1427,7 +1459,7 @@ def _countdown_info(now: datetime) -> tuple[int, str, str, str, bool] | None:
             # named — an all-local-streets trip still gets no
             # "via" text, same as before, just no longer ALL non-Work
             # trips regardless of what they actually drove.
-            main_road = _main_road_for_route(route, shift["summary"] == "Work")
+            main_road = _main_road_for_route(route)
             if main_road:
                 suffix = f" — via {main_road}"
             if route.get("incident"):
