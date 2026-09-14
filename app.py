@@ -1881,13 +1881,20 @@ try:
         # as jumbotron. Session request: "add a maintenance tab... by
         # pressing D." See pages_maintenance.py.
         page = "maintenance"
-    elif _requested_page == "terminal":
+    elif _requested_page == "terminal" and brayden_index.ENABLED:
         page = "terminal"
-    elif _requested_page == "brdn":
+    elif _requested_page == "brdn" and brayden_index.ENABLED:
         # No longer in PAGES (config.py) — same "not part of the
         # ambient rotation, still reachable on purpose" treatment as
         # maintenance/terminal just above, see PAGES' own comment for
         # why this one page was pulled out.
+        #
+        # brayden_index.ENABLED gate: "Temporarily decommission the
+        # BRDN index. It's broken and I don't feel like fixing it." A
+        # stale ?page=brdn/?page=terminal link (or the picker, whose
+        # own entries for these are hidden below while disabled) now
+        # falls through to the normal scheduled rotation instead of
+        # rendering a page nobody wants to look at right now.
         page = "brdn"
     elif _requested_page in PAGES:
         page = _requested_page
@@ -2256,8 +2263,13 @@ st.markdown(
 _picker_open = st.query_params.get("picker") == "open"
 _picker_entries = [(key, _PAGE_LABELS[key]) for key in PAGES] + [
     ("jumbotron", "Jumbotron"), ("maintenance", "Dev / Maintenance"),
-    ("brdn", "BRDN"), ("terminal", "BRDN Terminal"),
-]
+] + (
+    # Session request: "Temporarily decommission the BRDN index. It's
+    # broken and I don't feel like fixing it." — see brayden_index.
+    # ENABLED's own comment. No point offering tiles that just bounce
+    # back to the normal rotation (see the routing gate above).
+    [("brdn", "BRDN"), ("terminal", "BRDN Terminal")] if brayden_index.ENABLED else []
+)
 _picker_tiles = "".join(
     f'<a class="screen-picker-item{" screen-picker-item-active" if key == page else ""}" href="?page={key}">{label}</a>'
     for key, label in _picker_entries
@@ -3495,62 +3507,74 @@ if FRED_API_KEY:
 # night_mode_active=_night_mode_active — see NIGHT_REFRESH_SECONDS'
 # own comment in brayden_index.py for the deliberate 3hr-not-fully-
 # paused overnight cadence this drives.
-try:
-    brayden_index.maybe_reprice(now, readings, night_mode_active=_night_mode_active)
-except Exception:
-    pass
+#
+# Session request: "Temporarily decommission the BRDN index. It's
+# broken and I don't feel like fixing it." Whole cluster below —
+# reprice engine, both one-shot corrections (already true no-ops, see
+# their own comments, but no reason to still call them), the report-
+# history dedup, and both push notifications — gated on one flag
+# rather than six separate edits. See brayden_index.ENABLED's own
+# comment for the full scope of this kill switch (also covers the
+# corner ticker below, the headline/takeover surfaces, and manual
+# page routing further down).
+if brayden_index.ENABLED:
+    try:
+        brayden_index.maybe_reprice(now, readings, night_mode_active=_night_mode_active)
+    except Exception:
+        pass
 
-# Session request, live: "bump the price back up... tell it to
-# reprice today based on today's events... from today's opening price
-# because twenty six percent is a fucking joke." One-shot admin
-# correction for the real damage the now-fixed feedback-loop bug did
-# to today's price — see brayden_index.apply_pending_admin_correction's
-# own docstring/module comment for the full story, including why this
-# has to ship as real code rather than run as a one-off local script.
-# True no-op on every rerun after the one time it actually applies.
-try:
-    brayden_index.apply_pending_admin_correction(now, readings)
-except Exception:
-    pass
+    # Session request, live: "bump the price back up... tell it to
+    # reprice today based on today's events... from today's opening
+    # price because twenty six percent is a fucking joke." One-shot
+    # admin correction for the real damage the now-fixed feedback-loop
+    # bug did to today's price — see brayden_index.
+    # apply_pending_admin_correction's own docstring/module comment for
+    # the full story, including why this has to ship as real code
+    # rather than run as a one-off local script. True no-op on every
+    # rerun after the one time it actually applies.
+    try:
+        brayden_index.apply_pending_admin_correction(now, readings)
+    except Exception:
+        pass
 
-# Cleanup for the real duplicate track-record entries a race condition
-# in the correction above produced the first time it ran (fixed, see
-# apply_pending_admin_correction's own comment) — also one-shot, also
-# a true no-op after the one time it actually runs.
-try:
-    brayden_index.dedupe_pending_report_history()
-except Exception:
-    pass
+    # Cleanup for the real duplicate track-record entries a race
+    # condition in the correction above produced the first time it ran
+    # (fixed, see apply_pending_admin_correction's own comment) — also
+    # one-shot, also a true no-op after the one time it actually runs.
+    try:
+        brayden_index.dedupe_pending_report_history()
+    except Exception:
+        pass
 
-# Session request, live, direct pushback on the first correction's own
-# result: "Today should have a negative day... it's kinda silly that
-# I'm up fourteen point seven five percent today... this is now three
-# days of ten percent gains... it's just not realistic." A second,
-# distinct one-shot correction — see brayden_index.apply_pending_
-# volatility_recalibration's own module comment. True no-op after the
-# one time it actually runs.
-try:
-    brayden_index.apply_pending_volatility_recalibration(now, readings)
-except Exception:
-    pass
+    # Session request, live, direct pushback on the first correction's
+    # own result: "Today should have a negative day... it's kinda
+    # silly that I'm up fourteen point seven five percent today...
+    # this is now three days of ten percent gains... it's just not
+    # realistic." A second, distinct one-shot correction — see
+    # brayden_index.apply_pending_volatility_recalibration's own module
+    # comment. True no-op after the one time it actually runs.
+    try:
+        brayden_index.apply_pending_volatility_recalibration(now, readings)
+    except Exception:
+        pass
 
-# Session request: "every morning... around market open, nine thirty."
-# maybe_push_morning_brief owns its own once-per-day window/dedup — see
-# its own docstring.
-try:
-    brayden_index.maybe_push_morning_brief(now, readings)
-except Exception:
-    pass
+    # Session request: "every morning... around market open, nine
+    # thirty." maybe_push_morning_brief owns its own once-per-day
+    # window/dedup — see its own docstring.
+    try:
+        brayden_index.maybe_push_morning_brief(now, readings)
+    except Exception:
+        pass
 
-# Session request: "let's do it, the quarterly notification... framed
-# as a quarterly employment report." Reminder only — no scraping, see
-# brayden_index.py's own comment on why. maybe_push_quarterly_report
-# owns its own once-per-quarter window/dedup, same shape as the morning
-# brief just above.
-try:
-    brayden_index.maybe_push_quarterly_report(now)
-except Exception:
-    pass
+    # Session request: "let's do it, the quarterly notification...
+    # framed as a quarterly employment report." Reminder only — no
+    # scraping, see brayden_index.py's own comment on why.
+    # maybe_push_quarterly_report owns its own once-per-quarter
+    # window/dedup, same shape as the morning brief just above.
+    try:
+        brayden_index.maybe_push_quarterly_report(now)
+    except Exception:
+        pass
 
 # Session request: "when my shift is about over... send me a
 # notification on my phone with the estimated commute time home using
@@ -3598,28 +3622,34 @@ except Exception:
 # every rerun — no client-side script involved at all anymore (the
 # brdn-jitter script that used to live in the consolidated kiosk script
 # block above is gone, not just disabled).
-try:
-    _brdn_now = brayden_index.current()
-    _brdn_tone_class = "market-up" if _brdn_now["change"] > 0 else "market-down" if _brdn_now["change"] < 0 else ""
-    _brdn_arrow = "▲" if _brdn_now["change"] > 0 else "▼" if _brdn_now["change"] < 0 else "●"
-    _brdn_sign = "+" if _brdn_now["pct_change"] >= 0 else ""
-    # data-brdn-next-reprice-sec — same estimate the BRDN page's own
-    # gauge shows, exposed here too since this corner ticker is the one
-    # element guaranteed visible regardless of page/night-mode/jumbotron
-    # (see the BRDN page for a real visible gauge; this is just the raw
-    # number available for a future readout or a live diagnostic check).
-    _brdn_reprice = brayden_index.next_reprice_estimate(night_mode_active=_night_mode_active)
-    st.markdown(
-        f'<div class="brdn-ticker {_brdn_tone_class}" id="brdn-ticker-live" '
-        f'data-brdn-next-reprice-sec="{_brdn_reprice["seconds_until"]:.0f}">'
-        f'<span class="brdn-ticker-symbol">BRDN</span>'
-        f'<span class="brdn-ticker-price">${_brdn_now["price"]:.2f}</span> '
-        f'{_brdn_arrow} {_brdn_sign}{_brdn_now["pct_change"]:.2f}%'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-except Exception:
-    pass
+# Session request: "Temporarily decommission the BRDN index. It's
+# broken and I don't feel like fixing it." — see brayden_index.
+# ENABLED's own comment. The one element on screen "regardless of
+# page/night-mode/jumbotron" just goes back to not existing at all
+# while disabled, same as before this feature was ever built.
+if brayden_index.ENABLED:
+    try:
+        _brdn_now = brayden_index.current()
+        _brdn_tone_class = "market-up" if _brdn_now["change"] > 0 else "market-down" if _brdn_now["change"] < 0 else ""
+        _brdn_arrow = "▲" if _brdn_now["change"] > 0 else "▼" if _brdn_now["change"] < 0 else "●"
+        _brdn_sign = "+" if _brdn_now["pct_change"] >= 0 else ""
+        # data-brdn-next-reprice-sec — same estimate the BRDN page's own
+        # gauge shows, exposed here too since this corner ticker is the one
+        # element guaranteed visible regardless of page/night-mode/jumbotron
+        # (see the BRDN page for a real visible gauge; this is just the raw
+        # number available for a future readout or a live diagnostic check).
+        _brdn_reprice = brayden_index.next_reprice_estimate(night_mode_active=_night_mode_active)
+        st.markdown(
+            f'<div class="brdn-ticker {_brdn_tone_class}" id="brdn-ticker-live" '
+            f'data-brdn-next-reprice-sec="{_brdn_reprice["seconds_until"]:.0f}">'
+            f'<span class="brdn-ticker-symbol">BRDN</span>'
+            f'<span class="brdn-ticker-price">${_brdn_now["price"]:.2f}</span> '
+            f'{_brdn_arrow} {_brdn_sign}{_brdn_now["pct_change"]:.2f}%'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    except Exception:
+        pass
 
 # Session report: "the transition between pages is quite choppy...
 # different elements from different pages pop up as longer than five

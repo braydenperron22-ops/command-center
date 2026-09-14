@@ -61,6 +61,20 @@ from icons import label_for
 import weather_client
 
 LAUNCH_PRICE = 10.00
+# Session request: "Temporarily decommission the BRDN index. It's
+# broken and I don't feel like fixing it." Same kill-switch shape as
+# app.py's JUMBOTRON_AUTO_TAKEOVER_ENABLED/TERMINAL_AUTO_TAKEOVER_
+# ENABLED — one flag, not a deletion. All the real price/history/
+# report-history state stays exactly as it is in persisted_state, so
+# this is a one-line flip back to True whenever it's actually fixed.
+# Stops the hourly reprice engine and both push notifications (see
+# app.py's single `if ENABLED:` wrapping that whole call cluster),
+# the headline-rotation big-move alert and terminal auto-takeover
+# (both gated below), and every visible surface — top-right corner
+# ticker, bottom ticker stat item (ticker.build_brdn_stat_item), nav
+# picker entries, and manual ?page=brdn/?page=terminal routing (all
+# gated in app.py).
+ENABLED = False
 REFRESH_SECONDS = 60 * 60  # hourly — session request: "as frequently as hourly"
 # Session request: "exempt [BRDN] from jumbotron and periodic updates
 # (every 3 hours) in night mode." Two separate, deliberate departures
@@ -1784,6 +1798,8 @@ def big_move_headline_candidate(now: datetime) -> dict | None:
     it clears itself the moment the day's real cumulative move genuinely
     recovers back under the threshold, and resets naturally at the next
     day's own open."""
+    if not ENABLED:
+        return None
     day = current()
     pct = day["pct_change"]
     if abs(pct) < BIG_MOVE_THRESHOLD_PCT:
@@ -1860,6 +1876,8 @@ def big_move_takeover_active(now: datetime) -> bool:
     actual live jumbotron game or night mode (see its own routing
     comment) — this only ever answers "is BRDN itself currently in a
     big-move moment," nothing about screen priority."""
+    if not ENABLED:
+        return False
     if _last_report is None:
         return False
     cycle_pct = _last_report.get("pct_change", 0.0)

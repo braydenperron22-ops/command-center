@@ -97,7 +97,13 @@ def build_brdn_stat_item() -> dict | None:
     uses — see brayden_index._day_open_price) — visible ambient from
     any page, not just while actually on the BRDN page itself (see
     brayden_index.py/pages_brayden_index.py). Cheap: reads
-    already-computed state, no AI/network cost of its own."""
+    already-computed state, no AI/network cost of its own.
+
+    Session request: "Temporarily decommission the BRDN index. It's
+    broken and I don't feel like fixing it." — see brayden_index.
+    ENABLED's own comment for the full scope of this kill switch."""
+    if not brayden_index.ENABLED:
+        return None
     try:
         data = brayden_index.current()
     except Exception:
