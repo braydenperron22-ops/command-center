@@ -1319,12 +1319,41 @@ _ROUTE_NICKNAMES = (
 )
 
 
-def _route_nickname(route: dict) -> str:
+# Session request: "the main highway or artery that I'm taking to
+# town or whatever city I'm going to should always always always show
+# on the top bar... what highway I'm taking, and if there's any
+# delays." This used to only ever run for the literal Work commute
+# (shift["summary"] == "Work"), with a hardcoded "Highway 17" default
+# for the usual case ("Corbeil Rd -> Highway 94 -> Highway 17 -> merges
+# onto 11" — Highway 17 is the recognizable one, even though Highway
+# 94 is technically the first highway-named street on the route) — so
+# any OTHER real drive (an appointment, taking someone to school)
+# showed no road at all, no matter how obviously it used a real
+# highway. Generalized to any destination: still checks _ROUTE_
+# NICKNAMES first (the same known detours are still worth their
+# friendly names whenever they genuinely apply, to ANY destination
+# that happens to route through them, not just Work); `is_work` keeps
+# the Work commute's own specific, already-tuned "Highway 17" default
+# byte-for-byte unchanged rather than risking it picking a technically-
+# first-but-less-representative highway off the ordered list instead.
+# Any OTHER destination falls back to scanning the route's own real,
+# ordered street list (commute_client._ordered_street_names) for the
+# first one that actually looks like a highway — "Highway 17 E",
+# "Trans-Canada Highway", tightened the same way check_traffic_
+# change's own toast text already does (_short_road) — and returns
+# None on a genuine miss (an all-local-streets trip) rather than
+# fabricating a highway that trip never actually used.
+def _main_road_for_route(route: dict, is_work: bool) -> str | None:
     streets = route.get("streets") or set()
     for street, nickname in _ROUTE_NICKNAMES:
         if street in streets:
             return nickname
-    return "Highway 17"
+    if is_work:
+        return "Highway 17"
+    for name in route.get("streets_ordered") or []:
+        if "highway" in name.lower() or "hwy" in name.lower():
+            return _short_road(name)
+    return None
 
 
 def _countdown_info(now: datetime) -> tuple[int, str, str, str, bool] | None:
@@ -1348,10 +1377,10 @@ def _countdown_info(now: datetime) -> tuple[int, str, str, str, bool] | None:
     the WHY: a shifted number with no visible reason looks identical to
     a slow rush hour. Whichever route (live or predictive) actually won
     the hybrid comparison has its own already-computed "incident" label
-    (e.g. "road closed" — see commute_client._incident_label), and (for
-    the real Work commute specifically — see _route_nickname) which of
-    Brayden's own three named routes it actually is, both folded into a
-    single suffix.
+    (e.g. "road closed" — see commute_client._incident_label), and
+    which real road this trip is actually on (see _main_road_for_route
+    — any destination now, not just the Work commute), both folded
+    into a single suffix.
 
     `template` (not just `text`) carries that same suffix now — real
     bug found live shipping this: app.py's shared live-countdown ticker
@@ -1386,13 +1415,21 @@ def _countdown_info(now: datetime) -> tuple[int, str, str, str, bool] | None:
         result = _hybrid_route_for_shift(shift)
         route = result[0] if result else None
         if route:
-            # The nickname only means anything for the real home<->work
-            # commute this session actually mapped out three real
-            # routes for — a one-off appointment's own custom
-            # destination gets no route label, same as it's always
-            # gotten no "via" anything.
-            if shift["summary"] == "Work":
-                suffix = f" — via {_route_nickname(route)}"
+            # Session request: "the main highway or artery... should
+            # always always always show on the top bar... whatever
+            # city I'm going to." Used to be Work-commute-only — now
+            # every real drive gets a road name whenever its own route
+            # genuinely has one (_main_road_for_route, above), Work
+            # included (it still gets the same friendly "Derland"/
+            # "Highway 11" names it always did, via the same _ROUTE_
+            # NICKNAMES check that function runs first). None only for
+            # a route that genuinely never touches anything highway-
+            # named — an all-local-streets trip still gets no
+            # "via" text, same as before, just no longer ALL non-Work
+            # trips regardless of what they actually drove.
+            main_road = _main_road_for_route(route, shift["summary"] == "Work")
+            if main_road:
+                suffix = f" — via {main_road}"
             if route.get("incident"):
                 suffix += f", {route['incident']}" if suffix else f" — {route['incident']}"
             elif route.get("predicted") and is_congested(route):

@@ -174,6 +174,38 @@ def _traffic_road_names(route_data: dict) -> list[str]:
     return names
 
 
+# Session request: "the main highway or artery that I'm taking to
+# town or whatever city I'm going to should always always always show
+# on the top bar... what highway I'm taking, and if there's any
+# delays" — commute_reminder's own route-nickname display used to only
+# ever run for the literal Work commute (3 specific, hand-mapped
+# routes), so any OTHER destination (an appointment, taking someone to
+# school) never showed a road name at all, no matter how obviously the
+# route used a real highway. `streets` above is already every named
+# road the route touches, but as a plain unordered set (deliberately,
+# for its own "does this route pass through X" callers) — this is the
+# ordered version, so a general "which one is actually the main
+# artery" pick (commute_reminder._main_road_for_route) can reason
+# about DRIVE ORDER, not just membership.
+def _ordered_street_names(route_data: dict) -> list[str]:
+    """Every named street/highway the chosen route's own turn-by-turn
+    guidance instructions carry, in the order actually driven,
+    consecutive duplicates collapsed (a long highway stretch spans many
+    individual instructions, all the same street name back to back —
+    without collapsing, that single real highway would otherwise
+    dominate the list many times over)."""
+    instrs = sorted(
+        (i for i in route_data.get("guidance", {}).get("instructions", []) if i.get("street")),
+        key=lambda i: i.get("pointIndex", 0),
+    )
+    names: list[str] = []
+    for i in instrs:
+        street = i["street"]
+        if not names or names[-1] != street:
+            names.append(street)
+    return names
+
+
 def _reference_time_trustworthy(route_data: dict) -> bool:
     """False only when the reference route's own reported time can't
     be trusted as a real drivable estimate — a genuine impassable
@@ -244,10 +276,11 @@ def _fetch_route_raw(
     # sections data already being fetched here) — just pulls out the
     # real street/highway names for whichever route ends up `chosen`
     # below, generically (this module has no opinion on what any of
-    # them are "called" — see commute_reminder._route_nickname for
-    # where Brayden's own route nicknames actually live, since those
-    # only make sense for his specific home<->work commute, not every
-    # destination this function ever routes to).
+    # them are "called" — see commute_reminder._main_road_for_route for
+    # where the actual "which highway is this" naming lives, including
+    # Brayden's own route nicknames for his specific home<->work
+    # commute, which don't apply to every destination this function
+    # ever routes to.
     params = {
         "key": api_key, "traffic": "true", "sectionType": "traffic", "maxAlternatives": 2,
         "alternativeType": "anyRoute", "instructionsType": "text",
@@ -320,6 +353,11 @@ def _fetch_route_raw(
         "incident": incident,
         "points": points,
         "streets": streets,
+        # Same real streets as "streets" just above, but ordered (driven
+        # order, consecutive repeats collapsed) — see _ordered_street_
+        # names' own comment for why the plain set above can't answer
+        # "which one is the main artery" for an arbitrary destination.
+        "streets_ordered": _ordered_street_names(chosen),
         # Which named road(s) the CHOSEN route currently has a traffic
         # section ON (not just passes through) — for the "traffic added
         # to your commute, on Hwy 11" toast (commute_reminder.check_
