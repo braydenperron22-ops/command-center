@@ -206,6 +206,41 @@ def _ordered_street_names(route_data: dict) -> list[str]:
     return names
 
 
+# Session follow-up, after the multi-highway suffix ("via Hwy 94,
+# 17") shipped: "just set it up as whatever highway we're on the
+# longest, based on our route" — a real answer to the earlier "I don't
+# know if you have a way to distinguish the bigger highway" question.
+# Not road class/lane count (TomTom's guidance doesn't carry that),
+# but real point-index distance IS available for free from the same
+# instructions already being read — a reasonable proxy for "how much
+# of this drive is actually on this road," since TomTom's own point
+# sampling is roughly spatially even along a route.
+def _street_spans(route_data: dict) -> dict[str, int]:
+    """Total point-index distance each named street covers on the
+    chosen route, summed across every separate stretch it appears in
+    (a street name can legitimately appear more than once — leaving a
+    highway for a detour and rejoining it later, say). Each
+    instruction's own span runs from its pointIndex up to the NEXT
+    instruction's pointIndex (or the route's final point, for the
+    last instruction) — the same "how far until the next turn" reading
+    the turn-by-turn guidance itself represents, just measured instead
+    of just narrated."""
+    instrs = sorted(
+        (i for i in route_data.get("guidance", {}).get("instructions", []) if i.get("street")),
+        key=lambda i: i.get("pointIndex", 0),
+    )
+    if not instrs:
+        return {}
+    total_points = len(route_data.get("legs", [{}])[0].get("points", []))
+    spans: dict[str, int] = {}
+    for idx, instr in enumerate(instrs):
+        start = instr.get("pointIndex", 0)
+        end = instrs[idx + 1].get("pointIndex", start) if idx + 1 < len(instrs) else total_points
+        street = instr["street"]
+        spans[street] = spans.get(street, 0) + max(0, end - start)
+    return spans
+
+
 def _reference_time_trustworthy(route_data: dict) -> bool:
     """False only when the reference route's own reported time can't
     be trusted as a real drivable estimate — a genuine impassable
@@ -358,6 +393,10 @@ def _fetch_route_raw(
         # names' own comment for why the plain set above can't answer
         # "which one is the main artery" for an arbitrary destination.
         "streets_ordered": _ordered_street_names(chosen),
+        # Real point-index distance each named street covers — see
+        # _street_spans' own comment. Used to pick the single most-
+        # representative highway when a route touches more than one.
+        "street_spans": _street_spans(chosen),
         # Which named road(s) the CHOSEN route currently has a traffic
         # section ON (not just passes through) — for the "traffic added
         # to your commute, on Hwy 11" toast (commute_reminder.check_

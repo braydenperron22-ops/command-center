@@ -16,7 +16,6 @@ asleep through the whole window.
 """
 
 import html
-import re
 import time
 from datetime import datetime, timedelta
 
@@ -1339,53 +1338,35 @@ _ROUTE_NICKNAMES = (
 #
 # Session follow-up, after hearing the Work commute's own "usual"
 # route genuinely spends real distance on TWO highways (Highway 94,
-# then Highway 17): "if it's two highways, make it via Highway ninety
-# four, comma, seventeen... I don't know if you have a way to
-# distinguish the bigger highway, but—". Real answer: not reliably,
-# not from this data alone (guidance instructions don't carry lane
-# count/road-class) — so rather than guess which one is "bigger" and
-# risk silently dropping a real one, this lists every distinct highway
-# actually driven, in the order actually driven (which is exactly what
-# was asked for: 94 before 17, matching the real route). The single-
-# highway case is unchanged; multi-highway is new. Genuinely more than
-# 2 would be unusual for any real route this app has ever seen — capped
-# at 2 so this stays a short, glanceable suffix rather than growing
-# without bound on some future edge case.
-_MAX_HIGHWAYS_SHOWN = 2
-
-
-def _join_highway_names(names: list[str]) -> str:
-    """"Highway 94"/"Highway 17" -> "Hwy 94, 17" — one shared prefix
-    instead of repeating "Highway"/"Hwy" per number, matching exactly
-    how the session request said it out loud. Only collapses that far
-    when EVERY name is the plain "Highway N" pattern (this app's own
-    region names its highways that way); any name that doesn't fit
-    (a named highway with no number, say) falls back to each name
-    tightened independently and joined — nothing is ever silently
-    dropped just because it doesn't match the common case."""
-    numbers = []
-    for name in names:
-        match = re.fullmatch(r"Highway (\d+)(?: [NSEW])?", name.strip())
-        if not match:
-            return ", ".join(_short_road(n) for n in names)
-        numbers.append(match.group(1))
-    return "Hwy " + ", ".join(numbers)
-
-
+# then Highway 17), tried first as a comma-joined list ("via Hwy 94,
+# 17") — then: "just set it up as whatever highway we're on the
+# longest, based on our route." A real answer to the earlier "I don't
+# know if you have a way to distinguish the bigger highway" question:
+# not road class/lane count (TomTom's guidance doesn't carry that),
+# but real point-index distance IS available for free from the same
+# instructions already being read (commute_client._street_spans) — a
+# reasonable proxy for "how much of this drive is actually on this
+# road," since TomTom's own point sampling is roughly spatially even.
+# For the real Work commute this naturally reproduces what used to be
+# a hardcoded "Highway 17" default — Highway 94 is a short connector
+# before the much longer Highway 17 stretch — except now it's a real,
+# measured answer instead of an assumption, and it generalizes
+# correctly to any other route where the longer highway isn't the one
+# encountered first.
 def _main_road_for_route(route: dict) -> str | None:
     streets = route.get("streets") or set()
     for street, nickname in _ROUTE_NICKNAMES:
         if street in streets:
             return nickname
-    highways: list[str] = []
-    for name in route.get("streets_ordered") or []:
-        if ("highway" in name.lower() or "hwy" in name.lower()) and name not in highways:
-            highways.append(name)
+    spans = route.get("street_spans") or {}
+    highways = [
+        name for name in (route.get("streets_ordered") or [])
+        if "highway" in name.lower() or "hwy" in name.lower()
+    ]
     if not highways:
         return None
-    if len(highways) == 1:
-        return _short_road(highways[0])
-    return _join_highway_names(highways[:_MAX_HIGHWAYS_SHOWN])
+    longest = max(highways, key=lambda name: spans.get(name, 0))
+    return _short_road(longest)
 
 
 def _countdown_info(now: datetime) -> tuple[int, str, str, str, bool] | None:
