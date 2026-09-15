@@ -31,6 +31,7 @@ import headline_rotation
 import dashboard_health
 import heartbeat
 import holidays_client
+import household_reminders
 import lightning_client
 import local_news_client
 import market_circuit_breaker
@@ -1979,15 +1980,6 @@ try:
         # as jumbotron. Session request: "add a maintenance tab... by
         # pressing D." See pages_maintenance.py.
         page = "maintenance"
-    elif _requested_page == "timeline":
-        # Not part of PAGES (config.py) — same "not part of the ambient
-        # rotation, still reachable on purpose" treatment as maintenance/
-        # terminal/brdn. Session request: "That looks kind of incredible.
-        # Yeah. Build that." (the "Today Timeline" concept mockup — see
-        # pages_timeline.py's own docstring). Deliberately NOT added to
-        # the passive rotation — this is a new page getting lived with
-        # first, not a replacement for anything already there.
-        page = "timeline"
     elif _requested_page == "terminal" and brayden_index.ENABLED:
         page = "terminal"
     elif _requested_page == "brdn" and brayden_index.ENABLED:
@@ -2321,7 +2313,7 @@ _PAGE_LABELS = {
     "home": "Home", "conflicts": "Conflicts", "news": "News", "email": "Email", "markets": "Markets",
     "internals": "Internals", "today": "Today", "household": "Household",
     "weather": "Weather", "hourly": "Hourly", "radar": "Radar", "sports": "Sports", "scores": "Scores",
-    "portfolio": "Portfolio", "predictions": "Predictions",
+    "portfolio": "Portfolio", "predictions": "Predictions", "timeline": "Timeline",
 }
 
 # Invisible on the kiosk monitor — theme.py hides .mobile-nav entirely
@@ -2336,7 +2328,7 @@ _nav_items = "".join(
     f'href="?page={key}">{_PAGE_LABELS[key]}</a>'
     for key in PAGES
 )
-_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES and _requested_page not in ("maintenance", "terminal", "brdn", "timeline") else ""
+_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES and _requested_page not in ("maintenance", "terminal", "brdn") else ""
 # Separate from the PAGES loop above (same reasoning as jumbotron —
 # not part of the normal rotation, so it doesn't belong in that list).
 # Session request: "add a maintenance tab for the mobile version."
@@ -2369,7 +2361,7 @@ st.markdown(
 # route around.
 _picker_open = st.query_params.get("picker") == "open"
 _picker_entries = [(key, _PAGE_LABELS[key]) for key in PAGES] + [
-    ("jumbotron", "Jumbotron"), ("maintenance", "Dev / Maintenance"), ("timeline", "Timeline"),
+    ("jumbotron", "Jumbotron"), ("maintenance", "Dev / Maintenance"),
 ] + (
     # Session request: "Temporarily decommission the BRDN index. It's
     # broken and I don't feel like fixing it." — see brayden_index.
@@ -2386,7 +2378,7 @@ _picker_tiles = "".join(
 # "?": _requested_page already holds the real ?page= value (or None
 # for auto-rotation), same source the mobile-nav's own "Auto" link
 # above is built from.
-_close_href = f"?page={_requested_page}" if _requested_page in PAGES or _requested_page in ("jumbotron", "maintenance", "terminal", "timeline") else "?"
+_close_href = f"?page={_requested_page}" if _requested_page in PAGES or _requested_page in ("jumbotron", "maintenance", "terminal") else "?"
 st.markdown(
     f'<div class="screen-picker{" screen-picker-open" if _picker_open else ""}">'
     f'<a class="screen-picker-backdrop" href="{_close_href}"></a>'
@@ -3229,6 +3221,24 @@ if weather:
             f'background:{_badge_bg("#32D74B", 0.22)}; border-color:#32D74B;">'
             f'Payday {payday_when}</span>'
         )
+    # Session request: "add my laundry day on Wednesday... groceries on
+    # Sunday" — same "fixed weekly rule" household reminder shape as
+    # the garbage/recycling badge above (see household_reminders.py's
+    # own docstring), same today(morning-only)/evening-tomorrow gating.
+    # Two colors, both otherwise unclaimed in this row: mint for
+    # Laundry, blue for Groceries.
+    _reminder_colors = {"Laundry": "#00C7BE", "Groceries": "#007AFF"}
+    for reminder in household_reminders.due_reminders(now.date()):
+        if (reminder["days_until"] == 0 and now.hour < MORNING_BADGE_CUTOFF_HOUR) or (
+            reminder["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR
+        ):
+            reminder_when = "today" if reminder["days_until"] == 0 else "tomorrow"
+            reminder_color = _reminder_colors.get(reminder["label"], "#8E8E93")
+            extras.append(
+                f'<span class="weather-extra" style="color:{reminder_color}; '
+                f'background:{_badge_bg(reminder_color, 0.22)}; border-color:{reminder_color};">'
+                f'{reminder["label"]} {reminder_when}</span>'
+            )
     # Session request: "let me know when we hit a new quarter which
     # means my sales reset" — TD's own fiscal quarters (confirmed live:
     # Nov/Feb/May/Aug, one calendar quarter ahead of the regular year),

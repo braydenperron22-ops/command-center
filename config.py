@@ -215,7 +215,7 @@ YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 # another swap.
 PAGES = [
     "home", "conflicts", "news", "email", "markets", "internals", "today", "household",
-    "weather", "hourly", "radar", "sports", "scores", "portfolio", "predictions",
+    "weather", "hourly", "radar", "sports", "scores", "portfolio", "predictions", "timeline",
 ]
 # "brdn" (pages_brayden_index.py) used to be in the list above, cycling
 # through the ambient rotation on the same footing as Weather/Sports/
@@ -235,10 +235,11 @@ PAGES = [
 #
 # "timeline" (pages_timeline.py) — the whole day on one shared axis,
 # session request "build that" after reviewing an approved concept
-# mockup — is deliberately kept OUT of this list too, for a different
-# reason than brdn: it's brand new and getting lived with via the
-# picker (?page=timeline) before deciding whether it should join the
-# rotation or replace part of it.
+# mockup — launched picker-only ("brand new, getting lived with before
+# deciding whether it should join the rotation"); a later session
+# request ("make the today page a page that actually cycles through")
+# moved it into the list above for real, on the same footing as every
+# other page here.
 PAGE_ROTATION_SECONDS = 5 * 60
 
 # PAGE_DURATION_OVERRIDES lets a specific page hold the screen longer

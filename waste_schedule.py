@@ -19,13 +19,16 @@ def _nth_weekday_of_month(d: date) -> int:
     return (d.day - 1) // 7 + 1
 
 
-def _next_weekday(today: date, weekday: int) -> date:
-    """Next date (today included) landing on `weekday` (Monday=0 ... Sunday=6)."""
+def next_weekday(today: date, weekday: int) -> date:
+    """Next date (today included) landing on `weekday` (Monday=0 ... Sunday=6).
+    Public — household_reminders.py's own simple day-of-week reminders
+    (Laundry, Groceries) reuse this exact date math rather than a
+    second copy of it."""
     return today + timedelta(days=(weekday - today.weekday()) % 7)
 
 
 def _next_recycling_wednesday(today: date) -> date:
-    candidate = _next_weekday(today, WEDNESDAY)
+    candidate = next_weekday(today, WEDNESDAY)
     while _nth_weekday_of_month(candidate) not in RECYCLING_WEEKS:
         candidate += timedelta(days=7)
     return candidate
@@ -35,7 +38,7 @@ def next_pickup(today: date) -> dict:
     """Whichever of garbage (every Monday) or recycling (2nd/4th
     Wednesday) comes next from `today` — {"kind", "date", "days_until"}.
     `today` counts as "next" if it's itself a pickup day."""
-    garbage_date = _next_weekday(today, MONDAY)
+    garbage_date = next_weekday(today, MONDAY)
     recycling_date = _next_recycling_wednesday(today)
     if garbage_date <= recycling_date:
         kind, pickup_date = "Garbage", garbage_date

@@ -298,6 +298,12 @@ def _axis_left(pct: float) -> str:
 
 
 def render(now: datetime) -> None:
+    # Session request: "make the today page a page that actually
+    # cycles through" — joining config.PAGES for real means this page
+    # needs the same standard page-title header (with its own beacon
+    # color, theme.py) every other rotation page already has; it never
+    # needed one while picker-only.
+    st.markdown('<div class="page-title page-title-timeline">Timeline</div>', unsafe_allow_html=True)
     hour_marks = [now.replace(hour=h, minute=0, second=0, microsecond=0) for h in _RULER_HOURS]
     ruler = "".join(f'<span class="tick" style="left:{_pct(dt):.2f}%">{_hour_label(h)}</span>' for h, dt in zip(_RULER_HOURS, hour_marks))
     gridlines = "".join(f'<div class="gridline" style="left:{_axis_left(_pct(dt))}"></div>' for dt in hour_marks)

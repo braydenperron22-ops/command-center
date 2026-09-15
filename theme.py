@@ -1964,6 +1964,14 @@ html, body, [class*="css"] {
     background: #8E8E93;
     box-shadow: 0 0 8px 1px rgba(142,142,147,0.5);
 }
+/* Session request: "make the today page a page that actually cycles
+   through" — pages_timeline.py joined config.PAGES for real, so it
+   needs the same wayfinding beacon every other rotation page has.
+   #FF2D55 (rose) — distinct from every beacon already claimed above. */
+.page-title-timeline::before {
+    background: #FF2D55;
+    box-shadow: 0 0 8px 1px rgba(255,45,85,0.5);
+}
 
 /* pages_maintenance.py — session request: "add a maintenance tab...
    that shows stats on how everything is updating... all colour coded
@@ -3672,6 +3680,7 @@ html, body, [class*="css"] {
 .mobile-nav-item-scores { color: #30D5C8 !important; }
 .mobile-nav-item-portfolio { color: #A78BFA !important; }
 .mobile-nav-item-predictions { color: #0A84FF !important; }
+.mobile-nav-item-timeline { color: #FF2D55 !important; }
 .mobile-nav-item-maintenance { color: #8E8E93 !important; }
 
 /* Screen picker (app.py) — session request: "bind the S key to a
