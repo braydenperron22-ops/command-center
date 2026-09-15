@@ -667,6 +667,39 @@ components.html(
     // false-triggers this), only then reloads. Catches a real freeze
     // in minutes instead of up to an hour, and never touches a
     // healthy kiosk at all.
+    //
+    // Session report, real live incident: "just woke up and there's an
+    // error about internet" — the kiosk was stuck on Chromium's own
+    // native offline error page in the morning, the exact class of
+    // "ordinary LAN/WiFi blip, no automatic recovery" freeze this
+    // watchdog's own comment above already names. Real root cause,
+    // confirmed by re-reading this watchdog's own reload trigger below:
+    // it calls window.parent.location.reload() unconditionally the
+    // moment the heartbeat goes stale, with no regard for whether the
+    // network is actually back up yet — if the WiFi blip that CAUSED
+    // the staleness hadn't cleared by the time this fires, the reload
+    // itself fails and lands the kiosk on that exact native error page,
+    // with no further JS from this app ever running again to self-heal.
+    // kiosk-reconnect-watchdog further below is the other, complementary
+    // half of the real fix (catches the moment connectivity genuinely
+    // returns) — this shared helper is what keeps THIS watchdog (and
+    // dashboard-pulse-watchdog) from ever voluntarily reloading into a
+    // network that's still down in the first place.
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-reachability-helper')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-reachability-helper';
+      s.textContent = [
+        "window.kioskCheckReachable = function (callback) {",
+        "  fetch(window.location.href, {method: 'HEAD', cache: 'no-store'})",
+        "    .then(function () { callback(true); })",
+        "    .catch(function () { callback(false); });",
+        "};",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('kiosk-stale-watchdog')) return;
@@ -685,7 +718,11 @@ components.html(
         "    return;",
         "  }",
         "  if (Date.now() - kioskLastChangeAt > 4 * 60 * 1000) {",
-        "    window.parent.location.reload();",
+        "    if (window.kioskCheckReachable) {",
+        "      window.kioskCheckReachable(function (ok) { if (ok) window.parent.location.reload(); });",
+        "    } else {",
+        "      window.parent.location.reload();",
+        "    }",
         "  }",
         "}, 20 * 1000);",
       ].join('\\n');
@@ -813,6 +850,11 @@ components.html(
     // Slow now covers the routine lag without escalating, Stalled/
     // reload only fire for staleness that's clearly NOT just this
     // fragment's own known real-world cadence.
+    //
+    // Same window.kioskCheckReachable gate as kiosk-stale-watchdog's own
+    // reload trigger above, same reason — see that watchdog's own
+    // comment for the full "just woke up and there's an error about
+    // internet" incident writeup this fixes on both reload triggers.
     (function () {
       var doc = window.parent.document;
       if (doc.getElementById('dashboard-pulse-watchdog')) return;
@@ -826,7 +868,11 @@ components.html(
         "  if (!ts) return;",
         "  var ageSec = (Date.now() / 1000) - ts;",
         "  if (ageSec >= 150) {",
-        "    window.parent.location.reload();",
+        "    if (window.kioskCheckReachable) {",
+        "      window.kioskCheckReachable(function (ok) { if (ok) window.parent.location.reload(); });",
+        "    } else {",
+        "      window.parent.location.reload();",
+        "    }",
         "    return;",
         "  }",
         "  var dot = document.getElementById('dashboard-pulse-dot');",
@@ -847,6 +893,57 @@ components.html(
         "  dot.className = 'ai-status-dot ai-status-dot-' + cls;",
         "  text.textContent = 'Dashboard: ' + label + ' (' + ageLabel + ')';",
         "}, 2000);",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
+
+    // The other half of the real fix for "just woke up and there's an
+    // error about internet" (see kiosk-stale-watchdog's own comment,
+    // above, for the full incident writeup) — that gate keeps the
+    // existing watchdogs from ever voluntarily reloading INTO a dead
+    // network; this one is what actually RECOVERS once the network
+    // genuinely comes back, for a drop that happens mid-session rather
+    // than only at one of those two watchdogs' own reload moments (a
+    // plain WiFi blip while the page is just sitting there, no reload
+    // in flight at all). Two triggers, deliberately redundant: the
+    // browser's own 'online' event fires the instant it detects a
+    // network interface again (near-instant, but this kiosk's exact
+    // browser/OS combo isn't something this app controls or can fully
+    // trust to fire reliably), backed by a plain 30s poll as a fallback
+    // that doesn't depend on that event at all. Only reloads on a real
+    // failing-to-passing TRANSITION (same reasoning kiosk_ubuntu_
+    // watchdog.sh's own state-file logic already uses on the OS side)
+    // — never reloads an already-healthy kiosk just because a poll
+    // happened to succeed.
+    //
+    // Real, structural limit worth being honest about: none of this
+    // JS runs at all if the browser is ALREADY sitting on its own
+    // native offline error page with no page of this app's ever having
+    // loaded — there's no JS execution context on that page for this
+    // (or anything) to run from. This catches every drop that happens
+    // WHILE the kiosk already has a real page loaded (the common case
+    // for an overnight WiFi blip), which is exactly what the two gates
+    // above now also make far less likely to ever turn into that
+    // stuck native-error-page state in the first place. kiosk_ubuntu_
+    // watchdog.sh (installed directly on the kiosk box, outside the
+    // browser entirely) is the one thing that can still recover from
+    // that fully-never-loaded edge case — this is the part doable
+    // without any kiosk-side action tonight.
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-reconnect-watchdog')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-reconnect-watchdog';
+      s.textContent = [
+        "var kioskWasUnreachable = false;",
+        "function kioskReconnectCheck() {",
+        "  fetch(window.location.href, {method: 'HEAD', cache: 'no-store'}).then(function () {",
+        "    if (kioskWasUnreachable) { window.parent.location.reload(); }",
+        "    kioskWasUnreachable = false;",
+        "  }).catch(function () { kioskWasUnreachable = true; });",
+        "}",
+        "window.addEventListener('online', kioskReconnectCheck);",
+        "setInterval(kioskReconnectCheck, 30 * 1000);",
       ].join('\\n');
       doc.head.appendChild(s);
     })();
