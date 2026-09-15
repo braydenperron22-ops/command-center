@@ -39,6 +39,7 @@ import streamlit as st
 
 import brayden_index
 import commute_reminder
+import kiosk_hardware
 import market_circuit_breaker
 import persisted_state
 import road_conditions_511
@@ -111,6 +112,15 @@ def _candidates(now: datetime, weather: dict | None) -> dict[str, dict]:
     road_issue = road_conditions_511.road_closure_headline_candidate(now)
     if road_issue is not None:
         out["road_issue"] = road_issue
+    # Session request: "make it so if any readings are concerning it
+    # shows up as a red headline so i know my mini pc needs work ie
+    # 'clean fans'." Same wiring shape as every other source here —
+    # see kiosk_hardware.py's own docstring for why this judges the raw
+    # CPU/RAM/temp numbers itself rather than trusting the kiosk's own
+    # opaque "bad" flag.
+    hardware = kiosk_hardware.hardware_headline_candidate(now)
+    if hardware is not None:
+        out["kiosk_hardware"] = hardware
     # Session request: "market circuit breaker events... super duper
     # important if it were to happen." rotation-critical unconditionally
     # (see market_circuit_breaker.py's own docstring) — same wiring
