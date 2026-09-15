@@ -3440,6 +3440,20 @@ if not _jumbotron_active and not _night_mode_active and not _terminal_active:
                 f'<span class="ai-status-text">Kiosk: {_perf["cpu_pct"]}% CPU · {_perf["ram_pct"]}% RAM · {_perf["temp_c"]}°C</span>'
                 "</div>"
             )
+        # Session request: "run a network test every 20 minutes and flag
+        # if the WiFi is too slow." A systemd timer on the kiosk box
+        # itself measures real latency to this dashboard's own URL plus
+        # actual download throughput (Cloudflare's speed-test endpoint),
+        # same Upstash handoff as the kiosk perf stats just above.
+        _net = persisted_state.load("kiosk_network_test", None)
+        if _net is not None:
+            _net_tone = "low" if _net.get("bad") else "good"
+            _status_slots.append(
+                '<div class="ai-status-row">'
+                f'<span class="ai-status-dot ai-status-dot-{_net_tone}"></span>'
+                f'<span class="ai-status-text">Network: {_net["mbps"]} Mbps · {_net["latency_ms"]}ms</span>'
+                "</div>"
+            )
         _status_phase = int(time.time() // STATUS_ROTATE_SECONDS) % len(_status_slots)
         st.markdown(f'<div class="ai-status-bar">{_status_slots[_status_phase]}</div>', unsafe_allow_html=True)
     except Exception:
