@@ -3357,14 +3357,36 @@ except Exception:
 # list and what each one actually means. Page-independent like the
 # pinned headlines above; suppressed during a takeover for the same
 # reason they are.
+#
+# Follow-up session request: "encapsulate all of the performance
+# metrics into the bottom bar... all three AIs should be one thing...
+# dashboard and the physical box health can be two separate ones and
+# it'll just rotate through it so it doesn't take up any screen real
+# estate." What used to be up to 5 stacked rows (one per Groq account/
+# Gemini, Dashboard, Kiosk) is now up to 3 SLOTS, and only the current
+# one is ever actually rendered — the AI trio folds into a single
+# groq_client.ai_status_summary() badge first. STATUS_ROTATE_SECONDS is
+# nominal, same honest caveat headline_rotation.py's own hold-second
+# constants carry: the outer script only reruns every ~65-75s (see
+# kiosk-stale-watchdog's own comment on why), so the slot actually seen
+# advances roughly once per outer rerun, not on a tight visual cadence
+# — genuinely fine here, since the ask was screen real estate, not
+# animation speed. A pure time-phase (no persisted rotation state, no
+# Upstash write) rather than headline_rotation's own heavier order/
+# index/swap_at machinery — that earned its complexity handling a
+# dynamically-changing SET of eligible hazard sources with real
+# priority ordering; this is 2-3 fixed slots taking equal turns, a
+# simple `int(time.time() // N) % len(slots)` is the whole job.
+STATUS_ROTATE_SECONDS = 20
 if not _jumbotron_active and not _night_mode_active and not _terminal_active:
     try:
-        _ai_rows_html = "".join(
-            f"""<div class="ai-status-row">
-                <span class="ai-status-dot ai-status-dot-{m['tone']}"></span>
-                <span class="ai-status-text">{m['label']}: {m['status']}</span>
-            </div>"""
-            for m in groq_client.ai_status_by_model()
+        _status_slots = []
+        _ai_summary = groq_client.ai_status_summary()
+        _status_slots.append(
+            '<div class="ai-status-row">'
+            f'<span class="ai-status-dot ai-status-dot-{_ai_summary["tone"]}"></span>'
+            f'<span class="ai-status-text">{_ai_summary["label"]}: {_ai_summary["status"]}</span>'
+            "</div>"
         )
         # Session request: "a system that shows how the dashboard is
         # running... when it's being hung up, and when it's running
@@ -3381,7 +3403,13 @@ if not _jumbotron_active and not _night_mode_active and not _terminal_active:
         # update its own "just updated" claim) — see dashboard_health.py's
         # own docstring for why the fast signal has to be a client-side
         # clock ticking against a server timestamp, not server text.
-        _ai_rows_html += (
+        # dashboard-pulse-watchdog already tolerates #dashboard-pulse-
+        # dot/-text not existing in the DOM at all (`if (!dot || !text)
+        # return;` — originally written for night-mode/jumbotron
+        # suppression, see that script's own comment) — exactly the
+        # condition this row is now ALSO in in the 2 of every 3 rotation
+        # turns it isn't the one showing, so no JS changes needed here.
+        _status_slots.append(
             '<div class="ai-status-row">'
             '<span class="ai-status-dot ai-status-dot-good" id="dashboard-pulse-dot"></span>'
             '<span class="ai-status-text" id="dashboard-pulse-text">Dashboard: Live</span>'
@@ -3400,17 +3428,20 @@ if not _jumbotron_active and not _night_mode_active and not _terminal_active:
         # silently covered, not just overlapped, the exact bug
         # .ai-status-bar's own history above already found and fixed
         # once. Joins this proven bottom-right corner instead, as one
-        # more row in the same small stack.
+        # more slot in the same rotation — only present at all once real
+        # stats have actually landed in Upstash, so the rotation is 2
+        # slots (not 3) until then.
         _perf = persisted_state.load("kiosk_perf_stats", None)
         if _perf is not None:
             _perf_tone = "low" if _perf.get("bad") else "good"
-            _ai_rows_html += (
+            _status_slots.append(
                 '<div class="ai-status-row">'
                 f'<span class="ai-status-dot ai-status-dot-{_perf_tone}"></span>'
                 f'<span class="ai-status-text">Kiosk: {_perf["cpu_pct"]}% CPU · {_perf["ram_pct"]}% RAM · {_perf["temp_c"]}°C</span>'
                 "</div>"
             )
-        st.markdown(f'<div class="ai-status-bar">{_ai_rows_html}</div>', unsafe_allow_html=True)
+        _status_phase = int(time.time() // STATUS_ROTATE_SECONDS) % len(_status_slots)
+        st.markdown(f'<div class="ai-status-bar">{_status_slots[_status_phase]}</div>', unsafe_allow_html=True)
     except Exception:
         pass
 

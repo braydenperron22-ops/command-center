@@ -3241,7 +3241,15 @@ html, body, [class*="css"] {
    it may have." Later widened from one line to one row per model —
    session request: "since we have a bunch of different models now...
    show what models are active and what ones are not responding." See
-   groq_client.ai_status_by_model for the full status list. */
+   groq_client.ai_status_by_model for the full status list.
+
+   Later still: "encapsulate all of the performance metrics into the
+   bottom bar... it'll just rotate through it so it doesn't take up any
+   screen real estate." Up to 5 stacked rows became up to 3 (AI
+   summary/Dashboard/Kiosk) ROTATING slots, app.py's own job — only
+   ONE .ai-status-row is ever actually in the DOM at a time now, so
+   .ai-status-bar itself is a single-row-tall pill again, same as its
+   very first version. */
 .ai-status-bar {
     position: fixed;
     bottom: 60px;
@@ -3293,8 +3301,13 @@ html, body, [class*="css"] {
    alert) that it silently covered this corner outright, not just
    overlapped it. Moved to bottom-right instead, stacked directly above
    .ai-status-bar (measured live: bottom:60px, ~71.5px tall for its
-   typical 4-row stack) rather than sharing that corner — bottom:145px
-   clears even a slightly taller stack with real breathing room. Sized
+   then-typical 4-row stack) rather than sharing that corner —
+   bottom:145px clears even a slightly taller stack with real breathing
+   room. .ai-status-bar is down to a single rotating row now (see its
+   own comment above) — this only means MORE clearance than strictly
+   needed today, not a collision, so left as-is rather than re-tuned
+   for a value that'd need remeasuring against a currently-disabled
+   element (brayden_index.ENABLED) anyway. Sized
    and weighted to actually read at a glance from across a room (unlike
    .ai-status-text's deliberately-subtle 0.68rem debug telemetry just
    above) while staying a small corner pill, not a banner — "not

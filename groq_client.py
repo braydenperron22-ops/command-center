@@ -507,6 +507,48 @@ def ai_status_by_model() -> list[dict]:
     return entries
 
 
+# Rank for ai_status_summary's own dot color, most-worth-noticing first
+# — Rate Limited/Low genuinely means something's wrong and should win
+# the badge's color even if the other 2 accounts are fine; Asleep/Idle/
+# Game Time is deliberate, non-alarming downtime, so it loses to a
+# plain "Active" too (2 Active + 1 Asleep should read green, not a
+# false alarm just because they're not ALL doing the same thing).
+_STATUS_SEVERITY = {"low": 0, "medium": 1, "good": 2, "neutral": 3}
+
+
+def ai_status_summary() -> dict:
+    """{"label": "AI", "status", "tone"} — ai_status_by_model()'s 3
+    separate per-account rows (2 Groq accounts + Gemini) folded into
+    ONE badge. Session request: "all three AIs should be one thing that
+    can overview the three AIs into one status" (part of a wider "so it
+    doesn't take up any screen real estate" ask — see app.py's own
+    rotating corner-status rewrite). Groups by status TEXT, not by
+    account, so the common case ("3 Active", or all 3 "Asleep" during
+    the overnight pause) reads as one clean word instead of the same
+    line repeated three times, while a real split (one account actually
+    Rate Limited while the other two are fine) still shows exactly
+    that, not a false "all good." See _STATUS_SEVERITY above for which
+    status wins the badge's own dot color when they don't all agree."""
+    entries = ai_status_by_model()
+    counts: dict[str, int] = {}
+    order: list[str] = []
+    tone_by_status: dict[str, str] = {}
+    for e in entries:
+        status = e["status"]
+        if status not in counts:
+            counts[status] = 0
+            order.append(status)
+            tone_by_status[status] = e["tone"]
+        counts[status] += 1
+    if len(order) == 1:
+        status_text = order[0]
+    else:
+        order.sort(key=lambda s: -counts[s])
+        status_text = ", ".join(f"{counts[s]} {s}" for s in order)
+    overall_tone = tone_by_status[min(order, key=lambda s: _STATUS_SEVERITY.get(tone_by_status[s], 3))]
+    return {"label": "AI", "status": status_text, "tone": overall_tone}
+
+
 def account_budgets() -> list[dict]:
     """{"account", "used", "budget", "remaining_pct"} for each Groq
     account's real rolling-24h token usage — the same numbers ai_status
