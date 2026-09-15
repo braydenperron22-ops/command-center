@@ -1,0 +1,13 @@
+# Runs kiosk_ubuntu_watchdog.service every 10 minutes (session request:
+# "make it check in a 10m interval") — see kiosk_ubuntu_watchdog.service
+# for install steps.
+[Unit]
+Description=Run the Command Center kiosk watchdog every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

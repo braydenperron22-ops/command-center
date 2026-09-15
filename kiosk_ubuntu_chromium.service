@@ -1,0 +1,39 @@
+# Kiosk Chromium launcher for the real production kiosk (Ubuntu box) —
+# reinstated after being killed for maintenance and never brought back,
+# the real cause of the "just woke up and there's an error about
+# internet" incident (2026-09-15): Chromium had nothing restarting it
+# if it died or got stuck, so once maintenance killed it, nothing ever
+# brought the kiosk back on its own.
+#
+# Install as a USER unit (assumes a dedicated auto-login kiosk user —
+# adjust to a system unit under /etc/systemd/system/ with an explicit
+# User=/Environment=DISPLAY= if this box actually runs differently):
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp kiosk_ubuntu_chromium.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now kiosk_ubuntu_chromium.service
+#
+# Verify the real Chromium binary name first (varies by install method
+# — apt/snap/flatpak all differ): `which chromium || which chromium-browser`.
+# Edit ExecStart below to match if it isn't plain "chromium" — and keep
+# kiosk_ubuntu_watchdog.sh's own CHROMIUM_PROCESS_NAME in sync with
+# whichever binary this actually launches, or the watchdog's pkill
+# won't find the right process to restart.
+#
+# --incognito: deliberate, not an oversight — this app's own real state
+# lives server-side in Upstash, never in browser storage, so there's
+# nothing worth persisting locally; incognito just means the kiosk
+# never accumulates cache/cookie cruft across weeks of 24/7 uptime.
+[Unit]
+Description=Command Center kiosk browser
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=chromium --kiosk --noerrdialogs --disable-session-crashed-bubble --disable-infobars --incognito --autoplay-policy=no-user-gesture-required https://command-center-hcurakgnngnpwdp8d98hcd.streamlit.app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

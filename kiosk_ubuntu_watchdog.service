@@ -1,0 +1,15 @@
+# One-shot runner for kiosk_ubuntu_watchdog.sh — triggered every 10
+# minutes by kiosk_ubuntu_watchdog.timer, not run directly.
+#
+# Install alongside kiosk_ubuntu_watchdog.timer:
+#   cp kiosk_ubuntu_watchdog.sh ~/kiosk_ubuntu_watchdog.sh
+#   chmod +x ~/kiosk_ubuntu_watchdog.sh
+#   cp kiosk_ubuntu_watchdog.service kiosk_ubuntu_watchdog.timer ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now kiosk_ubuntu_watchdog.timer
+[Unit]
+Description=Command Center kiosk network-recovery watchdog (one-shot, run by kiosk_ubuntu_watchdog.timer)
+
+[Service]
+Type=oneshot
+ExecStart=%h/kiosk_ubuntu_watchdog.sh
