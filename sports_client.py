@@ -34,6 +34,34 @@ MLB_TEAM_NAME = "Toronto Blue Jays"
 # (pages_jumbotron's out-of-town-scoreboard pinning), not MLB Stats API
 # against ESPN, so there's no "MLB Stats API has none" problem here.
 MLB_TEAM_ABBR = "TOR"
+# Session request: put the opponent's real abbreviation (not just their
+# full name) on the compact live-score headline bar (sports_alerts.
+# live_score_headline_candidates) — same "MLB Stats API's schedule
+# payload doesn't carry team abbreviations at all" gap MLB_TEAM_NAME's
+# own comment above already documents. A static table rather than a
+# second live lookup (e.g. cross-referencing scores_client.
+# find_espn_competition, which DOES carry ESPN's own abbreviations) —
+# 30 teams, essentially never change, and this keeps the headline bar
+# genuinely free to build (no extra network call) the way the session
+# request itself asked for. Keyed by the exact team.name string MLB
+# Stats API's own schedule payload returns (confirmed live against
+# real games for the divisions this app actually needs). Athletics
+# listed under both their pre- and post-2025-rebrand names, defensive
+# against whichever the live API happens to report.
+MLB_TEAM_ABBR_BY_NAME = {
+    "Baltimore Orioles": "BAL", "Boston Red Sox": "BOS", "New York Yankees": "NYY",
+    "Tampa Bay Rays": "TB", "Toronto Blue Jays": "TOR",
+    "Chicago White Sox": "CWS", "Cleveland Guardians": "CLE", "Detroit Tigers": "DET",
+    "Kansas City Royals": "KC", "Minnesota Twins": "MIN",
+    "Houston Astros": "HOU", "Los Angeles Angels": "LAA", "Athletics": "ATH",
+    "Oakland Athletics": "ATH", "Seattle Mariners": "SEA", "Texas Rangers": "TEX",
+    "Atlanta Braves": "ATL", "Miami Marlins": "MIA", "New York Mets": "NYM",
+    "Philadelphia Phillies": "PHI", "Washington Nationals": "WSH",
+    "Chicago Cubs": "CHC", "Cincinnati Reds": "CIN", "Milwaukee Brewers": "MIL",
+    "Pittsburgh Pirates": "PIT", "St. Louis Cardinals": "STL",
+    "Arizona Diamondbacks": "ARI", "Colorado Rockies": "COL", "Los Angeles Dodgers": "LAD",
+    "San Diego Padres": "SD", "San Francisco Giants": "SF",
+}
 MLB_DIVISION_ID = 201  # AL East
 MLB_DIVISION_NAME = "AL East"
 # Session request: "can we also include preseason games?" — "S" (spring
@@ -453,6 +481,7 @@ def _normalize_mlb_game(g: dict) -> dict:
         "game_id": g["gamePk"],
         "opponent": opp["team"]["name"],
         "opponent_logo": _mlb_logo_url(opp["team"]["id"]),
+        "opponent_abbr": MLB_TEAM_ABBR_BY_NAME.get(opp["team"]["name"], ""),
         "is_home": is_home,
         "team_score": us.get("score"),
         "opp_score": opp.get("score"),
@@ -481,6 +510,7 @@ def _normalize_nhl_game(g: dict) -> dict:
         "game_id": g["id"],
         "opponent": opponent,
         "opponent_logo": _nhl_logo_url(opp["abbrev"]),
+        "opponent_abbr": opp["abbrev"],
         "is_home": is_home,
         "team_score": us.get("score"),
         "opp_score": opp.get("score"),
@@ -557,7 +587,7 @@ def fetch_jays() -> dict | None:
     entirely if the Jays haven't played a regular/postseason game
     within SEASON_WINDOW_DAYS of now (the actual offseason, not just a
     rest day). "game", when not None, also carries its own
-    "opponent_logo"."""
+    "opponent_logo"/"opponent_abbr" (see MLB_TEAM_ABBR_BY_NAME)."""
     now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
     raw_games = _fetch_mlb_games(now)
     if raw_games is None:
@@ -950,6 +980,7 @@ def _normalize_nfl_game(e: dict) -> dict:
         "game_id": e["id"],
         "opponent": opp["team"]["displayName"],
         "opponent_logo": _nfl_logo_url(opp["team"]["abbreviation"]),
+        "opponent_abbr": opp["team"]["abbreviation"],
         "is_home": is_home,
         "team_score": team_score,
         "opp_score": opp_score,

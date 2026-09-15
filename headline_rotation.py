@@ -65,12 +65,17 @@ SWAP_INTERVAL_SECONDS = 8
 # commute_reminder._TIER_TO_ROTATION_CLASS — reused here as the one
 # shared severity signal driving both ordering and hold time, instead
 # of adding a second, parallel priority system.
-_TIER_PRIORITY = {"rotation-critical": 3, "rotation-warning": 2, "rotation-notice": 1, "rotation-calm": 0}
+# rotation-score: the live-score mini-jumbotron bar (sports_alerts.
+# live_score_headline_candidates) — same real priority as rotation-
+# notice, just its own CSS class so it can be styled black instead of
+# rotation-notice's gold (session request: "don't make it yellow, make
+# it black") without changing every OTHER rotation-notice source.
+_TIER_PRIORITY = {"rotation-critical": 3, "rotation-warning": 2, "rotation-notice": 1, "rotation-score": 1, "rotation-calm": 0}
 # More important, more airtime — not just seen first, held longer.
 # Calm/FYI items still get their turn, just briefly; critical gets
 # double a calm item's hold, matching how differently urgent the two
 # actually are.
-_TIER_HOLD_SECONDS = {"rotation-critical": 16, "rotation-warning": 12, "rotation-notice": 8, "rotation-calm": 5}
+_TIER_HOLD_SECONDS = {"rotation-critical": 16, "rotation-warning": 12, "rotation-notice": 8, "rotation-score": 8, "rotation-calm": 5}
 
 # Loaded once at import, not re-fetched every rerun — same per-rerun-
 # cost convention as every other persisted dict in this app (news.py's
@@ -86,7 +91,10 @@ def _candidates(now: datetime, weather: dict | None) -> dict[str, dict]:
     """Every currently-active "red headline" source, keyed by a stable
     id — entries with nothing to show are simply absent. Each value:
     {"text", "css_class", "target_ms", "template", "zero_text"} — see
-    each source's own *_candidate function for what those mean."""
+    each source's own *_candidate function for what those mean. One
+    exception: sports_alerts.live_score_headline_candidates also
+    carries an "html" key, rendered verbatim instead of the usual
+    escaped "text" span — see _render_candidate's own comment."""
     out = {}
     leave = commute_reminder.leave_headline_candidate(now)
     if leave is not None:
@@ -278,17 +286,26 @@ def _render_candidate(key: str, candidate: dict) -> None:
     # site in this app already does it (e.g. weather_alerts_bar.
     # render_alert_bar's own html.escape calls).
     text = html.escape(candidate["text"])
+    # sports_alerts.live_score_headline_candidates is the one source
+    # that carries its own pre-built, already-escaped markup (logos,
+    # abbreviations, score, inning/period — see its own docstring for
+    # why plain escaped text can't show any of that) instead of a plain
+    # string — every other candidate has no "html" key and renders
+    # exactly as it always did.
+    inner = candidate.get("html") or f'<span class="live-countdown"{countdown_attrs}>{text}</span>'
     # data-rotate-value (not data-fade-value — a deliberately separate
     # attribute from the existing kiosk-jumbo-fade mechanism, so the
     # two scripts never both try to animate the same element) changes
     # whenever either the source or its text changes, so switching
     # sources and a same-source text update (a countdown's own first-
     # frame value ticking over between reruns) both trigger the swap
-    # animation the same way.
+    # animation the same way. Still keyed off the plain "text"
+    # fingerprint even for the html-carrying candidate above — a score/
+    # inning/outs change always changes that same plain string too.
     st.markdown(
         f"""<div class="headline-rotation {css_class}"
              data-rotate-value="{key}:{text}">
-            <span class="live-countdown"{countdown_attrs}>{text}</span>
+            {inner}
         </div>""",
         unsafe_allow_html=True,
     )

@@ -216,15 +216,15 @@ LEVEL_PRIORITY = {"playoff": 0, "regular": 1, "preseason": 2}
 
 _LEAGUES = [
     {
-        "sport": "mlb", "label": "BLUE JAYS", "fetch_status": sports_client.fetch_jays,
+        "sport": "mlb", "label": "BLUE JAYS", "abbr": sports_client.MLB_TEAM_ABBR, "fetch_status": sports_client.fetch_jays,
         "flash_color": FLASH_BLUE, "kickoff_label": "First pitch",
     },
     {
-        "sport": "nhl", "label": "CANADIENS", "fetch_status": sports_client.fetch_habs,
+        "sport": "nhl", "label": "CANADIENS", "abbr": sports_client.NHL_TEAM_ABBR, "fetch_status": sports_client.fetch_habs,
         "flash_color": FLASH_RED, "kickoff_label": "Puck drop",
     },
     {
-        "sport": "nfl", "label": "SAINTS", "fetch_status": sports_client.fetch_saints,
+        "sport": "nfl", "label": "SAINTS", "abbr": sports_client.NFL_TEAM_ABBR, "fetch_status": sports_client.fetch_saints,
         "flash_color": FLASH_GOLD, "kickoff_label": "Kickoff",
     },
 ]
@@ -240,22 +240,131 @@ _LEAGUES = [
 # to hand it one candidate PER currently-live tracked team, keyed
 # distinctly (headline_rotation._candidates is a dict, so same-shaped
 # entries under different keys coexist and rotate together with zero
-# changes needed there). Deliberately just the score — no inning/
-# count/period detail, that's the "all the details" this was asked to
-# stop showing; get_new_alerts below already covers every real scoring
-# play via its own toast, unaffected by this.
+# changes needed there).
+#
+# Follow-up session request: "instead of having the team names, just
+# put the logos and their abbreviations... don't make it yellow, make
+# it black... put the team logos, the inning, how many outs, deck it
+# out, make it look like a tiny little jumbotron. You should have
+# everything from the jumbotron, so it shouldn't be very expensive to
+# make." Reverses the earlier "just the score, no inning/count/period
+# detail" decision above (get_new_alerts's own toasts still separately
+# cover every real scoring play regardless) — genuinely cheap the way
+# the request predicted: sports_client.fetch_mlb_live_detail/
+# fetch_nhl_live_detail/fetch_nfl_live_detail are the exact same live-
+# situation fetches pages_jumbotron.py's own situation strips already
+# poll (same cache, same TTL — a real cache hit on the kiosk's own
+# jumbotron page, a cheap first fetch otherwise), and team_logo/
+# opponent_logo/opponent_abbr were already sitting on `status`/`game`
+# (see sports_client.MLB_TEAM_ABBR_BY_NAME for the one genuinely new
+# piece — MLB's own schedule payload has no abbreviations at all, a
+# static 30-team table rather than a second live lookup).
+_MINI_INNING_ARROW = {"Top": "▲", "Bottom": "▼"}
+_MINI_NFL_ORDINALS = {1: "1ST", 2: "2ND", 3: "3RD", 4: "4TH"}
+
+
+def _mini_status(sport: str, game_id) -> str:
+    """Compact "inning + outs" / "period + clock" / "quarter + clock"
+    string for the mini-jumbotron bar below — deliberately thinner than
+    pages_jumbotron.py's own full situation strips (no balls/strikes,
+    no down/distance, no bases diamond): this bar has room for one
+    short line, not a second full board. Swallows any fetch failure
+    into "" (bar still shows logos/abbr/score, just no status half)
+    rather than losing the whole candidate over one flaky poll."""
+    try:
+        if sport == "mlb":
+            detail = sports_client.fetch_mlb_live_detail(game_id)
+            if not detail:
+                return ""
+            arrow = _MINI_INNING_ARROW.get(detail.get("inning_state") or "")
+            inning = detail.get("current_inning")
+            half = f'{arrow} {inning}' if arrow and inning else (detail.get("inning_state") or "")
+            outs = detail.get("outs")
+            outs_text = "" if outs is None else (f"{outs} OUT" if outs == 1 else f"{outs} OUTS")
+            return " · ".join(p for p in (half, outs_text) if p)
+        if sport == "nhl":
+            detail = sports_client.fetch_nhl_live_detail(game_id)
+            if not detail:
+                return ""
+            if detail.get("in_intermission"):
+                return "INTERMISSION"
+            period = detail.get("period_label")
+            period_text = f"{period} PERIOD" if period else ""
+            return " · ".join(p for p in (period_text, detail.get("clock")) if p)
+        if sport == "nfl":
+            detail = sports_client.fetch_nfl_live_detail(game_id)
+            if not detail:
+                return ""
+            if detail.get("is_halftime"):
+                return "HALFTIME"
+            period = detail.get("period")
+            period_text = _MINI_NFL_ORDINALS.get(period, f"{period}TH") if isinstance(period, int) and period > 0 else ""
+            return " · ".join(p for p in (period_text, detail.get("clock")) if p)
+    except Exception:
+        return ""
+    return ""
+
+
+def _mini_jumbotron_html(league: dict, status: dict, game: dict, status_text: str) -> str:
+    """The actual mini-jumbotron markup — away team left, home team
+    right (same real-scoreboard convention pages_jumbotron._sides
+    already lays the full board out with), each side its own real logo
+    + abbreviation, the live score between them, and the status line
+    (inning/period/quarter, from _mini_status above) on the end. Each
+    league's own real, hand-tuned FLASH_BLUE/FLASH_RED/FLASH_GOLD
+    (already used for this team's Govee flash — see this module's own
+    docstring) doubles as this bar's accent color too, via the same
+    --side-rgb-style CSS custom property pages_jumbotron._side_html
+    already established (theme.py's .mini-jumbo-abbr/.mini-jumbo-status
+    read it back with the identical rgba(var(--x, fallback), a)
+    pattern) — one real per-sport identity color, no new lookup."""
+    our_abbr, our_logo = league["abbr"], status.get("team_logo") or ""
+    opp_abbr, opp_logo = game.get("opponent_abbr") or "", game.get("opponent_logo") or ""
+    team_score, opp_score = game["team_score"], game["opp_score"]
+    if game.get("is_home"):
+        away_abbr, away_logo, away_score = opp_abbr, opp_logo, opp_score
+        home_abbr, home_logo, home_score = our_abbr, our_logo, team_score
+    else:
+        away_abbr, away_logo, away_score = our_abbr, our_logo, team_score
+        home_abbr, home_logo, home_score = opp_abbr, opp_logo, opp_score
+    r, g, b = league["flash_color"]
+    status_html = f'<span class="mini-jumbo-status">{html.escape(status_text)}</span>' if status_text else ""
+    return (
+        f'<div class="mini-jumbo" style="--mini-jumbo-accent:{r},{g},{b}">'
+        f'<img class="mini-jumbo-logo" src="{html.escape(away_logo)}" />'
+        f'<span class="mini-jumbo-abbr">{html.escape(away_abbr)}</span>'
+        f'<span class="mini-jumbo-score">{away_score}</span>'
+        f'<span class="mini-jumbo-dash">–</span>'
+        f'<span class="mini-jumbo-score">{home_score}</span>'
+        f'<span class="mini-jumbo-abbr">{html.escape(home_abbr)}</span>'
+        f'<img class="mini-jumbo-logo" src="{html.escape(home_logo)}" />'
+        f'{status_html}'
+        f'</div>'
+    )
+
+
 def live_score_headline_candidates(now: datetime) -> dict[str, dict]:
     """{key: candidate} for every tracked team (see _LEAGUES) whose
     game is genuinely live right now — same candidate shape every
-    other headline_rotation.py source uses ({"text", "css_class",
-    "target_ms", "template", "zero_text"}), target_ms always None (a
-    score has no natural countdown). rotation-notice tier: real and
-    worth a look, but not an urgent/hazard-tier event the way a storm
-    or road closure is. `now` accepted for signature symmetry with
-    every other *_candidate function in this app, even though the live
-    status/score itself doesn't need it — a fetch failure on any one
-    team is swallowed and simply omits that team's key rather than
-    losing every other currently-live team's entry too."""
+    other headline_rotation.py source uses, PLUS an "html" key
+    (headline_rotation._render_candidate renders that verbatim instead
+    of its usual escaped-text span when present — every other source's
+    candidate has no such key and is completely unaffected). "text"
+    still carries the same plain-language summary as before (now used
+    only for the swap-detection fingerprint, not what's on screen) so
+    this candidate's own identity/dedup behavior is unchanged.
+    rotation-score tier: same real priority/hold-time as the old
+    rotation-notice tier (see headline_rotation._TIER_PRIORITY/
+    _TIER_HOLD_SECONDS) — a new, separate CSS class purely because the
+    session asked this bar not be yellow ("don't make it yellow, make
+    it black") while rotation-notice's own gold gradient stays exactly
+    as it is for every OTHER source still using it. `now` accepted for
+    signature symmetry with every other *_candidate function in this
+    app, even though the live status/score itself doesn't need it — a
+    fetch failure on any one team (or on that team's own live-detail
+    poll, inside _mini_status) is swallowed and simply omits that
+    team's key, or just its status half, rather than losing every
+    other currently-live team's entry too."""
     out = {}
     for league in _LEAGUES:
         try:
@@ -270,9 +379,11 @@ def live_score_headline_candidates(now: datetime) -> dict[str, dict]:
             continue
         connector = "vs" if game.get("is_home") else "@"
         text = f'{league["label"].title()} {team_score}-{opp_score} {connector} {game["opponent"]}'
+        status_text = _mini_status(league["sport"], game.get("game_id"))
         out[f'live_score_{league["sport"]}'] = {
-            "text": text, "css_class": "rotation-notice", "target_ms": None,
+            "text": text, "css_class": "rotation-score", "target_ms": None,
             "template": "{}", "zero_text": None,
+            "html": _mini_jumbotron_html(league, status, game, status_text),
         }
     return out
 

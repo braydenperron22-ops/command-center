@@ -2858,6 +2858,69 @@ html, body, [class*="css"] {
     background: linear-gradient(90deg, #4a3005 0%, #b3720a 50%, #4a3005 100%);
     box-shadow: 0 4px 24px rgba(179,114,10,0.32);
 }
+/* Session request: the live-score bar (sports_alerts.
+   live_score_headline_candidates) — "don't make it yellow, make it
+   black... make the little top part... cool... make it look like a
+   tiny little jumbotron." Its own class (not rotation-notice, which
+   every other "real, not urgent" source still uses unchanged) so it
+   can go black instead of that tier's gold, with a scoreboard-black
+   gradient rather than a flat fill — same visual language as every
+   other tier here (dark-to-bright-to-dark), just built from near-black
+   instead of a hue. padding tightened from the other tiers' — this bar
+   holds real logo images (.mini-jumbo-logo below), which already carry
+   their own visual weight the other tiers' plain text doesn't. */
+.headline-rotation.rotation-score {
+    background: linear-gradient(90deg, #050505 0%, #1c1c1c 50%, #050505 100%);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.55);
+    padding: 0.6rem 1.6rem;
+}
+/* The mini-jumbotron itself — away team left, home team right, real
+   logos, real abbreviations, the live score, and a status line
+   (inning/period/quarter — see sports_alerts._mini_status), all in one
+   row. --mini-jumbo-accent (sports_alerts._mini_jumbotron_html's own
+   inline style) is this game's real, hand-tuned flash color
+   (FLASH_BLUE/FLASH_RED/FLASH_GOLD — the same color that team's Govee
+   flash already uses), read back the identical rgba(var(--x,
+   fallback), a) way pages_jumbotron._side_html's --side-rgb already
+   established (see theme.py's own --side-rgb rules) — one real,
+   already-existing per-sport identity color, not a new one invented
+   for this bar. */
+.mini-jumbo {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-weight: 800;
+    vertical-align: middle;
+}
+.mini-jumbo-logo {
+    height: 2.1rem;
+    width: 2.1rem;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 4px rgba(0,0,0,0.6));
+}
+.mini-jumbo-abbr {
+    font-size: 1.15rem;
+    letter-spacing: 0.04em;
+    color: rgb(var(--mini-jumbo-accent, 160,170,200));
+}
+.mini-jumbo-score {
+    font-size: 1.9rem;
+    font-variant-numeric: tabular-nums;
+    color: #FFFFFF;
+}
+.mini-jumbo-dash {
+    font-size: 1.3rem;
+    color: rgba(255,255,255,0.4);
+}
+.mini-jumbo-status {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    margin-left: 0.4rem;
+    padding-left: 0.6rem;
+    border-left: 2px solid rgba(255,255,255,0.22);
+    color: rgb(var(--mini-jumbo-accent, 160,170,200));
+}
 .headline-rotation.rotation-warning {
     background: linear-gradient(90deg, #4a1512 0%, #a83a30 50%, #4a1512 100%);
     box-shadow: 0 4px 24px rgba(168,58,48,0.35);
@@ -6505,6 +6568,13 @@ html, body, [class*="css"] {
        weather-statement/news), which only ever carry .headline-rotation
        alone and would otherwise stay at the full desktop 2rem here. */
     .headline-rotation { font-size: 1.9rem; }
+    /* .mini-jumbo's own children set their own absolute rem sizes
+       (they don't inherit .headline-rotation's font-size above), so
+       they need their own mobile downsize here too. */
+    .mini-jumbo-logo { height: 1.7rem; width: 1.7rem; }
+    .mini-jumbo-abbr { font-size: 1rem; }
+    .mini-jumbo-score { font-size: 1.5rem; }
+    .mini-jumbo-status { font-size: 0.9rem; }
 
     /* Session report: "when there's a red headline or the leave in
        badge it covers the clock and weather." These, .top-alert-bar,
