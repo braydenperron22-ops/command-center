@@ -50,6 +50,46 @@ def primary_symbol(status: str) -> str:
 _last_good_history: dict[str, pd.DataFrame] = {}
 
 
+def _eastern_now(now: datetime | None) -> datetime:
+    """Shared entry-normalization for market_status/todays_session_window
+    below. A caller-supplied `now` (morning_briefing.py threads its own
+    shared snapshot through) arrives naive but already IN TIMEZONE —
+    same convention as pages_today.py's _row_class. .astimezone()
+    on a naive datetime instead assumes the *system's* zone, which is
+    UTC on Streamlit Cloud: confirmed live this silently threw the
+    open/closed determination off by a full 4-5 hours (Toronto's own
+    UTC offset) whenever a threaded `now` was passed, since it got
+    reinterpreted as if it were already UTC before converting to ET.
+    The no-argument default path (aware UTC) was never affected."""
+    if now is not None and now.tzinfo is None:
+        now = now.replace(tzinfo=ZoneInfo(TIMEZONE))
+    return (now or datetime.now(ZoneInfo("UTC"))).astimezone(ZoneInfo("America/New_York"))
+
+
+def todays_session_window(now: datetime | None = None) -> tuple[datetime, datetime] | None:
+    """Today's real NYSE/TSX cash-session window (9:30am-4:00pm), in
+    LOCAL naive time — Toronto and New York share the same UTC offset
+    and DST calendar (see _eastern_now's own comment), so ET's
+    9:30/4:00 boundaries are also exactly Toronto's 9:30/4:00, no
+    further conversion needed. None on a day with no real cash session
+    at all (Saturday/Sunday) — a market HOLIDAY still returns the
+    window here, same "no holiday calendar" simplification market_
+    status's own docstring already accepts; a holiday's real closure
+    isn't caught by either function.
+
+    Session request: a new Today-Timeline page's Markets lane needed
+    the actual window, not just an open/closed/weekend verdict — single
+    source of truth for the 9:30/16:00 boundaries now, market_status
+    below calls this rather than keeping its own separate copy of the
+    same two literals (previously inlined twice, a real drift risk)."""
+    eastern = _eastern_now(now)
+    if eastern.weekday() >= 5:  # Saturday or Sunday — no cash session at all
+        return None
+    open_time = eastern.replace(hour=9, minute=30, second=0, microsecond=0, tzinfo=None)
+    close_time = eastern.replace(hour=16, minute=0, second=0, microsecond=0, tzinfo=None)
+    return open_time, close_time
+
+
 def market_status(now: datetime | None = None) -> str:
     """'open' (real indices), 'closed' (futures), or 'weekend' (crypto)
     — 'open' is NYSE/TSX cash-market hours (9:30am-4:00pm ET, Mon-Fri).
@@ -63,25 +103,15 @@ def market_status(now: datetime | None = None) -> str:
     stale index quote — not worth the complexity of a full holiday
     calendar for that edge case alone.
     """
-    # A caller-supplied `now` (morning_briefing.py threads its own
-    # shared snapshot through) arrives naive but already IN TIMEZONE —
-    # same convention as pages_today.py's _row_class. .astimezone()
-    # on a naive datetime instead assumes the *system's* zone, which is
-    # UTC on Streamlit Cloud: confirmed live this silently threw the
-    # open/closed determination off by a full 4-5 hours (Toronto's own
-    # UTC offset) whenever a threaded `now` was passed, since it got
-    # reinterpreted as if it were already UTC before converting to ET.
-    # The no-argument default path (aware UTC) was never affected.
-    if now is not None and now.tzinfo is None:
-        now = now.replace(tzinfo=ZoneInfo(TIMEZONE))
-    eastern = (now or datetime.now(ZoneInfo("UTC"))).astimezone(ZoneInfo("America/New_York"))
+    eastern = _eastern_now(now)
     weekday = eastern.weekday()  # Monday=0 ... Saturday=5, Sunday=6
     if weekday == 6 and eastern.hour >= 18:  # Sunday, futures already reopened for the week
         return "closed"
     if weekday >= 5:  # all of Saturday, and Sunday before 6pm
         return "weekend"
-    open_time = eastern.replace(hour=9, minute=30, second=0, microsecond=0)
-    close_time = eastern.replace(hour=16, minute=0, second=0, microsecond=0)
+    window = todays_session_window(now)
+    open_time = window[0].replace(tzinfo=eastern.tzinfo)
+    close_time = window[1].replace(tzinfo=eastern.tzinfo)
     return "open" if open_time <= eastern < close_time else "closed"
 
 

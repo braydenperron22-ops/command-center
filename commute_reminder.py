@@ -856,6 +856,48 @@ def leave_by_time(now: datetime) -> datetime | None:
     return current[1] if current else None
 
 
+def timeline_entries(now: datetime) -> list[dict]:
+    """[{"label", "leave_by", "is_home", "road"}] — one entry per real
+    shift/commute event today (see _todays_shift_events — plural, a day
+    can have more than one), for the new Today-Timeline page's Commute
+    lane. Unlike _current_shift (which only returns whichever ONE event
+    is still "currently relevant," dropping anything whose leave-by
+    window already fully closed), this returns EVERY real event for the
+    day regardless of currency — the timeline wants to show a leave-by
+    pin for something that already happened this morning just as much
+    as one still ahead.
+
+    Rendered as a PIN at leave_by, not a block — this is a moment, not
+    a span, same reasoning _mini_jumbotron_html vs. leave_headline_
+    candidate already draws elsewhere in this app between "a point in
+    time" and "a real duration." `road` is None for a home event (see
+    _is_home_event — no destination, no route, no highway to name) and
+    also None whenever the live route genuinely isn't available (a
+    fetch failure, an ungeocodable location — same real bug class
+    _hybrid_route_for_shift's own callers already guard against) —
+    never a fabricated placeholder either way."""
+    out = []
+    for shift in _todays_shift_events(now):
+        leave_by = _leave_by_for_shift(shift)
+        if leave_by is None:
+            continue
+        is_home = _is_home_event(shift)
+        road = None
+        if not is_home:
+            # _leave_by_for_shift above already called this same
+            # function once internally — calling it again here is a
+            # cheap st.cache_data hit (5 min TTL on the underlying
+            # route fetch), not a second real network round trip, same
+            # "safe to re-fetch, rely on the cache" reasoning
+            # _countdown_info's own docstring already documents.
+            result = _hybrid_route_for_shift(shift)
+            route = result[0] if result else None
+            if route:
+                road = _main_road_for_route(route)
+        out.append({"label": shift["summary"], "leave_by": leave_by, "is_home": is_home, "road": road})
+    return out
+
+
 # Session request: "make [the screen wake] 90 min before I need to
 # leave." app.py's _night_mode_day_start used to key off sleep_tracker.
 # wake_time_for — the commitment's START minus a fixed getting-ready

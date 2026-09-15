@@ -232,6 +232,13 @@ PAGES = [
 # "brdn" branch and its picker entry (same "not in PAGES, still
 # reachable" treatment as jumbotron/maintenance/terminal) — just no
 # longer something that shows up on its own schedule.
+#
+# "timeline" (pages_timeline.py) — the whole day on one shared axis,
+# session request "build that" after reviewing an approved concept
+# mockup — is deliberately kept OUT of this list too, for a different
+# reason than brdn: it's brand new and getting lived with via the
+# picker (?page=timeline) before deciding whether it should join the
+# rotation or replace part of it.
 PAGE_ROTATION_SECONDS = 5 * 60
 
 # PAGE_DURATION_OVERRIDES lets a specific page hold the screen longer

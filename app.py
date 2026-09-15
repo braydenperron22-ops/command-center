@@ -57,6 +57,7 @@ import pages_predictions
 import pages_radar
 import pages_scores
 import pages_sports
+import pages_timeline
 import pages_today
 import pages_weather
 import payday_schedule
@@ -1881,6 +1882,15 @@ try:
         # as jumbotron. Session request: "add a maintenance tab... by
         # pressing D." See pages_maintenance.py.
         page = "maintenance"
+    elif _requested_page == "timeline":
+        # Not part of PAGES (config.py) — same "not part of the ambient
+        # rotation, still reachable on purpose" treatment as maintenance/
+        # terminal/brdn. Session request: "That looks kind of incredible.
+        # Yeah. Build that." (the "Today Timeline" concept mockup — see
+        # pages_timeline.py's own docstring). Deliberately NOT added to
+        # the passive rotation — this is a new page getting lived with
+        # first, not a replacement for anything already there.
+        page = "timeline"
     elif _requested_page == "terminal" and brayden_index.ENABLED:
         page = "terminal"
     elif _requested_page == "brdn" and brayden_index.ENABLED:
@@ -2229,7 +2239,7 @@ _nav_items = "".join(
     f'href="?page={key}">{_PAGE_LABELS[key]}</a>'
     for key in PAGES
 )
-_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES and _requested_page not in ("maintenance", "terminal", "brdn") else ""
+_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES and _requested_page not in ("maintenance", "terminal", "brdn", "timeline") else ""
 # Separate from the PAGES loop above (same reasoning as jumbotron —
 # not part of the normal rotation, so it doesn't belong in that list).
 # Session request: "add a maintenance tab for the mobile version."
@@ -2262,7 +2272,7 @@ st.markdown(
 # route around.
 _picker_open = st.query_params.get("picker") == "open"
 _picker_entries = [(key, _PAGE_LABELS[key]) for key in PAGES] + [
-    ("jumbotron", "Jumbotron"), ("maintenance", "Dev / Maintenance"),
+    ("jumbotron", "Jumbotron"), ("maintenance", "Dev / Maintenance"), ("timeline", "Timeline"),
 ] + (
     # Session request: "Temporarily decommission the BRDN index. It's
     # broken and I don't feel like fixing it." — see brayden_index.
@@ -2279,7 +2289,7 @@ _picker_tiles = "".join(
 # "?": _requested_page already holds the real ?page= value (or None
 # for auto-rotation), same source the mobile-nav's own "Auto" link
 # above is built from.
-_close_href = f"?page={_requested_page}" if _requested_page in PAGES or _requested_page in ("jumbotron", "maintenance", "terminal") else "?"
+_close_href = f"?page={_requested_page}" if _requested_page in PAGES or _requested_page in ("jumbotron", "maintenance", "terminal", "timeline") else "?"
 st.markdown(
     f'<div class="screen-picker{" screen-picker-open" if _picker_open else ""}">'
     f'<a class="screen-picker-backdrop" href="{_close_href}"></a>'
@@ -3840,6 +3850,8 @@ with st.container(key="page_body"):
         _safe_render(pages_predictions.render, readings, FRED_API_KEY)
     elif page == "brdn":
         _safe_render(pages_brayden_index.render)
+    elif page == "timeline":
+        _safe_render(pages_timeline.render, now)
     elif page == "maintenance":
         _safe_render(pages_maintenance.render)
     elif page == "terminal":

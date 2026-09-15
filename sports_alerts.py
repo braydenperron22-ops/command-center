@@ -50,7 +50,7 @@ toasts alongside the existing scoring-play ones.
 
 import html
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
@@ -385,6 +385,62 @@ def live_score_headline_candidates(now: datetime) -> dict[str, dict]:
             "template": "{}", "zero_text": None,
             "html": _mini_jumbotron_html(league, status, game, status_text),
         }
+    return out
+
+
+# Rough, clearly-labeled typical game LENGTH per sport, hours — no league
+# publishes a real end time (only a start), so this is only ever used for
+# how WIDE a game's own block draws on the Today-Timeline page's Sports
+# lane, never presented as an exact end time. Same honesty standard
+# _nfl_yards_out's own estimate already holds itself to elsewhere in this
+# app — a reasonable visual size, not a fabricated data point.
+_TYPICAL_GAME_LENGTH_HOURS = {"mlb": 3.0, "nhl": 2.5, "nfl": 3.25}
+
+
+def timeline_entries(now: datetime) -> list[dict]:
+    """[{"label", "abbr", "logo", "opp_abbr", "opp_logo", "start", "end",
+    "state", "score", "kickoff_label", "accent"}] — one entry per
+    tracked team (see _LEAGUES) with ANY game today, for the new Today-
+    Timeline page's Sports lane. Unlike live_score_headline_candidates
+    above (live games only), this includes a team whose game today
+    hasn't started yet OR already finished — the timeline wants to show
+    the whole day's real sports schedule, not just what's live right
+    now. "state" is the real "upcoming"/"live"/"final" sports_client
+    already computes (used directly for past/live/upcoming coloring,
+    never re-derived from a guessed end time) — "end" (start +
+    _TYPICAL_GAME_LENGTH_HOURS) is ONLY ever used for how wide the
+    timeline page draws the block, kept private to this module rather
+    than handing the page a magic-number constant to apply itself.
+    "score" is None while "upcoming" (nothing real to show yet) — same
+    fetch-failure-per-team isolation as live_score_headline_candidates:
+    one team's fetch failing never loses every other tracked team's own
+    entry."""
+    out = []
+    for league in _LEAGUES:
+        try:
+            status = league["fetch_status"]()
+        except Exception:
+            continue
+        game = status.get("game") if status else None
+        start = game.get("start_time") if game else None
+        if not game or start is None or start.date() != now.date():
+            continue
+        state = game.get("state")
+        team_score, opp_score = game.get("team_score"), game.get("opp_score")
+        has_score = state != "upcoming" and team_score is not None and opp_score is not None
+        out.append({
+            "label": league["label"],
+            "abbr": league["abbr"],
+            "logo": status.get("team_logo"),
+            "opp_abbr": game.get("opponent_abbr") or "",
+            "opp_logo": game.get("opponent_logo"),
+            "start": start,
+            "end": start + timedelta(hours=_TYPICAL_GAME_LENGTH_HOURS.get(league["sport"], 3.0)),
+            "state": state,
+            "score": (team_score, opp_score) if has_score else None,
+            "kickoff_label": league["kickoff_label"],
+            "accent": league["flash_color"],
+        })
     return out
 
 

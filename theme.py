@@ -3751,6 +3751,175 @@ html, body, [class*="css"] {
     color: #F5F5F7 !important;
 }
 
+/* ============ TIMELINE (pages_timeline.py) ============
+   Session request, after reviewing an approved concept mockup: "That
+   looks kind of incredible. Yeah. Build that." — the whole day on one
+   shared axis instead of the page rotation: an hour ruler + vertical
+   gridlines, a glowing "now" line, and 5 stacked lanes (Weather/
+   Commute/Calendar/Markets/Sports), each item styled by real state —
+   already happened (dimmed), happening right now (glowing), still
+   ahead (outlined) — rather than by source. CSS translated directly
+   from the approved mockup artifact; positioning math (the 132px
+   lane-label offset every absolutely-positioned element on the shared
+   axis has to account for) lives in pages_timeline.py's own _pct/
+   _axis_left, not duplicated here. */
+.timeline-board {
+    --tl-sun: #d3bc8d;
+    --tl-commute: #5ac8fa;
+    --tl-calendar: #b9bac2;
+    --tl-markets: #32d74b;
+    background: #0c0d11;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+    padding: 1.6rem 1.8rem 1.3rem;
+    position: relative;
+    overflow: hidden;
+}
+/* Numeric/timestamp text (.mono, applied by pages_timeline.py) — the
+   same monospace stack already used elsewhere in this file (jumbotron
+   pitch counts etc.), not a new Google Fonts request: this app
+   deliberately dropped external font loading (see this file's own
+   opening comment) in favor of one converged system stack. */
+.timeline-board .mono { font-family: "SF Mono", "Menlo", "Consolas", "Roboto Mono", monospace; }
+.timeline-ruler {
+    position: relative;
+    height: 22px;
+    margin-left: 132px;
+    margin-bottom: 0.4rem;
+}
+.timeline-ruler .tick {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: rgba(243,243,241,0.42);
+}
+.timeline-lanes { position: relative; }
+.timeline-gridlines { position: absolute; inset: 0; }
+.timeline-gridlines .gridline {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(255,255,255,0.08);
+}
+.timeline-lanes .now-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(180deg, #ff6961, rgba(255,105,97,0.15));
+    z-index: 5;
+    animation: timeline-now-pulse 2.4s ease-in-out infinite;
+}
+.timeline-lanes .now-line .now-chip {
+    position: absolute;
+    top: -2.55rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #ff6961;
+    color: #1a0503;
+    font-weight: 700;
+    font-size: 0.74rem;
+    padding: 0.28rem 0.55rem;
+    border-radius: 7px;
+    white-space: nowrap;
+}
+@keyframes timeline-now-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+@media (prefers-reduced-motion: reduce) { .timeline-lanes .now-line { animation: none; } }
+
+.timeline-lanes .lane {
+    display: flex;
+    align-items: center;
+    min-height: 58px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    position: relative;
+}
+.timeline-lanes .lane:first-child { border-top: none; }
+.timeline-lanes .lane-label {
+    width: 132px;
+    flex: 0 0 132px;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: rgba(243,243,241,0.68);
+    padding-right: 0.6rem;
+}
+.timeline-lanes .lane[data-lane="weather"] .lane-label { color: var(--tl-sun); }
+.timeline-lanes .lane[data-lane="commute"] .lane-label { color: var(--tl-commute); }
+.timeline-lanes .lane[data-lane="calendar"] .lane-label { color: var(--tl-calendar); }
+.timeline-lanes .lane[data-lane="markets"] .lane-label { color: var(--tl-markets); }
+.timeline-lanes .lane-track { position: relative; flex: 1 1 auto; height: 100%; min-height: 58px; }
+.timeline-lanes .lane-empty {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.78rem;
+    color: rgba(243,243,241,0.32);
+    font-style: italic;
+}
+
+.timeline-lanes .block {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 30px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    padding: 0 0.6rem;
+    font-size: 0.76rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+}
+.timeline-lanes .block.state-past { background: rgba(255,255,255,0.07); color: rgba(243,243,241,0.42); }
+.timeline-lanes .block.state-upcoming { background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.35); color: rgba(243,243,241,0.68); }
+.timeline-lanes .block.state-live { color: #fff; background: rgba(255,255,255,0.1); box-shadow: 0 0 0 1px rgba(255,255,255,0.16), 0 4px 18px -2px rgba(50,215,75,0.45); }
+.timeline-lanes .block.block-approx { border: 1px dashed rgba(255,255,255,0.35); background: rgba(255,255,255,0.04); }
+.timeline-lanes .block[style*="--sport-accent"] { color: rgb(var(--sport-accent)); background: rgba(255,255,255,0.07); }
+.timeline-lanes .block.state-live[style*="--sport-accent"] { box-shadow: 0 0 0 1px rgba(255,255,255,0.16), 0 4px 18px -2px rgb(var(--sport-accent)); }
+
+.timeline-lanes .marker {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%,-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+}
+.timeline-lanes .marker .pin { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--tl-commute); background: #0c0d11; }
+.timeline-lanes .marker.state-past .pin { border-color: rgba(255,255,255,0.35); }
+.timeline-lanes .marker .pin-label { font-size: 0.68rem; font-weight: 700; color: rgba(243,243,241,0.68); white-space: nowrap; }
+.timeline-lanes .marker.state-past .pin-label { color: rgba(243,243,241,0.42); }
+
+.timeline-lanes .weather-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.timeline-lanes .weather-now-temp {
+    position: absolute;
+    top: 2px;
+    transform: translateX(-50%);
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--tl-sun);
+}
+.timeline-lanes .sun-icon-inline {
+    position: absolute;
+    top: 8px;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    font-size: 0.64rem;
+    color: var(--tl-sun);
+    font-weight: 700;
+}
+
 /* ============ JUMBOTRON (pages_jumbotron.py) ============
    A self-contained arena-scoreboard skin that only ever renders while
    sports_alerts.takeover_state() has the screen (T-60min through ~15min
