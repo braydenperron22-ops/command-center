@@ -639,6 +639,51 @@ components.html(
     // headline text) all still render correctly without these — they
     // were never the thing making the numbers/text right, only the
     // thing making the change to them smooth.
+    //
+    // Session follow-up, real instability root-caused and fixed since
+    // (Streamlit's own websocket-disconnect bug, the autorefresh
+    // cadence, and — the same night as this — a real network-outage
+    // recovery watchdog): "it just feels boring lately, kind of flat."
+    // kiosk-headline-rotation-swap specifically is back — the top bar
+    // is the one element on screen almost constantly, now cycling
+    // through more sources than it did when this was first built
+    // (sports scores, bedtime, kiosk hardware all added since), so a
+    // hard cut on every swap reads flatter than it used to. wp-smoother
+    // and jumbo-fade stay retired — both are jumbotron-only, and the
+    // jumbotron itself barely shows anymore (JUMBOTRON_AUTO_TAKEOVER_
+    // ENABLED is False), so neither would earn its keep back right now.
+    // Rebuilt with a genuine improvement over the original, not just a
+    // restore: plain setInterval polling of one attribute instead of a
+    // MutationObserver watching the entire document — directly answers
+    // this removal's own stated complaint ("three MutationObservers
+    // still watching every DOM mutation") without giving up the effect.
+    // See theme.py's own .rotation-swap-in comment for the matching
+    // CSS-side fix this alone doesn't cover (that rule survived the
+    // JS deletion but was missing the !important every other exception
+    // to the kill switch needs — dead weight either way until both
+    // halves came back together).
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-headline-rotation-swap')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-headline-rotation-swap';
+      s.textContent = [
+        "var kioskLastRotateValue = null;",
+        "setInterval(function () {",
+        "  var el = document.querySelector('.headline-rotation');",
+        "  if (!el) { kioskLastRotateValue = null; return; }",
+        "  var val = el.getAttribute('data-rotate-value');",
+        "  if (val === kioskLastRotateValue) return;",
+        "  var isFirstSighting = kioskLastRotateValue === null;",
+        "  kioskLastRotateValue = val;",
+        "  if (isFirstSighting) return;",
+        "  el.classList.remove('rotation-swap-in');",
+        "  void el.offsetWidth;",
+        "  el.classList.add('rotation-swap-in');",
+        "}, 1000);",
+      ].join('\\n');
+      doc.head.appendChild(s);
+    })();
 
     // kiosk-reload-watchdog used to live here — a blind, unconditional
     // window.parent.location.reload() every 60 minutes, regardless of

@@ -3028,11 +3028,25 @@ html, body, [class*="css"] {
    cascade) since `animation` is a single property — without an
    explicit combined value here, adding .rotation-swap-in would
    replace the critical tier's own continuous pulse instead of
-   layering on top of it for the swap's brief duration. */
-.headline-rotation.rotation-swap-in { animation: headline-rotation-swap-in 0.5s cubic-bezier(.2,.8,.2,1); }
+   layering on top of it for the swap's brief duration.
+
+   Session request: "it just feels boring lately, kind of flat."
+   Real, confirmed cause for THIS specific animation: the "remove
+   quite literally all of the animations" pass (this file's own global
+   kill switch, `* { animation: none !important; }` near the top) went
+   in at the SAME time kiosk-headline-rotation-swap itself was deleted
+   from app.py outright — but this rule was left behind without the
+   `!important` every other surviving exception (.ticker-track/
+   .weather-radar-frame-img) already needed to beat that kill switch,
+   so even after the JS trigger comes back (see app.py), the animation
+   itself would have stayed silently inert. `!important` added below,
+   same pattern as those two exceptions — this is now genuinely back,
+   not still dead code with an out-of-date comment pointing at a
+   script that no longer existed. */
+.headline-rotation.rotation-swap-in { animation: headline-rotation-swap-in 0.5s cubic-bezier(.2,.8,.2,1) !important; }
 .headline-rotation.rotation-critical.rotation-swap-in {
     animation: headline-rotation-swap-in 0.5s cubic-bezier(.2,.8,.2,1), leave-headline-pulse 1.2s ease-in-out infinite,
-        headline-rotation-toast-pulse 1.6s ease-in-out infinite;
+        headline-rotation-toast-pulse 1.6s ease-in-out infinite !important;
 }
 @keyframes headline-rotation-swap-in {
     from { opacity: 0; transform: translateY(-16px); }
