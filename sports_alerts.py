@@ -59,6 +59,7 @@ import streamlit as st
 import fetch_throttle
 import kiosk_tts
 import persisted_state
+import pregame_storylines
 import scores_client
 import sports_client
 from config import TIMEZONE
@@ -104,6 +105,11 @@ _last_leader: dict[int, str] = {}
 _start_alerted: dict[int, bool] = {}
 _final_alerted: dict[int, bool] = {}
 _baseline_done: dict[str, bool] = {}
+# game_id -> set of pregame_storylines card indices already toasted for
+# it, and game_id -> epoch timestamp of the last one — see get_new_
+# alerts's own STORYLINE_TOAST_* constants below for the full story.
+_storylines_shown: dict[int, set] = {}
+_storylines_last_shown_at: dict[int, float] = {}
 # game_id -> True while a goal-to-go alert has already fired for the
 # CURRENT drive's approach to the end zone — see _nfl_goal_to_go_alert's
 # own docstring for why this resets (rather than staying True for the
@@ -160,6 +166,22 @@ K_STREAK_MIN = 3
 # alongside the persistent countdown headline (render_game_countdown),
 # not the only clock in town, so it doesn't need every 5-minute rung.
 PREGAME_MILESTONES_MINUTES = [60, 30, 15, 5]
+
+# Session request, after "we kind of got rid of the Jumbotron screen":
+# "add some of the features where they already exist... the toast
+# alerts." pregame_storylines.py's own AI-written storyline cards
+# (call-ups, trades, hot streaks, injuries — up to MAX_CARDS=15 per
+# game) used to only ever show up on the jumbotron's own pregame board
+# — basically invisible now that JUMBOTRON_AUTO_TAKEOVER_ENABLED is
+# False (app.py). Same 60-minute outer window as the widest pregame
+# milestone above (this generation call is real AI work, not worth
+# triggering hours before a game); one new card surfaces as its own
+# toast every STORYLINE_TOAST_INTERVAL_SECONDS, until either the
+# window closes or every card's been shown — user's own choice ("a
+# toast per notable storyline"), just paced rather than firing all 15
+# back to back.
+STORYLINE_TOAST_WINDOW_MINUTES = 60
+STORYLINE_TOAST_INTERVAL_SECONDS = 5 * 60
 
 # Jumbotron takeover (see takeover_state / pages_jumbotron.py) — session
 # request: "one hour before any game habs or jays and during the game I
@@ -262,6 +284,102 @@ _LEAGUES = [
 _MINI_INNING_ARROW = {"Top": "▲", "Bottom": "▼"}
 _MINI_NFL_ORDINALS = {1: "1ST", 2: "2ND", 3: "3RD", 4: "4TH"}
 
+# Session request, after "we kind of got rid of the Jumbotron screen"
+# (JUMBOTRON_AUTO_TAKEOVER_ENABLED = False, app.py): "add some of the
+# features where they already exist... the top bar with the scores."
+# User picked win probability + NFL down/distance/red zone + MLB base
+# occupancy specifically. Same real ESPN team names pages_jumbotron.
+# _TEAM_ESPN_NAME already uses — its own copy, not imported, since
+# that dict is private to pages_jumbotron.py and this is only 3 lines
+# built entirely from sports_client's own already-public constants.
+_TEAM_FULL_NAME = {
+    "mlb": sports_client.MLB_TEAM_NAME,
+    "nhl": sports_client.NHL_TEAM_NAME,
+    "nfl": sports_client.NFL_TEAM_NAME,
+}
+
+
+def _espn_match(sport: str, game: dict) -> dict | None:
+    """The ESPN competition for this game, cross-referenced by real
+    team name — same approach pages_jumbotron._espn_match_for already
+    established for the exact same purpose there (win probability).
+    None whenever ESPN simply doesn't have this exact game today (a
+    real, expected miss sometimes, not a bug)."""
+    our_name = _TEAM_FULL_NAME.get(sport)
+    if not our_name or not game.get("opponent"):
+        return None
+    away_name = our_name if not game.get("is_home") else game["opponent"]
+    home_name = game["opponent"] if not game.get("is_home") else our_name
+    return scores_client.find_espn_competition(sport, away_name, home_name)
+
+
+def _win_probability_text(sport: str, game: dict) -> str:
+    """Our own team's real win probability as a compact "62% WIN"
+    label — ESPN's live model once the game has enough data, falling
+    back to the pregame moneyline-derived estimate before that (same
+    preference order pages_jumbotron._win_probability_html already
+    established). "" whenever ESPN doesn't have this game, or neither
+    source has populated yet — both real, expected non-failure states
+    (see scores_client.win_probability's own docstring), not bugs."""
+    try:
+        match = _espn_match(sport, game)
+        if match is None:
+            return ""
+        home_pct = scores_client.win_probability(match)
+        if home_pct is None:
+            home_pct = scores_client.moneyline_win_probability(match)
+        if home_pct is None:
+            return ""
+        our_pct = home_pct if game.get("is_home") else (100 - home_pct)
+        return f"{round(our_pct)}% WIN"
+    except Exception:
+        return ""
+
+
+def _nfl_extra_status(game_id) -> str:
+    """Down/distance (+ a RED ZONE flag) for the Saints' own live top-
+    bar status — same real ESPN situation object pages_jumbotron.
+    _nfl_situation_html already reads (sports_client.
+    fetch_nfl_competition), just the two fields this compact bar has
+    room for (no yards-out/possession/timeouts — that's the full
+    board's job). "" whenever there's genuinely no situation right now
+    (between plays, halftime — see fetch_nfl_competition's own
+    docstring) rather than a stale leftover value."""
+    try:
+        data = sports_client.fetch_nfl_competition(game_id)
+        if not data:
+            return ""
+        situation = data.get("situation") or {}
+        down_text = situation.get("shortDownDistanceText") or situation.get("downDistanceText")
+        if not down_text:
+            return ""
+        return f"{down_text} · RED ZONE" if situation.get("isRedZone") else down_text
+    except Exception:
+        return ""
+
+
+def _mlb_bases_html(game_id) -> str:
+    """Tiny 3-dot runners-on-base indicator (1st/2nd/3rd, lit when
+    occupied) — same real detail.bases dict the jumbotron's own base
+    diamond SVG already reads (sports_client.fetch_mlb_live_detail,
+    the exact same call _mini_status above already makes for this same
+    game — a cheap st.cache_data hit, not a second real fetch), just a
+    compact dot row instead of a full diamond graphic; this bar has
+    room for a glance, not a diagram. "" whenever the live detail fetch
+    fails or genuinely has no bases field."""
+    try:
+        detail = sports_client.fetch_mlb_live_detail(game_id)
+        bases = detail.get("bases") if detail else None
+        if not bases:
+            return ""
+        dots = "".join(
+            f'<span class="mini-jumbo-base{" on" if bases.get(b) else ""}"></span>'
+            for b in ("first", "second", "third")
+        )
+        return f'<span class="mini-jumbo-bases">{dots}</span>'
+    except Exception:
+        return ""
+
 
 def _mini_status(sport: str, game_id) -> str:
     """Compact "inning + outs" / "period + clock" / "quarter + clock"
@@ -305,12 +423,18 @@ def _mini_status(sport: str, game_id) -> str:
     return ""
 
 
-def _mini_jumbotron_html(league: dict, status: dict, game: dict, status_text: str) -> str:
+def _mini_jumbotron_html(
+    league: dict, status: dict, game: dict, status_text: str,
+    win_prob_text: str = "", bases_html: str = "",
+) -> str:
     """The actual mini-jumbotron markup — away team left, home team
     right (same real-scoreboard convention pages_jumbotron._sides
     already lays the full board out with), each side its own real logo
-    + abbreviation, the live score between them, and the status line
-    (inning/period/quarter, from _mini_status above) on the end. Each
+    + abbreviation, the live score between them, the status line
+    (inning/period/quarter, from _mini_status above, already carrying
+    NFL's own down/distance/red-zone text folded in — see
+    live_score_headline_candidates below), an optional MLB base-
+    occupancy dot row, and an optional win-probability badge. Each
     league's own real, hand-tuned FLASH_BLUE/FLASH_RED/FLASH_GOLD
     (already used for this team's Govee flash — see this module's own
     docstring) doubles as this bar's accent color too, via the same
@@ -329,6 +453,7 @@ def _mini_jumbotron_html(league: dict, status: dict, game: dict, status_text: st
         home_abbr, home_logo, home_score = opp_abbr, opp_logo, opp_score
     r, g, b = league["flash_color"]
     status_html = f'<span class="mini-jumbo-status">{html.escape(status_text)}</span>' if status_text else ""
+    wp_html = f'<span class="mini-jumbo-wp">{html.escape(win_prob_text)}</span>' if win_prob_text else ""
     return (
         f'<div class="mini-jumbo" style="--mini-jumbo-accent:{r},{g},{b}">'
         f'<img class="mini-jumbo-logo" src="{html.escape(away_logo)}" />'
@@ -339,6 +464,8 @@ def _mini_jumbotron_html(league: dict, status: dict, game: dict, status_text: st
         f'<span class="mini-jumbo-abbr">{html.escape(home_abbr)}</span>'
         f'<img class="mini-jumbo-logo" src="{html.escape(home_logo)}" />'
         f'{status_html}'
+        f'{bases_html}'
+        f'{wp_html}'
         f'</div>'
     )
 
@@ -380,10 +507,17 @@ def live_score_headline_candidates(now: datetime) -> dict[str, dict]:
         connector = "vs" if game.get("is_home") else "@"
         text = f'{league["label"].title()} {team_score}-{opp_score} {connector} {game["opponent"]}'
         status_text = _mini_status(league["sport"], game.get("game_id"))
+        bases_html = ""
+        if league["sport"] == "nfl":
+            extra = _nfl_extra_status(game.get("game_id"))
+            status_text = f"{status_text} · {extra}" if status_text and extra else (extra or status_text)
+        elif league["sport"] == "mlb":
+            bases_html = _mlb_bases_html(game.get("game_id"))
+        win_prob_text = _win_probability_text(league["sport"], game)
         out[f'live_score_{league["sport"]}'] = {
             "text": text, "css_class": "rotation-score", "target_ms": None,
             "template": "{}", "zero_text": None,
-            "html": _mini_jumbotron_html(league, status, game, status_text),
+            "html": _mini_jumbotron_html(league, status, game, status_text, win_prob_text, bases_html),
         }
     return out
 
@@ -875,6 +1009,51 @@ def get_new_alerts(now: datetime) -> list[dict]:
                         "flash_color": league["flash_color"],
                     }
                 )
+
+            # Pregame storyline toasts — see STORYLINE_TOAST_* constants'
+            # own comment above for the full "jumbotron features nobody
+            # sees anymore" story. Real AI generation (pregame_
+            # storylines.get_storyline_cards) only actually runs once
+            # per game_id — everything after that first call is a cheap
+            # in-memory cache hit, so calling it again here (the
+            # jumbotron's own pregame board may or may not have already
+            # triggered it) is safe and free.
+            if 0 <= minutes_until <= STORYLINE_TOAST_WINDOW_MINUTES:
+                shown_indices = _storylines_shown.setdefault(game_id, set())
+                last_shown = _storylines_last_shown_at.get(game_id, 0.0)
+                if time.time() - last_shown >= STORYLINE_TOAST_INTERVAL_SECONDS:
+                    try:
+                        our_name = _TEAM_FULL_NAME.get(league["sport"])
+                        away_name = our_name if not game["is_home"] else game["opponent"]
+                        home_name = game["opponent"] if not game["is_home"] else our_name
+                        match = _espn_match(league["sport"], game)
+                        cards = pregame_storylines.get_storyline_cards(
+                            league["sport"], game_id, league["label"], away_name, home_name, game["opponent"], match
+                        )
+                    except Exception:
+                        cards = None
+                    if cards:
+                        next_index = next((i for i in range(len(cards)) if i not in shown_indices), None)
+                        if next_index is not None:
+                            card = cards[next_index]
+                            shown_indices.add(next_index)
+                            _storylines_last_shown_at[game_id] = time.time()
+                            headline = card.get("headline") or card["storyline"]
+                            description = f"{card['name']}: {headline}" if card.get("name") else headline
+                            alerts.append(
+                                {
+                                    "kind": "sports",
+                                    "type": "storyline",
+                                    "sport": league["sport"],
+                                    "team_label": league["label"],
+                                    "team_logo": status["team_logo"],
+                                    "opponent_logo": game["opponent_logo"],
+                                    "team_score": None,
+                                    "opp_score": None,
+                                    "description": description,
+                                    "flash_color": league["flash_color"],
+                                }
+                            )
 
         elif game["state"] == "live":
             baseline_done = _baseline_done.get(baseline_key, False)
@@ -1402,6 +1581,7 @@ def render_alert_bar(alert: dict) -> None:
         "final": "FINAL",
         "streak": "STREAK",
         "pregame": "PREGAME",
+        "storyline": "PREVIEW",
         "start": "LIVE",
         "lead_change": "LEAD CHANGE",
         "goal_line": "GOAL LINE",

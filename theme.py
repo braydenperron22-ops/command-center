@@ -2929,6 +2929,46 @@ html, body, [class*="css"] {
     border-left: 2px solid rgba(255,255,255,0.22);
     color: rgb(var(--mini-jumbo-accent, 160,170,200));
 }
+/* Session request, after "we kind of got rid of the Jumbotron screen":
+   "add some of the features where they already exist... the top bar
+   with the scores" — win probability (sports_alerts.
+   _win_probability_text) and MLB base occupancy (sports_alerts.
+   _mlb_bases_html), both real data the full jumbotron board already
+   computes, now also on this ambient bar. NFL down/distance/red zone
+   needed no new CSS — it's folded directly into the existing
+   .mini-jumbo-status text above. */
+.mini-jumbo-wp {
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 6px;
+    background: rgba(var(--mini-jumbo-accent, 160,170,200), 0.18);
+    color: rgb(var(--mini-jumbo-accent, 160,170,200));
+}
+.mini-jumbo-bases {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: 0.5rem;
+    /* Same visual language as pages_jumbotron.py's own base diamond —
+       rotated squares, not circles — just 3 in a row instead of a
+       real diamond layout; this bar has room for a glance, not a
+       diagram. */
+    transform: rotate(45deg);
+}
+.mini-jumbo-base {
+    width: 7px;
+    height: 7px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+}
+.mini-jumbo-base.on {
+    background: rgb(var(--mini-jumbo-accent, 160,170,200));
+    border-color: rgb(var(--mini-jumbo-accent, 160,170,200));
+    box-shadow: 0 0 5px 1px rgba(var(--mini-jumbo-accent, 160,170,200), 0.7);
+}
 .headline-rotation.rotation-warning {
     background: linear-gradient(90deg, #4a1512 0%, #a83a30 50%, #4a1512 100%);
     box-shadow: 0 4px 24px rgba(168,58,48,0.35);
@@ -6766,6 +6806,8 @@ html, body, [class*="css"] {
     .mini-jumbo-abbr { font-size: 1rem; }
     .mini-jumbo-score { font-size: 1.5rem; }
     .mini-jumbo-status { font-size: 0.9rem; }
+    .mini-jumbo-wp { font-size: 0.82rem; }
+    .mini-jumbo-base { width: 6px; height: 6px; }
 
     /* Session report: "when there's a red headline or the leave in
        badge it covers the clock and weather." These, .top-alert-bar,
