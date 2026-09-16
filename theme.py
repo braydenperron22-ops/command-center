@@ -69,6 +69,20 @@ CSS = """
 .weather-radar-frame-img {
     transition: opacity 0.35s ease !important;
 }
+/* Design-pass fix, found live: app.py's kioskRevealOverlay (the real
+   toast "wipe reveal" — covers a fresh toast, then clip-path-wipes
+   away) used to toggle this transition via plain inline JS
+   (overlay.style.transition = '...'), which the kill switch above
+   silently killed the whole time regardless — a JS-set el.style.X =
+   'value !important' string doesn't reliably register in real
+   browsers either, so appending !important there wasn't a fix. Same
+   real shape as .ticker-track/.weather-radar-frame-img just above
+   (a real, deliberate exception, not a decorative extra) — moved to a
+   class toggle instead of an inline style toggle, same pattern
+   kiosk-headline-rotation-swap already uses for the identical reason. */
+#kiosk-toast-overlay.wipe-active {
+    transition: clip-path 0.55s cubic-bezier(.4,0,.2,1), opacity 0.25s ease-in 0.55s !important;
+}
 
 /* Five full-screen/curtain-style elements relied on an `animation:
    ... forwards` to ever REACH their correct resting appearance — their
@@ -1169,7 +1183,15 @@ html, body, [class*="css"] {
 .news-alert-bar {
     background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
     box-shadow: 0 -4px 24px rgba(179,20,20,0.35);
-    animation: toast-pulse-red 1.6s ease-in-out infinite;
+    /* Design-pass fix, found live: missing !important — dead against
+       the global kill switch since it went in, silently undoing the
+       explicit "make it so that animation happens every single time
+       we have a toast alert... for every single toaster in the entire
+       system" request this whole toast-pulse-* family exists for (see
+       that request's own fuller comment a few rules below). Same fix
+       applied to every other toast-pulse-* declaration in this file
+       that was missing it. */
+    animation: toast-pulse-red 1.6s ease-in-out infinite !important;
 }
 /* Generic market-news items aren't a surprise worth a red alert, but
    should still visibly take over the strip like breaking news does —
@@ -1177,7 +1199,7 @@ html, body, [class*="css"] {
 .news-alert-bar-market {
     background: linear-gradient(90deg, #0a0a0c 0%, #1c1c20 50%, #0a0a0c 100%);
     box-shadow: 0 -4px 24px rgba(0,0,0,0.45);
-    animation: toast-pulse-neutral 1.6s ease-in-out infinite;
+    animation: toast-pulse-neutral 1.6s ease-in-out infinite !important;
 }
 
 /* Session request: "there is an animation for leave in alerts, but for
@@ -1261,7 +1283,7 @@ html, body, [class*="css"] {
     overflow: hidden;
     background: linear-gradient(90deg, #7a4a0f 0%, #b3811a 50%, #7a4a0f 100%);
     box-shadow: 0 -4px 24px rgba(179,142,20,0.35);
-    animation: toast-pulse-amber 1.6s ease-in-out infinite;
+    animation: toast-pulse-amber 1.6s ease-in-out infinite !important;
 }
 
 /* Important-email toasts (email_client.py) — same bottom-strip
@@ -1282,12 +1304,23 @@ html, body, [class*="css"] {
     overflow: hidden;
     background: linear-gradient(90deg, #2f1f6e 0%, #4a32a8 50%, #2f1f6e 100%);
     box-shadow: 0 -4px 24px rgba(74,50,168,0.4);
-    animation: toast-pulse-indigo 1.6s ease-in-out infinite;
+    animation: toast-pulse-indigo 1.6s ease-in-out infinite !important;
 }
+/* Design-pass fix, found live: real, genuinely unbounded data (an
+   email "From" display name — sports_alerts/news' own equivalent
+   nowrap spans are always short fixed strings, never real variable
+   text) with no overflow guard next to a sibling that DOES wrap
+   normally — an unusually long sender name could crowd the subject
+   text with nothing to stop it. Capped and ellipsized rather than
+   left to grow unbounded in a fixed-position bottom strip. */
 .email-alert-from {
     font-weight: 600;
     color: #E8E3FF;
     white-space: nowrap;
+    max-width: 32%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
 }
 
 /* Jays/Habs scoring-play alerts (sports_alerts.py) — same bottom-strip
@@ -1318,17 +1351,17 @@ html, body, [class*="css"] {
 .sports-alert-bar-goalline {
     background: linear-gradient(90deg, #7a0000 0%, #e6180f 50%, #7a0000 100%);
     box-shadow: 0 -4px 28px rgba(230,24,15,0.55);
-    animation: toast-pulse-red 1s ease-in-out infinite;
+    animation: toast-pulse-red 1s ease-in-out infinite !important;
 }
 .sports-alert-bar-mlb {
     background: linear-gradient(90deg, #0f2a7a 0%, #1a5ab3 50%, #0f2a7a 100%);
     box-shadow: 0 -4px 24px rgba(26,90,179,0.4);
-    animation: toast-pulse-blue 1.6s ease-in-out infinite;
+    animation: toast-pulse-blue 1.6s ease-in-out infinite !important;
 }
 .sports-alert-bar-nhl {
     background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
     box-shadow: 0 -4px 24px rgba(179,20,20,0.35);
-    animation: toast-pulse-red 1.6s ease-in-out infinite;
+    animation: toast-pulse-red 1.6s ease-in-out infinite !important;
 }
 /* Saints' own gold — real team color (ESPN's #d3bc8d), not the fixed
    FLASH_BLUE/FLASH_RED shared by every other team's non-opponent
@@ -1336,7 +1369,7 @@ html, body, [class*="css"] {
 .sports-alert-bar-nfl {
     background: linear-gradient(90deg, #7a6a3f 0%, #b3993f 50%, #7a6a3f 100%);
     box-shadow: 0 -4px 24px rgba(179,153,63,0.35);
-    animation: toast-pulse-gold 1.6s ease-in-out infinite;
+    animation: toast-pulse-gold 1.6s ease-in-out infinite !important;
 }
 /* UFC knockdown toast (ufc_client.get_new_alerts) — session follow-up:
    "I genuinely want to enjoy watching this... but I don't know how" —
@@ -1350,7 +1383,7 @@ html, body, [class*="css"] {
 .sports-alert-bar-ufc {
     background: linear-gradient(90deg, #7a1108 0%, #cc2c1a 50%, #7a1108 100%);
     box-shadow: 0 -4px 26px rgba(204,44,26,0.45);
-    animation: toast-pulse-red 1.1s ease-in-out infinite;
+    animation: toast-pulse-red 1.1s ease-in-out infinite !important;
 }
 .sports-alert-score {
     display: flex;
@@ -1398,15 +1431,22 @@ html, body, [class*="css"] {
    severe tiers, distinct from watch/statement/warning-moderate below,
    which stay at the calmer shared pace; a routine advisory shouldn't
    read as urgently as a real warning. */
+/* Design-pass fix, found live: both animation lists below were
+   missing !important, so the global kill switch at the top of this
+   file silently beat them the entire time — the "more menacing"
+   session request's own visual half (a faster/harder pulse plus a
+   shake, distinct from the calmer shared toast pace) has been dead
+   since that kill switch went in, even though the request's own
+   comment is still right here describing it as active. */
 .weather-alert-bar-extreme {
     background: linear-gradient(90deg, #5c0a0b 0%, #d4181a 50%, #5c0a0b 100%);
     box-shadow: 0 -4px 24px rgba(212,24,26,0.5);
-    animation: toast-pulse-red-extreme 0.7s ease-in-out infinite, weather-menace-shake 0.35s ease-in-out infinite;
+    animation: toast-pulse-red-extreme 0.7s ease-in-out infinite, weather-menace-shake 0.35s ease-in-out infinite !important;
 }
 .weather-alert-bar-warning {
     background: linear-gradient(90deg, #7a0f10 0%, #b3181a 50%, #7a0f10 100%);
     box-shadow: 0 -4px 24px rgba(179,20,20,0.35);
-    animation: toast-pulse-red 0.8s ease-in-out infinite, weather-menace-shake 0.4s ease-in-out infinite;
+    animation: toast-pulse-red 0.8s ease-in-out infinite, weather-menace-shake 0.4s ease-in-out infinite !important;
 }
 .weather-alert-bar-extreme .news-alert-headline, .weather-alert-bar-warning .news-alert-headline,
 .weather-alert-bar-extreme .news-breaking-label, .weather-alert-bar-warning .news-breaking-label {
@@ -1433,7 +1473,12 @@ html, body, [class*="css"] {
     z-index: 9998;
     pointer-events: none;
     background: radial-gradient(ellipse at center, rgba(212,24,26,0) 45%, rgba(212,24,26,0.5) 100%);
-    animation: weather-menace-pulse 0.9s ease-in-out infinite;
+    /* Design-pass fix, found live: missing !important, same as the
+       toast bar's own weather-menace-shake right above — silently
+       dead against the global kill switch this whole time despite
+       app.py's kioskShowMenaceOverlay genuinely still creating/
+       removing this element on every severe alert. */
+    animation: weather-menace-pulse 0.9s ease-in-out infinite !important;
 }
 @keyframes weather-menace-pulse {
     0%, 100% { opacity: 0.55; }
@@ -1442,12 +1487,12 @@ html, body, [class*="css"] {
 .weather-alert-bar-warning-moderate {
     background: linear-gradient(90deg, #7a3d10 0%, #b3641a 50%, #7a3d10 100%);
     box-shadow: 0 -4px 24px rgba(179,100,20,0.3);
-    animation: toast-pulse-orange 1.6s ease-in-out infinite;
+    animation: toast-pulse-orange 1.6s ease-in-out infinite !important;
 }
 .weather-alert-bar-watch, .weather-alert-bar-statement {
     background: linear-gradient(90deg, #7a4a0f 0%, #b3811a 50%, #7a4a0f 100%);
     box-shadow: 0 -4px 24px rgba(179,142,20,0.35);
-    animation: toast-pulse-amber 1.6s ease-in-out infinite;
+    animation: toast-pulse-amber 1.6s ease-in-out infinite !important;
 }
 
 /* Session follow-up: "make it so that the clearing [time] number sits
@@ -1967,10 +2012,17 @@ html, body, [class*="css"] {
 /* Session request: "make the today page a page that actually cycles
    through" — pages_timeline.py joined config.PAGES for real, so it
    needs the same wayfinding beacon every other rotation page has.
-   #FF2D55 (rose) — distinct from every beacon already claimed above. */
+   Design-pass fix, found live: originally #FF2D55 (rose), claimed
+   "distinct from every beacon already claimed above" — it wasn't.
+   Euclidean RGB distance to Hourly's #FF375F was ~14, the closest
+   pair of all 15 rotation beacons, closer than the Sports/Markets
+   green collision a different comment above says was deliberately
+   fixed for this exact reason. #00C7BE (mint) instead — checked
+   against the full existing palette this time, ~51 to its nearest
+   neighbor (Scores), genuinely distinguishable at a glance. */
 .page-title-timeline::before {
-    background: #FF2D55;
-    box-shadow: 0 0 8px 1px rgba(255,45,85,0.5);
+    background: #00C7BE;
+    box-shadow: 0 0 8px 1px rgba(0,199,190,0.5);
 }
 
 /* pages_maintenance.py — session request: "add a maintenance tab...
@@ -2834,6 +2886,26 @@ html, body, [class*="css"] {
     border-bottom: 2px solid rgba(255,255,255,0.25);
     color: #FFFFFF;
     text-shadow: 0 1px 3px rgba(0,0,0,0.35);
+}
+/* Design-pass fix, found live: this bar is position:fixed (doesn't
+   push page content down) and real text sources here — breaking news
+   headlines especially — have no length cap. An unusually long real
+   headline would wrap to 2-3 lines, growing this bar taller and
+   overlapping the clock/weather row underneath it rather than clipping
+   cleanly. Scoped to .live-countdown specifically (not the outer
+   .headline-rotation div) so the sports mini-jumbotron's own "html"-
+   carrying candidate — a flex row of logos/text, never routed through
+   this span — is untouched; every plain-text source (news, storm,
+   weather statement, road closure, bedtime, leave) already fits
+   comfortably on one line in practice, so this is a safety net for the
+   one genuinely unbounded source, not a visible change for the rest. */
+.headline-rotation .live-countdown {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
 }
 /* Same 4-tier severity scale .leave-headline's own intensity-* tiers
    already use — one shared scale across every source rather than each
@@ -3775,7 +3847,7 @@ html, body, [class*="css"] {
 .mobile-nav-item-scores { color: #30D5C8 !important; }
 .mobile-nav-item-portfolio { color: #A78BFA !important; }
 .mobile-nav-item-predictions { color: #0A84FF !important; }
-.mobile-nav-item-timeline { color: #FF2D55 !important; }
+.mobile-nav-item-timeline { color: #00C7BE !important; }
 .mobile-nav-item-maintenance { color: #8E8E93 !important; }
 
 /* Screen picker (app.py) — session request: "bind the S key to a
@@ -3980,6 +4052,11 @@ html, body, [class*="css"] {
     font-weight: 700;
     white-space: nowrap;
     overflow: hidden;
+    /* Design-pass fix, found live: real calendar/sports text has no
+       length cap (a long real event summary, a full matchup label) and
+       was silently clipping mid-character with no visual sign anything
+       was cut off. */
+    text-overflow: ellipsis;
 }
 .timeline-lanes .block.state-past { background: rgba(255,255,255,0.07); color: rgba(243,243,241,0.42); }
 .timeline-lanes .block.state-upcoming { background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.35); color: rgba(243,243,241,0.68); }

@@ -1712,17 +1712,33 @@ components.html(
         "  overlay.style.width = rect.width + 'px';",
         "  overlay.style.height = rect.height + 'px';",
         "  overlay.style.background = urgent ? '#FF3B30' : '#FFB300';",
-        "  overlay.style.transition = 'none';",
+        // Design-pass fix, found live: this used to toggle overlay.
+        // style.transition directly between 'none' and the real wipe
+        // value — invisible the whole time, for two compounding
+        // reasons: the global `* { transition: none !important; }`
+        // kill switch (theme.py) beats ANY non-!important declaration
+        // regardless of source, inline included, and even fixing that
+        // by appending ' !important' to a JS-set el.style.transition
+        // string doesn't reliably take effect in real browsers (that
+        // 2-argument form silently ignores the !important token —
+        // el.style.setProperty(prop, value, 'important') is the only
+        // JS API that actually honors it). This toast's OWN chime was
+        // confirmed firing correctly the whole time — only the visual
+        // wipe was silently dead, exactly the "client side animations
+        // don't show up" gap this function's own earlier comment
+        // already reports. Same real fix as kiosk-headline-rotation-
+        // swap got earlier tonight: a CSS class toggle instead of an
+        // inline style toggle (see #kiosk-toast-overlay.wipe-active in
+        // theme.py) — remove-then-add still needs the same reflow-
+        // forcing trick below so the class actually re-triggers the
+        // transition on a REPEAT reveal (removing then immediately
+        // re-adding the same class with no reflow between is a no-op
+        // to the browser).
+        "  overlay.classList.remove('wipe-active');",
         "  overlay.style.clipPath = 'inset(0 0 0 0%)';",
         "  overlay.style.opacity = '1';",
-        // Forces the browser to apply the reset styles above before the
-        // transition below is set, so the transition actually animates
-        // FROM fully-covering TO cleared rather than jumping straight
-        // to its end state with nothing visibly happening — the same
-        // reflow-forcing trick this app's other one-shot CSS triggers
-        // already rely on.
         "  overlay.offsetHeight;",
-        "  overlay.style.transition = 'clip-path 0.55s cubic-bezier(.4,0,.2,1), opacity 0.25s ease-in 0.55s';",
+        "  overlay.classList.add('wipe-active');",
         "  overlay.style.clipPath = 'inset(0 0 0 100%)';",
         "  overlay.style.opacity = '0';",
         "  }, 0);",
