@@ -2991,6 +2991,29 @@ html, body, [class*="css"] {
     0%, 100% { box-shadow: 0 4px 24px rgba(196,30,30,0.4); }
     50% { box-shadow: 0 6px 44px rgba(196,30,30,0.75), 0 2px 80px rgba(196,30,30,0.3); }
 }
+/* Session request: "reformat the bedtime timer... doesn't look that
+   good. Also make those timer a little bigger so they're... visible."
+   Used to just be whichever plain rotation-calm/notice/critical/
+   warning class its own tier happened to map to (sleep_tracker.
+   _TIER_TO_ROTATION_CLASS) — the identical look a random road closure
+   or weather statement gets, no identity of its own (see headline_
+   rotation._render_candidate's own comment on the bedtime special
+   case, same shape as the pre-existing "leave" one). Same "one warm
+   family throughout" philosophy night_mode.py's own .night-bedtime
+   already established for this exact feature, not a severity-tiered
+   blue/amber/red swap — this is a personal daily thing, not a hazard
+   alert. Structurally still a normal .headline-rotation tier rule
+   (background/box-shadow/font-size/padding only, same as rotation-
+   critical above) — no position/layout override, so it still lives in
+   the same shared rotating slot as every other source, just sized up
+   (2.4rem vs. the old rotation-calm tier's 1.6rem) and warm-branded
+   instead of generic. */
+.headline-rotation.bedtime-headline {
+    background: linear-gradient(90deg, #3d0f0c 0%, #8f2a20 50%, #3d0f0c 100%);
+    box-shadow: 0 4px 24px rgba(143,42,32,0.4);
+    font-size: 2.4rem;
+    padding: 1.05rem 1.9rem;
+}
 /* The one-shot "swap" animation itself — a JS-toggled class
    (app.py's kiosk-headline-rotation-swap script), not a plain
    `animation` on the base rule: Streamlit patches this element's
@@ -6808,6 +6831,12 @@ html, body, [class*="css"] {
     .mini-jumbo-status { font-size: 0.9rem; }
     .mini-jumbo-wp { font-size: 0.82rem; }
     .mini-jumbo-base { width: 6px; height: 6px; }
+    /* Same reasoning — .bedtime-headline's own 2.4rem is an absolute
+       size too, so it also needs its own explicit mobile downsize
+       rather than inheriting .headline-rotation's 1.9rem above (which
+       it already out-specificities anyway, so it wouldn't shrink
+       without this). */
+    .bedtime-headline { font-size: 2rem; }
 
     /* Session report: "when there's a red headline or the leave in
        badge it covers the clock and weather." These, .top-alert-bar,

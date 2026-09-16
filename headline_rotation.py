@@ -272,8 +272,23 @@ def _render_candidate(key: str, candidate: dict) -> None:
     # same element — so leave skips the rotation-* class entirely and
     # relies purely on the existing intensity system for its color,
     # exactly as it already did in its own standalone div.
+    # Session request: "reformat the bedtime timer... doesn't look that
+    # good. Also make those timer a little bigger so they're... visible."
+    # Same shape as the "leave" special case just above — bedtime used
+    # to just borrow whichever plain rotation-calm/notice/critical/
+    # warning class its own tier mapped to (sleep_tracker.
+    # _TIER_TO_ROTATION_CLASS), the exact same generic look every other
+    # unrelated source (a road closure, a weather statement) gets — no
+    # visual identity of its own. Drops that shared class from the
+    # rendered DOM the same way "leave" already does; _TIER_PRIORITY/
+    # _TIER_HOLD_SECONDS still read candidate["css_class"] straight from
+    # the dict below (server-side, before this function ever runs), so
+    # bedtime's real severity tier still drives its ordering/hold-time
+    # exactly as before — only the ON-SCREEN class changes.
     if key == "leave":
         css_class = "leave-headline"
+    elif key == "bedtime":
+        css_class = "bedtime-headline"
     else:
         css_class = candidate["css_class"]
     countdown_attrs = ""
