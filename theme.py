@@ -6947,6 +6947,19 @@ html, body, [class*="css"] {
        without this). */
     .bedtime-headline { font-size: 2rem; }
 
+    /* Design-pass fix, found live: the whole night-mode screen (night_
+       mode.py) had zero mobile-specific sizing — .night-ticker's own
+       2rem font + 2.5rem side padding leaves ~295px for real text on a
+       375px phone, easy to wrap awkwardly since night mode's own "join
+       on one centered line with a dot separator" convention (see that
+       class's own comment) doesn't otherwise account for a narrow
+       viewport. Scoped to this one element (not a full night-mode
+       mobile pass) — this is the one absolute-sized night element an
+       earlier audit specifically flagged as still missing a downsize
+       despite the explicit "appears on all screens" requirement its
+       own neighboring comment documents. */
+    .night-ticker { font-size: 1.4rem; padding: 0.9rem 1.2rem; }
+
     /* Session report: "when there's a red headline or the leave in
        badge it covers the clock and weather." These, .top-alert-bar,
        and .weather-statement-bar are all position:fixed with hardcoded
