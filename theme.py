@@ -3572,14 +3572,20 @@ html, body, [class*="css"] {
    Session follow-up, after seeing the static score-only version live:
    "I want that same kind of formatting on the little widget on the
    side... I want it to rotate between all the different ones and have
-   the same formatting as that" — "that" being pages_system_health.py's
-   own big-value/small-label vitals tiles. Rotation is back (app.py's
-   own STATUS_ROTATE_SECONDS), but every slot now reuses .system-
-   health-stat/-value/-label directly (same classes that page's own
-   _stat() emits) instead of the score-specific classes this block used
-   to define — column layout instead of the old horizontal score+meta
-   row, since a slot can now be a single stat (score, dashboard) or
-   several side by side (kiosk, internet). */
+   the same formatting as that" — briefly a 20s rotation across score/
+   dashboard/kiosk/internet slots, one at a time.
+
+   Session follow-up, after THAT: "That's actually not what I wanted at
+   all. I liked how you had it formatted with the other page where you
+   had all three... with their stats in the bar big and visible. hide
+   the 0-100 score and the little writing that says Dashboard: live."
+   No rotation anymore — Dashboard/Kiosk/Internet all stacked and
+   always visible at once, exactly matching pages_system_health.py's
+   own 3-tile row (app.py now calls that page's own dashboard_stats()/
+   kiosk_stats()/network_stats() directly — same .system-health-stat/
+   -value/-label classes those emit, genuinely the same formatting by
+   construction, not just visually matched). Score and the pulse-dot/
+   text row are both gone entirely per that report. */
 .system-health-corner {
     position: fixed;
     bottom: 60px;
@@ -3588,18 +3594,35 @@ html, body, [class*="css"] {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.55rem 1rem;
+    gap: 0.5rem;
+    padding: 0.7rem 1.1rem;
     border-radius: 14px;
     background: rgba(12,12,16,0.68);
     backdrop-filter: blur(20px) saturate(160%);
     -webkit-backdrop-filter: blur(20px) saturate(160%);
     border: 1px solid rgba(255,255,255,0.12);
-    opacity: 0.8;
+    opacity: 0.85;
     transition: opacity 0.2s ease;
 }
 .system-health-corner:hover {
     opacity: 1;
+}
+/* One section per stat group (Dashboard/Kiosk/Internet) — its own
+   wrapper, not flat children of .system-health-corner directly, so
+   the title/stat-row gap can be tighter than the gap BETWEEN sections
+   (a title belongs visually with its own row, not equidistant from
+   the row above it too) and so a divider can target the boundary
+   between sections specifically via the adjacent-sibling selector
+   below (none above the first section, none below the last). */
+.system-health-corner-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+}
+.system-health-corner-section + .system-health-corner-section {
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(255,255,255,0.08);
 }
 .system-health-corner-title {
     font-size: 0.68rem;
@@ -3610,22 +3633,17 @@ html, body, [class*="css"] {
 }
 /* Same .system-health-stat-row/-value/-label pages_system_health.py
    uses, just sized down for a corner pill instead of a full tile — a
-   slot showing 3 stats side by side (Kiosk's CPU/RAM/temp) needs to
-   fit this much smaller footprint without overflowing. */
+   section showing 3 stats side by side (Kiosk's CPU/RAM/temp) needs
+   to fit this much smaller footprint without overflowing. */
 .system-health-corner .system-health-stat-row {
     gap: 0.7rem;
+    padding-top: 0;
 }
 .system-health-corner .system-health-stat-value {
     font-size: 1.5rem;
 }
 .system-health-corner .system-health-stat-label {
     font-size: 0.62rem;
-}
-.system-health-corner-pulse {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    margin-top: 0.1rem;
 }
 .ai-status-dot {
     flex-shrink: 0;

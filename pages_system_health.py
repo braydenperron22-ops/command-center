@@ -129,7 +129,13 @@ def _issues_html(issues: list[dict]) -> str:
     return _tile(f"Current Issues ({len(issues)})", rows)
 
 
-def _dashboard_stats() -> str:
+def dashboard_stats() -> str:
+    """Public (not underscore-prefixed) — session follow-up: "I liked
+    how you had it formatted with the other page where you had all
+    three... with their stats in the bar big and visible," reused
+    directly by app.py's corner widget so the two surfaces can never
+    drift out of formatting sync (the corner wraps this in its own
+    small title, same as render() does below)."""
     last = dashboard_health.last_rerun()
     if last is None:
         return _stat_row(_stat("—", "LAST REFRESH"))
@@ -143,7 +149,8 @@ def _dashboard_stats() -> str:
     return _stat_row(_stat(_short_age(age), "LAST REFRESH", tone))
 
 
-def _kiosk_stats() -> str:
+def kiosk_stats() -> str:
+    """Public — see dashboard_stats' own comment, same reason."""
     perf = kiosk_hardware.load_perf_stats()
     if perf is None:
         return _stat_row(_stat("—", "NO DATA"))
@@ -154,7 +161,8 @@ def _kiosk_stats() -> str:
     )
 
 
-def _network_stats() -> str:
+def network_stats() -> str:
+    """Public — see dashboard_stats' own comment, same reason."""
     net = kiosk_hardware.load_network_test()
     if net is None:
         return _stat_row(_stat("—", "NO DATA"))
@@ -183,10 +191,10 @@ def render() -> None:
     # and this row reads cleaner with 3 tiles, not 4.
     cols = st.columns(3)
     with cols[0]:
-        st.markdown(_tile("Dashboard", _dashboard_stats()), unsafe_allow_html=True)
+        st.markdown(_tile("Dashboard", dashboard_stats()), unsafe_allow_html=True)
     with cols[1]:
-        st.markdown(_tile("Kiosk", _kiosk_stats()), unsafe_allow_html=True)
+        st.markdown(_tile("Kiosk", kiosk_stats()), unsafe_allow_html=True)
     with cols[2]:
-        st.markdown(_tile("Internet", _network_stats()), unsafe_allow_html=True)
+        st.markdown(_tile("Internet", network_stats()), unsafe_allow_html=True)
 
     st.markdown(_issues_html(result["issues"]), unsafe_allow_html=True)
