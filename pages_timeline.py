@@ -125,8 +125,84 @@ def _safe_lane(fn, now: datetime) -> str:
         return _empty_lane("Unavailable right now")
 
 
+# Design-pass fix, found live: two real events close together in time
+# (a school drop-off then Work, ~35 minutes apart this morning) landed
+# their labels directly on top of each other — every marker/block
+# centers on its own single row with zero collision awareness, so
+# anything within a label-width of its neighbor turns to illegible
+# overlapping text. _stack_rows (spans — calendar blocks) and
+# _stagger_points (point markers — commute pins) both solve this the
+# same real way a day-view calendar UI does: push the colliding item to
+# a second visual row instead of overlapping the first. Capped at
+# 2 rows — this is a personal household calendar/commute, not a packed
+# corporate one; a genuine 3-way overlap is rare enough that folding a
+# 3rd item into whichever row frees up soonest is an acceptable
+# degradation for an edge case, not something worth a growing-height
+# layout to engineer around.
+_MAX_STACK_ROWS = 2
+
+
+def _stack_rows(items: list[dict]) -> None:
+    """Assigns each item (already carrying "left"/"width" as floats,
+    0-100) a "row" key via greedy interval-stacking — the same "meeting
+    rooms" algorithm a real calendar day-view uses for overlapping
+    events: each item goes in the first row whose last-placed item
+    doesn't overlap it. Mutates items in place."""
+    row_ends: list[float] = []
+    for item in sorted(items, key=lambda i: i["left"]):
+        item_left = item["left"]
+        placed = False
+        for row_idx in range(len(row_ends)):
+            if row_ends[row_idx] <= item_left:
+                item["row"] = row_idx
+                row_ends[row_idx] = item_left + item["width"]
+                placed = True
+                break
+        if not placed:
+            if len(row_ends) < _MAX_STACK_ROWS:
+                item["row"] = len(row_ends)
+                row_ends.append(item_left + item["width"])
+            else:
+                row_idx = min(range(len(row_ends)), key=lambda i: row_ends[i])
+                item["row"] = row_idx
+                row_ends[row_idx] = max(row_ends[row_idx], item_left + item["width"])
+
+
+def _stagger_points(items: list[dict], threshold: float = 6.0) -> None:
+    """Same idea as _stack_rows, for point markers (already carrying
+    "left" as a float 0-100) rather than spans — it's the LABEL text
+    that collides, not the point itself, so two markers within
+    `threshold` percentage points of each other alternate rows."""
+    prev_left = None
+    prev_row = 1
+    for item in sorted(items, key=lambda i: i["left"]):
+        if prev_left is not None and item["left"] - prev_left < threshold:
+            item["row"] = 0 if prev_row == 1 else 1
+        else:
+            item["row"] = 0
+        prev_row = item["row"]
+        prev_left = item["left"]
+
+
+# Row -> inline `top` override (the shared .marker/.block CSS's own
+# top:50% assumes a single row) — 30%/70% keeps both comfortably inside
+# the lane's existing 58px min-height rather than needing to grow it.
+_ROW_TOP_PCT = {0: 30.0, 1: 70.0}
+
+
 def _weather_lane_html(now: datetime) -> str:
-    hourly = weather_client.cached_hourly_forecast() or []
+    # Design-pass fix, found live: hourly_forecast() runs well past
+    # midnight into tomorrow (confirmed live at 9pm — entries for
+    # 11pm, 12am, 1am... all came back). _pct() reads a datetime's own
+    # wall-clock hour/minute only, with no idea those later entries
+    # belong to a different calendar date — tomorrow's 1am (hour=1)
+    # computed as if it were 1am TODAY, clamping to the window's own
+    # 0% left edge instead of correctly falling off the right edge,
+    # which drew a real zigzag artifact back across the whole curve.
+    # This lane is today's real window only, so anything not actually
+    # today gets excluded outright rather than mapped onto the wrong
+    # spot on the axis.
+    hourly = [h for h in (weather_client.cached_hourly_forecast() or []) if h["at"].date() == now.date()]
     weather = weather_client.cached_weather() or {}
     parts = []
     if hourly:
@@ -174,7 +250,7 @@ def _commute_lane_html(now: datetime) -> str:
     entries = commute_reminder.timeline_entries(now)
     if not entries:
         return _empty_lane("Nothing scheduled")
-    parts = []
+    items = []
     for entry in entries:
         leave_by = entry["leave_by"]
         is_past = leave_by <= _compare_now(now, leave_by)
@@ -185,10 +261,15 @@ def _commute_lane_html(now: datetime) -> str:
         detail = f"{verb} {_fmt_time(leave_by)}"
         if entry["road"]:
             detail += f' · via {entry["road"]}'
-        cls = "state-past" if is_past else "state-upcoming"
+        items.append({"left": _pct(leave_by), "label": entry["label"], "detail": detail, "is_past": is_past})
+    _stagger_points(items)
+    parts = []
+    for item in items:
+        cls = "state-past" if item["is_past"] else "state-upcoming"
+        top_style = f"top:{_ROW_TOP_PCT[item['row']]:.0f}%;" if item["row"] else ""
         parts.append(
-            f'<div class="marker {cls}" style="left:{_pct(leave_by):.2f}%">'
-            f'<span class="pin-label mono">{html.escape(entry["label"])} — {html.escape(detail)}</span>'
+            f'<div class="marker {cls}" style="left:{item["left"]:.2f}%;{top_style}">'
+            f'<span class="pin-label mono">{html.escape(item["label"])} — {html.escape(item["detail"])}</span>'
             '<span class="pin"></span></div>'
         )
     return "".join(parts)
@@ -201,7 +282,7 @@ def _calendar_lane_html(now: datetime) -> str:
     events = [e for e in calendar_client.todays_events(calendars, now.date()) if not e["all_day"]]
     if not events:
         return _empty_lane("Nothing scheduled")
-    parts = []
+    items = []
     for event in events:
         start = event["start"]
         # Known, documented gotcha — never surface event["end"] as real
@@ -217,12 +298,17 @@ def _calendar_lane_html(now: datetime) -> str:
         else:
             end = start + timedelta(hours=commute_reminder.SHIFT_ASSUMED_LENGTH_HOURS)
             block_cls = "block-approx"
-        state = _state_class(now, start, end)
         left = _pct(start)
         width = max(_pct(end) - left, 1.4)
+        items.append({"left": left, "width": width, "block_cls": block_cls, "state": _state_class(now, start, end), "summary": event["summary"]})
+    _stack_rows(items)
+    parts = []
+    for item in items:
+        top_style = f"top:{_ROW_TOP_PCT[item['row']]:.0f}%;" if item["row"] else ""
         parts.append(
-            f'<div class="block {block_cls} {state} mono" style="left:{left:.2f}%;width:{width:.2f}%">'
-            f'{html.escape(event["summary"])}</div>'
+            f'<div class="block {item["block_cls"]} {item["state"]} mono" '
+            f'style="left:{item["left"]:.2f}%;width:{item["width"]:.2f}%;{top_style}">'
+            f'{html.escape(item["summary"])}</div>'
         )
     return "".join(parts)
 
