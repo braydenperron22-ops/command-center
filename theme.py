@@ -2154,6 +2154,49 @@ html, body, [class*="css"] {
     color: #8E8E93;
 }
 
+/* Session request, after the vitals row's original small maint-row
+   text (label + a small colored pill, same dense style pages_
+   maintenance.py's own diagnostics grid uses): "make it visible and
+   digestible from a distance... I don't have to read." A pill you have
+   to read the text of isn't glanceable across a room the way a big
+   number and a one-word label under it is — same "big value, small
+   caption" shape this app already uses everywhere something's meant
+   to be read at a glance (.tile-value, .market-hero-value, the score
+   hero just above), just applied to the kiosk/network/dashboard vitals
+   too now. Color alone (not a status word) carries good/low, so the
+   glance doesn't need to parse text to know something's wrong. */
+.system-health-stat-row {
+    display: flex;
+    justify-content: space-around;
+    align-items: flex-end;
+    gap: 0.4rem;
+    padding-top: 0.2rem;
+}
+.system-health-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+}
+.system-health-stat-value {
+    font-size: 2.3rem;
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: #F5F5F7;
+}
+.system-health-stat-good { color: #32D74B; }
+.system-health-stat-medium { color: #FF9F0A; }
+.system-health-stat-low { color: #FF6961; }
+.system-health-stat-neutral { color: rgba(255,255,255,0.4); }
+.system-health-stat-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: rgba(255,255,255,0.5);
+}
+
 /* Team + opponent logos (sports_client.py — MLB's static logo CDN and
    NHL's, both free, no key, keyed by team id/abbrev with no API call
    needed to look one up). object-fit:contain since these come in a mix

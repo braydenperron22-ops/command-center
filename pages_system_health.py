@@ -28,7 +28,6 @@ import streamlit as st
 
 import dashboard_health
 import dashboard_score
-import data_health
 import kiosk_hardware
 import tiles
 
@@ -52,7 +51,9 @@ def _row(label: str, status: str = "", tone: str = "", meta: str = "") -> str:
     helpers are kept page-local by convention, same as every other page
     in this app). `tone` empty means no pill — for purely informational
     rows (a plain duration, a plain count) pass `meta` instead of
-    `status`."""
+    `status`. Only used by _issues_html below now — the vitals tiles
+    switched to _stat/_stat_row (see their own comment) after "make it
+    visible and digestible from a distance... I don't have to read.\""""
     pill_html = f'<span class="maint-pill maint-pill-{tone}">{status}</span>' if tone else ""
     meta_html = f'<span class="maint-row-meta">{meta}</span>' if meta else ""
     return f'<div class="maint-row"><span class="maint-row-label">{label}</span>{pill_html}{meta_html}</div>'
@@ -60,6 +61,34 @@ def _row(label: str, status: str = "", tone: str = "", meta: str = "") -> str:
 
 def _tile(title: str, rows_html: str) -> str:
     return f'<div class="tile maint-tile"><div class="tile-label compact">{title}</div>{rows_html}</div>'
+
+
+def _stat(value: str, label: str, tone: str = "neutral") -> str:
+    """One big number + a small caption underneath — session request:
+    "make it visible and digestible from a distance... I don't have to
+    read." Color alone (good/medium/low) carries whether it's fine,
+    same as every dot/pill elsewhere in this app, so a glance doesn't
+    need to parse a status word to know something's off."""
+    return (
+        f'<div class="system-health-stat">'
+        f'<div class="system-health-stat-value system-health-stat-{tone}">{value}</div>'
+        f'<div class="system-health-stat-label">{label}</div>'
+        "</div>"
+    )
+
+
+def _stat_row(*stats: str) -> str:
+    return f'<div class="system-health-stat-row">{"".join(stats)}</div>'
+
+
+def _short_age(seconds: float) -> str:
+    """Compact duration for a big-stat value — "12s"/"3m"/"1.4h", no
+    "ago" (the tile's own LAST REFRESH label already says that)."""
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m"
+    return f"{seconds / 3600:.1f}h"
 
 
 def _score_hero_html(result: dict, hist: list[dict]) -> str:
@@ -100,56 +129,40 @@ def _issues_html(issues: list[dict]) -> str:
     return _tile(f"Current Issues ({len(issues)})", rows)
 
 
-def _kiosk_hardware_rows() -> str:
-    perf = kiosk_hardware.load_perf_stats()
-    if perf is None:
-        return _row("Status", "No reports yet", "neutral")
-    return (
-        _row("CPU", f"{perf['cpu_pct']}%", "low" if perf["cpu_pct"] >= kiosk_hardware.CPU_HIGH_PCT else "good")
-        + _row("RAM", f"{perf['ram_pct']}%", "low" if perf["ram_pct"] >= kiosk_hardware.RAM_HIGH_PCT else "good")
-        + _row("Temp", f"{perf['temp_c']}°C", "low" if perf["temp_c"] >= kiosk_hardware.TEMP_HIGH_C else "good")
-    )
-
-
-def _kiosk_network_rows() -> str:
-    net = kiosk_hardware.load_network_test()
-    if net is None:
-        return _row("Status", "No reports yet", "neutral")
-    tone = "low" if net.get("bad") else "good"
-    return (
-        _row("Speed", f"{net.get('mbps')} Mbps", tone)
-        + _row("Latency", f"{net.get('latency_ms')}ms", tone)
-    )
-
-
-def _dashboard_pulse_rows() -> str:
+def _dashboard_stats() -> str:
     last = dashboard_health.last_rerun()
     if last is None:
-        return _row("Status", "No data yet", "neutral")
+        return _stat_row(_stat("—", "LAST REFRESH"))
     age = time.time() - last["ts"]
     if age >= 180:
-        tone, label = "low", "Stalled"
+        tone = "low"
     elif age >= 90:
-        tone, label = "medium", "Slow"
+        tone = "medium"
     else:
-        tone, label = "good", "Live"
-    rows = _row("Status", label, tone, _relative_time(last["ts"])) + _row("Last rerun", meta=f"{last['duration']:.1f}s")
-    hist = dashboard_health.history()
-    if hist:
-        avg = sum(h["duration"] for h in hist) / len(hist)
-        rows += _row(f"Avg (last {len(hist)})", meta=f"{avg:.1f}s")
-    return rows
+        tone = "good"
+    return _stat_row(_stat(_short_age(age), "LAST REFRESH", tone))
 
 
-def _data_sources_rows() -> str:
-    statuses = data_health.all_status()
-    fresh = sum(1 for s in statuses if s["status"] == "fresh")
-    stale = [s for s in statuses if s["status"] == "stale"]
-    tone = "good" if not stale else "low"
-    rows = _row("Fresh", f"{fresh}/{len(statuses)}", tone)
-    for s in stale[:3]:
-        rows += _row(s["label"], f'{s["hours_since"]:.0f}h', "low")
-    return rows
+def _kiosk_stats() -> str:
+    perf = kiosk_hardware.load_perf_stats()
+    if perf is None:
+        return _stat_row(_stat("—", "NO DATA"))
+    return _stat_row(
+        _stat(f"{perf['cpu_pct']}%", "CPU", "low" if perf["cpu_pct"] >= kiosk_hardware.CPU_HIGH_PCT else "good"),
+        _stat(f"{perf['ram_pct']}%", "RAM", "low" if perf["ram_pct"] >= kiosk_hardware.RAM_HIGH_PCT else "good"),
+        _stat(f"{perf['temp_c']}°", "TEMP", "low" if perf["temp_c"] >= kiosk_hardware.TEMP_HIGH_C else "good"),
+    )
+
+
+def _network_stats() -> str:
+    net = kiosk_hardware.load_network_test()
+    if net is None:
+        return _stat_row(_stat("—", "NO DATA"))
+    tone = "low" if net.get("bad") else "good"
+    return _stat_row(
+        _stat(f"{net.get('mbps')}", "MBPS", tone),
+        _stat(f"{net.get('latency_ms')}", "MS PING", tone),
+    )
 
 
 def render() -> None:
@@ -158,14 +171,22 @@ def render() -> None:
     hist = dashboard_score.history()
     st.markdown(_score_hero_html(result, hist), unsafe_allow_html=True)
 
-    cols = st.columns(4)
+    # Session request: "make it so like dashboard and then time since
+    # last refresh, in a bigger font. And then kiosk CPU RAM temp,
+    # internet speed and how fast it is... visible and digestible from
+    # a distance." Same order requested, each its own big-stat tile
+    # (see _stat's own comment) instead of the small label+pill rows
+    # this row used to be. Data Sources' own tile was dropped from here
+    # — a real stale source still surfaces below in Current Issues
+    # (same as it always did, via dashboard_score's own penalty), a
+    # healthy "N/14 fresh" count just wasn't part of what was asked for
+    # and this row reads cleaner with 3 tiles, not 4.
+    cols = st.columns(3)
     with cols[0]:
-        st.markdown(_tile("Kiosk Hardware", _kiosk_hardware_rows()), unsafe_allow_html=True)
+        st.markdown(_tile("Dashboard", _dashboard_stats()), unsafe_allow_html=True)
     with cols[1]:
-        st.markdown(_tile("Kiosk Network", _kiosk_network_rows()), unsafe_allow_html=True)
+        st.markdown(_tile("Kiosk", _kiosk_stats()), unsafe_allow_html=True)
     with cols[2]:
-        st.markdown(_tile("Dashboard Pulse", _dashboard_pulse_rows()), unsafe_allow_html=True)
-    with cols[3]:
-        st.markdown(_tile("Data Sources", _data_sources_rows()), unsafe_allow_html=True)
+        st.markdown(_tile("Internet", _network_stats()), unsafe_allow_html=True)
 
     st.markdown(_issues_html(result["issues"]), unsafe_allow_html=True)
