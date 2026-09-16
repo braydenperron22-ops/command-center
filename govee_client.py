@@ -30,10 +30,21 @@ def _record_failure(device: dict, instance: str, value, error: str) -> None:
     unanswerable after the fact. Same shape as app.py's own
     toast_render_error, for the same reason. Only written on an actual
     failure, never on the success path, so this costs nothing extra on
-    the overwhelming majority of calls that just work."""
-    persisted_state.save(
+    the overwhelming majority of calls that just work.
+
+    Performance/resilience audit: unthrottled, this would write to
+    Upstash on every retry for as long as a real outage lasted (a
+    downed WiFi, an expired key) — govee_lighting.py's own retry-next-
+    rerun cadence, all day. save_throttled collapses a recurring
+    failure to one write per hour instead, same fix already applied to
+    app.py's own toast_render_error/scenery_render_error sites."""
+    now_ts = time.time()
+    sig = (device.get("sku"), instance, error)
+    persisted_state.save_throttled(
         "govee_control_error",
-        {"at": time.time(), "device": device.get("sku"), "capability": instance, "value": value, "error": error},
+        {"at": now_ts, "device": device.get("sku"), "capability": instance, "value": value, "error": error},
+        signature=sig,
+        min_interval_seconds=60 * 60,
     )
 
 

@@ -3048,8 +3048,27 @@ try:
             'mix-blend-mode:multiply; pointer-events:none; z-index:19;"></div>',
             unsafe_allow_html=True,
         )
-except Exception:
-    pass
+except Exception as _scenery_exc:
+    # Performance/resilience audit — flagged as the single most severe
+    # finding: this ~340-line block is pure local computation (day/
+    # night phase blend, sky-gradient/scenery HTML, pre-bedtime dim/
+    # warm overlay math — no network calls anywhere in it), and used to
+    # swallow any exception completely silently. A real bug in here
+    # would just stop the background from updating, forever, with zero
+    # trace anywhere to even suspect it — unlike a network-facing
+    # try/except elsewhere in this app, which at least leaves a stale
+    # cache or a request log to point at. Logging it costs nothing
+    # (still never crashes the page — behavior is otherwise unchanged)
+    # and makes a real regression here diagnosable instead of
+    # permanently invisible. Same throttled-write helper as toast_
+    # render_error just above, so a recurring failure doesn't hammer
+    # Upstash on every outer rerun either.
+    persisted_state.save_throttled(
+        "scenery_render_error",
+        {"at": time.time(), "error": f"{type(_scenery_exc).__name__}: {_scenery_exc}"},
+        signature=f"{type(_scenery_exc).__name__}: {_scenery_exc}",
+        min_interval_seconds=60 * 60,
+    )
 
 _weather_alert_shown = False
 
@@ -4139,11 +4158,13 @@ def _alert_priority(alert: dict) -> int:
 # EVERY outer rerun (~65-75s, all day) for as long as the same failure
 # kept recurring — pure waste once the first write already captured
 # it, against this app's own real, documented Upstash command budget.
-# Module-level (not persisted) in-memory de-dup — a process restart is
-# itself a new "epoch" for this kind of ephemeral debug tracking, so
-# there's no need for this state to survive one.
-_last_toast_render_error_sig: tuple | None = None
-_last_toast_render_error_saved_at = 0.0
+# Throttled via persisted_state.save_throttled rather than a plain
+# module-level dict defined here — an earlier version of this fix used
+# a bare global in app.py itself, which turned out to be a no-op: this
+# script is re-exec'd into a brand new module object on every single
+# rerun (see save_throttled's own docstring in persisted_state.py for
+# the confirmation), so any dedup state living directly in app.py can
+# never survive from one rerun to the next.
 TOAST_RENDER_ERROR_RESAVE_SECONDS = 60 * 60  # re-persist an ongoing failure at most once an hour
 
 
@@ -4153,14 +4174,14 @@ def _log_toast_render_error(kind: str, headline, error: str) -> None:
     the SAME ongoing failure (keeps the persisted "last seen" timestamp
     roughly fresh for anyone checking, without hammering Upstash for a
     problem already known about)."""
-    global _last_toast_render_error_sig, _last_toast_render_error_saved_at
-    sig = (kind, headline, error)
     now_ts = time.time()
-    if sig == _last_toast_render_error_sig and (now_ts - _last_toast_render_error_saved_at) < TOAST_RENDER_ERROR_RESAVE_SECONDS:
-        return
-    _last_toast_render_error_sig = sig
-    _last_toast_render_error_saved_at = now_ts
-    persisted_state.save("toast_render_error", {"at": now_ts, "kind": kind, "headline": headline, "error": error})
+    sig = (kind, headline, error)
+    persisted_state.save_throttled(
+        "toast_render_error",
+        {"at": now_ts, "kind": kind, "headline": headline, "error": error},
+        signature=sig,
+        min_interval_seconds=TOAST_RENDER_ERROR_RESAVE_SECONDS,
+    )
 
 
 def _render_bottom_ticker(now: datetime, readings: dict) -> None:

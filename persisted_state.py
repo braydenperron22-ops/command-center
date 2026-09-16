@@ -196,3 +196,46 @@ def save(key: str, value) -> None:
         _last_upstash_ok = True
     except Exception:
         _last_upstash_ok = False
+
+
+# Performance/resilience audit: several call sites (app.py's toast-
+# render-error logging, elsewhere the same "persist the current failure
+# for visibility" shape) want to write here on every occurrence of a
+# recurring exception without hammering Upstash on every outer rerun
+# (~65-75s, all day) for as long as the SAME failure keeps recurring.
+# A bare module-level dict for the dedup bookkeeping only works
+# correctly when it lives in a genuinely IMPORTED module like this one
+# — Streamlit's ScriptRunner creates a brand new "__main__" module for
+# app.py itself on every single rerun (confirmed by reading
+# script_runner.py — _run_script() calls self._new_module("__main__")
+# every time), so a dedup dict defined directly in app.py's own
+# top-level body resets to empty every rerun and never actually
+# throttles anything across reruns — a real bug caught in this app's
+# own first attempt at exactly that. persisted_state.py, by contrast,
+# is `import`ed normally, so Python's own sys.modules cache keeps this
+# dict alive for the life of the running process, same as every other
+# "load once at import into a module global" pattern already
+# established elsewhere in this app (see this file's own module
+# docstring re: module-level globals already solving the
+# multiple-reruns-within-one-process case).
+_throttle_state: dict[str, tuple] = {}
+
+
+def save_throttled(key: str, value, signature=None, min_interval_seconds: float = 3600) -> bool:
+    """Like save(), but a no-op if the same `signature` (defaults to
+    `value` itself) was already saved under this `key` within the last
+    `min_interval_seconds` — real writes still land immediately the
+    first time, and again the moment the signature actually changes, so
+    a genuinely new problem is never delayed by an old one's throttle
+    window. Returns whether it actually wrote. In-process only, same as
+    every other plain module-level dedup in this app — a restart is
+    itself a new epoch, nothing here needs to survive one."""
+    if signature is None:
+        signature = value
+    now_ts = time.time()
+    last_sig, last_saved_at = _throttle_state.get(key, (None, 0.0))
+    if signature == last_sig and (now_ts - last_saved_at) < min_interval_seconds:
+        return False
+    _throttle_state[key] = (signature, now_ts)
+    save(key, value)
+    return True
