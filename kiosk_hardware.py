@@ -136,12 +136,18 @@ _CPU_ADVICE = "check for a runaway process"
 _RAM_ADVICE = "a restart would help"
 
 
-def _concerns(perf: dict) -> list[tuple[str, str]]:
+def _concerns(perf: dict, boot: dict | None, smart: dict | None) -> list[tuple[str, str]]:
     """[(short_reading, advice)] for every metric currently over its
     own threshold, worst-first — empty once the box is genuinely fine.
     Independent per-field checks (not the writer's own single "bad"
     flag) so more than one real issue at once still gets its own
-    separate mention instead of collapsing into one vague warning."""
+    separate mention instead of collapsing into one vague warning.
+
+    Session request: "make sure they're actionable and I know exactly
+    what's going on and how to fix it" — crash detection and drive
+    health join the same worst-first list, same (reading, concrete-
+    advice) shape as temp/CPU/RAM, so anything genuinely worth knowing
+    about the physical kiosk surfaces here, not just CPU/RAM/temp."""
     out = []
     temp = perf.get("temp_c")
     if temp is not None and temp >= TEMP_HIGH_C:
@@ -152,6 +158,10 @@ def _concerns(perf: dict) -> list[tuple[str, str]]:
     ram = perf.get("ram_pct")
     if ram is not None and ram >= RAM_HIGH_PCT:
         out.append((f"{ram}% RAM", _RAM_ADVICE))
+    if smart is not None and smart.get("bad"):
+        out.append(("drive wear/errors", "back up your data soon, drive may be failing"))
+    if boot is not None and boot.get("clean") is False:
+        out.append(("crashed on last boot", "check the Maintenance page's Kiosk Last Boot tile"))
     return out
 
 
@@ -170,7 +180,7 @@ def hardware_headline_candidate(now) -> dict | None:
     perf = load_perf_stats()
     if perf is None:
         return None
-    concerns = _concerns(perf)
+    concerns = _concerns(perf, load_boot_status(), load_smart_status())
     if not concerns:
         return None
     reading, advice = concerns[0]
