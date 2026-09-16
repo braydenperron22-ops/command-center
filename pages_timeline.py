@@ -168,11 +168,22 @@ def _stack_rows(items: list[dict]) -> None:
                 row_ends[row_idx] = max(row_ends[row_idx], item_left + item["width"])
 
 
-def _stagger_points(items: list[dict], threshold: float = 6.0) -> None:
+def _stagger_points(items: list[dict], threshold: float = 18.0) -> None:
     """Same idea as _stack_rows, for point markers (already carrying
     "left" as a float 0-100) rather than spans — it's the LABEL text
     that collides, not the point itself, so two markers within
-    `threshold` percentage points of each other alternate rows."""
+    `threshold` percentage points of each other alternate rows.
+
+    Design-pass fix, found live: was 6.0, tuned against short labels —
+    a real commute pin's full label ("Gym - Push — Left 6:41 AM · via
+    Highway 11") runs long enough that two real, genuinely-different
+    events (a gym leave-time and a work leave-time) landed their
+    labels directly on top of each other at 15+ points apart, well
+    past the old threshold. Bumped to comfortably cover a realistic
+    long label's own half-width instead of just the point-to-point
+    gap; two leave-times on a normal day are still typically hours
+    (60+ points) apart, so this doesn't trigger unnecessary staggering
+    for markers that were never actually colliding."""
     prev_left = None
     prev_row = 1
     for item in sorted(items, key=lambda i: i["left"]):
@@ -292,9 +303,20 @@ def _calendar_lane_html(now: datetime) -> str:
         # already trusts for this exact situation) stands in instead,
         # rendered visually distinct (dashed, "block-approx") from a
         # real, trustworthy end time.
+        #
+        # Session report: "why is the gym an eight-hour thing on my
+        # calendar?" — real bug, found live: the gym auto-scheduler's
+        # events share that same show_end_time=false calendar source
+        # (see GYM_ASSUMED_LENGTH_HOURS's own comment), so a ~1-1.5h gym
+        # session was getting the Work-shift assumption instead of its
+        # own. Checked by summary, same "gym" match _destination_for_
+        # shift already uses.
         if event["show_end_time"]:
             end = event["end"]
             block_cls = "block-solid"
+        elif "gym" in event["summary"].lower():
+            end = start + timedelta(hours=commute_reminder.GYM_ASSUMED_LENGTH_HOURS)
+            block_cls = "block-approx"
         else:
             end = start + timedelta(hours=commute_reminder.SHIFT_ASSUMED_LENGTH_HOURS)
             block_cls = "block-approx"

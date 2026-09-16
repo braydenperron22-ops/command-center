@@ -4180,17 +4180,30 @@ html, body, [class*="css"] {
    lane-label offset every absolutely-positioned element on the shared
    axis has to account for) lives in pages_timeline.py's own _pct/
    _axis_left, not duplicated here. */
+/* Design-pass fix, session report: "it looks kind of choppy... make
+   it feel more premium." Root cause, found by comparing against every
+   other card in this app: .timeline-board was a flat, fully-opaque
+   box with a thin border and no shadow — every OTHER card here
+   (.tile, .market-pill, .score-card, the two floating corner badges)
+   shares one glass recipe (semi-transparent fill + backdrop-blur +
+   soft elevation shadow), and this board was the one exception,
+   sitting on the same screen looking visually disconnected from
+   everything around it. Same recipe applied here now, not a new one
+   invented for this page. */
 .timeline-board {
     --tl-sun: #d3bc8d;
     --tl-commute: #5ac8fa;
     --tl-calendar: #b9bac2;
     --tl-markets: #32d74b;
-    background: #0c0d11;
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 18px;
-    padding: 1.6rem 1.8rem 1.3rem;
+    background: rgba(16,17,22,0.72);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 20px;
+    padding: 1.7rem 1.9rem 1.4rem;
     position: relative;
     overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
 }
 /* Numeric/timestamp text (.mono, applied by pages_timeline.py) — the
    same monospace stack already used elsewhere in this file (jumbotron
@@ -4214,12 +4227,18 @@ html, body, [class*="css"] {
 }
 .timeline-lanes { position: relative; }
 .timeline-gridlines { position: absolute; inset: 0; }
+/* Design-pass fix: was rgba(255,255,255,0.08), the same alpha as the
+   old hard lane dividers below — a dense, visible grid competing with
+   the actual events for attention, part of the same "choppy,
+   spreadsheet" feeling. Faded to a quiet backdrop instead; the ruler's
+   own hour labels above already carry the "where am I on the day"
+   information, the gridlines just need to be felt, not read. */
 .timeline-gridlines .gridline {
     position: absolute;
     top: 0;
     bottom: 0;
     width: 1px;
-    background: rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.045);
 }
 .timeline-lanes .now-line {
     position: absolute;
@@ -4246,11 +4265,17 @@ html, body, [class*="css"] {
 @keyframes timeline-now-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
 @media (prefers-reduced-motion: reduce) { .timeline-lanes .now-line { animation: none; } }
 
+/* Design-pass fix: a hard 1px rule at the same 0.08 alpha as the old
+   gridlines, between every single lane, was the single biggest
+   contributor to the "choppy" report — 5 lanes ruled off from each
+   other like spreadsheet rows. Faded to match the gridlines' own new
+   quieter alpha, and given real room to breathe (58px -> 68px) so the
+   lanes read as soft horizontal bands, not gridded cells. */
 .timeline-lanes .lane {
     display: flex;
     align-items: center;
-    min-height: 58px;
-    border-top: 1px solid rgba(255,255,255,0.08);
+    min-height: 68px;
+    border-top: 1px solid rgba(255,255,255,0.045);
     position: relative;
 }
 .timeline-lanes .lane:first-child { border-top: none; }
@@ -4269,7 +4294,7 @@ html, body, [class*="css"] {
 .timeline-lanes .lane[data-lane="commute"] .lane-label { color: var(--tl-commute); }
 .timeline-lanes .lane[data-lane="calendar"] .lane-label { color: var(--tl-calendar); }
 .timeline-lanes .lane[data-lane="markets"] .lane-label { color: var(--tl-markets); }
-.timeline-lanes .lane-track { position: relative; flex: 1 1 auto; height: 100%; min-height: 58px; }
+.timeline-lanes .lane-track { position: relative; flex: 1 1 auto; height: 100%; min-height: 68px; }
 .timeline-lanes .lane-empty {
     position: absolute;
     left: 0;
@@ -4284,11 +4309,11 @@ html, body, [class*="css"] {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    height: 30px;
-    border-radius: 8px;
+    height: 32px;
+    border-radius: 9px;
     display: flex;
     align-items: center;
-    padding: 0 0.6rem;
+    padding: 0 0.65rem;
     font-size: 0.76rem;
     font-weight: 700;
     white-space: nowrap;
@@ -4299,12 +4324,16 @@ html, body, [class*="css"] {
        was cut off. */
     text-overflow: ellipsis;
 }
-.timeline-lanes .block.state-past { background: rgba(255,255,255,0.07); color: rgba(243,243,241,0.42); }
-.timeline-lanes .block.state-upcoming { background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.35); color: rgba(243,243,241,0.68); }
-.timeline-lanes .block.state-live { color: #fff; background: rgba(255,255,255,0.1); box-shadow: 0 0 0 1px rgba(255,255,255,0.16), 0 4px 18px -2px rgba(50,215,75,0.45); }
-.timeline-lanes .block.block-approx { border: 1px dashed rgba(255,255,255,0.35); background: rgba(255,255,255,0.04); }
-.timeline-lanes .block[style*="--sport-accent"] { color: rgb(var(--sport-accent)); background: rgba(255,255,255,0.07); }
-.timeline-lanes .block.state-live[style*="--sport-accent"] { box-shadow: 0 0 0 1px rgba(255,255,255,0.16), 0 4px 18px -2px rgb(var(--sport-accent)); }
+/* Design-pass fix: flat single-alpha fills read thin/paper-like next
+   to the rest of the app's own tiles, which almost always pair a
+   subtle top-to-bottom gradient with their fill — same treatment
+   applied here, purely a depth cue, no new colors introduced. */
+.timeline-lanes .block.state-past { background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.05)); color: rgba(243,243,241,0.42); }
+.timeline-lanes .block.state-upcoming { background: linear-gradient(180deg, rgba(255,255,255,0.065), rgba(255,255,255,0.035)); border: 1px dashed rgba(255,255,255,0.35); color: rgba(243,243,241,0.68); }
+.timeline-lanes .block.state-live { color: #fff; background: linear-gradient(180deg, rgba(255,255,255,0.15), rgba(255,255,255,0.08)); box-shadow: 0 0 0 1px rgba(255,255,255,0.18), 0 6px 20px -2px rgba(50,215,75,0.5); }
+.timeline-lanes .block.block-approx { border: 1px dashed rgba(255,255,255,0.35); background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.03)); }
+.timeline-lanes .block[style*="--sport-accent"] { color: rgb(var(--sport-accent)); background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.05)); }
+.timeline-lanes .block.state-live[style*="--sport-accent"] { box-shadow: 0 0 0 1px rgba(255,255,255,0.18), 0 6px 20px -2px rgb(var(--sport-accent)); }
 
 .timeline-lanes .marker {
     position: absolute;

@@ -700,6 +700,20 @@ SHIFT_HOME_NOTICE_HOURS = 7.5
 # The predictive call's own target — the real expected departure
 # moment, not "now" (this notice fires ~30 min before that, not at it).
 SHIFT_ASSUMED_LENGTH_HOURS = 8.0
+# Session report: "why is the gym an eight-hour thing on my calendar?"
+# Real bug, not a data problem: the gym auto-scheduler's own events
+# (see _destination_for_shift's own "gym" check above) land on the
+# same Google calendar source as real Work shifts — the one bulk-
+# imported with a placeholder end time on every entry, so it's
+# configured show_end_time=false for ALL its events (see calendar_
+# client._events_from_one's own comment). Any consumer that falls back
+# to SHIFT_ASSUMED_LENGTH_HOURS whenever show_end_time is false was
+# therefore stretching a real ~1-1.5h gym session out to a fake 8h
+# block, the same placeholder-end-time problem this constant exists to
+# paper over for Work, just never actually applied to Gym differently
+# before. Used by pages_timeline.py's own calendar lane specifically —
+# checked by summary the same way _destination_for_shift already does.
+GYM_ASSUMED_LENGTH_HOURS = 1.5
 # A window, not an exact minute match — same reasoning every other
 # clock-time-gated feature in this app already uses (the outer rerun's
 # own ~65-75s cadence can't guarantee landing on the literal minute).
