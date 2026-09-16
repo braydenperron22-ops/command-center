@@ -24,15 +24,16 @@ import tiles
 SPARKLINE_WEEKS = 16
 
 
-def _render_fuel_price(now: datetime) -> None:
+def _render_fuel_price(now: datetime) -> bool:
     """North Bay gas price vs. its own inflation-adjusted long-run
     median (see fuel_price_client.eco_mode_status) — built specifically
     to answer "should I bother driving in eco mode today," not just to
     display a number. Silent if the feed hasn't returned anything yet
-    rather than an empty tile."""
+    rather than an empty tile. Returns whether it actually rendered
+    anything — render()'s own combined empty-state check needs to know."""
     status = fuel_price_client.eco_mode_status()
     if not status:
-        return
+        return False
     if status["eco_recommended"]:
         badge_class, badge_text, tone = "badge-bad", "Eco mode recommended", "bad"
     else:
@@ -80,6 +81,7 @@ def _render_fuel_price(now: datetime) -> None:
         </div>""",
         unsafe_allow_html=True,
     )
+    return True
 
 
 def _relative_time(seconds_ago: float) -> str:
@@ -97,7 +99,7 @@ def _relative_time(seconds_ago: float) -> str:
 NEARBY_ROTATION_SECONDS = 10
 
 
-def _render_local_news() -> None:
+def _render_local_news() -> bool:
     """Real, nearby stuff only — police/OPP incident beats and
     road-closure/construction items (see local_news_client), not
     general local news. One headline at a time, rotating — same
@@ -105,10 +107,12 @@ def _render_local_news() -> None:
     (int(time.time() // interval) % n, so it's driven by wall-clock
     time and needs nothing stored in session state). Silent if nothing
     currently qualifies rather than an empty-state tile — a quiet day
-    locally isn't worth taking up space to announce."""
+    locally isn't worth taking up space to announce. Returns whether
+    it actually rendered anything — render()'s own combined empty-state
+    check needs to know."""
     items = local_news_client.fetch_items()
     if not items:
-        return
+        return False
     now_ts = time.time()
     index = int(now_ts // NEARBY_ROTATION_SECONDS) % len(items)
     item = items[index]
@@ -124,10 +128,26 @@ def _render_local_news() -> None:
     # is tuned for the agenda's 1-3 short calendar-event titles, and
     # blows real headline-length text up to one word per line.
     st.markdown(f'<div class="news-feed-list">{row}</div>', unsafe_allow_html=True)
+    return True
 
 
 def render(now: datetime) -> None:
     st.markdown('<div class="page-title page-title-household">Household</div>', unsafe_allow_html=True)
-    _render_fuel_price(now)
+    has_fuel = _render_fuel_price(now)
     st.markdown('<div style="height: 0.5rem;"></div>', unsafe_allow_html=True)
-    _render_local_news()
+    has_news = _render_local_news()
+    # Design-pass fix, found live: unlike every other page in this app
+    # (News/Email/Today/Scores/Conflicts/Sports/Portfolio all show a
+    # real "nothing here" message), this page had no combined fallback
+    # — each section is individually, deliberately silent when its own
+    # source is empty (see both functions' own docstrings), but nothing
+    # covered the case where BOTH go quiet at once, which would leave
+    # just the bare page-title header on screen with no signal that's
+    # actually what happened vs. something being broken.
+    if not has_fuel and not has_news:
+        st.markdown(
+            '<div class="tile-prev" style="text-align:center;padding:2rem 0;">'
+            "Nothing to report right now — gas price and nearby incidents are both quiet."
+            "</div>",
+            unsafe_allow_html=True,
+        )
