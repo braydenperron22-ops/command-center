@@ -33,6 +33,7 @@ import dashboard_health
 import heartbeat
 import holidays_client
 import household_reminders
+import kiosk_hardware
 import lightning_client
 import local_news_client
 import market_circuit_breaker
@@ -3588,28 +3589,79 @@ except Exception:
 # (session request: "encapsulate all of the performance metrics into
 # the bottom bar... it'll just rotate through it") up to 3 small slots
 # (AI/Dashboard/Kiosk) taking turns on a timer, each a couple words of
-# 0.68rem text.
+# 0.68rem text. Session request: "make it so the score... is shown in
+# the corner in a bigger style instead of the small rotating badges" —
+# briefly a single static score badge, no rotation.
 #
-# Session request: "make it so the score on the maintenance page is
-# shown in the corner in a bigger style instead of the small rotating
-# badges." dashboard_score.compute() (see that module's own docstring)
-# already rolls up every one of those rotating slots' own signals — AI
-# outage/budget/rate-limits, dashboard rerun health, kiosk CPU/RAM/
-# temp/network — into one number, so showing THAT instead of cycling
-# through 3 separate tiny badges is a real simplification, not just a
-# bigger font: one glance answers "is anything wrong" instead of
-# needing to catch the right slot on its ~20s turn. No new network call
-# or Upstash read here — compute() only reads state other modules
-# already maintain, same "be command conscious" rule this corner
-# always followed.
+# Session follow-up, after seeing that live: "I want that same kind of
+# formatting on the little widget on the side... I want it to rotate
+# between all the different ones and have the same formatting as
+# that." Back to rotating slots — same STATUS_ROTATE_SECONDS time-phase
+# mechanism as the original rotation — but each slot now reuses the
+# exact big-value/small-label .system-health-stat shape pages_system_
+# health.py's own vitals tiles use (see that page's own _stat()/
+# _stat_row() for the pattern mirrored here — not re-imported, since
+# per-page/script HTML-builder functions stay local by convention in
+# this app, only the CSS classes are actually shared), instead of the
+# old 0.68rem text rows. Score is always slot 1 (the one thing meant to
+# answer "is anything wrong" at a glance); Dashboard/Kiosk/Internet
+# join the rotation only once they actually have real data to show —
+# same "don't render an empty slot" rule the original rotation used.
+STATUS_ROTATE_SECONDS = 20
+
+
+def _corner_stat(value, label: str, tone: str = "neutral") -> str:
+    return (
+        f'<div class="system-health-stat"><div class="system-health-stat-value system-health-stat-{tone}">{value}</div>'
+        f'<div class="system-health-stat-label">{label}</div></div>'
+    )
+
+
+def _corner_slot(title: str, stats_html: str) -> str:
+    return (
+        f'<div class="system-health-corner-title">{title}</div>'
+        f'<div class="system-health-stat-row">{stats_html}</div>'
+    )
+
+
+def _corner_short_age(seconds: float) -> str:
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m"
+    return f"{seconds / 3600:.1f}h"
+
+
 if not _jumbotron_active and not _night_mode_active and not _terminal_active:
     try:
         _health = dashboard_score.compute()
+        _corner_slots = [_corner_slot("System Health", _corner_stat(_health["score"], _health["grade"].upper(), _health["tone"]))]
+
+        _last_rerun = dashboard_health.last_rerun()
+        if _last_rerun is not None:
+            _refresh_age = time.time() - _last_rerun["ts"]
+            _refresh_tone = "low" if _refresh_age >= 180 else "medium" if _refresh_age >= 90 else "good"
+            _corner_slots.append(_corner_slot("Dashboard", _corner_stat(_corner_short_age(_refresh_age), "LAST REFRESH", _refresh_tone)))
+
+        _corner_perf = kiosk_hardware.load_perf_stats()
+        if _corner_perf is not None:
+            _corner_slots.append(_corner_slot("Kiosk", (
+                _corner_stat(f"{_corner_perf['cpu_pct']}%", "CPU", "low" if _corner_perf["cpu_pct"] >= kiosk_hardware.CPU_HIGH_PCT else "good")
+                + _corner_stat(f"{_corner_perf['ram_pct']}%", "RAM", "low" if _corner_perf["ram_pct"] >= kiosk_hardware.RAM_HIGH_PCT else "good")
+                + _corner_stat(f"{_corner_perf['temp_c']}°", "TEMP", "low" if _corner_perf["temp_c"] >= kiosk_hardware.TEMP_HIGH_C else "good")
+            )))
+
+        _corner_net = kiosk_hardware.load_network_test()
+        if _corner_net is not None:
+            _net_tone = "low" if _corner_net.get("bad") else "good"
+            _corner_slots.append(_corner_slot("Internet", (
+                _corner_stat(f"{_corner_net.get('mbps')}", "MBPS", _net_tone)
+                + _corner_stat(f"{_corner_net.get('latency_ms')}", "MS PING", _net_tone)
+            )))
+
+        _corner_phase = int(time.time() // STATUS_ROTATE_SECONDS) % len(_corner_slots)
         st.markdown(
-            f'<div class="system-health-corner">'
-            f'<div class="system-health-corner-score system-health-score-{_health["tone"]}">{_health["score"]}</div>'
-            f'<div class="system-health-corner-meta">'
-            f'<div class="system-health-corner-grade">{_health["grade"]}</div>'
+            f'<div class="system-health-corner">{_corner_slots[_corner_phase]}'
             # Session request: "a system that shows how the dashboard is
             # running... when it's being hung up, and when it's running
             # smoothly, like an actual heart rate monitor." This row's
@@ -3625,15 +3677,14 @@ if not _jumbotron_active and not _night_mode_active and not _terminal_active:
             # wedged process can't rerun to update its own "just
             # updated" claim) — see dashboard_health.py's own docstring
             # for why the fast signal has to be a client-side clock
-            # ticking against a server timestamp, not server text.
-            # Kept as its own row (not folded into the score) since the
-            # score only refreshes once per outer rerun (~65-75s) —
-            # this stays the faster, more honest "is it hung right now"
-            # signal the score alone can't give.
-            f'<div class="system-health-corner-pulse">'
-            f'<span class="ai-status-dot ai-status-dot-good" id="dashboard-pulse-dot"></span>'
-            f'<span class="ai-status-text" id="dashboard-pulse-text">Dashboard: Live</span>'
-            "</div></div></div>",
+            # ticking against a server timestamp, not server text. Kept
+            # always-visible (not part of the rotation itself) — the
+            # faster, more honest "is it hung right now" signal none of
+            # the once-per-outer-rerun slots above can give on their own.
+            '<div class="system-health-corner-pulse">'
+            '<span class="ai-status-dot ai-status-dot-good" id="dashboard-pulse-dot"></span>'
+            '<span class="ai-status-text" id="dashboard-pulse-text">Dashboard: Live</span>'
+            "</div></div>",
             unsafe_allow_html=True,
         )
     except Exception:

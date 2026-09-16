@@ -3567,49 +3567,65 @@ html, body, [class*="css"] {
    corner didn't need to change, same geometry either way). .ai-status-
    dot/.ai-status-text below are kept — still reused by the pulse row
    inside the new badge, see app.py's own comment on why that row
-   stays separate from the score itself. */
+   stays separate from the score itself.
+
+   Session follow-up, after seeing the static score-only version live:
+   "I want that same kind of formatting on the little widget on the
+   side... I want it to rotate between all the different ones and have
+   the same formatting as that" — "that" being pages_system_health.py's
+   own big-value/small-label vitals tiles. Rotation is back (app.py's
+   own STATUS_ROTATE_SECONDS), but every slot now reuses .system-
+   health-stat/-value/-label directly (same classes that page's own
+   _stat() emits) instead of the score-specific classes this block used
+   to define — column layout instead of the old horizontal score+meta
+   row, since a slot can now be a single stat (score, dashboard) or
+   several side by side (kiosk, internet). */
 .system-health-corner {
     position: fixed;
     bottom: 60px;
     right: 14px;
     z-index: 400;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 0.65rem;
-    padding: 0.5rem 0.9rem;
+    gap: 0.3rem;
+    padding: 0.55rem 1rem;
     border-radius: 14px;
     background: rgba(12,12,16,0.68);
     backdrop-filter: blur(20px) saturate(160%);
     -webkit-backdrop-filter: blur(20px) saturate(160%);
     border: 1px solid rgba(255,255,255,0.12);
-    opacity: 0.75;
+    opacity: 0.8;
     transition: opacity 0.2s ease;
 }
 .system-health-corner:hover {
     opacity: 1;
 }
-.system-health-corner-score {
-    font-size: 1.9rem;
-    font-weight: 800;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-}
-.system-health-corner-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 0.18rem;
-}
-.system-health-corner-grade {
+.system-health-corner-title {
     font-size: 0.68rem;
     font-weight: 600;
-    color: rgba(255,255,255,0.6);
+    color: rgba(255,255,255,0.45);
     text-transform: uppercase;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.04em;
+}
+/* Same .system-health-stat-row/-value/-label pages_system_health.py
+   uses, just sized down for a corner pill instead of a full tile — a
+   slot showing 3 stats side by side (Kiosk's CPU/RAM/temp) needs to
+   fit this much smaller footprint without overflowing. */
+.system-health-corner .system-health-stat-row {
+    gap: 0.7rem;
+}
+.system-health-corner .system-health-stat-value {
+    font-size: 1.5rem;
+}
+.system-health-corner .system-health-stat-label {
+    font-size: 0.62rem;
 }
 .system-health-corner-pulse {
     display: flex;
     align-items: center;
     gap: 0.4rem;
+    margin-top: 0.1rem;
 }
 .ai-status-dot {
     flex-shrink: 0;
