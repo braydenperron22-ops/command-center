@@ -193,6 +193,19 @@ def network_stats() -> str:
     )
 
 
+def household_stats() -> str:
+    """Public — see dashboard_stats' own comment, same reason. Session
+    request: "could we have somewhere that shows how many devices are
+    online." Same no-data fix as its siblings (kiosk_stats/network_
+    stats) — keeps the real 1-stat shape instead of collapsing to a
+    placeholder. No tone threshold the way CPU/RAM/temp have one —
+    there's no "bad" device count, just a number."""
+    devices = kiosk_hardware.load_device_stats()
+    if devices is None:
+        return _stat_row(_stat("—", "DEVICES"))
+    return _stat_row(_stat(str(devices.get("count", "—")), "DEVICES", "good"))
+
+
 def render() -> None:
     st.markdown('<div class="page-title page-title-system-health">System Health</div>', unsafe_allow_html=True)
     result = dashboard_score.compute()
@@ -209,12 +222,14 @@ def render() -> None:
     # (same as it always did, via dashboard_score's own penalty), a
     # healthy "N/14 fresh" count just wasn't part of what was asked for
     # and this row reads cleaner with 3 tiles, not 4.
-    cols = st.columns(3)
+    cols = st.columns(4)
     with cols[0]:
         st.markdown(_tile("Dashboard", dashboard_stats()), unsafe_allow_html=True)
     with cols[1]:
         st.markdown(_tile("Kiosk", kiosk_stats()), unsafe_allow_html=True)
     with cols[2]:
         st.markdown(_tile("Internet", network_stats()), unsafe_allow_html=True)
+    with cols[3]:
+        st.markdown(_tile("Household", household_stats()), unsafe_allow_html=True)
 
     st.markdown(_issues_html(result["issues"]), unsafe_allow_html=True)

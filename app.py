@@ -3621,6 +3621,7 @@ if not _jumbotron_active and not _night_mode_active and not _terminal_active:
             ("Dashboard", pages_system_health.dashboard_stats),
             ("Kiosk", pages_system_health.kiosk_stats),
             ("Internet", pages_system_health.network_stats),
+            ("Household", pages_system_health.household_stats),
         ]
         _corner_title, _corner_stats_fn = _corner_sections[int(time.time() // STATUS_ROTATE_SECONDS) % len(_corner_sections)]
         st.markdown(
