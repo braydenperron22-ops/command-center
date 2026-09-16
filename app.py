@@ -3604,9 +3604,19 @@ except Exception:
 # per-page/script HTML-builder functions stay local by convention in
 # this app, only the CSS classes are actually shared), instead of the
 # old 0.68rem text rows. Score is always slot 1 (the one thing meant to
-# answer "is anything wrong" at a glance); Dashboard/Kiosk/Internet
-# join the rotation only once they actually have real data to show —
-# same "don't render an empty slot" rule the original rotation used.
+# answer "is anything wrong" at a glance); Kiosk/Internet join the
+# rotation only once they actually have real data to show — same
+# "don't render an empty slot" rule the original rotation used.
+#
+# Session follow-up: "remove the dashboard part and just let it cycle
+# through the three normally... I don't know why dashboard is also
+# shown there always." A 4th "Dashboard" slot (last-refresh age) used
+# to sit in the rotation alongside these 3 — dropped entirely, not
+# just hidden, per that report. The separate always-visible
+# dashboard-pulse-dot/-text row below (a different thing — the
+# real-time freeze watchdog, not part of this rotation) is untouched;
+# nothing in the report named that one specifically, and removing it
+# would drop a safety-adjacent signal nobody asked to lose.
 STATUS_ROTATE_SECONDS = 20
 
 
@@ -3624,24 +3634,10 @@ def _corner_slot(title: str, stats_html: str) -> str:
     )
 
 
-def _corner_short_age(seconds: float) -> str:
-    if seconds < 60:
-        return f"{int(seconds)}s"
-    if seconds < 3600:
-        return f"{int(seconds // 60)}m"
-    return f"{seconds / 3600:.1f}h"
-
-
 if not _jumbotron_active and not _night_mode_active and not _terminal_active:
     try:
         _health = dashboard_score.compute()
         _corner_slots = [_corner_slot("System Health", _corner_stat(_health["score"], _health["grade"].upper(), _health["tone"]))]
-
-        _last_rerun = dashboard_health.last_rerun()
-        if _last_rerun is not None:
-            _refresh_age = time.time() - _last_rerun["ts"]
-            _refresh_tone = "low" if _refresh_age >= 180 else "medium" if _refresh_age >= 90 else "good"
-            _corner_slots.append(_corner_slot("Dashboard", _corner_stat(_corner_short_age(_refresh_age), "LAST REFRESH", _refresh_tone)))
 
         _corner_perf = kiosk_hardware.load_perf_stats()
         if _corner_perf is not None:
