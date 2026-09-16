@@ -337,6 +337,33 @@ def _leave_spoken_text(shift: dict, minutes: int) -> str:
     return f"{headline}."
 
 
+# Session request: "make the leave-in alert softer and less jarring
+# between the hours of like ten PM and eight AM." Distinct from
+# QUIET_MILESTONE_CUTOFF_HOUR above (whether a far-out milestone fires
+# AT ALL) and from night_mode.py's own 9:30pm-4:30am window (which
+# already replaces this whole countdown with its own calm, non-
+# escalating display — see night_countdown_span_html's own docstring,
+# "not in a very serious... wake the fuck up type of way," the exact
+# same ask, already solved there for most of this span). The real gap
+# this closes is the part night mode DOESN'T cover: once night mode
+# itself ends for the morning (4:30am) but it's still this early, the
+# ordinary daytime-rotation countdown (headline_rotation.py's
+# .leave-headline, commute_reminder.render_ticker_leave_bar's
+# .jumbo-leave-ticker) was back to full color/volume escalation.
+# Reused below by both the volume ramp (LEAVE_VOLUME_MORNING_RAMP_END_
+# HOUR / _EVENING_RAMP_END_HOUR) and the visual dimming
+# (_is_leave_quiet_hours) so "how loud" and "how visually intense" stay
+# governed by the exact same clock boundary rather than two that could
+# drift apart.
+LEAVE_QUIET_HOURS_START_HOUR = 22
+LEAVE_QUIET_HOURS_END_HOUR = 8
+
+
+def _is_leave_quiet_hours(now: datetime) -> bool:
+    hour = now.hour + now.minute / 60
+    return hour >= LEAVE_QUIET_HOURS_START_HOUR or hour < LEAVE_QUIET_HOURS_END_HOUR
+
+
 # Session request: "make it so the alert fires at 100% for leave in
 # notifications regardless of time" (a fix for an early-morning jump
 # scare) later walked back once that same flat 100% became its own
@@ -359,21 +386,36 @@ def _leave_spoken_text(shift: dict, minutes: int) -> str:
 # read as a jolt. leave_by alone can't see that: it only knows when
 # the shift starts, not when THIS particular alert is actually firing.
 LEAVE_VOLUME_FLOOR = 0.35
-LEAVE_VOLUME_RAMP_START_HOUR = 5
-LEAVE_VOLUME_RAMP_END_HOUR = 8
+LEAVE_VOLUME_MORNING_RAMP_START_HOUR = 5
+# What didn't exist until the same request above: an evening ramp at
+# all — before this, the volume ceiling stayed flat at 1.0 from 8am
+# all the way to midnight, so a leave alert firing at, say, 10:30pm for
+# a late shift got the exact same full volume as one at 2pm.
+# EVENING_RAMP_START begins easing down an hour before the quiet-hours
+# boundary so the drop into the night floor is a glide, not a cliff
+# at the 10pm instant — mirrors the morning ramp's own shape, just
+# descending instead of climbing.
+LEAVE_VOLUME_MORNING_RAMP_END_HOUR = LEAVE_QUIET_HOURS_END_HOUR
+LEAVE_VOLUME_EVENING_RAMP_START_HOUR = LEAVE_QUIET_HOURS_START_HOUR - 1
+LEAVE_VOLUME_EVENING_RAMP_END_HOUR = LEAVE_QUIET_HOURS_START_HOUR
 
 
 def _volume_ramp(hour: float) -> float:
-    """Shared ramp shape: LEAVE_VOLUME_FLOOR at/before RAMP_START_HOUR,
-    full by RAMP_END_HOUR, linear in between. Takes a plain hour
-    (fractional) so it can be applied to either a shift's leave_by or
-    the actual current time — see _leave_volume_ceiling."""
-    if hour <= LEAVE_VOLUME_RAMP_START_HOUR:
+    """Full 24h shape: LEAVE_VOLUME_FLOOR through the whole overnight
+    stretch (10pm-5am), ramping up to full by 8am, full through the
+    day, then ramping back down from 9pm to the same floor by 10pm.
+    Takes a plain fractional hour so it can be applied to either a
+    shift's leave_by or the actual current time — see
+    _leave_volume_ceiling."""
+    if hour < LEAVE_VOLUME_MORNING_RAMP_START_HOUR or hour >= LEAVE_VOLUME_EVENING_RAMP_END_HOUR:
         return LEAVE_VOLUME_FLOOR
-    if hour >= LEAVE_VOLUME_RAMP_END_HOUR:
+    if hour < LEAVE_VOLUME_MORNING_RAMP_END_HOUR:
+        span = LEAVE_VOLUME_MORNING_RAMP_END_HOUR - LEAVE_VOLUME_MORNING_RAMP_START_HOUR
+        return LEAVE_VOLUME_FLOOR + (1.0 - LEAVE_VOLUME_FLOOR) * (hour - LEAVE_VOLUME_MORNING_RAMP_START_HOUR) / span
+    if hour < LEAVE_VOLUME_EVENING_RAMP_START_HOUR:
         return 1.0
-    span = LEAVE_VOLUME_RAMP_END_HOUR - LEAVE_VOLUME_RAMP_START_HOUR
-    return LEAVE_VOLUME_FLOOR + (1.0 - LEAVE_VOLUME_FLOOR) * (hour - LEAVE_VOLUME_RAMP_START_HOUR) / span
+    span = LEAVE_VOLUME_EVENING_RAMP_END_HOUR - LEAVE_VOLUME_EVENING_RAMP_START_HOUR
+    return 1.0 - (1.0 - LEAVE_VOLUME_FLOOR) * (hour - LEAVE_VOLUME_EVENING_RAMP_START_HOUR) / span
 
 
 def _leave_volume_ceiling(now: datetime, leave_by: datetime) -> float:
@@ -1417,14 +1459,20 @@ def _main_road_for_route(route: dict) -> str | None:
     return _short_road(longest)
 
 
-def _countdown_info(now: datetime) -> tuple[int, str, str, str, bool] | None:
-    """(target_ms, intensity tier, first-frame text, template, is_home)
-    shared by leave_headline_candidate below and render_ticker_leave_bar
-    further down — same window/gating logic, just two different places
-    it ends up on screen (the unified top-of-screen rotation vs. the
-    jumbotron's own compact ticker slot). is_home (_is_home_event) is
-    what lets both callers swap "Leave" for "Starts" without each
-    re-deriving it themselves.
+def _countdown_info(now: datetime) -> tuple[int, str, str, str, bool, bool] | None:
+    """(target_ms, intensity tier, first-frame text, template, is_home,
+    is_quiet_hours) shared by leave_headline_candidate below and
+    render_ticker_leave_bar further down — same window/gating logic,
+    just two different places it ends up on screen (the unified
+    top-of-screen rotation vs. the jumbotron's own compact ticker
+    slot). is_home (_is_home_event) is what lets both callers swap
+    "Leave" for "Starts" without each re-deriving it themselves.
+    is_quiet_hours (_is_leave_quiet_hours) is only actually consumed by
+    render_ticker_leave_bar — the rotation path's own on-screen color
+    is entirely client-side (see headline_rotation._render_candidate's
+    own comment on why), so it computes quiet-hours itself in JS
+    instead; returned here anyway so every caller unpacks the same
+    fixed shape.
 
     Session request: "if there is a detour in effect, I should see a
     meaningful delay... the leave in timers should be reflective of
@@ -1523,7 +1571,7 @@ def _countdown_info(now: datetime) -> tuple[int, str, str, str, bool] | None:
                 suffix += ", start your car" if suffix else " — start your car"
     template = f"{verb} in {{}}{suffix}"
     text = (f"{verb} now" if remaining <= 0 else f"{verb} in {_format_clock(remaining)}") + suffix
-    return target_ms, tier, text, template, is_home
+    return target_ms, tier, text, template, is_home, _is_leave_quiet_hours(now)
 
 
 # Session request: "make it so all the red headlines within the last 2
@@ -1549,7 +1597,7 @@ def leave_headline_candidate(now: datetime) -> dict | None:
     info = _countdown_info(now)
     if info is None:
         return None
-    target_ms, tier, text, template, is_home = info
+    target_ms, tier, text, template, is_home, _quiet = info
     verb = "Starts" if is_home else "Leave"
     return {
         "text": text,
@@ -1588,10 +1636,11 @@ def render_ticker_leave_bar(now: datetime) -> None:
     info = _countdown_info(now)
     if info is None:
         return
-    target_ms, tier, text, template, is_home = info
+    target_ms, tier, text, template, is_home, quiet = info
     verb = "Starts" if is_home else "Leave"
+    quiet_class = " quiet-hours" if quiet else ""
     st.markdown(
-        f'<div class="jumbo-leave-ticker intensity-{tier}"><span class="live-countdown" data-intensity '
+        f'<div class="jumbo-leave-ticker intensity-{tier}{quiet_class}"><span class="live-countdown" data-intensity '
         f'data-target-ms="{target_ms}" data-format="clock" data-template="{template}" '
         f'data-zero-text="{verb} now">{text}</span></div>',
         unsafe_allow_html=True,
@@ -1623,7 +1672,7 @@ def night_countdown_span_html(now: datetime) -> str | None:
     info = _countdown_info(now)
     if info is None:
         return None
-    target_ms, tier, text, template, is_home = info
+    target_ms, tier, text, template, is_home, _quiet = info
     remaining = _remaining_until_leave(now)
     if remaining is None or remaining > NIGHT_HEADS_UP_MINUTES * 60:
         return None

@@ -3339,6 +3339,25 @@ html, body, [class*="css"] {
     animation: leave-headline-pulse-overdue-rotation 0.7s ease-in-out infinite;
 }
 
+/* Session request: "make the leave-in alert softer and less jarring
+   between the hours of like ten PM and eight AM." Toggled by
+   app.py's kiosk-countdown-ticker (see its own comment — same 22/8
+   boundary as commute_reminder.py's LEAVE_QUIET_HOURS_START_HOUR/_END_
+   HOUR). Opacity alone, not a color remap: the tier's own color still
+   shows through (dimmed), so the countdown stays honestly informative
+   — if you genuinely need to leave at 3am, it should still read as
+   urgent, just not at full brightness. animation:none is defensive
+   documentation, not a working fix — every leave-headline-pulse-*
+   keyframe above is already inert against this file's own global kill
+   switch (`* { animation: none !important; }`, no `!important` on any
+   of those declarations) — quiet hours should never be the moment
+   that changes, so this makes the intent explicit rather than relying
+   on an unrelated bug staying unfixed. */
+.leave-headline.quiet-hours {
+    opacity: 0.7;
+    animation: none;
+}
+
 /* commute_reminder.render_ticker_leave_bar — same slot as .ticker-bar
    (position/left/right/bottom/z-index all match exactly) so a real
    toast still covers it the instant one fires, same as it already
@@ -3387,6 +3406,15 @@ html, body, [class*="css"] {
 .jumbo-leave-ticker.intensity-overdue {
     color: #FF453A;
     animation: leave-headline-pulse-overdue 0.7s ease-in-out infinite;
+}
+/* Same quiet-hours treatment as .leave-headline.quiet-hours above —
+   set server-side directly by commute_reminder.render_ticker_leave_bar
+   (this surface only shows during a jumbotron takeover, which re-
+   renders every ~5s via its own fast fragment, plenty precise for a
+   day/night-style boolean, so no JS mirroring needed here). */
+.jumbo-leave-ticker.quiet-hours {
+    opacity: 0.7;
+    animation: none;
 }
 @keyframes leave-headline-pulse-amber {
     0%, 100% { text-shadow: 0 0 18px rgba(255,159,10,0.4); }

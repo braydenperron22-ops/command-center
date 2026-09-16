@@ -535,6 +535,19 @@ components.html(
         "        wrapper.classList.remove('intensity-' + t);",
         "      });",
         "      wrapper.classList.add('intensity-' + tier);",
+        // Session request: "make the leave-in alert softer and less
+        // jarring between... ten PM and eight AM" — same boundary as
+        // commute_reminder.py's own LEAVE_QUIET_HOURS_START_HOUR/_END_
+        // HOUR (22/8), mirrored here in JS the same way the tier
+        // thresholds just above already are, since this same wrapper
+        // is almost always the rotation-embedded .leave-headline,
+        // whose color is entirely client-side (see headline_rotation.
+        // _render_candidate's own comment on why it carries no static
+        // rotation-* class). Toggled every tick, not just once, so a
+        // countdown already on screen still eases into/out of it the
+        // moment the clock actually crosses the boundary.
+        "      var quietHour = new Date().getHours();",
+        "      wrapper.classList.toggle('quiet-hours', quietHour >= 22 || quietHour < 8);",
         "    }",
         "    var zeroText = el.getAttribute('data-zero-text');",
         "    if (zeroText && remainingSeconds <= 0) {",
