@@ -3594,25 +3594,37 @@ except Exception:
 # wanted at all. I liked how you had it formatted with the other
 # page where you had all three... with their stats in the bar big and
 # visible. hide the 0-100 score and the little writing that says
-# Dashboard: live." No rotation at all anymore — all 3 sections
-# (Dashboard/Kiosk/Internet) stacked and always visible at once, same
-# as pages_system_health.py's own 3-tile row, which is now literally
-# what this renders: dashboard_stats()/kiosk_stats()/network_stats()
-# are that page's own public functions (not page-local anymore, see
-# their own docstrings), called directly here so the corner can never
-# drift out of formatting sync with the page — genuinely "the same
+# Dashboard: live." All 3 sections (Dashboard/Kiosk/Internet) stacked
+# and always visible at once, same as pages_system_health.py's own
+# 3-tile row — dashboard_stats()/kiosk_stats()/network_stats() are
+# that page's own public functions (not page-local anymore, see their
+# own docstrings), called directly here so the corner can never drift
+# out of formatting sync with the page — genuinely "the same
 # formatting as that," not a hand-mirrored copy of it. Score and the
 # dashboard-pulse-dot/-text row are both gone per this report, not
 # just hidden — the pulse dot's own real-time freeze-watchdog JS
 # already tolerates the element not existing at all (see kiosk-stale-
 # watchdog's sibling script), so removing it costs nothing safety-wise.
+#
+# Session follow-up: "keep in mind, I just want one to show at a time.
+# So make it so that only one can show up at a time and then rotate
+# them through." Back to a time-phased rotation (STATUS_ROTATE_SECONDS,
+# same shape every earlier version of this corner used) across the
+# same 3 sections — score and the pulse row stay gone, per the report
+# right above this one.
+STATUS_ROTATE_SECONDS = 20
+
 if not _jumbotron_active and not _night_mode_active and not _terminal_active:
     try:
+        _corner_sections = [
+            ("Dashboard", pages_system_health.dashboard_stats),
+            ("Kiosk", pages_system_health.kiosk_stats),
+            ("Internet", pages_system_health.network_stats),
+        ]
+        _corner_title, _corner_stats_fn = _corner_sections[int(time.time() // STATUS_ROTATE_SECONDS) % len(_corner_sections)]
         st.markdown(
             '<div class="system-health-corner">'
-            f'<div class="system-health-corner-section"><div class="system-health-corner-title">Dashboard</div>{pages_system_health.dashboard_stats()}</div>'
-            f'<div class="system-health-corner-section"><div class="system-health-corner-title">Kiosk</div>{pages_system_health.kiosk_stats()}</div>'
-            f'<div class="system-health-corner-section"><div class="system-health-corner-title">Internet</div>{pages_system_health.network_stats()}</div>'
+            f'<div class="system-health-corner-section"><div class="system-health-corner-title">{_corner_title}</div>{_corner_stats_fn()}</div>'
             "</div>",
             unsafe_allow_html=True,
         )
