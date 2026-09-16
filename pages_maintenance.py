@@ -32,6 +32,7 @@ import dashboard_health
 import data_health
 import gemini_client
 import groq_client
+import kiosk_hardware
 import persisted_state
 
 _STARTED_AT = time.time()
@@ -270,7 +271,7 @@ def _kiosk_watchdog_rows() -> str:
     different device. Same shape as _toast_health_rows/_govee_health_
     rows above: a background process's own record surfaced here, no
     live probe of the kiosk from this page itself."""
-    report = persisted_state.load("kiosk_watchdog_status", None)
+    report = kiosk_hardware.load_watchdog_status()
     if report is None:
         return _row("Kiosk watchdog", "No reports yet", "neutral")
     at = report.get("at")

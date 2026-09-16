@@ -33,6 +33,7 @@ import dashboard_health
 import heartbeat
 import holidays_client
 import household_reminders
+import kiosk_hardware
 import lightning_client
 import local_news_client
 import market_circuit_breaker
@@ -4345,6 +4346,17 @@ def _gather_new_alerts(
         _car_prep_alert = commute_reminder.check_car_prep(now)
         if _car_prep_alert:
             alerts.append(_car_prep_alert)
+    except Exception:
+        pass
+
+    # Session request: "I want to know when people are here, and when
+    # people leave" — device count on the home network, up or down,
+    # from the kiosk box's own 2-minute cycle. One-shot, own dedup, same
+    # append-to-the-queue shape as every source above it.
+    try:
+        _device_alert = kiosk_hardware.device_change_toast()
+        if _device_alert:
+            alerts.append(_device_alert)
     except Exception:
         pass
 

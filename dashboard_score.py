@@ -134,7 +134,7 @@ def compute() -> dict:
     if net is not None and net.get("bad"):
         score = _deduct(issues, score, 6, f"Kiosk network slow ({net.get('mbps')} Mbps, {net.get('latency_ms')}ms)")
 
-    watchdog = persisted_state.load("kiosk_watchdog_status", None)
+    watchdog = kiosk_hardware.load_watchdog_status()
     if watchdog is not None:
         at = watchdog.get("at")
         age = time.time() - at if at else None

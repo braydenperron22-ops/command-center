@@ -1,8 +1,20 @@
-"""Physical kiosk-box hardware health — CPU/RAM/temp readings pushed to
-Upstash by a script that runs directly on the kiosk hardware itself
-(outside this repo entirely, not tracked here — confirmed by grepping
-for it; app.py's own bottom-right corner tile is the read side of that
-same handoff, see its "Kiosk: ..." row and kiosk_perf_stats key).
+"""Physical kiosk-box hardware health — CPU/RAM/temp/network/device-count
+readings pushed to Upstash by a script that runs directly on the kiosk
+hardware itself (outside this repo entirely, not tracked here —
+confirmed by grepping for it; app.py's own bottom-right corner tile and
+pages_system_health.py are the read side of that same handoff).
+
+Session request: "we have to be very conservative with our [Upstash]
+limits... can we batch all of our uploads." The writer script used to
+push three separate keys (kiosk_perf_stats, kiosk_network_test,
+kiosk_watchdog_status) on two separate timers — consolidated into one
+script, one timer, one key (kiosk_status) with perf/network/watchdog/
+devices as sub-objects, one Upstash write per cycle instead of three.
+This module is the one place that unpacks that combined shape back into
+the four separate dicts every existing consumer (this file's own
+hardware_headline_candidate, dashboard_score.py, pages_maintenance.py,
+pages_system_health.py) already expects — none of those callers needed
+to change at all, only where their data actually comes from.
 
 Session request: "make it so if any readings are concerning it shows
 up as a red headline so i know my mini pc needs work ie 'clean fans'."
@@ -19,29 +31,63 @@ import streamlit as st
 
 import persisted_state
 
-# Performance/resilience audit: app.py's status-bar row and
-# hardware_headline_candidate() below both read this same key every
-# outer rerun (~75s cadence) — two real Upstash GETs per rerun for a
-# value the kiosk's own writer script only updates every 2 minutes (see
-# module docstring above and app.py's own comment at its "Kiosk: ..."
-# status row). Caching here throttles both call sites down to one real
-# read roughly every 2 minutes, matched to the writer's actual cadence
-# rather than the reader's — st.cache_data's per-process memoization
-# means the two call sites within the same rerun share one cached
-# result even within the same TTL window, not just across reruns.
+
+# The one real Upstash read every consumer below shares — st.cache_
+# data's per-process memoization means every call site within the same
+# rerun (and across reruns within the TTL) gets the same cached dict
+# instead of each doing its own GET. 120s matches the writer's own
+# cycle time; caching any looser would return stale data for no
+# benefit, any tighter would just re-fetch data that hasn't changed.
 @st.cache_data(ttl=120)
+def _load_combined() -> dict | None:
+    return persisted_state.load("kiosk_status", None)
+
+
 def load_perf_stats() -> dict | None:
-    return persisted_state.load("kiosk_perf_stats", None)
+    combined = _load_combined()
+    if combined is None:
+        return None
+    perf = dict(combined.get("perf") or {})
+    perf.setdefault("at", combined.get("at"))
+    return perf or None
 
 
-# Same reasoning as load_perf_stats() above, matched to the network
-# test's own real cadence — the kiosk box only runs it every 20 minutes
-# (see app.py's own comment at its "Network: ..." status row), so
-# reading it every ~75s outer rerun was ~16x more often than the data
-# could ever actually change.
-@st.cache_data(ttl=1200)
 def load_network_test() -> dict | None:
-    return persisted_state.load("kiosk_network_test", None)
+    combined = _load_combined()
+    if combined is None:
+        return None
+    net = dict(combined.get("network") or {})
+    # The network sub-reading carries its own "at" (it's only actually
+    # re-tested every ~20min, not every 2min cycle like the rest of
+    # this payload) -- only fall back to the outer timestamp if the
+    # writer script is old enough not to have set one yet.
+    net.setdefault("at", combined.get("at"))
+    return net or None
+
+
+def load_watchdog_status() -> dict | None:
+    """Same shape pages_maintenance.py and dashboard_score.py already
+    expect from the old standalone kiosk_watchdog_status key — {"at",
+    "status", "issues"}."""
+    combined = _load_combined()
+    if combined is None:
+        return None
+    watchdog = dict(combined.get("watchdog") or {})
+    watchdog.setdefault("at", combined.get("at"))
+    return watchdog or None
+
+
+def load_device_stats() -> dict | None:
+    """{"count", "delta"} -- devices currently on the home network and
+    the change since the last 2-minute cycle. See app.py's own arrival/
+    departure toast for how `delta` turns into "someone's home" without
+    claiming to know who."""
+    combined = _load_combined()
+    if combined is None:
+        return None
+    devices = dict(combined.get("devices") or {})
+    devices.setdefault("at", combined.get("at"))
+    return devices or None
 
 
 # This repo has no visibility into whatever logic the kiosk's own
@@ -104,3 +150,43 @@ def hardware_headline_candidate(now) -> dict | None:
         extra = ", ".join(r for r, _ in concerns[1:])
         text += f" (also {extra})"
     return {"text": text, "css_class": "rotation-warning", "target_ms": None, "template": "{}", "zero_text": None}
+
+
+# Session request: "I want a toast alert... X amount of devices just
+# came online, or people are leaving." The kiosk's own writer script
+# already computes count/delta every 2-minute cycle (see its own
+# comment) -- this just turns a genuine change into a one-shot toast,
+# same append-to-the-queue shape as commute_reminder.check_car_prep and
+# every other source app.py's _gather_new_alerts calls. Module-level
+# dedup (not st.session_state) for the same reason toast_queue.py
+# itself is process-wide, not per-session — this is imported once per
+# process and, unlike app.py itself, is NOT re-exec'd fresh every
+# rerun, so a plain global here really does survive across ticks (see
+# persisted_state.py's own docstring on exactly this distinction).
+_last_alerted_device_at: float | None = None
+
+
+def device_change_toast() -> dict | None:
+    global _last_alerted_device_at
+    devices = load_device_stats()
+    if devices is None:
+        return None
+    at = devices.get("at")
+    delta = devices.get("delta", 0)
+    if not at or not delta:
+        return None
+    if at == _last_alerted_device_at:
+        return None  # already alerted for this exact 2-minute reading
+    _last_alerted_device_at = at
+    count = devices.get("count")
+    if delta > 0:
+        headline = f"{delta} more device{'s' if delta != 1 else ''} just joined the network ({count} total)"
+    else:
+        headline = f"{abs(delta)} device{'s' if abs(delta) != 1 else ''} just left the network ({count} total)"
+    return {
+        "kind": "household",
+        "category": "Household",
+        "headline": headline,
+        "summary": headline,
+        "important": False,
+    }
