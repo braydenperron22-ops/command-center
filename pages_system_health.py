@@ -125,7 +125,12 @@ def _score_hero_html(result: dict, hist: list[dict]) -> str:
 def _issues_html(issues: list[dict]) -> str:
     if not issues:
         return _tile("Current Issues", _row("All systems healthy", "Good", "good"))
-    rows = "".join(_row(issue["text"], "!", issue["tone"]) for issue in issues[:8])
+    # A real word, not a glyph — every other status pill on this page
+    # (and pages_maintenance.py's own _row, the pattern this mirrors)
+    # uses a word ("Good", "Active", "Failed"); a bare "!" was a one-off
+    # that didn't match either that convention or the app's separate
+    # ▲/▼/● glyph vocabulary used elsewhere for directional movement.
+    rows = "".join(_row(issue["text"], "Issue", issue["tone"]) for issue in issues[:8])
     return _tile(f"Current Issues ({len(issues)})", rows)
 
 
@@ -150,10 +155,16 @@ def dashboard_stats() -> str:
 
 
 def kiosk_stats() -> str:
-    """Public — see dashboard_stats' own comment, same reason."""
+    """Public — see dashboard_stats' own comment, same reason. No-data
+    case keeps the real 3-stat shape (dash per value, same CPU/RAM/TEMP
+    labels) instead of collapsing to one generic placeholder — audit
+    finding: the old single "NO DATA" stat made this tile a visibly
+    different width/shape than its two siblings the moment any one of
+    the three tiles lost its data, since dashboard_stats() never did
+    that collapse to begin with. All three now degrade the same way."""
     perf = kiosk_hardware.load_perf_stats()
     if perf is None:
-        return _stat_row(_stat("—", "NO DATA"))
+        return _stat_row(_stat("—", "CPU"), _stat("—", "RAM"), _stat("—", "TEMP"))
     return _stat_row(
         _stat(f"{perf['cpu_pct']}%", "CPU", "low" if perf["cpu_pct"] >= kiosk_hardware.CPU_HIGH_PCT else "good"),
         _stat(f"{perf['ram_pct']}%", "RAM", "low" if perf["ram_pct"] >= kiosk_hardware.RAM_HIGH_PCT else "good"),
@@ -162,10 +173,11 @@ def kiosk_stats() -> str:
 
 
 def network_stats() -> str:
-    """Public — see dashboard_stats' own comment, same reason."""
+    """Public — see dashboard_stats' own comment, same reason. Same
+    no-data fix as kiosk_stats() above — keeps the real 2-stat shape."""
     net = kiosk_hardware.load_network_test()
     if net is None:
-        return _stat_row(_stat("—", "NO DATA"))
+        return _stat_row(_stat("—", "MBPS"), _stat("—", "MS PING"))
     tone = "low" if net.get("bad") else "good"
     return _stat_row(
         _stat(f"{net.get('mbps')}", "MBPS", tone),

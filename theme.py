@@ -303,7 +303,7 @@ html, body, [class*="css"] {
 }
 
 .weather-hilo {
-    color: #ABB2C4;
+    color: #8E8E93;
     font-weight: 500;
 }
 
@@ -391,7 +391,7 @@ html, body, [class*="css"] {
 
 .market-metric-label {
     font-size: 0.85rem;
-    color: #ABB2C4;
+    color: #8E8E93;
 }
 
 .market-metric-value {
@@ -759,7 +759,7 @@ html, body, [class*="css"] {
    treatment anymore. */
 .prediction-source-note {
     font-size: 1.15rem;
-    color: #ABB2C4;
+    color: #8E8E93;
     margin: -0.4rem 0 0.9rem;
 }
 /* Scoped rather than touching the shared .tile-label everywhere else
@@ -840,7 +840,7 @@ html, body, [class*="css"] {
     border-radius: 2px;
 }
 .prediction-row-outcome {
-    color: #ABB2C4;
+    color: #8E8E93;
     white-space: nowrap;
     font-weight: 700;
     font-size: 1.35rem;
@@ -900,7 +900,7 @@ html, body, [class*="css"] {
    ass little titles." */
 .prediction-macro-heading {
     font-size: 1.3rem;
-    color: #ABB2C4;
+    color: #8E8E93;
     text-transform: uppercase;
     letter-spacing: 0.02em;
 }
@@ -967,7 +967,7 @@ html, body, [class*="css"] {
     padding-top: 0.5rem;
     height: 1.2em;
     font-size: 0.8rem;
-    color: #ABB2C4;
+    color: #8E8E93;
     box-sizing: content-box;
 }
 
@@ -997,9 +997,14 @@ html, body, [class*="css"] {
     text-transform: uppercase;
 }
 
-.badge-bad { background: rgba(255,69,58,0.18); color: #FF6961; }
+/* Audit fix: .badge-bad/.badge-neutral's own background tint used to
+   be derived from a DIFFERENT hex than their text color (bad: tint
+   from #FF453A, text #FF6961; neutral: tint from #0A84FF, text
+   #5AC8FA) — only .badge-good actually derived its tint from its own
+   text color. Now all three do, same self-consistent pattern. */
+.badge-bad { background: rgba(255,105,97,0.18); color: #FF6961; }
 .badge-good { background: rgba(50,215,75,0.18); color: #32D74B; }
-.badge-neutral { background: rgba(10,132,255,0.14); color: #5AC8FA; }
+.badge-neutral { background: rgba(90,200,250,0.14); color: #5AC8FA; }
 .badge-inline { background: rgba(255,255,255,0.08); color: #D6D6DC; }
 
 /* Rotation countdown (app.py) — deliberately quiet: a slim track at the
@@ -1720,7 +1725,11 @@ html, body, [class*="css"] {
     border: 1px solid rgba(255,159,10,0.75);
     box-shadow: 0 0 16px rgba(255,159,10,0.3);
 }
-.weather-statement-watch .weather-statement-label { color: #FFB340; }
+/* Audit fix: was #FFB340, a lighter amber that didn't match this
+   tier's own background/border/glow (all #FF9F0A, the app's one
+   established "medium/warning" amber) — the only tier in this block
+   whose label color departed from its own tier's hue. */
+.weather-statement-watch .weather-statement-label { color: #FF9F0A; }
 .weather-statement-watch .weather-statement-text {
     color: #FFFFFF;
     font-weight: 600;
@@ -1805,7 +1814,7 @@ html, body, [class*="css"] {
     font-weight: 800;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #ABB2C4;
+    color: #8E8E93;
 }
 .regime-text {
     font-size: 1.05rem;
@@ -2112,7 +2121,13 @@ html, body, [class*="css"] {
    just visually) since it's the one number the whole page exists to
    answer. Everything below it (kiosk/pulse/data-source vitals, the
    issues list) reuses the plain .tile/.maint-row/.maint-pill language
-   already established rather than inventing a second visual system. */
+   already established rather than inventing a second visual system.
+   Padding is deliberately its own value, not .tile's default 1.7rem
+   1.5rem 1.5rem or .maint-tile's tighter 0.9rem 1rem — the hero holds
+   more distinct content (a huge number, a meta column, a full-width
+   sparkline) than either of those two shapes were sized for, and this
+   splits the difference so the sparkline gets real width without the
+   tile reading as tall as a full .tile padding would make it. */
 .system-health-hero {
     display: flex;
     flex-direction: column;
@@ -2126,16 +2141,23 @@ html, body, [class*="css"] {
 }
 .system-health-score-number {
     font-size: 3.4rem;
-    font-weight: 700;
+    font-weight: 800;
     line-height: 1;
     font-variant-numeric: tabular-nums;
 }
 .system-health-score-good { color: #32D74B; }
 .system-health-score-medium { color: #FF9F0A; }
 .system-health-score-low { color: #FF6961; }
+/* Audit fix: a real bug, not just polish — flex-direction:column's
+   default align-items is stretch, so the grade .maint-pill inside
+   (an inline-shaped tag everywhere else it's used, always sitting in a
+   ROW-flex parent) was stretching to the full width of this column
+   instead of shrink-wrapping to its own text, the only place in the
+   app .maint-pill sits inside a column instead of a row. */
 .system-health-score-meta {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     gap: 0.3rem;
 }
 .system-health-history {
@@ -2188,13 +2210,17 @@ html, body, [class*="css"] {
 .system-health-stat-good { color: #32D74B; }
 .system-health-stat-medium { color: #FF9F0A; }
 .system-health-stat-low { color: #FF6961; }
-.system-health-stat-neutral { color: rgba(255,255,255,0.4); }
+.system-health-stat-neutral { color: #8E8E93; }
+/* Audit fix: matches .form-strip-label/.sports-blurb-label/.weather-
+   day-period-label exactly (same "small uppercase caption under a
+   value" role, already established in 3 other places) — this one had
+   drifted to its own one-off size/weight/color on all 3 axes at once. */
 .system-health-stat-label {
-    font-size: 0.72rem;
-    font-weight: 600;
+    font-size: 0.75rem;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: rgba(255,255,255,0.5);
+    color: #8E8E93;
 }
 
 /* Team + opponent logos (sports_client.py — MLB's static logo CDN and
@@ -2273,7 +2299,7 @@ html, body, [class*="css"] {
     gap: 0.7rem;
     padding: 0.3rem 0;
     font-size: 0.95rem;
-    color: #ABB2C4;
+    color: #8E8E93;
 }
 .sports-standings-row-team {
     color: #F5F5F7;
@@ -2387,7 +2413,7 @@ html, body, [class*="css"] {
     padding-top: 0.4rem;
     border-top: 1px solid rgba(255,255,255,0.06);
     font-size: 0.78rem;
-    color: #ABB2C4;
+    color: #8E8E93;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2397,7 +2423,7 @@ html, body, [class*="css"] {
     padding-top: 0.5rem;
     border-top: 1px solid rgba(255,255,255,0.08);
     font-size: 0.85rem;
-    color: #ABB2C4;
+    color: #8E8E93;
     text-align: center;
 }
 .score-card-status-live {
@@ -2460,7 +2486,7 @@ html, body, [class*="css"] {
     padding-top: 0.7rem;
     border-top: 1px solid rgba(255,255,255,0.08);
     font-size: 0.95rem;
-    color: #ABB2C4;
+    color: #8E8E93;
 }
 .game-situation strong {
     color: #F5F5F7;
@@ -2500,7 +2526,7 @@ html, body, [class*="css"] {
     height: 3rem;
     display: block;
     margin: 0.3rem 0;
-    color: #ABB2C4;
+    color: #8E8E93;
 }
 .weather-day-temps {
     display: flex;
@@ -2554,7 +2580,7 @@ html, body, [class*="css"] {
 }
 .weather-day-wind {
     font-size: 0.78rem;
-    color: #ABB2C4;
+    color: #8E8E93;
     margin-top: 0.25rem;
 }
 
@@ -2573,7 +2599,7 @@ html, body, [class*="css"] {
 .weather-current-icon svg {
     width: 2.6rem;
     height: 2.6rem;
-    color: #ABB2C4;
+    color: #8E8E93;
     flex-shrink: 0;
 }
 .weather-current-temp {
@@ -2593,7 +2619,7 @@ html, body, [class*="css"] {
     flex-wrap: wrap;
     margin-left: auto;
     font-size: 0.9rem;
-    color: #ABB2C4;
+    color: #8E8E93;
 }
 
 /* Radar page (pages_radar.py, radar_client.py) — reinstated at the
@@ -2757,7 +2783,7 @@ html, body, [class*="css"] {
     height: 2.4rem;
     display: block;
     margin: 0.3rem 0;
-    color: #ABB2C4;
+    color: #8E8E93;
 }
 .hourly-temp {
     font-size: 1.6rem;
@@ -2775,7 +2801,7 @@ html, body, [class*="css"] {
    alignment between columns. */
 .hourly-condition {
     font-size: 0.78rem;
-    color: #ABB2C4;
+    color: #8E8E93;
     line-height: 1.25;
     min-height: 2em;
     margin-bottom: 0.3rem;
@@ -2791,7 +2817,7 @@ html, body, [class*="css"] {
 }
 .hourly-wind {
     font-size: 0.78rem;
-    color: #ABB2C4;
+    color: #8E8E93;
     margin-top: 0.25rem;
 }
 /* The soonest real hourly reading — this page's own version of "the one
@@ -3601,6 +3627,12 @@ html, body, [class*="css"] {
     backdrop-filter: blur(20px) saturate(160%);
     -webkit-backdrop-filter: blur(20px) saturate(160%);
     border: 1px solid rgba(255,255,255,0.12);
+    /* Same elevation .tile/.market-pill/.score-card already use —
+       audit fix: this floating glass badge used the same blur/border
+       language as every card on the kiosk but skipped the shadow that
+       normally comes with it, so it read flatter than it should next
+       to them. */
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
     opacity: 0.85;
     transition: opacity 0.2s ease;
 }
@@ -3624,10 +3656,16 @@ html, body, [class*="css"] {
     padding-top: 0.5rem;
     border-top: 1px solid rgba(255,255,255,0.08);
 }
+/* Audit fix: matches .system-health-stat-label's own weight/color now
+   (700/#8E8E93, the same established "small uppercase caption" recipe
+   .form-strip-label etc. already use) — only font-size stays its own
+   smaller value, for the same "this corner pill is a scaled-down
+   mirror of the page's own tiles" reason .system-health-stat-value/
+   -label are scaled down just below. */
 .system-health-corner-title {
     font-size: 0.68rem;
-    font-weight: 600;
-    color: rgba(255,255,255,0.45);
+    font-weight: 700;
+    color: #8E8E93;
     text-transform: uppercase;
     letter-spacing: 0.04em;
 }
@@ -3683,17 +3721,24 @@ html, body, [class*="css"] {
    above) while staying a small corner pill, not a banner — "not
    obstructive" is the backdrop-blur + modest padding, not a smaller
    font. */
+/* Audit fix: radius/border-alpha/fill-alpha now match .system-health-
+   corner exactly (14px/0.12/0.68, plus the same elevation shadow) —
+   this stacks directly above that corner (see this rule's own
+   bottom:145px, sized for that clearance) and the two were drifting on
+   3 separate properties despite being guaranteed to sit in the same
+   screen corner, one above the other, whenever BRDN is re-enabled. */
 .brdn-ticker {
     position: fixed;
     bottom: 145px;
     right: 14px;
     z-index: 401;
     padding: 0.5rem 1.1rem;
-    border-radius: 12px;
-    background: rgba(12,12,16,0.72);
+    border-radius: 14px;
+    background: rgba(12,12,16,0.68);
     backdrop-filter: blur(20px) saturate(160%);
     -webkit-backdrop-filter: blur(20px) saturate(160%);
-    border: 1px solid rgba(255,255,255,0.14);
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
     font-weight: 700;
     font-size: 1.6rem;
@@ -3927,7 +3972,7 @@ html, body, [class*="css"] {
 .news-feed-meta {
     flex-shrink: 0;
     font-size: 0.85rem;
-    color: #ABB2C4;
+    color: #8E8E93;
 }
 
 /* Session request: "redesign the mobile UI... see the full pages...
@@ -4008,7 +4053,7 @@ html, body, [class*="css"] {
     background: rgba(255,255,255,0.06);
     border: 1px solid rgba(255,255,255,0.12);
     text-decoration: none !important;
-    color: #ABB2C4 !important;
+    color: #8E8E93 !important;
 }
 .mobile-nav-item::before {
     content: "";
@@ -4111,7 +4156,7 @@ html, body, [class*="css"] {
     border-radius: 12px;
     background: rgba(255,255,255,0.05);
     border: 1px solid rgba(255,255,255,0.1);
-    color: #ABB2C4 !important;
+    color: #8E8E93 !important;
     text-decoration: none !important;
     font-size: 0.92rem;
     font-weight: 600;
