@@ -14,12 +14,20 @@ physical-kiosk vitals that don't appear ANYWHERE else in this app
 outside the tiny rotating corner status badge (see kiosk_hardware.py).
 Reads the same already-tracked state dashboard_score.py rolls up (data_
 health, groq_client, dashboard_health, persisted_state, kiosk_hardware)
-— no new network call, no new Upstash read beyond dashboard_score's own
-throttled history recording, which app.py drives separately from this
-page's own render (see app.py's own call to dashboard_score.record_if_
-due, right alongside dashboard_health's per-rerun bookkeeping) so the
-trend keeps getting sampled even during the ~75-80 minutes per rotation
-this page isn't the one showing.
+— no new network call anywhere in that chain. dashboard_score.compute()
+itself does read a handful of persisted_state keys directly (kiosk
+watchdog status, the toast/scenery/Govee error logs) every time this
+page is on screen, which is a real Upstash cost this docstring used to
+claim didn't exist — audited and left as-is on purpose rather than
+adding a cache layer: at ~72 renders/day (5 of every ~85 rotation
+minutes) it's on the order of a few hundred commands/day, negligible
+against the 500k/month budget, not worth the extra complexity of
+throttling something already this cheap. The actual throttled write is
+dashboard_score's own history recording, which app.py drives
+separately from this page's own render (see app.py's own call to
+dashboard_score.record_if_due, right alongside dashboard_health's
+per-rerun bookkeeping) so the trend keeps getting sampled even during
+the ~75-80 minutes per rotation this page isn't the one showing.
 """
 
 import time
