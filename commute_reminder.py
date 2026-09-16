@@ -700,6 +700,15 @@ def maybe_push_commute_home(now: datetime) -> None:
     today = now.date().isoformat()
     if persisted_state.load(_COMMUTE_HOME_PUSHED_KEY, None) == today:
         return
+    # Performance/resilience audit: real race condition, same shape as
+    # the confirmed historical bug in brayden_index.py's own admin-
+    # correction flags (flag saved only at the end, after slow work,
+    # letting two overlapping reruns both pass the check above before
+    # either one saves). Claimed immediately here instead, before the
+    # two real network calls below — a true one-shot no-op on every
+    # rerun after the first, even a slow one, rather than a window
+    # where a duplicate "Commute home" push could still slip through.
+    persisted_state.save(_COMMUTE_HOME_PUSHED_KEY, today)
 
     live = commute_client.route(COMMUTE_ORIGIN, origin=work_location)
     if not live:
@@ -716,11 +725,8 @@ def maybe_push_commute_home(now: datetime) -> None:
         reason = ""
     message = f"~{minutes} min home{reason}"
 
-    # Marked before the send call, not conditioned on its success — same
-    # convention every other push dedup in this app already uses: a
-    # transient ntfy failure shouldn't turn into a retry-storm for the
-    # rest of the window.
-    persisted_state.save(_COMMUTE_HOME_PUSHED_KEY, today)
+    # Flag already claimed above, before the network calls — no second
+    # save needed here (see the comment at the claim site).
     try:
         ntfy_client.send(title="Commute home", message=message, priority="default", tags="car")
     except Exception:

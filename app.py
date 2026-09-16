@@ -32,6 +32,7 @@ import dashboard_health
 import heartbeat
 import holidays_client
 import household_reminders
+import kiosk_hardware
 import lightning_client
 import local_news_client
 import market_circuit_breaker
@@ -3609,7 +3610,7 @@ if not _jumbotron_active and not _night_mode_active and not _terminal_active:
         # more slot in the same rotation — only present at all once real
         # stats have actually landed in Upstash, so the rotation is 2
         # slots (not 3) until then.
-        _perf = persisted_state.load("kiosk_perf_stats", None)
+        _perf = kiosk_hardware.load_perf_stats()
         if _perf is not None:
             _perf_tone = "low" if _perf.get("bad") else "good"
             _status_slots.append(
@@ -3623,7 +3624,7 @@ if not _jumbotron_active and not _night_mode_active and not _terminal_active:
         # itself measures real latency to this dashboard's own URL plus
         # actual download throughput (Cloudflare's speed-test endpoint),
         # same Upstash handoff as the kiosk perf stats just above.
-        _net = persisted_state.load("kiosk_network_test", None)
+        _net = kiosk_hardware.load_network_test()
         if _net is not None:
             _net_tone = "low" if _net.get("bad") else "good"
             _status_slots.append(
@@ -4128,6 +4129,40 @@ def _alert_priority(alert: dict) -> int:
     return 10
 
 
+# Performance/resilience audit: "I want this system to be as lean and
+# efficient as possible while still being extremely resilient." The
+# two toast/bottom-bar exception handlers below both persist a real
+# diagnostic record (deliberately kept, not removed — see their own
+# comments: this exact failure class has genuinely recurred in
+# production before, and the persisted record is what made it
+# diagnosable). Left unthrottled, either one would write to Upstash on
+# EVERY outer rerun (~65-75s, all day) for as long as the same failure
+# kept recurring — pure waste once the first write already captured
+# it, against this app's own real, documented Upstash command budget.
+# Module-level (not persisted) in-memory de-dup — a process restart is
+# itself a new "epoch" for this kind of ephemeral debug tracking, so
+# there's no need for this state to survive one.
+_last_toast_render_error_sig: tuple | None = None
+_last_toast_render_error_saved_at = 0.0
+TOAST_RENDER_ERROR_RESAVE_SECONDS = 60 * 60  # re-persist an ongoing failure at most once an hour
+
+
+def _log_toast_render_error(kind: str, headline, error: str) -> None:
+    """Only re-saves "toast_render_error" when the failure signature
+    genuinely changes, or an hour has passed since the last save of
+    the SAME ongoing failure (keeps the persisted "last seen" timestamp
+    roughly fresh for anyone checking, without hammering Upstash for a
+    problem already known about)."""
+    global _last_toast_render_error_sig, _last_toast_render_error_saved_at
+    sig = (kind, headline, error)
+    now_ts = time.time()
+    if sig == _last_toast_render_error_sig and (now_ts - _last_toast_render_error_saved_at) < TOAST_RENDER_ERROR_RESAVE_SECONDS:
+        return
+    _last_toast_render_error_sig = sig
+    _last_toast_render_error_saved_at = now_ts
+    persisted_state.save("toast_render_error", {"at": now_ts, "kind": kind, "headline": headline, "error": error})
+
+
 def _render_bottom_ticker(now: datetime, readings: dict) -> None:
     """A pure live-stat ticker (session request: "remove the dates for
     data... just not [as] informational and as good as the other
@@ -4551,14 +4586,10 @@ def _toast_fragment(
 
                 print(f"TOAST RENDER FAILED: {current_alert.get('kind', 'news')} alert {current_alert!r}")
                 traceback.print_exc()
-                persisted_state.save(
-                    "toast_render_error",
-                    {
-                        "at": now_ts,
-                        "kind": current_alert.get("kind", "news"),
-                        "headline": current_alert.get("headline"),
-                        "error": f"{type(toast_render_exc).__name__}: {toast_render_exc}",
-                    },
+                _log_toast_render_error(
+                    current_alert.get("kind", "news"),
+                    current_alert.get("headline"),
+                    f"{type(toast_render_exc).__name__}: {toast_render_exc}",
                 )
                 current_alert, elapsed = None, None
                 # Falls back to the ticker rather than leaving the bottom
@@ -4612,10 +4643,7 @@ def _toast_fragment(
 
         print(f"BOTTOM BAR SETUP FAILED: {_bottom_bar_exc!r}")
         traceback.print_exc()
-        persisted_state.save(
-            "toast_render_error",
-            {"at": time.time(), "kind": "setup", "headline": None, "error": f"{type(_bottom_bar_exc).__name__}: {_bottom_bar_exc}"},
-        )
+        _log_toast_render_error("setup", None, f"{type(_bottom_bar_exc).__name__}: {_bottom_bar_exc}")
         try:
             _render_bottom_ticker(now, readings)
         except Exception:

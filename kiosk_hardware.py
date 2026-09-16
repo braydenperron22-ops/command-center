@@ -15,7 +15,34 @@ with concrete, metric-specific advice ("clean fans" was the user's own
 example for a hot CPU) instead of a generic "something's wrong."
 """
 
+import streamlit as st
+
 import persisted_state
+
+# Performance/resilience audit: app.py's status-bar row and
+# hardware_headline_candidate() below both read this same key every
+# outer rerun (~75s cadence) — two real Upstash GETs per rerun for a
+# value the kiosk's own writer script only updates every 2 minutes (see
+# module docstring above and app.py's own comment at its "Kiosk: ..."
+# status row). Caching here throttles both call sites down to one real
+# read roughly every 2 minutes, matched to the writer's actual cadence
+# rather than the reader's — st.cache_data's per-process memoization
+# means the two call sites within the same rerun share one cached
+# result even within the same TTL window, not just across reruns.
+@st.cache_data(ttl=120)
+def load_perf_stats() -> dict | None:
+    return persisted_state.load("kiosk_perf_stats", None)
+
+
+# Same reasoning as load_perf_stats() above, matched to the network
+# test's own real cadence — the kiosk box only runs it every 20 minutes
+# (see app.py's own comment at its "Network: ..." status row), so
+# reading it every ~75s outer rerun was ~16x more often than the data
+# could ever actually change.
+@st.cache_data(ttl=1200)
+def load_network_test() -> dict | None:
+    return persisted_state.load("kiosk_network_test", None)
+
 
 # This repo has no visibility into whatever logic the kiosk's own
 # writer script uses to set "bad" (see this module's own docstring —
@@ -65,7 +92,7 @@ def hardware_headline_candidate(now) -> dict | None:
     countdown candidates. `now` accepted for signature symmetry with
     every other *_candidate function in this app, even though this
     reading doesn't actually need it."""
-    perf = persisted_state.load("kiosk_perf_stats", None)
+    perf = load_perf_stats()
     if perf is None:
         return None
     concerns = _concerns(perf)
