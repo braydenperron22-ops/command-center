@@ -1602,6 +1602,19 @@ def maybe_push_morning_brief(now: datetime, readings: dict | None = None) -> Non
     today = now.date().isoformat()
     if persisted_state.load(_MORNING_BRIEF_PUSHED_KEY, None) == today:
         return
+    # Performance/resilience audit: same race-condition shape as the
+    # confirmed historical bug this app already fixed once (see
+    # commute_reminder.maybe_push_commute_home's own comment) — the
+    # flag used to only be saved at the very end, after maybe_reprice's
+    # real Gemini call, so two overlapping reruns landing in the same
+    # window could both pass the check above before either saved.
+    # Claimed immediately instead. Same accepted tradeoff as that fix:
+    # if maybe_reprice hasn't produced a report yet (line below), this
+    # skips silently for the rest of today rather than retrying — no
+    # double-send, in exchange for no retry-on-transient-failure.
+    # Currently inert either way (brayden_index.ENABLED is False), kept
+    # correct for whenever BRDN is re-enabled.
+    persisted_state.save(_MORNING_BRIEF_PUSHED_KEY, today)
     is_catchup = minutes_now >= on_time_end
 
     # night_mode_active always False here on purpose, not just the
@@ -1625,11 +1638,9 @@ def maybe_push_morning_brief(now: datetime, readings: dict | None = None) -> Non
         # silent gap.
         message = "(This morning's window was missed — catching up now.)\n\n" + message
 
-    # Marked before the send call, not conditioned on its success — same
-    # convention commute_reminder's own milestone push dedup already
-    # uses (see its own comment): a transient ntfy failure shouldn't
-    # turn into a retry-storm on every rerun for the rest of the window.
-    persisted_state.save(_MORNING_BRIEF_PUSHED_KEY, today)
+    # Flag already claimed above, before maybe_reprice's own network
+    # call — no second save needed here (see the comment at the claim
+    # site).
     try:
         ntfy_client.send(title=title, message=message, priority="default", tags="bar_chart")
     except Exception:
