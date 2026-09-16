@@ -27,6 +27,8 @@ with concrete, metric-specific advice ("clean fans" was the user's own
 example for a hot CPU) instead of a generic "something's wrong."
 """
 
+import html
+
 import streamlit as st
 
 import persisted_state
@@ -190,3 +192,22 @@ def device_change_toast() -> dict | None:
         "summary": headline,
         "important": False,
     }
+
+
+def render_alert_bar(alert: dict) -> None:
+    """Bottom-strip toast, own dedicated renderer — session report: this
+    was falling through to news.render_alert_bar's binary BREAKING
+    NEWS/MARKET NEWS label choice (the fallback for any kind without
+    its own renderer, see app.py's own dispatch), showing the
+    genuinely wrong "MARKET NEWS" label for a device join/leave.
+    Reuses that same function's calm, neutral bar styling (.news-alert-
+    bar-market — visually exactly right for this, not urgent) with its
+    own label instead, same shape as email_client.render_alert_bar."""
+    headline_text = html.escape(alert.get("headline", ""))
+    st.markdown(
+        f'<div class="news-alert-bar-market">'
+        f'<span class="news-breaking-label">HOUSEHOLD</span>'
+        f'<span class="news-alert-headline">{headline_text}</span>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )

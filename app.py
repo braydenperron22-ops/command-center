@@ -4589,6 +4589,8 @@ def _toast_fragment(
                     weather_alerts_bar.render_alert_bar(current_alert)
                 elif current_alert.get("kind") == "email":
                     email_client.render_alert_bar(current_alert)
+                elif current_alert.get("kind") == "household":
+                    kiosk_hardware.render_alert_bar(current_alert)
                 else:
                     news.render_alert_bar(current_alert)
             except Exception as toast_render_exc:
