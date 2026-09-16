@@ -122,8 +122,24 @@ def _fallback_from_ec() -> dict | None:
     }
 
 
+# Performance/resilience audit: fetch_weather()/hourly_forecast()/
+# daily_forecast() each used to issue their own separate GET to this
+# same endpoint (one for "current"+a thin "daily" slice, one for
+# "hourly", one for a fuller "daily") — three real Open-Meteo requests
+# per cold 15-min cache window instead of one, since Open-Meteo
+# supports current+hourly+daily together in a single call. This is the
+# union of every field all three actually need, at forecast_days=7 (the
+# widest window any of them asked for) — each of the three _fetch_*_raw
+# functions below now just reads its own slice out of this one cached
+# body instead of fetching it separately. Safe to widen "current"/
+# "hourly"'s own forecast_days from 2 to 7 this way: _fetch_weather_raw
+# only ever indexes today's [0] daily entry regardless of array length,
+# and both real hourly_forecast() consumers (pages_hourly.py's own
+# [:HOURS_SHOWN] slice, pages_timeline.py's own same-date filter)
+# already bound themselves rather than trusting the array's total
+# length.
 @st.cache_data(ttl=15 * 60, show_spinner=False)
-def _fetch_weather_raw() -> dict | None:
+def _fetch_combined_raw() -> dict:
     params = {
         "latitude": WEATHER_LAT,
         "longitude": WEATHER_LON,
@@ -135,16 +151,25 @@ def _fetch_weather_raw() -> dict | None:
         # context next to the gust figure even though gust is the one
         # the badge itself keys off.
         "current": "temperature_2m,apparent_temperature,weather_code,uv_index,wind_speed_10m,wind_gusts_10m",
-        "daily": "sunrise,sunset,temperature_2m_max,temperature_2m_min",
+        "hourly": "temperature_2m,weather_code,precipitation_probability,wind_speed_10m,wind_direction_10m",
+        "daily": (
+            "sunrise,sunset,weather_code,temperature_2m_max,temperature_2m_min,"
+            "precipitation_probability_max,wind_speed_10m_max,"
+            "wind_direction_10m_dominant,uv_index_max"
+        ),
         "temperature_unit": "celsius",
         "wind_speed_unit": "kmh",
         "timezone": TIMEZONE,
-        "forecast_days": 2,
+        "forecast_days": 7,
     }
     fetch_throttle.wait_turn()
     resp = requests.get(WEATHER_URL, params=params, timeout=10)
     resp.raise_for_status()
-    body = resp.json()
+    return resp.json()
+
+
+def _fetch_weather_raw() -> dict | None:
+    body = _fetch_combined_raw()
     current = body.get("current", {})
     daily = body.get("daily", {})
     if "temperature_2m" not in current or not daily.get("sunrise"):
@@ -223,21 +248,8 @@ def _compass_abbr(degrees: float) -> str:
     return _WIND_COMPASS[round(degrees / 22.5) % 16]
 
 
-@st.cache_data(ttl=15 * 60, show_spinner=False)
 def _fetch_hourly_raw() -> dict:
-    fetch_throttle.wait_turn()
-    resp = requests.get(
-        WEATHER_URL,
-        params={
-            "latitude": WEATHER_LAT, "longitude": WEATHER_LON,
-            "hourly": "temperature_2m,weather_code,precipitation_probability,wind_speed_10m,wind_direction_10m",
-            "temperature_unit": "celsius", "wind_speed_unit": "kmh",
-            "timezone": TIMEZONE, "forecast_days": 2,
-        },
-        timeout=10,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    return _fetch_combined_raw()
 
 
 def hourly_forecast() -> list[dict]:
@@ -280,25 +292,8 @@ def hourly_forecast() -> list[dict]:
         return ec_forecast.hourly_forecast()
 
 
-@st.cache_data(ttl=15 * 60, show_spinner=False)
 def _fetch_daily_raw() -> dict:
-    fetch_throttle.wait_turn()
-    resp = requests.get(
-        WEATHER_URL,
-        params={
-            "latitude": WEATHER_LAT, "longitude": WEATHER_LON,
-            "daily": (
-                "weather_code,temperature_2m_max,temperature_2m_min,"
-                "precipitation_probability_max,wind_speed_10m_max,"
-                "wind_direction_10m_dominant,uv_index_max"
-            ),
-            "temperature_unit": "celsius", "wind_speed_unit": "kmh",
-            "timezone": TIMEZONE, "forecast_days": 7,
-        },
-        timeout=10,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    return _fetch_combined_raw()
 
 
 def _normalize_ec_daily(ec_days: list[dict]) -> list[dict]:
