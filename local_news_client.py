@@ -18,6 +18,7 @@ import requests
 import streamlit as st
 
 import fetch_throttle
+import ontario_511_events
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -45,7 +46,10 @@ CONSTRUCTION_TERMS = [
 # home) rather than the whole province. Real government data, not a
 # news article's paraphrase of it — complements (doesn't duplicate)
 # TomTom's live delay number by saying what's actually causing it.
-ROAD_EVENTS_URL = "https://511on.ca/api/v2/get/event"
+# The raw fetch itself is shared with road_conditions_511.py via
+# ontario_511_events.fetch_raw() (one real GET/cache for both
+# consumers, not two — see that module's own docstring); this file
+# owns only its own filtering below.
 ROAD_EVENTS_SOURCE = "511 Ontario"
 ROAD_EVENT_TYPES = {"roadwork", "accidentsAndIncidents"}
 NEARBY_RADIUS_KM = 25
@@ -66,11 +70,8 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def _fetch_road_events() -> list[dict]:
-    fetch_throttle.wait_turn()
-    resp = requests.get(ROAD_EVENTS_URL, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-    resp.raise_for_status()
     items = []
-    for event in resp.json():
+    for event in ontario_511_events.fetch_raw():
         if event.get("EventType") not in ROAD_EVENT_TYPES:
             continue
         lat, lon = event.get("Latitude"), event.get("Longitude")

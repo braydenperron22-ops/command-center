@@ -29,14 +29,15 @@ Two genuinely different 511 endpoints, both real, both free/no-key
   where they should on a real map.
 
 - /event (v2) — the same endpoint local_news_client.py already
-  fetches for its own incident/roadwork tile, given its own separate
-  cache here (that module's own _fetch_road_events is a private,
-  uncached helper living inside a different function's cache
-  boundary, not meant to be called from outside it) and filtered
-  specifically to IsFullClosure == True regardless of EventType,
-  since a real closure can appear tagged as either "roadwork" or
-  "accidentsAndIncidents." Events carry real Latitude/Longitude
-  directly, so no polyline decode is needed for this half.
+  fetches for its own incident/roadwork tile, via the shared
+  ontario_511_events.fetch_raw() (one real GET behind one 15-min
+  cache for both consumers — used to be two separate private fetchers
+  hitting the identical unparameterized endpoint, closed as a real
+  duplicate-fetch finding), filtered here specifically to
+  IsFullClosure == True regardless of EventType, since a real closure
+  can appear tagged as either "roadwork" or "accidentsAndIncidents."
+  Events carry real Latitude/Longitude directly, so no polyline decode
+  is needed for this half.
 
 Condition/Visibility/Drifting are read as a DENYLIST of known-benign
 values ("no report", "bare and dry", visibility "good", drifting
@@ -59,11 +60,13 @@ import commute_reminder
 import fetch_throttle
 import groq_client
 import ntfy_client
+import ontario_511_events
 import persisted_state
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN
 
 CONDITIONS_URL = "https://511on.ca/api/v3/get/roadconditions"
-EVENTS_URL = "https://511on.ca/api/v2/get/event"
+# /event (v2) is fetched via ontario_511_events.fetch_raw() — see that
+# module's own docstring for why the raw GET is shared, not duplicated.
 
 # Matches local_news_client.NEARBY_RADIUS_KM exactly — same "near
 # either end of the commute, not just home" reasoning, same distance.
@@ -216,14 +219,6 @@ def _segment_near_commute(encoded_polyline) -> bool:
 def _fetch_conditions_raw() -> list[dict]:
     fetch_throttle.wait_turn()
     resp = requests.get(CONDITIONS_URL, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
-    resp.raise_for_status()
-    return resp.json()
-
-
-@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_events_raw() -> list[dict]:
-    fetch_throttle.wait_turn()
-    resp = requests.get(EVENTS_URL, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
     resp.raise_for_status()
     return resp.json()
 
@@ -388,7 +383,7 @@ def road_issues_near_commute(now) -> list[dict]:
     name always should have promised."""
     global _last_good_closures
     try:
-        raw = _fetch_events_raw()
+        raw = ontario_511_events.fetch_raw()
     except Exception:
         return _last_good_closures
     routes = _commute_routes(now)
@@ -501,7 +496,7 @@ def get_new_alerts(now: datetime) -> list[dict]:
     genuinely new issue."""
     global _seen_closure_ids, _closure_baseline_done
     try:
-        raw = _fetch_events_raw()
+        raw = ontario_511_events.fetch_raw()
     except Exception:
         return []
     routes = _commute_routes(now)
@@ -638,7 +633,7 @@ def get_status_updates(now: datetime) -> list[dict]:
     if _muted_overnight(now):
         return []
     try:
-        raw = _fetch_events_raw()
+        raw = ontario_511_events.fetch_raw()
     except Exception:
         return []
     routes = _commute_routes(now)
@@ -700,7 +695,7 @@ def road_closure_headline_candidate(now) -> dict | None:
     reopen time to count down to, same reasoning weather_statement_
     candidate's own docstring gives for its plain fallback text."""
     try:
-        raw = _fetch_events_raw()
+        raw = ontario_511_events.fetch_raw()
     except Exception:
         return None
     routes = _commute_routes(now)
@@ -749,7 +744,7 @@ def get_cleared_alerts(now) -> list[dict]:
     required one."""
     global _last_known_active
     try:
-        raw = _fetch_events_raw()
+        raw = ontario_511_events.fetch_raw()
     except Exception:
         return []
     routes = _commute_routes(now)
