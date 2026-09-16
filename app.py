@@ -1868,6 +1868,107 @@ components.html(
       doc.head.appendChild(s);
     })();
 
+    (function () {
+      var doc = window.parent.document;
+      if (doc.getElementById('kiosk-sky-canvas')) return;
+      var s = doc.createElement('script');
+      s.id = 'kiosk-sky-canvas';
+      s.textContent = [
+        "(function(){",
+        "  var canvas = document.getElementById('kiosk-sky-canvas-el');",
+        "  if (!canvas) {",
+        "    canvas = document.createElement('canvas');",
+        "    canvas.id = 'kiosk-sky-canvas-el';",
+        "    canvas.style.position = 'fixed'; canvas.style.inset = '0'; canvas.style.width = '100vw'; canvas.style.height = '100vh';",
+        "    canvas.style.zIndex = '-1'; canvas.style.pointerEvents = 'none'; canvas.style.display = 'block';",
+        "    document.body.insertBefore(canvas, document.body.firstChild);",
+        "  }",
+        "  if (canvas.dataset.skyRunning === '1') return;",
+        "  canvas.dataset.skyRunning = '1';",
+        "  var ctx = canvas.getContext('2d');",
+        "  var W = 0, H = 0, DPR = Math.min(window.devicePixelRatio || 1, 2);",
+        "  var clouds = [], drops = [], flakes = [], stars = [], fogBands = [];",
+        "  function buildClouds(){ clouds = []; for (var i=0;i<7;i++){ clouds.push({x:Math.random()*W*1.4-W*0.2, y:H*(0.08+Math.random()*0.32), scale:0.6+Math.random()*1.1, baseSpeed:4+Math.random()*7, puffs:buildPuffs()}); } }",
+        "  function buildPuffs(){ var puffs=[]; var n=5+Math.floor(Math.random()*3); for (var i=0;i<n;i++) puffs.push({dx:(Math.random()-0.5)*220, dy:(Math.random()-0.3)*46, r:40+Math.random()*60}); return puffs; }",
+        "  function buildRain(){ drops = []; for (var i=0;i<260;i++) drops.push({x:Math.random()*W, y:Math.random()*H, len:14+Math.random()*18, speed:620+Math.random()*380}); }",
+        "  function buildSnow(){ flakes = []; for (var i=0;i<130;i++) flakes.push({x:Math.random()*W, y:Math.random()*H, r:1.5+Math.random()*2.8, speed:30+Math.random()*44, sway:Math.random()*Math.PI*2, swaySpeed:0.6+Math.random()*0.8}); }",
+        "  function buildStars(){ stars = []; for (var i=0;i<140;i++) stars.push({x:Math.random()*W, y:Math.random()*H*0.75, r:Math.random()*1.6+0.3, phase:Math.random()*Math.PI*2, speed:0.6+Math.random()*1.2}); }",
+        "  function buildFogBands(){ fogBands = []; for (var i=0;i<5;i++) fogBands.push({x:Math.random()*W, y:H*(0.35+i*0.13), w:W*0.9, h:90+Math.random()*60, speed:5+Math.random()*8}); }",
+        "  function resize(){ W = window.innerWidth; H = window.innerHeight; canvas.width = W*DPR; canvas.height = H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0); buildClouds(); buildRain(); buildSnow(); buildStars(); buildFogBands(); }",
+        "  window.addEventListener('resize', resize);",
+        "  function computeMoonPhase(date){ var synodic=29.530588853; var known=Date.UTC(2000,0,6,18,14,0); var diff=(date.getTime()-known)/86400000; var p=(diff%synodic)/synodic; return p<0?p+1:p; }",
+        "  var MOON_PHASE = computeMoonPhase(new Date());",
+        "  var STATES = {",
+        "    'clear-day':   {top:[74,158,227], bottom:[178,222,247], sun:true, moon:false, clouds:0.12, rain:0, snow:0, fog:0, storm:0, stars:0},",
+        "    'golden-hour': {top:[64,86,148],  bottom:[247,170,110], sun:true, moon:false, clouds:0.18, rain:0, snow:0, fog:0, storm:0, stars:0, warm:true},",
+        "    'cloudy-day':  {top:[121,138,151],bottom:[184,196,203], sun:false,moon:false, clouds:0.85, rain:0, snow:0, fog:0, storm:0, stars:0},",
+        "    'fog':         {top:[168,174,178],bottom:[206,209,210], sun:false,moon:false, clouds:0.30, rain:0, snow:0, fog:1, storm:0, stars:0},",
+        "    'rain-day':    {top:[63,75,86],   bottom:[112,124,133], sun:false,moon:false, clouds:0.95, rain:0.55, snow:0, fog:0, storm:0, stars:0},",
+        "    'storm':       {top:[35,36,46],   bottom:[68,70,82],    sun:false,moon:false, clouds:1.0,  rain:1.0, snow:0, fog:0, storm:0.6, stars:0},",
+        "    'snow':        {top:[150,163,180],bottom:[213,220,228], sun:false,moon:false, clouds:0.7,  rain:0, snow:1, fog:0, storm:0, stars:0},",
+        "    'clear-night': {top:[8,12,28],    bottom:[27,36,64],    sun:false,moon:true,  clouds:0.06, rain:0, snow:0, fog:0, storm:0, stars:1},",
+        "    'cloudy-night':{top:[24,27,36],   bottom:[46,50,58],    sun:false,moon:false, clouds:0.85, rain:0, snow:0, fog:0, storm:0, stars:0},",
+        "    'rain-night':  {top:[20,24,32],   bottom:[42,48,56],    sun:false,moon:false, clouds:0.95, rain:0.55, snow:0, fog:0, storm:0, stars:0}",
+        "  };",
+        "  function resolveStateKey(){",
+        "    var dataEl = document.getElementById('kiosk-sky-data');",
+        "    if (!dataEl) return 'clear-day';",
+        "    var code = dataEl.dataset.code || '2'; var isDay = dataEl.dataset.day === '1'; var golden = dataEl.dataset.golden === '1';",
+        "    if (code === '0') return isDay ? (golden ? 'golden-hour' : 'clear-day') : 'clear-night';",
+        "    if (code === '45') return 'fog';",
+        "    if (code === '61') return isDay ? 'rain-day' : 'rain-night';",
+        "    if (code === '71') return 'snow';",
+        "    if (code === '95') return 'storm';",
+        "    return isDay ? 'cloudy-day' : 'cloudy-night';",
+        "  }",
+        "  function windFactor(){ var dataEl = document.getElementById('kiosk-sky-data'); var w = dataEl ? parseFloat(dataEl.dataset.wind || '10') : 10; return Math.max(0, Math.min(1, w/45)); }",
+        "  var current = STATES['clear-day'];",
+        "  var display = {top:current.top.slice(), bottom:current.bottom.slice(), clouds:current.clouds, rain:0, snow:0, fog:0, stars:0, storm:0, sunOpacity:1, moonOpacity:0, warm:0};",
+        "  var transition = {from:null, to:current, t:1};",
+        "  var targetKey = 'clear-day';",
+        "  function setState(key){ if (key === targetKey || !STATES[key]) return; targetKey = key; transition.from = {top:display.top.slice(), bottom:display.bottom.slice(), clouds:display.clouds, rain:display.rain, snow:display.snow, fog:display.fog, stars:display.stars, storm:display.storm, sunOpacity:display.sunOpacity, moonOpacity:display.moonOpacity, warm:display.warm}; transition.to = STATES[key]; transition.t = 0; current = STATES[key]; }",
+        "  setInterval(function(){ setState(resolveStateKey()); }, 2000);",
+        "  function lerp(a,b,t){ return a+(b-a)*t; } function lerpArr(a,b,t){ return [lerp(a[0],b[0],t),lerp(a[1],b[1],t),lerp(a[2],b[2],t)]; }",
+        "  function drawClouds(alpha, isNight, wind, dt){ if (alpha<=0.01) return; var mult=0.5+wind*2.2; ctx.save(); var base=isNight?'rgba(150,158,178,':'rgba(255,255,255,'; var shadow=isNight?'rgba(60,66,86,':'rgba(150,160,172,'; clouds.forEach(function(c){ c.x += c.baseSpeed*mult*dt; if (c.x-260*c.scale>W) c.x=-260*c.scale; ctx.save(); ctx.translate(c.x,c.y); ctx.scale(c.scale,c.scale); c.puffs.forEach(function(p){ var g=ctx.createRadialGradient(p.dx,p.dy+10,p.r*0.1,p.dx,p.dy+10,p.r); g.addColorStop(0,shadow+(0.22*alpha)+')'); g.addColorStop(1,shadow+'0)'); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(p.dx,p.dy+10,p.r,0,Math.PI*2); ctx.fill(); }); c.puffs.forEach(function(p){ var g=ctx.createRadialGradient(p.dx,p.dy,p.r*0.1,p.dx,p.dy,p.r); g.addColorStop(0,base+(0.95*alpha)+')'); g.addColorStop(1,base+'0)'); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(p.dx,p.dy,p.r,0,Math.PI*2); ctx.fill(); }); ctx.restore(); }); ctx.restore(); }",
+        "  function drawRain(intensity, dt, wind){ if (intensity<=0.02) return; ctx.save(); ctx.strokeStyle='rgba(200,220,235,'+(0.35*intensity)+')'; ctx.lineWidth=1.4; var driftX=(wind-0.3)*90; var count=Math.floor(drops.length*intensity); for (var i=0;i<count;i++){ var d=drops[i]; d.y+=d.speed*dt; d.x+=driftX*dt; if (d.y>H){ d.y=-20; d.x=Math.random()*W; } ctx.beginPath(); ctx.moveTo(d.x,d.y); ctx.lineTo(d.x-driftX*0.05,d.y+d.len); ctx.stroke(); } ctx.restore(); }",
+        "  function drawSnow(intensity, dt, t){ if (intensity<=0.02) return; ctx.save(); ctx.fillStyle='rgba(255,255,255,0.92)'; var count=Math.floor(flakes.length*intensity); for (var i=0;i<count;i++){ var f=flakes[i]; f.y+=f.speed*dt; var x=f.x+Math.sin(t*f.swaySpeed+f.sway)*18; if (f.y>H){ f.y=-10; f.x=Math.random()*W; } ctx.beginPath(); ctx.arc(x,f.y,f.r,0,Math.PI*2); ctx.fill(); } ctx.restore(); }",
+        "  function drawFog(intensity, dt){ if (intensity<=0.02) return; ctx.save(); fogBands.forEach(function(b){ b.x+=b.speed*dt; if (b.x-b.w>W) b.x=-b.w; var g=ctx.createLinearGradient(b.x,0,b.x+b.w,0); g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(0.5,'rgba(255,255,255,'+(0.30*intensity)+')'); g.addColorStop(1,'rgba(255,255,255,0)'); ctx.fillStyle=g; ctx.fillRect(b.x,b.y,b.w,b.h); }); ctx.fillStyle='rgba(230,232,232,'+(0.22*intensity)+')'; ctx.fillRect(0,0,W,H); ctx.restore(); }",
+        "  function drawStars(alpha, t){ if (alpha<=0.02) return; ctx.save(); stars.forEach(function(st){ var tw=0.55+0.45*Math.sin(t*st.speed+st.phase); ctx.fillStyle='rgba(255,255,255,'+(alpha*tw)+')'; ctx.beginPath(); ctx.arc(st.x,st.y,st.r,0,Math.PI*2); ctx.fill(); }); ctx.restore(); }",
+        "  function drawSun(alpha, warm){ if (alpha<=0.02) return; var x=W*0.80, y=H*0.20, r=Math.min(W,H)*0.09; ctx.save(); var core=warm?'255,196,140':'255,244,214'; var glow=ctx.createRadialGradient(x,y,0,x,y,r*(warm?4.4:3.4)); glow.addColorStop(0,'rgba('+core+','+(0.6*alpha)+')'); glow.addColorStop(1,'rgba('+core+',0)'); ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(x,y,r*(warm?4.4:3.4),0,Math.PI*2); ctx.fill(); ctx.fillStyle=warm?('rgba(255,214,170,'+alpha+')'):('rgba(255,251,235,'+alpha+')'); ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); ctx.restore(); }",
+        "  function drawMoon(alpha, phase){ if (alpha<=0.02) return; var x=W*0.80, y=H*0.16, r=Math.min(W,H)*0.055; ctx.save(); var glow=ctx.createRadialGradient(x,y,0,x,y,r*3.6); glow.addColorStop(0,'rgba(215,222,240,'+(0.30*alpha)+')'); glow.addColorStop(1,'rgba(215,222,240,0)'); ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(x,y,r*3.6,0,Math.PI*2); ctx.fill(); ctx.fillStyle='rgba(70,74,92,'+(0.55*alpha)+')'; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); ctx.save(); ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.clip(); ctx.fillStyle='rgba(238,240,248,'+alpha+')'; var rx=r*Math.cos(phase*2*Math.PI); ctx.beginPath(); if (phase<=0.5){ ctx.arc(x,y,r,-Math.PI/2,Math.PI/2,false); ctx.ellipse(x,y,Math.abs(rx),r,0,Math.PI/2,-Math.PI/2,rx<0); } else { ctx.arc(x,y,r,Math.PI/2,Math.PI*1.5,false); ctx.ellipse(x,y,Math.abs(rx),r,0,-Math.PI/2,Math.PI/2,rx>=0); } ctx.closePath(); ctx.fill(); ctx.restore(); ctx.restore(); }",
+        "  var boltCooldown = 0;",
+        "  function jaggedBolt(x0,y0,y1){ ctx.beginPath(); var x=x0,y=y0; ctx.moveTo(x,y); while (y<y1){ y+=26+Math.random()*30; x+=(Math.random()-0.5)*46; ctx.lineTo(x,y); } }",
+        "  function maybeStrikeLightning(dt, intensity){ if (intensity<=0){ boltCooldown=0; return; } boltCooldown -= dt; if (boltCooldown<=0){ var x0=W*(0.15+Math.random()*0.7); ctx.save(); ctx.strokeStyle='rgba(255,255,255,0.95)'; ctx.lineWidth=2.4; ctx.shadowColor='rgba(200,220,255,0.9)'; ctx.shadowBlur=14; jaggedBolt(x0,0,H*0.72); ctx.stroke(); ctx.lineWidth=1; jaggedBolt(x0+6,0,H*0.5); ctx.stroke(); ctx.restore(); boltCooldown = (2.5+Math.random()*4.5)/Math.max(intensity,0.35); } }",
+        "  var last = performance.now(); var t0 = last;",
+        "  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;",
+        "  function frame(now){",
+        "    var dt = Math.min((now-last)/1000, 0.05); last = now; var tSec = (now-t0)/1000;",
+        "    if (!reduced) transition.t = Math.min(1, transition.t + dt/1.6); else transition.t = 1;",
+        "    var te = transition.t<1 ? (1-Math.pow(1-transition.t,3)) : 1;",
+        "    var from = transition.from || transition.to;",
+        "    display.top = lerpArr(from.top, transition.to.top, te); display.bottom = lerpArr(from.bottom, transition.to.bottom, te);",
+        "    display.clouds = lerp(from.clouds, transition.to.clouds, te); display.rain = lerp(from.rain, transition.to.rain, te);",
+        "    display.snow = lerp(from.snow, transition.to.snow, te); display.fog = lerp(from.fog, transition.to.fog, te);",
+        "    display.stars = lerp(from.stars, transition.to.stars, te); display.storm = lerp(from.storm, transition.to.storm, te);",
+        "    display.sunOpacity = lerp(from.sunOpacity, transition.to.sun?1:0, te); display.moonOpacity = lerp(from.moonOpacity, transition.to.moon?1:0, te);",
+        "    display.warm = lerp(from.warm?1:(typeof from.warm==='number'?from.warm:0), transition.to.warm?1:0, te);",
+        "    var wind = windFactor();",
+        "    ctx.clearRect(0,0,W,H);",
+        "    var grad = ctx.createLinearGradient(0,0,0,H);",
+        "    grad.addColorStop(0, 'rgb('+display.top.map(Math.round).join(',')+')'); grad.addColorStop(1, 'rgb('+display.bottom.map(Math.round).join(',')+')');",
+        "    ctx.fillStyle = grad; ctx.fillRect(0,0,W,H);",
+        "    drawStars(display.stars, tSec); drawSun(display.sunOpacity, display.warm>0.5); drawMoon(display.moonOpacity, MOON_PHASE);",
+        "    drawClouds(display.clouds, display.stars>0.3, wind, reduced?0:dt);",
+        "    if (!reduced){ drawRain(display.rain, dt, wind); drawSnow(display.snow, dt, tSec); drawFog(display.fog, dt); maybeStrikeLightning(dt, display.storm); }",
+        "    else { if (display.rain>0.3) drawRain(display.rain, 0, wind); if (display.snow>0.3) drawSnow(display.snow, 0, tSec); if (display.fog>0.3) drawFog(display.fog, 0); }",
+        "    requestAnimationFrame(frame);",
+        "  }",
+        "  resize(); setState(resolveStateKey()); requestAnimationFrame(frame);",
+        "})();"
+      ].join('\\n');
+      doc.body.appendChild(s);
+    })();
+
     </script>
     """,
     height=0,
@@ -2218,6 +2319,31 @@ try:
     weather = fetch_weather()
 except Exception:
     weather = None
+
+# Feeds the animated sky-canvas background (see the merged kiosk script
+# above, 'kiosk-sky-canvas') its real conditions — session request: "an
+# exact replica of what the sky looks like... driven by real weather
+# fields." Computed here (not passed as raw epoch times) specifically
+# to avoid a naive-local-vs-true-UTC timestamp mismatch between this
+# server's datetimes and the browser's own Date.now(): day/golden-hour
+# are resolved to plain booleans in this same tz-consistent frame, so
+# the JS side never has to reconcile two different clocks.
+try:
+    _sky_is_day = bool(weather and weather["sunrise"] <= now <= weather["sunset"])
+    _sky_mins_since_sunrise = (now - weather["sunrise"]).total_seconds() / 60 if weather else 999
+    _sky_mins_to_sunset = (weather["sunset"] - now).total_seconds() / 60 if weather else 999
+    _sky_golden = bool(weather and (0 <= _sky_mins_since_sunrise <= 45 or 0 <= _sky_mins_to_sunset <= 45))
+    st.markdown(
+        f'<div id="kiosk-sky-data" style="display:none;" '
+        f'data-code="{weather["weather_code"] if weather else 2}" '
+        f'data-day="{"1" if _sky_is_day else "0"}" '
+        f'data-golden="{"1" if _sky_golden else "0"}" '
+        f'data-wind="{(weather.get("wind_speed_kmh") or 10) if weather else 10}"></div>',
+        unsafe_allow_html=True,
+    )
+except Exception:
+    pass
+
 try:
     _night_mode_day_start = weather["sunrise"].replace(second=0, microsecond=0) if weather else None
 except Exception:
