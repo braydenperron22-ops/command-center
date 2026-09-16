@@ -286,6 +286,50 @@ def _kiosk_watchdog_rows() -> str:
     )
 
 
+def _kiosk_boot_rows() -> str:
+    """Session request: crash detection — did the kiosk's last boot
+    actually end cleanly, or did it just stop (a real crash) outside
+    the scheduled daily reboot? Same shape as _kiosk_watchdog_rows
+    above — a background record from the kiosk's own writer script,
+    surfaced here with no live probe of the box from this page."""
+    boot = kiosk_hardware.load_boot_status()
+    if boot is None:
+        return _row("Last boot", "No reports yet", "neutral")
+    if boot.get("clean") is None:
+        return _row("Last boot", "Unknown", "neutral")
+    if boot.get("clean"):
+        return _row("Last boot", "Clean", "good", _relative_time(boot.get("at")))
+    return _row("Last boot", "Did not shut down cleanly", "low", _relative_time(boot.get("at"))) + (
+        f'<div class="maint-row-meta">{boot.get("reason", "")}</div>'
+    )
+
+
+def _kiosk_drive_rows() -> str:
+    """Session request: real SMART attribute detail (reallocated
+    blocks, wear level, error counts), not just a pass/fail health
+    flag — catches a drive going bad while it still technically says
+    "PASSED." Same background-record shape as its siblings above."""
+    smart = kiosk_hardware.load_smart_status()
+    if smart is None:
+        return _row("Drive health", "No reports yet", "neutral")
+    tone = "low" if smart.get("bad") else "good"
+    rows = [_row("Drive health", "Needs attention" if smart.get("bad") else "Healthy", tone, _relative_time(smart.get("at")))]
+    if smart.get("power_on_hours") is not None:
+        rows.append(_row("Power-on hours", meta=f"{smart['power_on_hours']:,}"))
+    if smart.get("wear_value") is not None and smart.get("wear_thresh") is not None:
+        rows.append(_row("Wear level", meta=f"{smart['wear_value']} (fails at {smart['wear_thresh']})"))
+    error_fields = [
+        ("Reallocated blocks", smart.get("reallocated_blocks")),
+        ("Reallocated events", smart.get("reallocated_events")),
+        ("Uncorrectable errors", smart.get("uncorrectable")),
+        ("CRC errors", smart.get("crc_errors")),
+    ]
+    for label, count in error_fields:
+        if count:
+            rows.append(_row(label, str(count), "low"))
+    return "".join(rows)
+
+
 def render() -> None:
     st.markdown('<div class="page-title page-title-maintenance">Maintenance</div>', unsafe_allow_html=True)
     row1 = st.columns(3)
@@ -312,3 +356,7 @@ def render() -> None:
     row4 = st.columns(3)
     with row4[0]:
         st.markdown(_tile("Kiosk Watchdog", _kiosk_watchdog_rows()), unsafe_allow_html=True)
+    with row4[1]:
+        st.markdown(_tile("Kiosk Last Boot", _kiosk_boot_rows()), unsafe_allow_html=True)
+    with row4[2]:
+        st.markdown(_tile("Kiosk Drive Health", _kiosk_drive_rows()), unsafe_allow_html=True)

@@ -92,6 +92,33 @@ def load_device_stats() -> dict | None:
     return devices or None
 
 
+def load_boot_status() -> dict | None:
+    """{"at", "clean", "reason"} -- did the kiosk's previous boot end
+    with a real shutdown/reboot sequence, or did it just stop (a crash)?
+    Only actually re-evaluated on the kiosk once per boot, not every
+    2-minute cycle — see the writer script's own comment."""
+    combined = _load_combined()
+    if combined is None:
+        return None
+    boot = dict(combined.get("boot") or {})
+    boot.setdefault("at", combined.get("at"))
+    return boot or None
+
+
+def load_smart_status() -> dict | None:
+    """{"reallocated_blocks", "reallocated_events", "uncorrectable",
+    "crc_errors", "power_on_hours", "wear_value", "wear_thresh", "bad"}
+    -- the kiosk's own SSD SMART attributes, re-checked on the kiosk
+    roughly once an hour (see the writer script's own comment — wear/
+    error counts don't change meaningfully minute to minute)."""
+    combined = _load_combined()
+    if combined is None:
+        return None
+    smart = dict(combined.get("smart") or {})
+    smart.setdefault("at", combined.get("at"))
+    return smart or None
+
+
 # This repo has no visibility into whatever logic the kiosk's own
 # writer script uses to set "bad" (see this module's own docstring —
 # that script isn't tracked here), so these are independent,

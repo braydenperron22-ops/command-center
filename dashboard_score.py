@@ -144,6 +144,14 @@ def compute() -> dict:
             for issue in (watchdog.get("issues") or [])[:3]:
                 score = _deduct(issues, score, 4, f"Kiosk: {issue}", "medium")
 
+    boot = kiosk_hardware.load_boot_status()
+    if boot is not None and boot.get("clean") is False:
+        score = _deduct(issues, score, 4, "Kiosk's last boot did not shut down cleanly", "medium")
+
+    smart = kiosk_hardware.load_smart_status()
+    if smart is not None and smart.get("bad"):
+        score = _deduct(issues, score, 8, "Kiosk drive showing real wear/error signs")
+
     now_ts = time.time()
     for key, label in _RECENT_FAILURE_KEYS:
         err = persisted_state.load(key, None)
