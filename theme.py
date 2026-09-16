@@ -2880,7 +2880,14 @@ html, body, [class*="css"] {
 .headline-rotation.rotation-score {
     background: linear-gradient(90deg, #050505 0%, #1c1c1c 50%, #050505 100%);
     box-shadow: 0 4px 24px rgba(0,0,0,0.55);
-    padding: 0.6rem 1.6rem;
+    /* Design pass: "look at how it's formatted... see what we can
+       improve." This bar has picked up real content since it was
+       first sized (win probability, base occupancy, NFL situation
+       detail all landed the same day) — the original 0.6rem/1.6rem
+       padding was tuned for the plainer score-only version and reads
+       cramped now that there's genuinely more to show. Bumped to
+       match the breathing room every other tier here already gets. */
+    padding: 0.75rem 1.9rem;
 }
 /* The mini-jumbotron itself — away team left, home team right, real
    logos, real abbreviations, the live score, and a status line
@@ -2901,8 +2908,12 @@ html, body, [class*="css"] {
     vertical-align: middle;
 }
 .mini-jumbo-logo {
-    height: 2.1rem;
-    width: 2.1rem;
+    /* Design pass: sized up slightly (was 2.1rem) — team identity is
+       the first thing a glance across the room should register, and
+       at the old size the logos read as an afterthought next to the
+       score. */
+    height: 2.3rem;
+    width: 2.3rem;
     object-fit: contain;
     filter: drop-shadow(0 1px 4px rgba(0,0,0,0.6));
 }
@@ -2950,7 +2961,7 @@ html, body, [class*="css"] {
 .mini-jumbo-bases {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: 5px;
     margin-left: 0.5rem;
     /* Same visual language as pages_jumbotron.py's own base diamond —
        rotated squares, not circles — just 3 in a row instead of a
@@ -2958,16 +2969,23 @@ html, body, [class*="css"] {
        diagram. */
     transform: rotate(45deg);
 }
+/* Design pass: "see what we can improve." These were the weakest
+   element on the bar — 7px, no glow at rest, genuinely unreadable at
+   real kiosk viewing distance even when lit, let alone the unlit
+   dots. Sized up and given a faint resting ring even when empty, so
+   the whole 3-dot cluster reads as "the bases" at a glance instead of
+   disappearing into the gradient until (and unless) one happens to be
+   lit. */
 .mini-jumbo-base {
-    width: 7px;
-    height: 7px;
-    background: rgba(255,255,255,0.15);
-    border: 1px solid rgba(255,255,255,0.3);
+    width: 9px;
+    height: 9px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.4);
 }
 .mini-jumbo-base.on {
     background: rgb(var(--mini-jumbo-accent, 160,170,200));
     border-color: rgb(var(--mini-jumbo-accent, 160,170,200));
-    box-shadow: 0 0 5px 1px rgba(var(--mini-jumbo-accent, 160,170,200), 0.7);
+    box-shadow: 0 0 7px 2px rgba(var(--mini-jumbo-accent, 160,170,200), 0.75);
 }
 .headline-rotation.rotation-warning {
     background: linear-gradient(90deg, #4a1512 0%, #a83a30 50%, #4a1512 100%);
@@ -6839,12 +6857,12 @@ html, body, [class*="css"] {
     /* .mini-jumbo's own children set their own absolute rem sizes
        (they don't inherit .headline-rotation's font-size above), so
        they need their own mobile downsize here too. */
-    .mini-jumbo-logo { height: 1.7rem; width: 1.7rem; }
+    .mini-jumbo-logo { height: 1.85rem; width: 1.85rem; }
     .mini-jumbo-abbr { font-size: 1rem; }
     .mini-jumbo-score { font-size: 1.5rem; }
     .mini-jumbo-status { font-size: 0.9rem; }
     .mini-jumbo-wp { font-size: 0.82rem; }
-    .mini-jumbo-base { width: 6px; height: 6px; }
+    .mini-jumbo-base { width: 7px; height: 7px; }
     /* Same reasoning — .bedtime-headline's own 2.4rem is an absolute
        size too, so it also needs its own explicit mobile downsize
        rather than inheriting .headline-rotation's 1.9rem above (which
