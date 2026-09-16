@@ -33,7 +33,6 @@ import dashboard_health
 import heartbeat
 import holidays_client
 import household_reminders
-import kiosk_hardware
 import lightning_client
 import local_news_client
 import market_circuit_breaker
@@ -1352,7 +1351,7 @@ components.html(
         "  filter.type = 'lowpass'; filter.frequency.value = opts.brightness || 2200; filter.Q.value = 0.5;",
         "  var out = c.createGain();",
         "  out.gain.setValueAtTime(0, t0);",
-        "  out.gain.linearRampToValueAtTime(gainMul, t0 + 0.006);",
+        "  out.gain.linearRampToValueAtTime(gainMul, t0 + (opts.attack !== undefined ? opts.attack : 0.006));",
         "  out.gain.exponentialRampToValueAtTime(0.0006, t0 + duration);",
         "  carrier.connect(filter); filter.connect(out);",
         "  var dry = c.createGain(); dry.gain.value = 0.85;",
@@ -1391,6 +1390,31 @@ components.html(
         "    } else {",
         "      kioskPlayFMBell(ctx, 293.66, { time: now, gain: 0.5 * vol, duration: 1.3, wet: 0.18, brightness: 1900, modRatio: 2.8, modIndex: 2.1 });",
         "    }",
+        "  } catch (e) {}",
+        "}",
+        // Session request: "make the leave-in alert softer and less
+        // jarring between... ten PM and eight AM," then "make the
+        // sound... three different softer options and I'll pick which
+        // one I like" — 3 candidate FM-bell variants were rendered to
+        // real WAV files and sent for a listen (warm_low/slow_fade/
+        // soft_duo, all quieter/darker/slower-attack than the ordinary
+        // gentle chime above); "1" picked warm_low. Same FM-bell voice
+        // as kioskPlayChime, just a lower carrier (G3 instead of D4),
+        // far less modulation depth (modIndex 1.0 vs 2.1 — rounder,
+        // less metallic), darker lowpass (1100Hz vs 1900Hz), and a
+        // genuine 60ms fade-in instead of the usual near-instant 6ms
+        // attack — no percussive "strike" at all. Only ever called from
+        // kioskPlayLeaveVoice below, only during quiet hours — every
+        // other gentle chime in the app (weather, road closures, other
+        // toasts) is untouched.
+        "function kioskPlayQuietLeaveChime(vol) {",
+        "  try {",
+        "    if (vol <= 0) return;",
+        "    var Ctx = window.AudioContext || window.webkitAudioContext;",
+        "    if (!Ctx) return;",
+        "    var ctx = window.__kioskChimeCtx || (window.__kioskChimeCtx = new Ctx());",
+        "    if (ctx.state === 'suspended') { ctx.resume(); }",
+        "    kioskPlayFMBell(ctx, 196.00, { time: ctx.currentTime, gain: 0.6 * vol, duration: 1.9, wet: 0.18, brightness: 1100, modRatio: 2.0, modIndex: 1.0, attack: 0.06 });",
         "  } catch (e) {}",
         "}",
         // "Aaron" is a real macOS voice name and won't exist on every
@@ -1558,7 +1582,8 @@ components.html(
         "  if (el.getAttribute('data-silent') === 'true') { return; }",
         "  var vol = parseFloat(el.getAttribute('data-volume'));",
         "  if (!(vol >= 0 && vol <= 1)) { vol = 1; }",
-        "  kioskPlayChime(false, vol);",
+        "  var leaveHour = new Date().getHours();",
+        "  if (leaveHour >= 22 || leaveHour < 8) { kioskPlayQuietLeaveChime(vol); } else { kioskPlayChime(false, vol); }",
         "  try {",
         "    var summary = el.getAttribute('data-summary') || '';",
         "    var audioB64 = el.getAttribute('data-audio-b64');",
@@ -3558,118 +3583,59 @@ try:
 except Exception:
     pass
 
-# Small bottom-right system-health glance — session request, after the
-# original percentage-based version's own blind spots caused real
-# confusion ("thought we rate limited main?? ... badge said 100%"):
-# "can you just change the badge to say AI: Active or AI: Rate Limited
-# or any an all other statuses it may have." Later widened to one row
-# per model — session request, once conflicts started pinning its own
-# model (gpt-oss-120b) separately from everything else's default
-# (llama-3.3-70b-versatile): "since we have a bunch of different
-# models now... show what models are active and what ones are not
-# responding." See groq_client.ai_status_by_model for the full status
-# list and what each one actually means. Page-independent like the
-# pinned headlines above; suppressed during a takeover for the same
-# reason they are.
+# Bottom-right system-health glance. History: started as a percentage
+# bar, then "AI: Active/Rate Limited" text, then one row per model, then
+# (session request: "encapsulate all of the performance metrics into
+# the bottom bar... it'll just rotate through it") up to 3 small slots
+# (AI/Dashboard/Kiosk) taking turns on a timer, each a couple words of
+# 0.68rem text.
 #
-# Follow-up session request: "encapsulate all of the performance
-# metrics into the bottom bar... all three AIs should be one thing...
-# dashboard and the physical box health can be two separate ones and
-# it'll just rotate through it so it doesn't take up any screen real
-# estate." What used to be up to 5 stacked rows (one per Groq account/
-# Gemini, Dashboard, Kiosk) is now up to 3 SLOTS, and only the current
-# one is ever actually rendered — the AI trio folds into a single
-# groq_client.ai_status_summary() badge first. STATUS_ROTATE_SECONDS is
-# nominal, same honest caveat headline_rotation.py's own hold-second
-# constants carry: the outer script only reruns every ~65-75s (see
-# kiosk-stale-watchdog's own comment on why), so the slot actually seen
-# advances roughly once per outer rerun, not on a tight visual cadence
-# — genuinely fine here, since the ask was screen real estate, not
-# animation speed. A pure time-phase (no persisted rotation state, no
-# Upstash write) rather than headline_rotation's own heavier order/
-# index/swap_at machinery — that earned its complexity handling a
-# dynamically-changing SET of eligible hazard sources with real
-# priority ordering; this is 2-3 fixed slots taking equal turns, a
-# simple `int(time.time() // N) % len(slots)` is the whole job.
-STATUS_ROTATE_SECONDS = 20
+# Session request: "make it so the score on the maintenance page is
+# shown in the corner in a bigger style instead of the small rotating
+# badges." dashboard_score.compute() (see that module's own docstring)
+# already rolls up every one of those rotating slots' own signals — AI
+# outage/budget/rate-limits, dashboard rerun health, kiosk CPU/RAM/
+# temp/network — into one number, so showing THAT instead of cycling
+# through 3 separate tiny badges is a real simplification, not just a
+# bigger font: one glance answers "is anything wrong" instead of
+# needing to catch the right slot on its ~20s turn. No new network call
+# or Upstash read here — compute() only reads state other modules
+# already maintain, same "be command conscious" rule this corner
+# always followed.
 if not _jumbotron_active and not _night_mode_active and not _terminal_active:
     try:
-        _status_slots = []
-        _ai_summary = groq_client.ai_status_summary()
-        _status_slots.append(
-            '<div class="ai-status-row">'
-            f'<span class="ai-status-dot ai-status-dot-{_ai_summary["tone"]}"></span>'
-            f'<span class="ai-status-text">{_ai_summary["label"]}: {_ai_summary["status"]}</span>'
-            "</div>"
+        _health = dashboard_score.compute()
+        st.markdown(
+            f'<div class="system-health-corner">'
+            f'<div class="system-health-corner-score system-health-score-{_health["tone"]}">{_health["score"]}</div>'
+            f'<div class="system-health-corner-meta">'
+            f'<div class="system-health-corner-grade">{_health["grade"]}</div>'
+            # Session request: "a system that shows how the dashboard is
+            # running... when it's being hung up, and when it's running
+            # smoothly, like an actual heart rate monitor." This row's
+            # own color/text is only ever touched by dashboard-pulse-
+            # watchdog (the JS block in the consolidated kiosk script)
+            # reading dashboard-pulse-ts, a marker the 10s toast
+            # fragment stamps fresh every tick, unconditional of page —
+            # this initial "good"/"Live" is just the first-paint guess
+            # before that JS has run once, corrected within ~2s either
+            # way. Deliberately NOT re-rendered by this outer ~65s
+            # script on every tick — server-computed "Xs ago" text
+            # would freeze the instant this exact bug happened (a real,
+            # wedged process can't rerun to update its own "just
+            # updated" claim) — see dashboard_health.py's own docstring
+            # for why the fast signal has to be a client-side clock
+            # ticking against a server timestamp, not server text.
+            # Kept as its own row (not folded into the score) since the
+            # score only refreshes once per outer rerun (~65-75s) —
+            # this stays the faster, more honest "is it hung right now"
+            # signal the score alone can't give.
+            f'<div class="system-health-corner-pulse">'
+            f'<span class="ai-status-dot ai-status-dot-good" id="dashboard-pulse-dot"></span>'
+            f'<span class="ai-status-text" id="dashboard-pulse-text">Dashboard: Live</span>'
+            "</div></div></div>",
+            unsafe_allow_html=True,
         )
-        # Session request: "a system that shows how the dashboard is
-        # running... when it's being hung up, and when it's running
-        # smoothly, like an actual heart rate monitor." This row's own
-        # color/text is only ever touched by dashboard-pulse-watchdog
-        # (the JS block down in the consolidated kiosk script) reading
-        # dashboard-pulse-ts, a marker the 10s toast fragment stamps
-        # fresh every tick, unconditional of page — this initial
-        # "good"/"Live" is just the first-paint guess before that JS
-        # has run once, corrected within ~2s either way. Deliberately
-        # NOT re-rendered by this outer ~65s script on every tick —
-        # server-computed "Xs ago" text would freeze the instant this
-        # exact bug happened (a real, wedged process can't rerun to
-        # update its own "just updated" claim) — see dashboard_health.py's
-        # own docstring for why the fast signal has to be a client-side
-        # clock ticking against a server timestamp, not server text.
-        # dashboard-pulse-watchdog already tolerates #dashboard-pulse-
-        # dot/-text not existing in the DOM at all (`if (!dot || !text)
-        # return;` — originally written for night-mode/jumbotron
-        # suppression, see that script's own comment) — exactly the
-        # condition this row is now ALSO in in the 2 of every 3 rotation
-        # turns it isn't the one showing, so no JS changes needed here.
-        _status_slots.append(
-            '<div class="ai-status-row">'
-            '<span class="ai-status-dot ai-status-dot-good" id="dashboard-pulse-dot"></span>'
-            '<span class="ai-status-text" id="dashboard-pulse-text">Dashboard: Live</span>'
-            "</div>"
-        )
-        # Session request: "a little tab with the performance stats of
-        # the computer... if anything is bad, flag it red." Real
-        # hardware numbers (CPU/RAM/temp) only exist on the physical
-        # kiosk box, not this Streamlit process — same handoff as the
-        # watchdog/night-mode sync above, read from the same shared
-        # Upstash store the kiosk's own watchdog already writes to
-        # every 2 minutes. Requested placement was top-right, but that
-        # corner is where .headline-rotation already lives — full-width,
-        # z-index:502, up often enough (any weather alert, leave-in
-        # timer, bedtime countdown) that a fixed element there gets
-        # silently covered, not just overlapped, the exact bug
-        # .ai-status-bar's own history above already found and fixed
-        # once. Joins this proven bottom-right corner instead, as one
-        # more slot in the same rotation — only present at all once real
-        # stats have actually landed in Upstash, so the rotation is 2
-        # slots (not 3) until then.
-        _perf = kiosk_hardware.load_perf_stats()
-        if _perf is not None:
-            _perf_tone = "low" if _perf.get("bad") else "good"
-            _status_slots.append(
-                '<div class="ai-status-row">'
-                f'<span class="ai-status-dot ai-status-dot-{_perf_tone}"></span>'
-                f'<span class="ai-status-text">Kiosk: {_perf["cpu_pct"]}% CPU · {_perf["ram_pct"]}% RAM · {_perf["temp_c"]}°C</span>'
-                "</div>"
-            )
-        # Session request: "run a network test every 20 minutes and flag
-        # if the WiFi is too slow." A systemd timer on the kiosk box
-        # itself measures real latency to this dashboard's own URL plus
-        # actual download throughput (Cloudflare's speed-test endpoint),
-        # same Upstash handoff as the kiosk perf stats just above.
-        _net = kiosk_hardware.load_network_test()
-        if _net is not None:
-            _net_tone = "low" if _net.get("bad") else "good"
-            _status_slots.append(
-                '<div class="ai-status-row">'
-                f'<span class="ai-status-dot ai-status-dot-{_net_tone}"></span>'
-                f'<span class="ai-status-text">Network: {_net["mbps"]} Mbps · {_net["latency_ms"]}ms</span>'
-                "</div>"
-            )
-        _status_phase = int(time.time() // STATUS_ROTATE_SECONDS) % len(_status_slots)
-        st.markdown(f'<div class="ai-status-bar">{_status_slots[_status_phase]}</div>', unsafe_allow_html=True)
     except Exception:
         pass
 

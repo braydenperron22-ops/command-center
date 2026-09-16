@@ -3510,30 +3510,60 @@ html, body, [class*="css"] {
    bottom bar... it'll just rotate through it so it doesn't take up any
    screen real estate." Up to 5 stacked rows became up to 3 (AI
    summary/Dashboard/Kiosk) ROTATING slots, app.py's own job — only
-   ONE .ai-status-row is ever actually in the DOM at a time now, so
-   .ai-status-bar itself is a single-row-tall pill again, same as its
-   very first version. */
-.ai-status-bar {
+   ONE row was ever actually in the DOM at a time.
+
+   Session request: "make it so the score on the maintenance page is
+   shown in the corner in a bigger style instead of the small rotating
+   badges." dashboard_score.py's composite score already rolls up
+   every one of those 3 slots' own underlying signals into one number
+   — replaced the whole rotation with this one always-visible badge
+   instead, class renamed .ai-status-bar -> .system-health-corner to
+   match (same position/z-index/corner — see .stElementContainer:has()
+   and the mobile breakpoint below, both updated to the new name; see
+   .brdn-ticker's own comment for why ITS stacking clearance above this
+   corner didn't need to change, same geometry either way). .ai-status-
+   dot/.ai-status-text below are kept — still reused by the pulse row
+   inside the new badge, see app.py's own comment on why that row
+   stays separate from the score itself. */
+.system-health-corner {
     position: fixed;
     bottom: 60px;
     right: 14px;
     z-index: 400;
     display: flex;
-    flex-direction: column;
-    gap: 0.22rem;
-    padding: 0.32rem 0.65rem;
-    border-radius: 10px;
-    background: rgba(12,12,16,0.62);
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.5rem 0.9rem;
+    border-radius: 14px;
+    background: rgba(12,12,16,0.68);
     backdrop-filter: blur(20px) saturate(160%);
     -webkit-backdrop-filter: blur(20px) saturate(160%);
-    border: 1px solid rgba(255,255,255,0.1);
-    opacity: 0.55;
+    border: 1px solid rgba(255,255,255,0.12);
+    opacity: 0.75;
     transition: opacity 0.2s ease;
 }
-.ai-status-bar:hover {
+.system-health-corner:hover {
     opacity: 1;
 }
-.ai-status-row {
+.system-health-corner-score {
+    font-size: 1.9rem;
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+.system-health-corner-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.18rem;
+}
+.system-health-corner-grade {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: rgba(255,255,255,0.6);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+.system-health-corner-pulse {
     display: flex;
     align-items: center;
     gap: 0.4rem;
@@ -3563,10 +3593,10 @@ html, body, [class*="css"] {
    often enough (bedtime countdown, leave-in timer, any weather/storm
    alert) that it silently covered this corner outright, not just
    overlapped it. Moved to bottom-right instead, stacked directly above
-   .ai-status-bar (measured live: bottom:60px, ~71.5px tall for its
-   then-typical 4-row stack) rather than sharing that corner —
+   .system-health-corner (measured live: bottom:60px, ~71.5px tall for
+   its then-typical 4-row stack) rather than sharing that corner —
    bottom:145px clears even a slightly taller stack with real breathing
-   room. .ai-status-bar is down to a single rotating row now (see its
+   room. That corner is down to one fixed-height badge now (see its
    own comment above) — this only means MORE clearance than strictly
    needed today, not a collision, so left as-is rather than re-tuned
    for a value that'd need remeasuring against a currently-disabled
@@ -3852,7 +3882,7 @@ html, body, [class*="css"] {
 .stElementContainer:has(> div.stMarkdown [data-testid="stMarkdownContainer"] > style:only-child),
 .stElementContainer:has(iframe),
 .stElementContainer:has(.screen-picker),
-.stElementContainer:has(.ai-status-bar),
+.stElementContainer:has(.system-health-corner),
 .stElementContainer:has(.rotation-timer-track),
 .stElementContainer:has(.ticker-bar),
 .stElementContainer:has(.top-alert-bar),
@@ -7170,10 +7200,11 @@ html, body, [class*="css"] {
        debug telemetry, not something a quick phone glance needs; the
        kiosk (where scrolling never happens, so this never overlaps
        anything) keeps it. */
-    .ai-status-bar { display: none; }
+    .system-health-corner { display: none; }
 
-    /* Same position:fixed-on-a-scrolling-phone-page bug as .ai-status-
-       bar just above, same fix — see that rule's own comment. */
+    /* Same position:fixed-on-a-scrolling-phone-page bug as
+       .system-health-corner just above, same fix — see that rule's
+       own comment. */
     .brdn-ticker { display: none; }
 
     /* The jumbotron's 3-column bento is built for a 1080p wall, not a
