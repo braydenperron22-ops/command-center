@@ -20,6 +20,7 @@ import aviation_client
 import brayden_index
 import commute_reminder
 import cpp_payment_dates
+import dashboard_score
 import data_health
 import ec_forecast
 import email_client
@@ -59,6 +60,7 @@ import pages_predictions
 import pages_radar
 import pages_scores
 import pages_sports
+import pages_system_health
 import pages_timeline
 import pages_today
 import pages_weather
@@ -2376,6 +2378,7 @@ _PAGE_LABELS = {
     "internals": "Internals", "today": "Today", "household": "Household",
     "weather": "Weather", "hourly": "Hourly", "radar": "Radar", "sports": "Sports", "scores": "Scores",
     "portfolio": "Portfolio", "predictions": "Predictions", "timeline": "Timeline",
+    "system_health": "System Health",
 }
 
 # Invisible on the kiosk monitor — theme.py hides .mobile-nav entirely
@@ -4040,6 +4043,8 @@ with st.container(key="page_body"):
         _safe_render(pages_brayden_index.render)
     elif page == "timeline":
         _safe_render(pages_timeline.render, now)
+    elif page == "system_health":
+        _safe_render(pages_system_health.render)
     elif page == "maintenance":
         _safe_render(pages_maintenance.render)
     elif page == "terminal":
@@ -4822,6 +4827,17 @@ st.markdown(f'<div id="kiosk-state-key" data-state="{html.escape(_kiosk_state_ke
 # this file so a stuck rerun genuinely never reaches it.
 try:
     dashboard_health.record_rerun(time.time() - _rerun_started_at)
+except Exception:
+    pass
+# Session request: "historical performance, that way I know if
+# something is falling off" — sampled unconditionally here (not from
+# pages_system_health.render itself) so the trend keeps getting
+# recorded during the ~75-80 minutes per rotation that page isn't the
+# one showing. record_if_due is a no-op the overwhelming majority of
+# reruns (see its own docstring) — a plain in-process float comparison,
+# not a persisted_state.load() on every rerun.
+try:
+    dashboard_score.record_if_due()
 except Exception:
     pass
 heartbeat.beat()

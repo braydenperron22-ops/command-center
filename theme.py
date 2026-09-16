@@ -2024,6 +2024,18 @@ html, body, [class*="css"] {
     background: #00C7BE;
     box-shadow: 0 0 8px 1px rgba(0,199,190,0.5);
 }
+/* pages_system_health.py — session request: "a page that rotates
+   through... derives one score on how the dashboard is doing." Lime
+   rather than another blue/teal (already crowded: Weather, Radar,
+   Scores, Timeline) or Maintenance's own muted grey (this page IS part
+   of the normal rotation, unlike that one — it should read as "alive,"
+   not "utility"). Checked against the full existing palette the same
+   way Timeline's own fix above was: ~79 to its nearest neighbor (News),
+   comfortably clear of the ~14-unit near-collision that was a real bug. */
+.page-title-system-health::before {
+    background: #B4E61D;
+    box-shadow: 0 0 8px 1px rgba(180,230,29,0.5);
+}
 
 /* pages_maintenance.py — session request: "add a maintenance tab...
    that shows stats on how everything is updating... all colour coded
@@ -2093,6 +2105,54 @@ html, body, [class*="css"] {
 .maint-pulse-bar-good { background: #32D74B; }
 .maint-pulse-bar-medium { background: #FF9F0A; }
 .maint-pulse-bar-low { background: #FF6961; }
+
+/* pages_system_health.py's own hero tile — the composite score plus
+   its history sparkline, deliberately the widest/tallest single tile
+   on the page (same "hero" weight the score gets in the layout, not
+   just visually) since it's the one number the whole page exists to
+   answer. Everything below it (kiosk/pulse/data-source vitals, the
+   issues list) reuses the plain .tile/.maint-row/.maint-pill language
+   already established rather than inventing a second visual system. */
+.system-health-hero {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 1.1rem 1.4rem;
+}
+.system-health-score-row {
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+}
+.system-health-score-number {
+    font-size: 3.4rem;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+.system-health-score-good { color: #32D74B; }
+.system-health-score-medium { color: #FF9F0A; }
+.system-health-score-low { color: #FF6961; }
+.system-health-score-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+.system-health-history {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+.system-health-history .sparkline {
+    width: 100%;
+    height: 54px;
+    opacity: 1;
+    margin-bottom: 0;
+}
+.system-health-history-caption {
+    font-size: 0.78rem;
+    color: #8E8E93;
+}
 
 /* Team + opponent logos (sports_client.py — MLB's static logo CDN and
    NHL's, both free, no key, keyed by team id/abbrev with no API call
@@ -3848,6 +3908,7 @@ html, body, [class*="css"] {
 .mobile-nav-item-portfolio { color: #A78BFA !important; }
 .mobile-nav-item-predictions { color: #0A84FF !important; }
 .mobile-nav-item-timeline { color: #00C7BE !important; }
+.mobile-nav-item-system_health { color: #B4E61D !important; }
 .mobile-nav-item-maintenance { color: #8E8E93 !important; }
 
 /* Screen picker (app.py) — session request: "bind the S key to a

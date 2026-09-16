@@ -216,6 +216,7 @@ YIELD_SPREAD_SERIES_ID = "T10Y2Y"
 PAGES = [
     "home", "conflicts", "news", "email", "markets", "internals", "today", "household",
     "weather", "hourly", "radar", "sports", "scores", "portfolio", "predictions", "timeline",
+    "system_health",
 ]
 # "brdn" (pages_brayden_index.py) used to be in the list above, cycling
 # through the ambient rotation on the same footing as Weather/Sports/
@@ -240,6 +241,17 @@ PAGES = [
 # request ("make the today page a page that actually cycles through")
 # moved it into the list above for real, on the same footing as every
 # other page here.
+#
+# "system_health" (pages_system_health.py) — session request: "a page
+# that rotates through... shows all the maintenance stats, for the
+# kiosk and the dashboard itself... derives one score... has historical
+# performance." Distinct from "maintenance" (pages_maintenance.py, an
+# exhaustive on-demand diagnostics grid, still picker/hotkey-only, not
+# in this list) — this is the glanceable score+trend version, launched
+# straight into the ambient rotation rather than picker-only first,
+# since (unlike Timeline's own launch above) there was no new visual
+# design to live with first, just new plumbing over data every other
+# page here already trusts.
 PAGE_ROTATION_SECONDS = 5 * 60
 
 # PAGE_DURATION_OVERRIDES lets a specific page hold the screen longer
