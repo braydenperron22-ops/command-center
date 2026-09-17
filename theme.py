@@ -11,6 +11,25 @@ CSS = """
    on every kiosk page load, not just dead CSS. */
 #MainMenu, header, footer { visibility: hidden; }
 
+/* Session report: "it's currently nighttime and I'm not seeing the
+   night background, it's just a black screen." The animated sky
+   canvas (app.py's own merged kiosk script, kiosk-sky-canvas) sits
+   behind document.body at z-index:-1 -- but .streamlit/config.toml's
+   own backgroundColor (#000000) paints Streamlit's root container
+   fully opaque ON TOP of that in the normal stacking order. The canvas
+   was never actually visible at all, any time of day, not something
+   that broke specifically at night -- flat black just happens to look
+   close enough to "working" during the day that nobody caught it
+   until the moon/stars were the obvious thing missing. Making the
+   root transparent is what actually lets the canvas show through;
+   every real tile/card in this file already carries its own explicit
+   background (the established convention throughout this stylesheet),
+   so removing the root's solid color only reveals the sky in the
+   empty space around and between content, not through it. */
+.stApp, [data-testid="stAppViewContainer"] {
+    background: transparent !important;
+}
+
 /* Kills Streamlit's own "stale element" dimming — every element
    container gets data-stale="true" and fades toward partial opacity for
    the ~1s a rerun is in flight, then fades back. Confirmed live
