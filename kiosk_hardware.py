@@ -131,9 +131,35 @@ TEMP_HIGH_C = 70
 CPU_HIGH_PCT = 90
 RAM_HIGH_PCT = 90
 
+# Session report: "set the alert for a threshold that actually will
+# impair the ability for the kiosk to load. It's just a fucking web
+# page. three point six Mbps is enough." Same move as TEMP_HIGH_C/
+# CPU_HIGH_PCT/RAM_HIGH_PCT above: this used to just trust the writer
+# script's own opaque "bad" flag for network, whatever threshold that
+# script happens to use internally — not tracked in this repo, and
+# evidently tuned for a heavier real use case than "reload a mostly-
+# cached Streamlit page every ~70s." A real, locally-owned number
+# instead, set well below the user's own stated "enough" reading so
+# normal fluctuation around it doesn't flap the alert.
+MBPS_LOW_THRESHOLD = 2.0
+
 _TEMP_ADVICE = "clean the fans/vents"
 _CPU_ADVICE = "check for a runaway process"
 _RAM_ADVICE = "a restart would help"
+
+
+def network_is_slow(net: dict | None) -> bool:
+    """True only when the real Mbps reading is below MBPS_LOW_
+    THRESHOLD — the one shared judgment _concerns(), dashboard_score.py,
+    and pages_system_health.py's network_stats() all call instead of
+    each separately checking the writer's own net["bad"] flag, so "is
+    the network actually a problem" can never drift into disagreeing
+    with itself across the headline, the score, and the page's own
+    color coding."""
+    if net is None:
+        return False
+    mbps = net.get("mbps")
+    return mbps is not None and mbps < MBPS_LOW_THRESHOLD
 
 
 def _concerns(perf: dict, boot: dict | None, smart: dict | None, net: dict | None) -> list[tuple[str, str]]:
@@ -151,16 +177,16 @@ def _concerns(perf: dict, boot: dict | None, smart: dict | None, net: dict | Non
 
     Session report: "shouldn't I have a red headline? For my internet,
     it's currently reading 1.6 Mbps." Real gap, found live — network
-    was already reaching dashboard_score.py's own score (see that
-    module's own `if net.get("bad")` deduction) but never this
+    was already reaching dashboard_score.py's own score but never this
     function, so a genuinely bad reading dinged the score silently
     with no headline, the only one of the 5 real signals this module
-    tracks that didn't. `net["bad"]` is the writer script's own
-    judgment (no local Mbps/ms threshold exists in this repo to
-    duplicate, same reason temp/CPU/RAM above use their own thresholds
-    but drive/boot trust the writer's flag directly) — trusted the same
-    way smart/boot already are, just with the real numbers surfaced in
-    the reading."""
+    tracks that didn't. Follow-up session report: the writer script's
+    own "bad" judgment this originally trusted directly was too
+    aggressive for what a kiosk actually needs (see MBPS_LOW_THRESHOLD's
+    own comment) — network_is_slow() above replaced it with a real,
+    locally-owned threshold instead, same "don't trust an opaque
+    external flag, judge the real number" move temp/CPU/RAM already
+    made above."""
     out = []
     temp = perf.get("temp_c")
     if temp is not None and temp >= TEMP_HIGH_C:
@@ -171,7 +197,7 @@ def _concerns(perf: dict, boot: dict | None, smart: dict | None, net: dict | Non
     ram = perf.get("ram_pct")
     if ram is not None and ram >= RAM_HIGH_PCT:
         out.append((f"{ram}% RAM", _RAM_ADVICE))
-    if net is not None and net.get("bad"):
+    if network_is_slow(net):
         out.append((f"{net.get('mbps')} Mbps network", "check the kiosk's WiFi signal/router"))
     if smart is not None and smart.get("bad"):
         out.append(("drive wear/errors", "back up your data soon, drive may be failing"))

@@ -186,7 +186,7 @@ def network_stats() -> str:
     net = kiosk_hardware.load_network_test()
     if net is None:
         return _stat_row(_stat("—", "MBPS"), _stat("—", "MS PING"))
-    tone = "low" if net.get("bad") else "good"
+    tone = "low" if kiosk_hardware.network_is_slow(net) else "good"
     return _stat_row(
         _stat(f"{net.get('mbps')}", "MBPS", tone),
         _stat(f"{net.get('latency_ms')}", "MS PING", tone),

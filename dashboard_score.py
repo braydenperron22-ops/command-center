@@ -131,7 +131,7 @@ def compute() -> dict:
             score = _deduct(issues, score, 5, f"Kiosk RAM pegged ({ram}%)")
 
     net = kiosk_hardware.load_network_test()
-    if net is not None and net.get("bad"):
+    if kiosk_hardware.network_is_slow(net):
         score = _deduct(issues, score, 6, f"Kiosk network slow ({net.get('mbps')} Mbps, {net.get('latency_ms')}ms)")
 
     watchdog = kiosk_hardware.load_watchdog_status()
