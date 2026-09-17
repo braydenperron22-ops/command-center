@@ -136,7 +136,7 @@ _CPU_ADVICE = "check for a runaway process"
 _RAM_ADVICE = "a restart would help"
 
 
-def _concerns(perf: dict, boot: dict | None, smart: dict | None) -> list[tuple[str, str]]:
+def _concerns(perf: dict, boot: dict | None, smart: dict | None, net: dict | None) -> list[tuple[str, str]]:
     """[(short_reading, advice)] for every metric currently over its
     own threshold, worst-first — empty once the box is genuinely fine.
     Independent per-field checks (not the writer's own single "bad"
@@ -147,7 +147,20 @@ def _concerns(perf: dict, boot: dict | None, smart: dict | None) -> list[tuple[s
     what's going on and how to fix it" — crash detection and drive
     health join the same worst-first list, same (reading, concrete-
     advice) shape as temp/CPU/RAM, so anything genuinely worth knowing
-    about the physical kiosk surfaces here, not just CPU/RAM/temp."""
+    about the physical kiosk surfaces here, not just CPU/RAM/temp.
+
+    Session report: "shouldn't I have a red headline? For my internet,
+    it's currently reading 1.6 Mbps." Real gap, found live — network
+    was already reaching dashboard_score.py's own score (see that
+    module's own `if net.get("bad")` deduction) but never this
+    function, so a genuinely bad reading dinged the score silently
+    with no headline, the only one of the 5 real signals this module
+    tracks that didn't. `net["bad"]` is the writer script's own
+    judgment (no local Mbps/ms threshold exists in this repo to
+    duplicate, same reason temp/CPU/RAM above use their own thresholds
+    but drive/boot trust the writer's flag directly) — trusted the same
+    way smart/boot already are, just with the real numbers surfaced in
+    the reading."""
     out = []
     temp = perf.get("temp_c")
     if temp is not None and temp >= TEMP_HIGH_C:
@@ -158,6 +171,8 @@ def _concerns(perf: dict, boot: dict | None, smart: dict | None) -> list[tuple[s
     ram = perf.get("ram_pct")
     if ram is not None and ram >= RAM_HIGH_PCT:
         out.append((f"{ram}% RAM", _RAM_ADVICE))
+    if net is not None and net.get("bad"):
+        out.append((f"{net.get('mbps')} Mbps network", "check the kiosk's WiFi signal/router"))
     if smart is not None and smart.get("bad"):
         out.append(("drive wear/errors", "back up your data soon, drive may be failing"))
     if boot is not None and boot.get("clean") is False:
@@ -180,7 +195,7 @@ def hardware_headline_candidate(now) -> dict | None:
     perf = load_perf_stats()
     if perf is None:
         return None
-    concerns = _concerns(perf, load_boot_status(), load_smart_status())
+    concerns = _concerns(perf, load_boot_status(), load_smart_status(), load_network_test())
     if not concerns:
         return None
     reading, advice = concerns[0]
