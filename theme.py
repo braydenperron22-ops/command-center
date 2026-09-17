@@ -235,9 +235,20 @@ html, body, [class*="css"] {
    session's follow-up request. The card still only owns the glass
    container (background/blur/border/padding); .morning-headline/
    .morning-body below own their own typography. */
+/* Session report: "the morning brief... white on white as well." This
+   card's own translucent tint used to be a light rgba(255,255,255,0.05)
+   glass — a nice subtle sheen assuming it always sat on this app's own
+   dark background, which was a safe assumption before the sky canvas
+   could put a bright fog/snow/heat-wave sky directly behind it. Switched
+   to a dark tint instead (same rgba(12,12,16,x) family .ai-status-bar's
+   own corner badge already uses for exactly this "must stay legible
+   regardless of what's behind it" reason) — the card's own light text
+   colors (color/.morning-body/.morning-headline below) were always
+   designed for a dark backing, so this is the fix that actually matches
+   the text, not a shadow papering over a backwards assumption. */
 .morning-briefing {
     color: #E5E5EA;
-    background: rgba(255,255,255,0.05);
+    background: rgba(12,12,16,0.6);
     backdrop-filter: blur(24px) saturate(160%);
     -webkit-backdrop-filter: blur(24px) saturate(160%);
     border: 1px solid rgba(255,255,255,0.08);
