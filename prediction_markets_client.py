@@ -117,13 +117,26 @@ _BUCKET_PATTERNS = [
     ("hike_50", _INCREASE_WORDS, re.compile(r"50", re.I)),
 ]
 BUCKET_ORDER = ["cut_50", "cut_25", "cut", "hold", "hike_25", "hike_50", "hike"]
+# Session request: "can we add the type of cut or hike that we're looking
+# at? So whether it's 25 or 50 basis points... if there's higher options,
+# we look at that as well. Because the Bank of Japan is looking at
+# potentially a 50 basis point hike here." The bps-level bucket a bank's
+# market already carries (cut_50/cut_25/hike_25/hike_50, see this
+# module's own docstring) was being collapsed away right here before
+# display — every hike/cut showed as a bare "Cut"/"Hike" regardless of
+# size. "50" is actually the market's own "50 or more" bucket (its real
+# question wording is "...by 50+ bps...", never an exact 50), so labeled
+# "50+ bps" rather than "50 bps" to stay honest about what the bucket
+# covers if a bank ever goes bigger still. The two coarser 3-way banks
+# (Bank of Israel, SARB) have no bps-level detail to show at all — their
+# "cut"/"hike" keys keep the plain bare label, not a fabricated size.
 BUCKET_LABELS = {
-    "cut_50": "Cut",
-    "cut_25": "Cut",
+    "cut_50": "Cut 50+ bps",
+    "cut_25": "Cut 25 bps",
     "cut": "Cut",
     "hold": "No change",
-    "hike_25": "Hike",
-    "hike_50": "Hike",
+    "hike_25": "Hike 25 bps",
+    "hike_50": "Hike 50+ bps",
     "hike": "Hike",
 }
 # Session request: color the direction, not each individual bucket —
