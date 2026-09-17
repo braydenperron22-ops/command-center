@@ -226,6 +226,31 @@ def current_type_label() -> str | None:
     return f"{hazard.title()} {type_label}" if hazard else type_label
 
 
+def current_hazard_for_sky() -> str | None:
+    """Hazard keyword (an _HAZARD_RANK key, e.g. "tornado"/"heat"/
+    "freezing rain") for the animated sky-canvas background (app.py's
+    kiosk-sky-canvas) — session request: wire the real EC alert system
+    into the severe-weather sky states, not just weather_code, so they
+    actually trigger during a real warning instead of never firing.
+
+    Only returns anything for a genuine warning-tier (or extreme)
+    alert — same threshold current_severity() itself already uses to
+    mean "certain/imminent enough to matter," not a mere Watch/
+    Statement/Advisory. Same selection as current_severity/current_
+    type_label (_combined_alerts/_selection_score), so the sky always
+    agrees with whatever the on-screen alert bar is showing right now
+    — no second, possibly-drifting definition of "which alert is
+    active" for a third caller to maintain."""
+    if current_severity() not in ("extreme", "warning", "warning-moderate"):
+        return None
+    alerts = _combined_alerts()
+    if not alerts:
+        return None
+    alert = max(alerts, key=_selection_score)
+    title = alert["title"].lower()
+    return next((h for h in _HAZARD_RANK if h in title), None)
+
+
 # Session request: "a recent special weather statement just came in but
 # it didnt show as a toast alert, make sure they show up." weather_
 # statement_candidate (headline_rotation.py's own unified rotation)

@@ -1899,20 +1899,40 @@ components.html(
         "  function computeMoonPhase(date){ var synodic=29.530588853; var known=Date.UTC(2000,0,6,18,14,0); var diff=(date.getTime()-known)/86400000; var p=(diff%synodic)/synodic; return p<0?p+1:p; }",
         "  var MOON_PHASE = computeMoonPhase(new Date());",
         "  var STATES = {",
-        "    'clear-day':   {top:[74,158,227], bottom:[178,222,247], sun:true, moon:false, clouds:0.12, rain:0, snow:0, fog:0, storm:0, stars:0},",
-        "    'golden-hour': {top:[64,86,148],  bottom:[247,170,110], sun:true, moon:false, clouds:0.18, rain:0, snow:0, fog:0, storm:0, stars:0, warm:true},",
-        "    'cloudy-day':  {top:[121,138,151],bottom:[184,196,203], sun:false,moon:false, clouds:0.85, rain:0, snow:0, fog:0, storm:0, stars:0},",
-        "    'fog':         {top:[168,174,178],bottom:[206,209,210], sun:false,moon:false, clouds:0.30, rain:0, snow:0, fog:1, storm:0, stars:0},",
-        "    'rain-day':    {top:[63,75,86],   bottom:[112,124,133], sun:false,moon:false, clouds:0.95, rain:0.55, snow:0, fog:0, storm:0, stars:0},",
-        "    'storm':       {top:[35,36,46],   bottom:[68,70,82],    sun:false,moon:false, clouds:1.0,  rain:1.0, snow:0, fog:0, storm:0.6, stars:0},",
-        "    'snow':        {top:[150,163,180],bottom:[213,220,228], sun:false,moon:false, clouds:0.7,  rain:0, snow:1, fog:0, storm:0, stars:0},",
-        "    'clear-night': {top:[8,12,28],    bottom:[27,36,64],    sun:false,moon:true,  clouds:0.06, rain:0, snow:0, fog:0, storm:0, stars:1},",
-        "    'cloudy-night':{top:[24,27,36],   bottom:[46,50,58],    sun:false,moon:false, clouds:0.85, rain:0, snow:0, fog:0, storm:0, stars:0},",
-        "    'rain-night':  {top:[20,24,32],   bottom:[42,48,56],    sun:false,moon:false, clouds:0.95, rain:0.55, snow:0, fog:0, storm:0, stars:0}",
+        "    'clear-day':   {top:[74,158,227], bottom:[178,222,247], sun:true, moon:false, clouds:0.12, rain:0, snow:0, fog:0, storm:0, stars:0, heat:0},",
+        "    'golden-hour': {top:[64,86,148],  bottom:[247,170,110], sun:true, moon:false, clouds:0.18, rain:0, snow:0, fog:0, storm:0, stars:0, warm:true, heat:0},",
+        "    'cloudy-day':  {top:[121,138,151],bottom:[184,196,203], sun:false,moon:false, clouds:0.85, rain:0, snow:0, fog:0, storm:0, stars:0, heat:0},",
+        "    'fog':         {top:[168,174,178],bottom:[206,209,210], sun:false,moon:false, clouds:0.30, rain:0, snow:0, fog:1, storm:0, stars:0, heat:0},",
+        "    'rain-day':    {top:[63,75,86],   bottom:[112,124,133], sun:false,moon:false, clouds:0.95, rain:0.55, snow:0, fog:0, storm:0, stars:0, heat:0},",
+        "    'storm':       {top:[35,36,46],   bottom:[68,70,82],    sun:false,moon:false, clouds:1.0,  rain:1.0, snow:0, fog:0, storm:0.6, stars:0, heat:0},",
+        "    'snow':        {top:[150,163,180],bottom:[213,220,228], sun:false,moon:false, clouds:0.7,  rain:0, snow:1, fog:0, storm:0, stars:0, heat:0},",
+        "    'clear-night': {top:[8,12,28],    bottom:[27,36,64],    sun:false,moon:true,  clouds:0.06, rain:0, snow:0, fog:0, storm:0, stars:1, heat:0},",
+        "    'cloudy-night':{top:[24,27,36],   bottom:[46,50,58],    sun:false,moon:false, clouds:0.85, rain:0, snow:0, fog:0, storm:0, stars:0, heat:0},",
+        "    'rain-night':  {top:[20,24,32],   bottom:[42,48,56],    sun:false,moon:false, clouds:0.95, rain:0.55, snow:0, fog:0, storm:0, stars:0, heat:0},",
+        "    'severe-storm':{top:[26,32,26],   bottom:[52,60,44],    sun:false,moon:false, clouds:1.0,  rain:1.0, snow:0, fog:0, storm:1.0, stars:0, heat:0},",
+        "    'tornado-warning':{top:[20,24,20],bottom:[42,48,36],    sun:false,moon:false, clouds:1.0,  rain:0.7, snow:0, fog:0, storm:0.5, stars:0, heat:0},",
+        "    'blizzard':    {top:[140,148,158],bottom:[188,194,200], sun:false,moon:false, clouds:0.9,  rain:0, snow:1, fog:0.45, storm:0, stars:0, heat:0},",
+        "    'freezing-rain':{top:[58,68,82],  bottom:[104,116,128], sun:false,moon:false, clouds:0.95, rain:0.45, snow:0, fog:0, storm:0, stars:0, heat:0},",
+        "    'heavy-rain':  {top:[42,50,60],   bottom:[78,88,98],    sun:false,moon:false, clouds:1.0,  rain:1.0, snow:0, fog:0, storm:0, stars:0, heat:0},",
+        "    'heavy-snow':  {top:[128,138,152],bottom:[196,204,214], sun:false,moon:false, clouds:0.95, rain:0, snow:1, fog:0, storm:0, stars:0, heat:0},",
+        "    'wind-warning':{top:[100,150,205],bottom:[192,212,226], sun:true, moon:false, clouds:0.5,  rain:0, snow:0, fog:0, storm:0, stars:0, heat:0},",
+        "    'smoke':       {top:[196,158,110],bottom:[224,186,132], sun:true, moon:false, clouds:0.05, rain:0, snow:0, fog:0.85, storm:0, stars:0, heat:0, fogTint:'196,140,90'},",
+        "    'heat-wave':   {top:[142,192,232],bottom:[255,238,205], sun:true, moon:false, clouds:0.02, rain:0, snow:0, fog:0, storm:0, stars:0, heat:1},",
+        "    'extreme-cold':{top:[152,190,222],bottom:[224,238,246], sun:true, moon:false, clouds:0.08, rain:0, snow:0, fog:0, storm:0, stars:0, heat:0},",
+        "    'frost':       {top:[120,150,178],bottom:[210,222,232], sun:true, moon:false, clouds:0.10, rain:0, snow:0, fog:0, storm:0, stars:0, heat:0, warm:true}",
+        "  };",
+        "  var HAZARD_TO_STATE = {",
+        "    'tornado':'tornado-warning', 'hurricane':'severe-storm', 'tsunami':'severe-storm',",
+        "    'thunderstorm':'severe-storm', 'tropical storm':'severe-storm', 'flood':'heavy-rain',",
+        "    'blizzard':'blizzard', 'winter storm':'blizzard', 'ice storm':'freezing-rain', 'freezing rain':'freezing-rain',",
+        "    'wind':'wind-warning', 'rainfall':'heavy-rain', 'snowfall':'heavy-snow',",
+        "    'air quality':'smoke', 'heat':'heat-wave', 'cold':'extreme-cold', 'frost':'frost', 'fog':'fog'",
         "  };",
         "  function resolveStateKey(){",
         "    var dataEl = document.getElementById('kiosk-sky-data');",
         "    if (!dataEl) return 'clear-day';",
+        "    var hazard = dataEl.dataset.hazard || '';",
+        "    if (hazard && HAZARD_TO_STATE[hazard]) return HAZARD_TO_STATE[hazard];",
         "    var code = dataEl.dataset.code || '2'; var isDay = dataEl.dataset.day === '1'; var golden = dataEl.dataset.golden === '1';",
         "    if (code === '0') return isDay ? (golden ? 'golden-hour' : 'clear-day') : 'clear-night';",
         "    if (code === '45') return 'fog';",
@@ -1923,16 +1943,17 @@ components.html(
         "  }",
         "  function windFactor(){ var dataEl = document.getElementById('kiosk-sky-data'); var w = dataEl ? parseFloat(dataEl.dataset.wind || '10') : 10; return Math.max(0, Math.min(1, w/45)); }",
         "  var current = STATES['clear-day'];",
-        "  var display = {top:current.top.slice(), bottom:current.bottom.slice(), clouds:current.clouds, rain:0, snow:0, fog:0, stars:0, storm:0, sunOpacity:1, moonOpacity:0, warm:0};",
+        "  var display = {top:current.top.slice(), bottom:current.bottom.slice(), clouds:current.clouds, rain:0, snow:0, fog:0, stars:0, storm:0, sunOpacity:1, moonOpacity:0, warm:0, heat:0};",
         "  var transition = {from:null, to:current, t:1};",
         "  var targetKey = 'clear-day';",
-        "  function setState(key){ if (key === targetKey || !STATES[key]) return; targetKey = key; transition.from = {top:display.top.slice(), bottom:display.bottom.slice(), clouds:display.clouds, rain:display.rain, snow:display.snow, fog:display.fog, stars:display.stars, storm:display.storm, sunOpacity:display.sunOpacity, moonOpacity:display.moonOpacity, warm:display.warm}; transition.to = STATES[key]; transition.t = 0; current = STATES[key]; }",
+        "  function setState(key){ if (key === targetKey || !STATES[key]) return; targetKey = key; transition.from = {top:display.top.slice(), bottom:display.bottom.slice(), clouds:display.clouds, rain:display.rain, snow:display.snow, fog:display.fog, stars:display.stars, storm:display.storm, sunOpacity:display.sunOpacity, moonOpacity:display.moonOpacity, warm:display.warm, heat:display.heat}; transition.to = STATES[key]; transition.t = 0; current = STATES[key]; }",
         "  setInterval(function(){ setState(resolveStateKey()); }, 2000);",
         "  function lerp(a,b,t){ return a+(b-a)*t; } function lerpArr(a,b,t){ return [lerp(a[0],b[0],t),lerp(a[1],b[1],t),lerp(a[2],b[2],t)]; }",
         "  function drawClouds(alpha, isNight, wind, dt){ if (alpha<=0.01) return; var mult=0.5+wind*2.2; ctx.save(); var base=isNight?'rgba(150,158,178,':'rgba(255,255,255,'; var shadow=isNight?'rgba(60,66,86,':'rgba(150,160,172,'; clouds.forEach(function(c){ c.x += c.baseSpeed*mult*dt; if (c.x-260*c.scale>W) c.x=-260*c.scale; ctx.save(); ctx.translate(c.x,c.y); ctx.scale(c.scale,c.scale); c.puffs.forEach(function(p){ var g=ctx.createRadialGradient(p.dx,p.dy+10,p.r*0.1,p.dx,p.dy+10,p.r); g.addColorStop(0,shadow+(0.22*alpha)+')'); g.addColorStop(1,shadow+'0)'); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(p.dx,p.dy+10,p.r,0,Math.PI*2); ctx.fill(); }); c.puffs.forEach(function(p){ var g=ctx.createRadialGradient(p.dx,p.dy,p.r*0.1,p.dx,p.dy,p.r); g.addColorStop(0,base+(0.95*alpha)+')'); g.addColorStop(1,base+'0)'); ctx.fillStyle=g; ctx.beginPath(); ctx.arc(p.dx,p.dy,p.r,0,Math.PI*2); ctx.fill(); }); ctx.restore(); }); ctx.restore(); }",
         "  function drawRain(intensity, dt, wind){ if (intensity<=0.02) return; ctx.save(); ctx.strokeStyle='rgba(200,220,235,'+(0.35*intensity)+')'; ctx.lineWidth=1.4; var driftX=(wind-0.3)*90; var count=Math.floor(drops.length*intensity); for (var i=0;i<count;i++){ var d=drops[i]; d.y+=d.speed*dt; d.x+=driftX*dt; if (d.y>H){ d.y=-20; d.x=Math.random()*W; } ctx.beginPath(); ctx.moveTo(d.x,d.y); ctx.lineTo(d.x-driftX*0.05,d.y+d.len); ctx.stroke(); } ctx.restore(); }",
         "  function drawSnow(intensity, dt, t){ if (intensity<=0.02) return; ctx.save(); ctx.fillStyle='rgba(255,255,255,0.92)'; var count=Math.floor(flakes.length*intensity); for (var i=0;i<count;i++){ var f=flakes[i]; f.y+=f.speed*dt; var x=f.x+Math.sin(t*f.swaySpeed+f.sway)*18; if (f.y>H){ f.y=-10; f.x=Math.random()*W; } ctx.beginPath(); ctx.arc(x,f.y,f.r,0,Math.PI*2); ctx.fill(); } ctx.restore(); }",
-        "  function drawFog(intensity, dt){ if (intensity<=0.02) return; ctx.save(); fogBands.forEach(function(b){ b.x+=b.speed*dt; if (b.x-b.w>W) b.x=-b.w; var g=ctx.createLinearGradient(b.x,0,b.x+b.w,0); g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(0.5,'rgba(255,255,255,'+(0.30*intensity)+')'); g.addColorStop(1,'rgba(255,255,255,0)'); ctx.fillStyle=g; ctx.fillRect(b.x,b.y,b.w,b.h); }); ctx.fillStyle='rgba(230,232,232,'+(0.22*intensity)+')'; ctx.fillRect(0,0,W,H); ctx.restore(); }",
+        "  function drawFog(intensity, dt, tint){ if (intensity<=0.02) return; tint = tint || '255,255,255'; ctx.save(); fogBands.forEach(function(b){ b.x+=b.speed*dt; if (b.x-b.w>W) b.x=-b.w; var g=ctx.createLinearGradient(b.x,0,b.x+b.w,0); g.addColorStop(0,'rgba('+tint+',0)'); g.addColorStop(0.5,'rgba('+tint+','+(0.30*intensity)+')'); g.addColorStop(1,'rgba('+tint+',0)'); ctx.fillStyle=g; ctx.fillRect(b.x,b.y,b.w,b.h); }); ctx.fillStyle='rgba('+tint+','+(0.22*intensity)+')'; ctx.fillRect(0,0,W,H); ctx.restore(); }",
+        "  function drawHeatShimmer(intensity, t){ if (intensity<=0.02) return; ctx.save(); ctx.strokeStyle='rgba(255,250,235,'+(0.10*intensity)+')'; ctx.lineWidth=3; for (var band=0;band<4;band++){ var y0=H*0.78+band*16; ctx.beginPath(); for (var x=0;x<=W;x+=20){ var yy=y0+Math.sin(x*0.02+t*3+band)*4; if (x===0) ctx.moveTo(x,yy); else ctx.lineTo(x,yy); } ctx.stroke(); } ctx.restore(); }",
         "  function drawStars(alpha, t){ if (alpha<=0.02) return; ctx.save(); stars.forEach(function(st){ var tw=0.55+0.45*Math.sin(t*st.speed+st.phase); ctx.fillStyle='rgba(255,255,255,'+(alpha*tw)+')'; ctx.beginPath(); ctx.arc(st.x,st.y,st.r,0,Math.PI*2); ctx.fill(); }); ctx.restore(); }",
         "  function drawSun(alpha, warm){ if (alpha<=0.02) return; var x=W*0.80, y=H*0.20, r=Math.min(W,H)*0.09; ctx.save(); var core=warm?'255,196,140':'255,244,214'; var glow=ctx.createRadialGradient(x,y,0,x,y,r*(warm?4.4:3.4)); glow.addColorStop(0,'rgba('+core+','+(0.6*alpha)+')'); glow.addColorStop(1,'rgba('+core+',0)'); ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(x,y,r*(warm?4.4:3.4),0,Math.PI*2); ctx.fill(); ctx.fillStyle=warm?('rgba(255,214,170,'+alpha+')'):('rgba(255,251,235,'+alpha+')'); ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); ctx.restore(); }",
         "  function drawMoon(alpha, phase){ if (alpha<=0.02) return; var x=W*0.80, y=H*0.16, r=Math.min(W,H)*0.055; ctx.save(); var glow=ctx.createRadialGradient(x,y,0,x,y,r*3.6); glow.addColorStop(0,'rgba(215,222,240,'+(0.30*alpha)+')'); glow.addColorStop(1,'rgba(215,222,240,0)'); ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(x,y,r*3.6,0,Math.PI*2); ctx.fill(); ctx.fillStyle='rgba(70,74,92,'+(0.55*alpha)+')'; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); ctx.save(); ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.clip(); ctx.fillStyle='rgba(238,240,248,'+alpha+')'; var rx=r*Math.cos(phase*2*Math.PI); ctx.beginPath(); if (phase<=0.5){ ctx.arc(x,y,r,-Math.PI/2,Math.PI/2,false); ctx.ellipse(x,y,Math.abs(rx),r,0,Math.PI/2,-Math.PI/2,rx<0); } else { ctx.arc(x,y,r,Math.PI/2,Math.PI*1.5,false); ctx.ellipse(x,y,Math.abs(rx),r,0,-Math.PI/2,Math.PI/2,rx>=0); } ctx.closePath(); ctx.fill(); ctx.restore(); ctx.restore(); }",
@@ -1952,6 +1973,7 @@ components.html(
         "    display.stars = lerp(from.stars, transition.to.stars, te); display.storm = lerp(from.storm, transition.to.storm, te);",
         "    display.sunOpacity = lerp(from.sunOpacity, transition.to.sun?1:0, te); display.moonOpacity = lerp(from.moonOpacity, transition.to.moon?1:0, te);",
         "    display.warm = lerp(from.warm?1:(typeof from.warm==='number'?from.warm:0), transition.to.warm?1:0, te);",
+        "    display.heat = lerp(from.heat||0, transition.to.heat||0, te);",
         "    var wind = windFactor();",
         "    ctx.clearRect(0,0,W,H);",
         "    var grad = ctx.createLinearGradient(0,0,0,H);",
@@ -1959,8 +1981,8 @@ components.html(
         "    ctx.fillStyle = grad; ctx.fillRect(0,0,W,H);",
         "    drawStars(display.stars, tSec); drawSun(display.sunOpacity, display.warm>0.5); drawMoon(display.moonOpacity, MOON_PHASE);",
         "    drawClouds(display.clouds, display.stars>0.3, wind, reduced?0:dt);",
-        "    if (!reduced){ drawRain(display.rain, dt, wind); drawSnow(display.snow, dt, tSec); drawFog(display.fog, dt); maybeStrikeLightning(dt, display.storm); }",
-        "    else { if (display.rain>0.3) drawRain(display.rain, 0, wind); if (display.snow>0.3) drawSnow(display.snow, 0, tSec); if (display.fog>0.3) drawFog(display.fog, 0); }",
+        "    if (!reduced){ drawRain(display.rain, dt, wind); drawSnow(display.snow, dt, tSec); drawFog(display.fog, dt, current.fogTint); drawHeatShimmer(display.heat, tSec); maybeStrikeLightning(dt, display.storm); }",
+        "    else { if (display.rain>0.3) drawRain(display.rain, 0, wind); if (display.snow>0.3) drawSnow(display.snow, 0, tSec); if (display.fog>0.3) drawFog(display.fog, 0, current.fogTint); if (display.heat>0.3) drawHeatShimmer(display.heat, tSec); }",
         "    requestAnimationFrame(frame);",
         "  }",
         "  resize(); setState(resolveStateKey()); requestAnimationFrame(frame);",
@@ -2333,12 +2355,23 @@ try:
     _sky_mins_since_sunrise = (now - weather["sunrise"]).total_seconds() / 60 if weather else 999
     _sky_mins_to_sunset = (weather["sunset"] - now).total_seconds() / 60 if weather else 999
     _sky_golden = bool(weather and (0 <= _sky_mins_since_sunrise <= 45 or 0 <= _sky_mins_to_sunset <= 45))
+    # Session request: "do the Environment Canada wiring" — a real
+    # active warning-tier hazard (see weather_alerts_bar.current_
+    # hazard_for_sky's own docstring) overrides the plain weather_code
+    # mapping client-side, so severe-storm/tornado/heat/cold/etc.
+    # actually trigger during a genuine EC alert instead of never
+    # firing at all.
+    try:
+        _sky_hazard = weather_alerts_bar.current_hazard_for_sky() or ""
+    except Exception:
+        _sky_hazard = ""
     st.markdown(
         f'<div id="kiosk-sky-data" style="display:none;" '
         f'data-code="{weather["weather_code"] if weather else 2}" '
         f'data-day="{"1" if _sky_is_day else "0"}" '
         f'data-golden="{"1" if _sky_golden else "0"}" '
-        f'data-wind="{(weather.get("wind_speed_kmh") or 10) if weather else 10}"></div>',
+        f'data-wind="{(weather.get("wind_speed_kmh") or 10) if weather else 10}" '
+        f'data-hazard="{html.escape(_sky_hazard)}"></div>',
         unsafe_allow_html=True,
     )
 except Exception:
