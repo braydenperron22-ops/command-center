@@ -300,6 +300,22 @@ html, body, [class*="css"] {
     gap: 0.6rem;
 }
 
+/* Session report: "it's a very foggy morning... the text isn't
+   visible... white on white." Real consequence of the sky canvas
+   sitting directly behind these specific elements (theme.py's own
+   .stApp-transparency fix) — unlike most tiles/cards in this file,
+   .hero-row's own children have no background of their own, so a
+   bright sky state (fog, snow, heat-wave, extreme-cold, cloudy-day)
+   can sit right behind light-colored text with nothing between them.
+   A text-shadow (not a background swap or a color that depends on
+   knowing which sky state is active) keeps every one of these legible
+   against ANY sky brightness, including ones this app doesn't even
+   have yet — the same technique the Sky Canvas design preview already
+   used for exactly this reason. */
+.clock, .date-sub, .weather-condition-label, .weather-hilo, .page-title {
+    text-shadow: 0 1px 10px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.75);
+}
+
 .clock {
     font-size: 4.2rem;
     font-weight: 600;
