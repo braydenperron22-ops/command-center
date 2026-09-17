@@ -221,6 +221,20 @@ _last_alerted_device_at: float | None = None
 
 
 def device_change_toast() -> dict | None:
+    """Session follow-up: "can you make it so that it shows what device
+    went offline? And if it doesn't know what device went offline,
+    then just say a device has left." devices["joined"]/["left"] are
+    OPTIONAL lists of real device names — the writer script doesn't
+    send these yet as of this comment (it only reports count/delta),
+    so every real toast today still falls through to the generic
+    phrasing below until that script is extended to actually capture
+    hostnames/names during its own network scan (outside this repo,
+    can't be done from here — see this module's own docstring). Once
+    it does, this needs no further changes: a present, non-empty list
+    is used automatically; an absent/empty one still falls back
+    exactly as before, so a cycle where the writer only recognizes
+    SOME of the devices that changed degrades gracefully to the
+    generic count instead of a partial, confusing name list."""
     global _last_alerted_device_at
     devices = load_device_stats()
     if devices is None:
@@ -234,9 +248,19 @@ def device_change_toast() -> dict | None:
     _last_alerted_device_at = at
     count = devices.get("count")
     if delta > 0:
-        headline = f"{delta} more device{'s' if delta != 1 else ''} just joined the network ({count} total)"
+        joined = [n for n in (devices.get("joined") or []) if n]
+        if joined:
+            headline = f"{', '.join(joined)} joined the network ({count} total)"
+        else:
+            headline = f"{delta} more device{'s' if delta != 1 else ''} just joined the network ({count} total)"
     else:
-        headline = f"{abs(delta)} device{'s' if abs(delta) != 1 else ''} just left the network ({count} total)"
+        left = [n for n in (devices.get("left") or []) if n]
+        if left:
+            headline = f"{', '.join(left)} left the network ({count} total)"
+        elif abs(delta) == 1:
+            headline = f"A device has left the network ({count} total)"
+        else:
+            headline = f"{abs(delta)} devices just left the network ({count} total)"
     return {
         "kind": "household",
         "category": "Household",
