@@ -220,8 +220,9 @@ def render() -> None:
     # this row used to be. Data Sources' own tile was dropped from here
     # — a real stale source still surfaces below in Current Issues
     # (same as it always did, via dashboard_score's own penalty), a
-    # healthy "N/14 fresh" count just wasn't part of what was asked for
-    # and this row reads cleaner with 3 tiles, not 4.
+    # healthy "N/14 fresh" count just wasn't part of what was asked for.
+    # Household (device count) joined later as a 4th tile — see
+    # household_stats' own comment.
     cols = st.columns(4)
     with cols[0]:
         st.markdown(_tile("Dashboard", dashboard_stats()), unsafe_allow_html=True)
