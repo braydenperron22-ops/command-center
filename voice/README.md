@@ -75,22 +75,34 @@ numbers are in.
 ## Known limitations (as of this build)
 
 - **No microphone is attached to the EliteDesk yet.** `arecord -l`
-  shows only the unused onboard analog line-in — no USB mic. The
-  entire acoustic front end (`voice/wake_word.py`, `voice/audio_io.py`)
-  is written and syntax-checked but **not yet live-verified** against
-  a real spoken "hey jarvis." `voice/orchestrator.py --text-mode`
-  exists specifically to prove everything else (LLM reasoning,
-  tool-calling, dashboard data, TTS playback) works end to end
-  independent of that gap. Get a USB mic (a conference speakerphone
-  with a physical mute button/LED is the recommended pick — it
-  satisfies the "obvious physical mute" requirement for free) and
-  re-run text-mode's counterpart, real audio mode, before considering
-  this actually done.
-- **`voice/wake_word.py`'s exact `openwakeword.Model()` call signature
-  is written from documented API, not yet confirmed against the
-  installed package on this box** (the pip install was still running
-  as of this file's last edit). Sanity-check this the first time
-  audio mode actually runs.
+  shows only the unused onboard analog line-in — no USB mic. Get a USB
+  mic (a conference speakerphone with a physical mute button/LED is the
+  recommended pick — it satisfies the "obvious physical mute"
+  requirement for free) before real audio mode can be exercised at
+  all. What HAS been verified without one, live on this box:
+  - `voice/wake_word.py`'s model loads correctly and scores real audio
+    without crashing (confirmed against the actual installed
+    `openwakeword` 0.4.0 — its real API differs from the first draft
+    in two ways, both now fixed: `Model()` takes real file paths via
+    `openwakeword.models[name]["model_path"]`, not a bare name list;
+    and every pretrained model, including `hey_jarvis`, ships bundled
+    inside the pip package with no separate download step).
+  - A genuine chunk-size bug was caught this way too: openWakeWord
+    requires audio in multiples of 1280 samples (80ms), which is a
+    different requirement from webrtcvad's 30ms frames — `audio_io.py`
+    now uses two separate capture streams, one per library.
+  - Silence and random noise both correctly score 0.0 (no false
+    positives).
+  - **Inconclusive**: feeding a Piper-synthesized "hey jarvis" through
+    the model (resampled 22050Hz -> 16000Hz) scored 0.0 even after
+    amplitude normalization — ruled out as an amplitude or resampling
+    bug, but this is a known, expected limitation of testing a
+    wake-word model (trained on real human speech) against an
+    unfamiliar synthetic TTS voice, not evidence the code is broken.
+    The one thing that actually proves this stage works is a real
+    human voice through a real microphone — genuinely still
+    unverified, and it's the single most important thing to test the
+    moment a mic is connected.
 - **Mute is currently software-only** (a `persisted_state` flag,
   `voice/status.set_muted()`) — there's no code path to flip it yet
   (a future dashboard hotkey, or a physical button, would call it). A
