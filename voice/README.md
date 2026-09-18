@@ -63,15 +63,27 @@ load.
 | Model | Speed | Tool-calling reliability |
 |---|---|---|
 | qwen2.5:1.5b | ~23 tok/s, ~4-5s per answer | **Unreliable, inconsistently.** Tested via both a raw API benchmark and the real orchestrator end to end (four real questions, full `--text-mode` run): correctly called `get_weather()` and `get_schedule()` and gave accurate, real-data answers for straightforward single-tool factual questions. But asked "should I leave for work now?" (needs `get_commute_status()`, a more inferential ask) it fabricated a plausible-sounding answer instead of calling the tool — confirmed this isn't a plumbing gap: Ollama's own `/api/show` shows `tools` as a declared capability and correctly injects the tool definitions into the prompt. Asked about a live Habs game, it didn't call `get_sports()` either, though it at least admitted it didn't know rather than inventing a score (arguably fine here, since the real answer — NHL is out of season on this date — would also have come back empty). The pattern: reliable for direct factual lookups, unreliable the moment a question requires recognizing an *inferential* need for a tool. |
-| llama3.2:3b | *(benchmark pending — download in progress on this box's own flaky WiFi as of this writing)* | *(pending)* |
+| llama3.2:3b | ~11 tok/s, 8-9s per direct answer. Ran all 5 real questions through the actual orchestrator end to end in 3m28s total (~42s/question average, some faster) — **half qwen's raw token rate**, but see the reliability column: this is the one that's actually usable. | **Reliable, verified against ground truth on every tool call.** Same 5 questions as qwen, run through the real `--text-mode` orchestrator (not just the raw API): correctly called `get_commute_status()` for "should I leave for work now?" and answered "leave by 7:56 AM" — checked directly against the tool's own real output: **exact match**. Correctly called `get_schedule()` and accurately summarized the real calendar (took Keira to school, work 9-5 — even correctly added "at TD Bank" from `config.USER_PROFILE`, a true fact, not an invented one). Correctly called `get_sports("habs")` for a Habs question and gave an honest, accurate answer about a real *upcoming* (not yet started) preseason game — verified against the tool's raw output, itself correct: no live score existed to report, and it correctly said so instead of inventing one. Zero fabrications across all 5 questions. |
 
 The qwen2.5:1.5b commute-question result is disqualifying on its own,
 independent of its speed and independent of the cases where it DID
 work correctly: the explicit hard requirement is that the assistant
 never invents dashboard data, and it did, even if only for some
-question shapes. `voice/config.OLLAMA_MODEL` defaults to `llama3.2:3b`,
-chosen for its stronger published track record on small-model tool
-use — update this file once its own benchmark numbers are in.
+question shapes. `voice/config.OLLAMA_MODEL` defaults to `llama3.2:3b`
+— confirmed the right call: slower, but the only one of the two that
+actually satisfies "never invent dashboard data" under real testing.
+
+**A real bug this benchmark surfaced and fixed**: the first llama3.2:3b
+run timed out (60s) on every question after the first tool call.
+Root cause: `get_commute_status()`'s raw tool result included a
+`points` field — every lat/lon coordinate along the drive, meant for
+drawing a map, not language reasoning — ballooning a single tool
+result to 6062 characters. `voice/tools.py`'s `get_commute_status()`
+now returns a clean, purpose-built summary instead of the raw
+dashboard dict, dropping to 360 characters (a 17x reduction) and
+eliminating the timeouts entirely. Worth keeping in mind for any
+future tool: pass the LLM what a spoken answer could actually use, not
+whatever shape the dashboard's own UI happens to want.
 
 ## Known limitations (as of this build)
 
