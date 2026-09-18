@@ -9,14 +9,32 @@ out of this box's own local speaker via sounddevice, since the voice
 assistant IS the thing sitting next to the speaker."""
 
 import io
+import sys
 import wave
 
 import numpy as np
-import sounddevice as sd
 from piper import PiperVoice
 from piper.config import SynthesisConfig
 
 from voice import config
+
+# sounddevice needs the system libportaudio2 shared library, which is a
+# genuinely separate, sudo-gated `apt install` step (see voice/README.md)
+# — not something pip alone can guarantee. Importing it at module level
+# unguarded means a box that hasn't had that one command run yet can't
+# even start the orchestrator at all, including --text-mode, which
+# needs no speaker-dependent code path except this one. Caught live:
+# this exact box, tonight, had openwakeword/faster-whisper/webrtcvad
+# all install and work fine while sounddevice raised `OSError:
+# PortAudio library not found` at import time. Degrading here (falling
+# back to printing the text) instead of crashing matches this
+# project's own explicit failure-modes review ("what happens if... the
+# speaker disappears") — a missing/removed speaker should be exactly
+# this same code path, not a special case.
+try:
+    import sounddevice as sd
+except OSError:
+    sd = None
 
 # Same values kiosk_tts.py's own docstring documents as A/B-tested
 # against 6 other voices and picked live — reused verbatim rather than
@@ -42,8 +60,17 @@ def speak(text: str, length_scale: float | None = None) -> bool:
     missing, no audio device, empty text) rather than raising — a
     failed TTS must degrade to "the assistant went silent this once,"
     never to crashing the whole voice service (see this project's own
-    failure-modes review: "what happens if text-to-speech fails")."""
+    failure-modes review: "what happens if text-to-speech fails").
+
+    No audio output device at all (see this module's own comment on
+    `sd`) prints the text to stdout instead of speaking it and returns
+    False — real degradation, not a crash, and genuinely useful for
+    --text-mode testing on a box that hasn't had libportaudio2
+    installed yet."""
     if not text:
+        return False
+    if sd is None:
+        print(f"[TTS unavailable — no audio output device] {config.ASSISTANT_NAME} would have said: {text}", file=sys.stderr)
         return False
     try:
         voice = _get_voice()

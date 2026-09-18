@@ -16,10 +16,20 @@ can be fully exercised and proven correct independent of that gap."""
 import time
 
 import numpy as np
-import sounddevice as sd
 import webrtcvad
 
 from voice import config
+
+# See voice/tts.py's own comment on the same pattern — sounddevice
+# needs the system libportaudio2 library, a separate sudo-gated step
+# from `pip install`. Caught live on this exact box: it's genuinely
+# absent as of this build. Guarded here so importing this module (and
+# therefore starting the orchestrator at all) doesn't hard-crash before
+# audio-mode-specific functions ever get a chance to fail gracefully.
+try:
+    import sounddevice as sd
+except OSError:
+    sd = None
 
 _FRAME_SAMPLES = int(config.SAMPLE_RATE * config.FRAME_MS / 1000)  # webrtcvad requires exactly 10/20/30ms frames
 
