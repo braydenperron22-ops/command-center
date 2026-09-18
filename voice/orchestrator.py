@@ -99,12 +99,19 @@ def _run_audio_mode() -> None:
         sys.exit(1)
 
     provider = get_provider()
-    frames = audio_io.mic_frames()
     history: list[dict] | None = None
     followup_deadline = 0.0
+    # A SEPARATE stream/generator from the one record_until_silence
+    # uses below — openWakeWord and webrtcvad require genuinely
+    # different input chunk sizes (1280 samples/80ms vs. a 10/20/30ms
+    # frame; see audio_io.wake_word_frames' own comment for why this
+    # isn't a detail worth unifying away). Held open across the whole
+    # idle-scanning phase; only actually read from when not in a
+    # conversational follow-up window.
+    wake_frames = audio_io.wake_word_frames()
 
     status.set_state("listening_for_wake_word")
-    for frame in frames:
+    while True:
         if status.is_muted():
             status.set_state("muted")
             time.sleep(0.5)
@@ -112,13 +119,19 @@ def _run_audio_mode() -> None:
 
         in_followup = history is not None and time.time() < followup_deadline
         if not in_followup:
-            if not wake_word.is_wake_word(frame):
+            if not wake_word.is_wake_word(next(wake_frames)):
                 continue
             wake_word.reset()
             history = [{"role": "system", "content": _system_prompt()}]
 
         status.set_state("listening")
-        audio = audio_io.record_until_silence(frames)
+        # Its own fresh stream, closed the moment this recording ends —
+        # not the same one wake_frames holds open, and not left dangling
+        # either (a stray open InputStream is a real resource leak on a
+        # long-running daemon).
+        record_frames = audio_io.mic_frames()
+        audio = audio_io.record_until_silence(record_frames)
+        record_frames.close()
         text = stt.transcribe(audio)
         if not text:
             status.set_state("listening_for_wake_word")

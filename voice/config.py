@@ -109,6 +109,12 @@ PIPER_VOICE_CONFIG_PATH = os.path.join(_REPO_ROOT, "piper_voices", "en_US-hfc_ma
 # --- Audio -----------------------------------------------------------------
 SAMPLE_RATE = 16000  # required by both openWakeWord and whisper
 FRAME_MS = 30  # webrtcvad only accepts 10/20/30ms frames at 16kHz
+# openWakeWord's own required input granularity — verified against the
+# real installed package (see wake_word.py's own comment): "multiples
+# of 80 ms (1280 samples)". A genuinely different requirement from
+# webrtcvad's 30ms frames above, not a detail to unify — audio_io.py
+# uses two differently-sized capture streams for exactly this reason.
+WAKE_WORD_CHUNK_SAMPLES = 1280
 
 # Session request: "a sensible timeout so it does not remain actively
 # listening indefinitely after a command... after some configurable

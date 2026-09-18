@@ -1,0 +1,144 @@
+# Jarvis — voice interface for the command-center dashboard
+
+A modular voice assistant that plugs into the existing dashboard as a
+new interface, not a replacement — the dashboard's own already-working
+Python functions are the assistant's "eyes," a local LLM is the
+reasoning layer, and this package is the ears/mouth wiring them
+together. Runs as its own process on the kiosk mini-PC (the HP
+EliteDesk 800 G2 this repo already runs its watchdog/night-mode
+services on) — completely separate from `app.py`, which still only
+ever runs on Streamlit Community Cloud. A crash here can never take the
+dashboard down, and vice versa.
+
+## Architecture
+
+```
+Microphone
+  -> voice/wake_word.py     (openWakeWord, fully local — "hey jarvis")
+  -> voice/audio_io.py      (VAD-bounded recording of the actual command)
+  -> voice/stt.py           (faster-whisper, fully local)
+  -> voice/orchestrator.py  (conversation loop + tool-calling)
+       -> voice/llm/        (AIProvider: Ollama by default, Claude also implemented)
+       -> voice/tools.py    (thin wrappers around weather_client, commute_reminder,
+                              calendar_client, sports_client, ec_alerts, ec_aqhi,
+                              road_conditions_511 — the SAME functions app.py uses)
+  -> voice/tts.py           (Piper, the same voice/config kiosk_tts.py already uses)
+  -> speaker
+
+voice/status.py publishes state to persisted_state.py (the same
+Upstash-backed store the kiosk watchdog already writes to) — app.py
+reads it back for the bottom-left status badge. This is the only
+connection between the two processes.
+```
+
+## Why Ollama, not groq_client.py/gemini_client.py
+
+Both existing dashboard AI clients share one call signature on purpose
+(`generate(prompt, ...)`), which looks like exactly the
+provider-swapping pattern this project wants. They were deliberately
+**not** reused for the voice brain:
+
+1. Neither does tool/function-calling at all today — both are plain
+   prompt-in/text-out.
+2. Both silently return `None` during dashboard-only quiet windows (an
+   overnight AI pause synced to the bedroom smart-light schedule, and
+   a pause during any live tracked game) that have nothing to do with
+   a live voice query — asking Jarvis a question at 11pm or during a
+   Habs game must never silently fail because of dashboard automation
+   elsewhere.
+3. Both share a hard 100k-tokens/day budget with existing automated
+   features (news classification, morning brief, conflicts overview).
+   Routing voice queries through the same key risks starving those
+   features on a heavy-usage day.
+
+Voice gets its own call path (`voice/llm/ollama_provider.py`), on its
+own local model, with no shared budget or quiet-window entanglement.
+
+## Live benchmark (on the actual target hardware)
+
+EliteDesk 800 G2, Intel i5-6500T, 4 threads (no hyperthreading),
+integrated graphics only (no GPU), ~4GB RAM available under normal
+load.
+
+| Model | Speed | Tool-calling reliability |
+|---|---|---|
+| qwen2.5:1.5b | ~23 tok/s, ~4-5s per answer | **Unreliable.** Asked "should I leave for work now?" with `get_commute_status()` available and correctly offered via Ollama's own tool-calling template (confirmed via `/api/show` — capabilities included `tools`, and the chat template correctly injected the tool definitions), it fabricated a plausible-sounding answer ("your leave-by time is set for 8:00 AM") instead of calling the tool. The real commute status at that moment had no active shift at all — the answer was pure invention. |
+| llama3.2:3b | *(benchmark pending — download in progress on this box's own flaky WiFi as of this writing)* | *(pending)* |
+
+The qwen2.5:1.5b result is disqualifying on its own, independent of its
+speed: the explicit hard requirement is that the assistant never
+invents dashboard data. `voice/config.OLLAMA_MODEL` defaults to
+`llama3.2:3b`, chosen for its stronger published track record on
+small-model tool use — update this file once its own benchmark
+numbers are in.
+
+## Known limitations (as of this build)
+
+- **No microphone is attached to the EliteDesk yet.** `arecord -l`
+  shows only the unused onboard analog line-in — no USB mic. The
+  entire acoustic front end (`voice/wake_word.py`, `voice/audio_io.py`)
+  is written and syntax-checked but **not yet live-verified** against
+  a real spoken "hey jarvis." `voice/orchestrator.py --text-mode`
+  exists specifically to prove everything else (LLM reasoning,
+  tool-calling, dashboard data, TTS playback) works end to end
+  independent of that gap. Get a USB mic (a conference speakerphone
+  with a physical mute button/LED is the recommended pick — it
+  satisfies the "obvious physical mute" requirement for free) and
+  re-run text-mode's counterpart, real audio mode, before considering
+  this actually done.
+- **`voice/wake_word.py`'s exact `openwakeword.Model()` call signature
+  is written from documented API, not yet confirmed against the
+  installed package on this box** (the pip install was still running
+  as of this file's last edit). Sanity-check this the first time
+  audio mode actually runs.
+- **Mute is currently software-only** (a `persisted_state` flag,
+  `voice/status.set_muted()`) — there's no code path to flip it yet
+  (a future dashboard hotkey, or a physical button, would call it). A
+  real physical mute (a mic with its own hardware mute switch) is the
+  better long-term answer per the original design brief.
+- **Only 7 tools are wired up** (`voice/tools.py`): weather, commute
+  status, schedule, air quality, weather alerts, road conditions, and
+  the three tracked sports teams. This deliberately covers every
+  example query in the original request; more dashboard data
+  (portfolio, rate odds, market quotes, night-mode status) can be added
+  the same way, but weren't added speculatively.
+- **`search_web()` doesn't exist.** Per the original request ("don't
+  implement a giant research system... first make the core voice
+  assistant work"), this is intentionally deferred.
+- **No staleness detection on the status badge.** If the voice service
+  crashes mid-`processing`, the dashboard badge will keep showing
+  "PROCESSING..." until the service restarts and reports a new state.
+  Acceptable for a first version; a heartbeat/timeout could be added
+  later if this proves confusing in practice.
+
+## Running it
+
+```bash
+cd ~/projects/command-center
+.venv/bin/pip install -r requirements-voice.txt   # one-time
+.venv/bin/python3 -m voice.orchestrator --text-mode   # typed input, spoken output — no mic needed
+.venv/bin/python3 -m voice.orchestrator               # full audio pipeline — needs a real mic
+```
+
+## Deploying as a service
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp voice/systemd/jarvis-voice.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now jarvis-voice.service
+```
+
+No `sudo` needed — this is a `systemd --user` unit, same as the
+existing `kiosk-dashboard.service`.
+
+## Configuration
+
+Everything in `voice/config.py` is overridable via a `VOICE_`-prefixed
+environment variable (set these in the systemd unit's `[Service]`
+block via `Environment=`) — see that file for the full list, including
+`VOICE_ASSISTANT_NAME` (rename "Jarvis"), `VOICE_AI_PROVIDER`
+(`ollama`/`claude`), `VOICE_OLLAMA_MODEL`, `VOICE_STT_MODEL_SIZE`,
+`VOICE_FOLLOWUP_WINDOW_SECONDS`, and the VAD/recording timeouts.
+`ANTHROPIC_API_KEY` (no `VOICE_` prefix, matching the SDK's own
+convention) enables the Claude provider.

@@ -5,13 +5,19 @@ transcribed, sent to an LLM, or transmitted anywhere. Everything in
 this module runs on raw audio frames already in memory; nothing here
 makes a network call.
 
-NOTE: the exact openwakeword.Model() constructor/predict() signature
-below is written from its documented API and gets a live sanity check
-(see voice/README.md's own verification log) the first time this
-actually runs on the box with the package installed — flagged here
-rather than silently assumed correct, since a wake-word library's
-precise call signature is exactly the kind of detail worth confirming
-against the real installed version rather than memory."""
+API verified live against the actual installed package (openwakeword
+0.4.0) rather than assumed from memory — two real corrections from the
+first draft, caught this way before ever running against real audio:
+
+1. `Model()` takes `wakeword_model_paths` (real file paths), not a
+   `wakeword_models` list of bare names, and has no `inference_
+   framework` kwarg. `openwakeword.models["hey_jarvis"]["model_path"]`
+   is the real lookup.
+2. Every pretrained model (including "hey_jarvis") ships bundled
+   INSIDE the pip package itself (openwakeword/resources/models/) on
+   this version — no `download_models()` call exists, and none is
+   needed; confirmed the .onnx files are already on disk immediately
+   after `pip install`."""
 
 import numpy as np
 
@@ -26,22 +32,28 @@ def _get_model():
         import openwakeword
         from openwakeword.model import Model
 
-        # Pretrained models (including "hey_jarvis") ship separately
-        # from the pip package and need a one-time download on first
-        # use — safe to call repeatedly, it no-ops once already present.
-        openwakeword.utils.download_models()
-        _model = Model(wakeword_models=[config.WAKE_WORD_MODEL], inference_framework="onnx")
+        entry = openwakeword.models.get(config.WAKE_WORD_MODEL)
+        if entry is None:
+            raise ValueError(
+                f"no pretrained openWakeWord model named {config.WAKE_WORD_MODEL!r}; "
+                f"available: {sorted(openwakeword.models)}"
+            )
+        _model = Model(wakeword_model_paths=[entry["model_path"]])
     return _model
 
 
 def score(audio_chunk: np.ndarray) -> float:
-    """`audio_chunk` is int16 PCM at 16kHz (openWakeWord's own required
-    input format — NOT the float32 array voice/stt.py expects; see
-    audio_io.py for where each stage gets its own correctly-shaped
-    copy). Returns the wake word's confidence score for this chunk
-    (openWakeWord keeps its own internal rolling buffer across calls,
-    so chunks must be fed in continuously, in order — a single
-    out-of-context chunk isn't meaningful on its own)."""
+    """`audio_chunk` is int16 PCM at 16kHz, length a multiple of 1280
+    samples (80ms) — openWakeWord's own required input granularity;
+    see voice/config.WAKE_WORD_CHUNK_SAMPLES and audio_io.wake_word_
+    frames(), which is the ONLY audio_io generator sized for this (the
+    VAD-oriented mic_frames()/record_until_silence() pair uses a
+    different, smaller frame size — the two libraries have genuinely
+    different input requirements, not a detail to unify away). Returns
+    the wake word's confidence score for this chunk (openWakeWord keeps
+    its own internal rolling buffer across calls, so chunks must be fed
+    in continuously, in order — a single out-of-context chunk isn't
+    meaningful on its own)."""
     model = _get_model()
     prediction = model.predict(audio_chunk)
     return float(prediction.get(config.WAKE_WORD_MODEL, 0.0))

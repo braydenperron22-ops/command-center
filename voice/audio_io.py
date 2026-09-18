@@ -24,12 +24,32 @@ from voice import config
 _FRAME_SAMPLES = int(config.SAMPLE_RATE * config.FRAME_MS / 1000)  # webrtcvad requires exactly 10/20/30ms frames
 
 
+def wake_word_frames():
+    """Yields raw int16 mono chunks of exactly WAKE_WORD_CHUNK_SAMPLES
+    (openWakeWord's own required 80ms granularity — see wake_word.py's
+    own comment), forever, from the system default input device. Used
+    ONLY for the idle wake-word-scanning phase — a genuinely different
+    chunk size from mic_frames()/record_until_silence() below, which
+    are sized for webrtcvad instead. orchestrator.py opens this stream
+    while idle and closes it (the `with` block exits) before opening
+    the VAD-sized one for the actual recording, rather than trying to
+    share one stream between two libraries with different input-size
+    requirements."""
+    with sd.InputStream(
+        samplerate=config.SAMPLE_RATE, channels=1, dtype="int16", blocksize=config.WAKE_WORD_CHUNK_SAMPLES
+    ) as stream:
+        while True:
+            frame, _overflowed = stream.read(config.WAKE_WORD_CHUNK_SAMPLES)
+            yield frame.reshape(-1)
+
+
 def mic_frames():
     """Yields raw int16 mono frames of exactly FRAME_MS duration,
-    forever, from the system default input device. A generator (not a
-    callback) so the caller's own loop stays in plain, easy-to-follow
-    control flow — wake-word scanning and VAD-bounded recording are
-    both just "read the next frame and decide.\""""
+    forever, from the system default input device. Used for VAD-bounded
+    recording (record_until_silence below) AFTER a wake-word trigger —
+    NOT for wake-word scanning itself, which needs the larger chunks
+    wake_word_frames() provides instead (see that function's own
+    comment)."""
     with sd.InputStream(
         samplerate=config.SAMPLE_RATE, channels=1, dtype="int16", blocksize=_FRAME_SAMPLES
     ) as stream:
