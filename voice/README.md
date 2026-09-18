@@ -74,6 +74,13 @@ numbers are in.
 
 ## Known limitations (as of this build)
 
+- **The Claude provider (`voice/llm/claude_provider.py`) is untested.**
+  No `ANTHROPIC_API_KEY` was configured to test against — the code is
+  written carefully against Anthropic's real documented Messages API
+  shape (tool_use/tool_result content blocks, system as a top-level
+  field), but unlike the Ollama provider, it hasn't been exercised
+  against a real response. Verify it before actually relying on
+  `VOICE_AI_PROVIDER=claude`.
 - **No microphone is attached to the EliteDesk yet.** `arecord -l`
   shows only the unused onboard analog line-in — no USB mic. Get a USB
   mic (a conference speakerphone with a physical mute button/LED is the
