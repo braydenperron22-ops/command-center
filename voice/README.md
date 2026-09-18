@@ -87,6 +87,9 @@ whatever shape the dashboard's own UI happens to want.
 
 ## Known limitations (as of this build)
 
+- ~~No microphone is attached~~ **RESOLVED**: a SteelSeries Arctis 1 headset (mic into the dedicated mic-in jack, no splitter needed) was connected live and the full pipeline was verified end to end with a real human voice — wake word detected, command transcribed correctly, llama3.2:3b answered, Piper spoke the response out loud, confirmed audibly by the user. Two real bugs were found and fixed getting here, both real API/data mismatches that only real audio surfaced:
+  1. **The actual wake-word bug**: `openwakeword.Model.predict()` keys its result by the model's own internal name ("hey_jarvis_v0.1"), not the bare "hey_jarvis" `WAKE_WORD_MODEL` was set to — `prediction.get(config.WAKE_WORD_MODEL, 0.0)` silently returned the 0.0 default on every single call, which is exactly why an earlier synthetic-TTS smoke test also scored a flat 0.0 and got written up (wrongly) as an acoustic-mismatch limitation. Fixed in `voice/wake_word.py` by reading the dict's only value directly instead of assuming a key name. Once fixed, live testing showed clean detections scoring 0.86-0.99 on real speech.
+  2. faster-whisper's `tiny.en` model download had silently stalled at 0 bytes hours earlier (the same flaky-WiFi problem from the Ollama pulls) and was never retried — `stt.transcribe()`'s broad exception handling degraded this to a silent empty-string return rather than a visible error, so the first two live trigger attempts correctly detected the wake word and recorded audio, but produced no response because transcription silently failed. Cleared the stale cache and re-downloaded successfully once the connection stabilized.
 - **The Claude provider (`voice/llm/claude_provider.py`) is untested.**
   No `ANTHROPIC_API_KEY` was configured to test against — the code is
   written carefully against Anthropic's real documented Messages API
