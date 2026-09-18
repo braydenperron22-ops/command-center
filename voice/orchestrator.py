@@ -124,15 +124,24 @@ def _run_audio_mode() -> None:
             wake_word.reset()
             history = [{"role": "system", "content": _system_prompt()}]
 
+        # Close the wake-word stream before opening the recording one —
+        # never hold two simultaneous InputStreams on the same device.
+        # A real-but-minor tradeoff either way: closing first means a
+        # brief (sub-100ms) gap where nothing is capturing, which could
+        # in principle clip the very start of a command spoken with no
+        # pause after the wake word itself; the alternative (leaving
+        # both open for the whole recording) risks driver-level
+        # contention for the entire multi-second recording instead of a
+        # one-time startup gap. Worth tuning once real hardware is
+        # available to test against (see voice/README.md) — not
+        # something verifiable without a real microphone.
+        wake_frames.close()
         status.set_state("listening")
-        # Its own fresh stream, closed the moment this recording ends —
-        # not the same one wake_frames holds open, and not left dangling
-        # either (a stray open InputStream is a real resource leak on a
-        # long-running daemon).
         record_frames = audio_io.mic_frames()
         audio = audio_io.record_until_silence(record_frames)
         record_frames.close()
         text = stt.transcribe(audio)
+        wake_frames = audio_io.wake_word_frames()
         if not text:
             status.set_state("listening_for_wake_word")
             history = None
