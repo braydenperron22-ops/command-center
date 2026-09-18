@@ -1,0 +1,14 @@
+# Dependencies for voice/ ONLY — deliberately kept out of requirements.txt
+# (the Streamlit Cloud app's own dependency file). This code never runs
+# on Streamlit Cloud; some of it (audio I/O) wouldn't even install
+# there. Install into the same repo's venv on the mini-PC only:
+#   .venv/bin/pip install -r requirements-voice.txt
+#
+# streamlit, requests, astral, icalendar, recurring-ical-events, and
+# piper-tts are already in requirements.txt and are reused as-is by
+# voice/tools.py and voice/tts.py — not repeated here.
+openwakeword
+faster-whisper
+sounddevice
+webrtcvad
+numpy

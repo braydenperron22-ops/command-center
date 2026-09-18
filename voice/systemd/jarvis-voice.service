@@ -1,0 +1,24 @@
+[Unit]
+Description=Jarvis voice assistant
+# A systemd --user unit (installed to ~/.config/systemd/user/, same as
+# the existing kiosk-dashboard.service) rather than a system-level one
+# on purpose: it needs no sudo/root to install or manage, matching
+# every other kiosk service already on this box. ollama.service (the
+# one genuine cross-service dependency) is a SYSTEM unit, so it can't
+# be a hard `Wants=`/`After=` from here — orchestrator.py's own
+# wait_until_reachable() retry loop at startup covers that boot-order
+# gap instead, so this still starts correctly regardless of which
+# service happens to come up first.
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/command-center
+ExecStart=%h/projects/command-center/.venv/bin/python3 -m voice.orchestrator
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=120
+StartLimitBurst=6
+
+[Install]
+WantedBy=default.target
