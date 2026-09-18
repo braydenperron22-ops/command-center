@@ -6,8 +6,9 @@ this module runs on raw audio frames already in memory; nothing here
 makes a network call.
 
 API verified live against the actual installed package (openwakeword
-0.4.0) rather than assumed from memory — two real corrections from the
-first draft, caught this way before ever running against real audio:
+0.4.0) rather than assumed from memory — three real corrections from
+the first draft, each caught by actually running this against real
+audio rather than trusting the first version that ran without error:
 
 1. `Model()` takes `wakeword_model_paths` (real file paths), not a
    `wakeword_models` list of bare names, and has no `inference_
@@ -17,7 +18,21 @@ first draft, caught this way before ever running against real audio:
    INSIDE the pip package itself (openwakeword/resources/models/) on
    this version — no `download_models()` call exists, and none is
    needed; confirmed the .onnx files are already on disk immediately
-   after `pip install`."""
+   after `pip install`.
+3. THE REAL BUG, found live the first time a human actually spoke to
+   this: `model.predict()`'s returned dict is keyed by the model's own
+   internal name derived from its filename — "hey_jarvis_v0.1", not
+   the bare "hey_jarvis" this module's own WAKE_WORD_MODEL config value
+   uses. `prediction.get(config.WAKE_WORD_MODEL, 0.0)` therefore always
+   silently returned the 0.0 default, no matter what the model actually
+   computed — score() reported a flat 0.0 for real "hey jarvis" speech
+   at a clean, verified-good mic level, exactly as it had for a
+   synthetic TTS test earlier (which made the earlier test's own 0.0
+   read as "expected TTS/human-speech mismatch" instead of the actual
+   bug it was hiding). Fixed by reading the dict's own only value
+   directly (this module only ever loads ONE wakeword model) instead of
+   assuming a key name — robust to whatever openWakeWord happens to
+   call it, for any wake word."""
 
 import numpy as np
 
@@ -53,10 +68,15 @@ def score(audio_chunk: np.ndarray) -> float:
     the wake word's confidence score for this chunk (openWakeWord keeps
     its own internal rolling buffer across calls, so chunks must be fed
     in continuously, in order — a single out-of-context chunk isn't
-    meaningful on its own)."""
+    meaningful on its own).
+
+    Reads the ONLY value in the prediction dict rather than looking it
+    up by a key name this module assumes — see this module's own
+    docstring, point 3, for the real bug that shipped when this instead
+    did `prediction.get(config.WAKE_WORD_MODEL, 0.0)`."""
     model = _get_model()
     prediction = model.predict(audio_chunk)
-    return float(prediction.get(config.WAKE_WORD_MODEL, 0.0))
+    return float(next(iter(prediction.values()), 0.0))
 
 
 def is_wake_word(audio_chunk: np.ndarray) -> bool:
