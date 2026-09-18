@@ -62,15 +62,16 @@ load.
 
 | Model | Speed | Tool-calling reliability |
 |---|---|---|
-| qwen2.5:1.5b | ~23 tok/s, ~4-5s per answer | **Unreliable.** Asked "should I leave for work now?" with `get_commute_status()` available and correctly offered via Ollama's own tool-calling template (confirmed via `/api/show` — capabilities included `tools`, and the chat template correctly injected the tool definitions), it fabricated a plausible-sounding answer ("your leave-by time is set for 8:00 AM") instead of calling the tool. The real commute status at that moment had no active shift at all — the answer was pure invention. |
+| qwen2.5:1.5b | ~23 tok/s, ~4-5s per answer | **Unreliable, inconsistently.** Tested via both a raw API benchmark and the real orchestrator end to end (four real questions, full `--text-mode` run): correctly called `get_weather()` and `get_schedule()` and gave accurate, real-data answers for straightforward single-tool factual questions. But asked "should I leave for work now?" (needs `get_commute_status()`, a more inferential ask) it fabricated a plausible-sounding answer instead of calling the tool — confirmed this isn't a plumbing gap: Ollama's own `/api/show` shows `tools` as a declared capability and correctly injects the tool definitions into the prompt. Asked about a live Habs game, it didn't call `get_sports()` either, though it at least admitted it didn't know rather than inventing a score (arguably fine here, since the real answer — NHL is out of season on this date — would also have come back empty). The pattern: reliable for direct factual lookups, unreliable the moment a question requires recognizing an *inferential* need for a tool. |
 | llama3.2:3b | *(benchmark pending — download in progress on this box's own flaky WiFi as of this writing)* | *(pending)* |
 
-The qwen2.5:1.5b result is disqualifying on its own, independent of its
-speed: the explicit hard requirement is that the assistant never
-invents dashboard data. `voice/config.OLLAMA_MODEL` defaults to
-`llama3.2:3b`, chosen for its stronger published track record on
-small-model tool use — update this file once its own benchmark
-numbers are in.
+The qwen2.5:1.5b commute-question result is disqualifying on its own,
+independent of its speed and independent of the cases where it DID
+work correctly: the explicit hard requirement is that the assistant
+never invents dashboard data, and it did, even if only for some
+question shapes. `voice/config.OLLAMA_MODEL` defaults to `llama3.2:3b`,
+chosen for its stronger published track record on small-model tool
+use — update this file once its own benchmark numbers are in.
 
 ## Known limitations (as of this build)
 
