@@ -56,6 +56,7 @@ from astral import LocationInfo
 from astral.sun import sun
 
 import air_quality_client
+import birthdays_client
 import calendar_client
 import commute_client
 import commute_reminder
@@ -668,6 +669,25 @@ def _household_clause(now: datetime) -> tuple[int, str] | None:
                     direction = "jumped" if change > 0 else "dropped"
                     return 2, f"gas price {direction} {abs(change):.1f}¢ to {gas['price']:.1f}¢/L overnight"
                 return 2, f"gas price {gas['price']:.1f}¢/L (above average, eco driving recommended)"
+    return None
+
+
+def _birthday_clause(now: datetime) -> tuple[int, str] | None:
+    """Session request: "make it so September 18th is always flagged as
+    Chloe's birthday. I want to make sure I don't forget." Priority 7
+    today — one tier above _cpp_clause's own "busy branch" 6, since
+    forgetting a partner's birthday is a worse day than a busy bank
+    branch. A 3-day-ahead heads-up too (unlike _cpp_clause, which is
+    same-day/next-day only) — "don't forget" reads as wanting a chance
+    to actually plan something, not just a day-of announcement."""
+    birthday = birthdays_client.next_birthday(now.date())
+    if not birthday:
+        return None
+    if birthday["days_until"] == 0:
+        return 7, f"{birthday['label']} is today"
+    if 1 <= birthday["days_until"] <= 3:
+        day_word = "day" if birthday["days_until"] == 1 else "days"
+        return 4, f"{birthday['label']} is in {birthday['days_until']} {day_word}"
     return None
 
 
@@ -1511,6 +1531,7 @@ def _generate_brief_now(now: datetime, weather: dict | None, air_quality: dict |
         ("email", _email_clause, (now,)),
         ("household", _household_clause, (now,)),
         ("cpp", _cpp_clause, (now,)),
+        ("birthday", _birthday_clause, (now,)),
         ("td_quarter", _td_quarter_clause, (now,)),
         ("markets", _markets_clause, (now,)),
         ("portfolio", _portfolio_clause, (now,)),

@@ -17,6 +17,7 @@ from streamlit_autorefresh import st_autorefresh
 
 import air_quality_client
 import aviation_client
+import birthdays_client
 import brayden_index
 import commute_reminder
 import cpp_payment_dates
@@ -3634,6 +3635,22 @@ if weather:
             f'<span class="weather-extra" style="color:#30D5C8; '
             f'background:{_badge_bg("#30D5C8", 0.22)}; border-color:#30D5C8;">'
             f'{holiday["label"]} {holiday_when}</span>'
+        )
+    # Session request: "make it so September 18th is always flagged as
+    # Chloe's birthday. I want to make sure I don't forget." Same
+    # today/evening-tomorrow gating as every other calendar badge here
+    # (birthdays_client.next_birthday, shaped like holidays_client.
+    # next_holiday). Bright pink — every other color nearby (brown/
+    # green/violet/rose-red/gold/teal/icy-blue) is already claimed, and
+    # pink reads as "birthday" at a glance rather than any of this row's
+    # existing associations.
+    birthday = birthdays_client.next_birthday(now.date())
+    if birthday and (birthday["days_until"] == 0 or (birthday["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR)):
+        birthday_when = "today" if birthday["days_until"] == 0 else "tomorrow"
+        extras.append(
+            f'<span class="weather-extra" style="color:#FF2D95; '
+            f'background:{_badge_bg("#FF2D95", 0.22)}; border-color:#FF2D95;">'
+            f'🎂 {birthday["label"]} {birthday_when}</span>'
         )
     # Session follow-up, same "what other hero badges" question — black
     # ice risk already fed a morning-brief fact (morning_briefing.
