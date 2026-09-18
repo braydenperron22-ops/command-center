@@ -34,6 +34,21 @@ except Exception:  # pragma: no cover - the dashboard's own config.py should alw
 MAX_TOOL_HOPS = 3  # a real safety cap — a model that keeps calling tools forever must not hang the pipeline
 FALLBACK_ANSWER = "Sorry, I'm having trouble answering that right now."
 
+# Real bug found live (see voice/README.md): a small local model, given
+# a confused/garbled conversation to work with, sometimes emits the
+# literal text "None" as its answer instead of an empty string — a
+# known small-model quirk (echoing what a null/missing value would
+# print as, rather than actually having nothing to say). `content or
+# FALLBACK_ANSWER` alone doesn't catch this: a non-empty string "None"
+# is truthy in Python. Checked case-insensitively and stripped, since
+# the exact casing/whitespace isn't the point — anything that's
+# semantically "no answer" should hit the same fallback.
+_EMPTY_ANSWERS = {"", "none", "null", "n/a"}
+
+
+def _is_empty_answer(text: str | None) -> bool:
+    return not text or text.strip().lower() in _EMPTY_ANSWERS
+
 # Real gap found live during testing: voice/status.py only ever holds
 # the CURRENT state — the moment a turn finishes and state moves back
 # to listening_for_wake_word, whatever was just transcribed/answered is
@@ -61,19 +76,31 @@ def _system_prompt() -> str:
     return "\n\n".join(parts)
 
 
-def run_turn(provider, history: list[dict], user_text: str) -> str:
+def run_turn(provider, history: list[dict], user_text: str) -> tuple[str, list[tuple[str, str]]]:
     """One full user turn: appends `user_text`, lets the model call
     tools as many times as it needs (bounded by MAX_TOOL_HOPS), and
-    returns the final spoken answer. Mutates `history` in place so the
-    conversational follow-up window (session requirement: no repeated
-    wake word needed mid-conversation) has real prior context to draw
-    on."""
+    returns (final spoken answer, [(tool_name, tool_result_json), ...]).
+    Mutates `history` in place so the conversational follow-up window
+    (session requirement: no repeated wake word needed mid-conversation)
+    has real prior context to draw on.
+
+    The tool-call list is returned (not just left in `history`)
+    specifically so the caller can log it — a real session incident
+    (see voice/README.md) had the model claim an answer "came from
+    Google Maps" when no such tool exists in this system; being able to
+    check afterward whether get_commute_status() was actually called
+    for that turn, and what it actually returned, is the difference
+    between "the model is fabricating data" and "the model got real
+    data and just mislabeled where it came from" — two very different
+    problems with very different fixes."""
     history.append({"role": "user", "content": user_text})
+    calls_made: list[tuple[str, str]] = []
     for _ in range(MAX_TOOL_HOPS):
         result: ChatResult = provider.chat(history, tools=tools.TOOL_SCHEMAS)
         if not result.tool_calls:
             history.append({"role": "assistant", "content": result.content})
-            return result.content or FALLBACK_ANSWER
+            answer = FALLBACK_ANSWER if _is_empty_answer(result.content) else result.content
+            return answer, calls_made
         history.append({
             "role": "assistant",
             "content": result.content,
@@ -81,8 +108,9 @@ def run_turn(provider, history: list[dict], user_text: str) -> str:
         })
         for tc in result.tool_calls:
             tool_result = tools.call_tool(tc.name, tc.arguments)
+            calls_made.append((tc.name, tool_result))
             history.append({"role": "tool", "tool_call_id": tc.id, "name": tc.name, "content": tool_result})
-    return FALLBACK_ANSWER
+    return FALLBACK_ANSWER, calls_made
 
 
 def _run_text_mode() -> None:
@@ -97,7 +125,9 @@ def _run_text_mode() -> None:
         if not user_text or user_text.lower() in ("quit", "exit"):
             break
         status.set_state("processing")
-        answer = run_turn(provider, history, user_text)
+        answer, calls_made = run_turn(provider, history, user_text)
+        if calls_made:
+            print(f"  (tools called: {[name for name, _ in calls_made]})")
         print(f"{config.ASSISTANT_NAME}: {answer}")
         status.set_state("speaking")
         tts.speak(answer)
@@ -167,8 +197,16 @@ def _run_audio_mode() -> None:
             continue
 
         status.set_state("processing", detail=text)
-        answer = run_turn(provider, history, text)
-        _logger.info("heard: %r -> answered: %r", text, answer)
+        answer, calls_made = run_turn(provider, history, text)
+        if calls_made:
+            _logger.info(
+                "heard: %r -> tools: %s -> answered: %r",
+                text,
+                [(name, result[:200]) for name, result in calls_made],
+                answer,
+            )
+        else:
+            _logger.info("heard: %r -> answered: %r (no tools called)", text, answer)
 
         status.set_state("speaking")
         tts.speak(answer)
