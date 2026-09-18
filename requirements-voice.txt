@@ -12,3 +12,8 @@ faster-whisper
 sounddevice
 webrtcvad
 numpy
+# webrtcvad imports pkg_resources internally but doesn't declare
+# setuptools as its own dependency — confirmed live: a fresh venv
+# without this raises ModuleNotFoundError at import time despite
+# webrtcvad itself installing cleanly.
+setuptools
