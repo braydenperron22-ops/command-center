@@ -3803,6 +3803,69 @@ html, body, [class*="css"] {
 .brdn-ticker.market-up { color: #32D74B; }
 .brdn-ticker.market-down { color: #FF6961; }
 
+/* Voice assistant status badge (voice/status.py) — session's own
+   explicit requirement: "a visible dashboard status showing something
+   like MIC: MUTED / LISTENING FOR WAKE WORD / LISTENING / PROCESSING /
+   SPEAKING... I want it to always be obvious when the assistant is
+   actively processing a command." Bottom-LEFT, not bottom-right —
+   that corner already stacks .system-health-corner and .brdn-ticker;
+   this is a genuinely separate, unrelated status and putting it there
+   too would just crowd one corner while the other sits empty. Same
+   glass-card family (blur/border/shadow) as those two for visual
+   consistency, not a new look. Omitted entirely from the DOM by app.py
+   whenever voice/status.py has never reported in (service not
+   deployed/running) rather than rendering a fake default state — same
+   "just omit it" rule this app already applies to every other
+   no-data-yet feature. */
+.voice-status-badge {
+    position: fixed;
+    /* 60px, not 14px — found live: the shared bottom toast bar
+       (.news-alert-bar/-market, and every other alert source that
+       reuses it) is a full-width strip pinned to bottom:0 at
+       z-index:10000, and it shows up often (any of ~10 different toast
+       sources, roughly every 10s when one's active). 60px matches
+       .system-health-corner's own bottom offset, already proven clear
+       of that bar in this exact layout. */
+    bottom: 60px;
+    left: 14px;
+    z-index: 400;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.6rem 1.1rem;
+    border-radius: 14px;
+    background: rgba(12,12,16,0.68);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+}
+.voice-status-icon { font-size: 1.5rem; line-height: 1; }
+.voice-status-text { display: flex; flex-direction: column; line-height: 1.25; }
+.voice-status-name {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #8E8E93;
+}
+.voice-status-state {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+/* Neutral passive listening is deliberately the same muted gray as the
+   name label above it — this is the steady-state 99% of the time, and
+   shouldn't visually compete with an actually-active state. Listening/
+   processing/speaking each get a distinct, brighter color specifically
+   so a glance across the room can tell "idle" from "doing something"
+   without reading the words. */
+.voice-status-badge.voice-status-listening_for_wake_word .voice-status-state { color: #8E8E93; }
+.voice-status-badge.voice-status-listening .voice-status-state { color: #3DD9FF; }
+.voice-status-badge.voice-status-processing .voice-status-state { color: #FF9F0A; }
+.voice-status-badge.voice-status-speaking .voice-status-state { color: #32D74B; }
+.voice-status-badge.voice-status-muted .voice-status-state { color: #FF6961; }
+
 /* pages_brdn_terminal.py — session request: "bring up the full
    institutional analysis on my stock in a Bloomberg terminal style,
    kinda like the Jumbotron, but for a Bloomberg terminal." Deliberately

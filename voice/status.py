@@ -57,6 +57,23 @@ def set_state(state: str, detail: str = "") -> None:
         pass
 
 
+def current() -> dict | None:
+    """{"state", "detail", "assistant_name", "at"} — whatever the voice
+    service last published, or None if it has never reported in at all
+    (not yet deployed, or persisted_state/Upstash unreachable). app.py's
+    own badge (see its own comment) treats None as "omit the badge
+    entirely" — the same "just don't show it" rule this app already
+    applies everywhere else a feature has no real data yet, rather than
+    rendering a fake/default state for a service that may not even be
+    running."""
+    if persisted_state is None:
+        return None
+    try:
+        return persisted_state.load(config.STATUS_KEY, None)
+    except Exception:
+        return None
+
+
 def is_muted() -> bool:
     """Reads the mic-mute flag — see voice/audio_io.py for how this
     gets set (a software toggle, pending real hardware mute — see this

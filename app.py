@@ -79,6 +79,7 @@ import td_quarter_schedule
 import theme
 import toast_queue
 import ufc_client
+import voice.status as voice_status
 import waste_schedule
 import weather_alerts_bar
 import weather_client
@@ -4098,6 +4099,53 @@ if brayden_index.ENABLED:
         )
     except Exception:
         pass
+
+# Voice assistant status badge — session's own explicit requirement:
+# "a visible dashboard status showing something like MIC: MUTED /
+# LISTENING FOR WAKE WORD / LISTENING / PROCESSING / SPEAKING... always
+# be obvious when the assistant is actively processing a command."
+# Reads voice/status.py's own small persisted_state entry (the same
+# Upstash-backed shared store the kiosk watchdog/night-mode-sync
+# scripts already write to) — the voice service runs as its own
+# separate process on the kiosk box, not here, so this is the one
+# read-only touchpoint between the two. Bottom-left (see theme.py's own
+# .voice-status-badge comment for why not the already-crowded bottom-
+# right corner). Unconditional (not gated on jumbotron/night-mode),
+# same "regardless of what page" reasoning as the BRDN ticker just
+# above — asking Jarvis something is exactly as valid during night mode
+# as any other time. Omitted entirely whenever the voice service has
+# never reported in (see voice.status.current's own docstring) rather
+# than showing a fake default state for a service that may not even be
+# deployed yet.
+_VOICE_STATUS_ICONS = {
+    "listening_for_wake_word": "🎙️",
+    "listening": "🎙️",
+    "processing": "🧠",
+    "speaking": "🔊",
+    "muted": "🔇",
+}
+_VOICE_STATUS_LABELS = {
+    "listening_for_wake_word": "LISTENING FOR WAKE WORD",
+    "listening": "LISTENING...",
+    "processing": "PROCESSING...",
+    "speaking": "SPEAKING...",
+    "muted": "MUTED",
+}
+try:
+    _voice_now = voice_status.current()
+    if _voice_now is not None:
+        _voice_state = _voice_now.get("state", "listening_for_wake_word")
+        st.markdown(
+            f'<div class="voice-status-badge voice-status-{_voice_state}">'
+            f'<span class="voice-status-icon">{_VOICE_STATUS_ICONS.get(_voice_state, "🎙️")}</span>'
+            f'<span class="voice-status-text">'
+            f'<span class="voice-status-name">{html.escape(_voice_now.get("assistant_name") or "JARVIS")}</span>'
+            f'<span class="voice-status-state">{_VOICE_STATUS_LABELS.get(_voice_state, _voice_state.upper())}</span>'
+            f'</span></div>',
+            unsafe_allow_html=True,
+        )
+except Exception:
+    pass
 
 # Session report: "the transition between pages is quite choppy...
 # different elements from different pages pop up as longer than five
