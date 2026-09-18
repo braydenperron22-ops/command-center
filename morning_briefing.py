@@ -1506,14 +1506,19 @@ def parse_headline_body(raw: str) -> tuple[str, str] | None:
     return headline, body
 
 
-def _generate_brief_now(now: datetime, weather: dict | None, air_quality: dict | None) -> tuple[str, str] | None:
-    """The actual clause-gathering + AI-write work render() below does —
-    pulled out into its own function so spoken_brief_for_leave_timer can
-    call it directly too (see that function's own docstring for why:
-    the leave timer can genuinely fire before render()'s own outer-
-    script cadence has run even once yet today). Returns None only when
-    there's truly nothing to report (no clauses fired at all) — same
-    "no brief" case render() already treats as "show nothing."""
+def gather_facts(now: datetime, weather: dict | None, air_quality: dict | None) -> list[str]:
+    """Every real fact today's *_clause functions have to offer, highest
+    priority first — the same picked-facts step _generate_brief_now
+    below runs, pulled out on its own so a second, differently-toned
+    brief (see spoken_morning_brief.py's own docstring: "Good morning,
+    sir" vs. this file's own deliberately unhinged/sarcastic on-screen
+    voice — two genuinely different personalities, not one reused
+    verbatim) can draw on the identical real facts without a second,
+    drifting copy of this same clause list. Deliberately does NOT touch
+    _record_history/_update_learned_notes below — those are this
+    file's own on-screen brief's bookkeeping, and stay owned by
+    _generate_brief_now alone so a second brief reading these same
+    facts doesn't double-record them."""
     clauses = []
     for name, fn, args in (
         ("alert", _alert_clause, (now,)),
@@ -1548,20 +1553,32 @@ def _generate_brief_now(now: datetime, weather: dict | None, air_quality: dict |
             priority, text = result
             clauses.append((name, priority, text))
 
-    if not clauses:
-        return None
     clauses.sort(key=lambda c: c[1], reverse=True)
+    return [text for _, _, text in clauses]
+
+
+def _generate_brief_now(now: datetime, weather: dict | None, air_quality: dict | None) -> tuple[str, str] | None:
+    """The actual clause-gathering + AI-write work render() below does —
+    pulled out into its own function so spoken_brief_for_leave_timer can
+    call it directly too (see that function's own docstring for why:
+    the leave timer can genuinely fire before render()'s own outer-
+    script cadence has run even once yet today). Returns None only when
+    there's truly nothing to report (no clauses fired at all) — same
+    "no brief" case render() already treats as "show nothing."""
+    all_facts = gather_facts(now, weather, air_quality)
+    if not all_facts:
+        return None
     # Session request: "give it as much data as possible so it could
-    # make as many informed comments as possible." The AI now gets
-    # EVERY fact computed today, not just the top MAX_CLAUSES=5 by
-    # priority — that cap exists for the plain-text fallback below
-    # (which genuinely needs to stay short with no AI narration to
-    # shape it), not for what the AI itself gets to see and draw on.
-    # A day where 8 of the 10 clause functions fire (a real event, real
-    # weather, real traffic, a full calendar, all at once) used to
-    # silently lose 3 of them before the AI ever got a look, with no
-    # way to notice a connection between something it was never told.
-    all_facts = [text for _, _, text in clauses]
+    # make as many informed comments as possible." The AI gets EVERY
+    # fact computed today (all_facts, above), not just the top
+    # MAX_CLAUSES=5 by priority — that cap is only for the plain-text
+    # fallback below (which genuinely needs to stay short with no AI
+    # narration to shape it), not for what the AI itself gets to see
+    # and draw on. A day where 8 of the 10 clause functions fire (a
+    # real event, real weather, real traffic, a full calendar, all at
+    # once) used to silently lose 3 of them before the AI ever got a
+    # look, with no way to notice a connection between something it
+    # was never told.
     picked = all_facts[:MAX_CLAUSES]
     try:
         _record_history(now, all_facts)
