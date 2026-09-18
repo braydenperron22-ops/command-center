@@ -31,6 +31,16 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+# Import for its side effect only (puts the repo root on sys.path) —
+# this module must not depend on some OTHER voice/ module having been
+# imported first to make the sibling imports below resolve. Real bug
+# caught in review: this file originally had no `voice.config` import
+# at all, so `import calendar_client` etc. only worked when something
+# else (orchestrator.py) happened to import voice.config earlier in
+# the same process — a plain `from voice import tools` in isolation
+# would have raised ModuleNotFoundError.
+from voice import config as _voice_config  # noqa: F401
+
 import calendar_client
 import commute_reminder
 import ec_aqhi
@@ -151,8 +161,9 @@ def get_road_conditions() -> dict:
 
 def get_sports(team: str) -> dict:
     """Live/last game state and standings for one of the teams this
-    dashboard actually tracks (Habs, Jays, Saints) — sports_client.py,
-    NHL/MLB/ESPN-backed. None (a plain "no data") is the honest answer
+    dashboard actually tracks — Montreal Canadiens (habs), Toronto
+    Blue Jays (jays), New Orleans Saints (saints) — sports_client.py,
+    NHL/MLB/NFL-backed. None (a plain "no data") is the honest answer
     outside that team's season, not an error."""
     key = team.strip().lower()
     fetcher = _SPORTS_FETCHERS.get(key)
@@ -236,7 +247,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "get_sports",
-            "description": "Get the live or most recent game and standings for one of the teams this dashboard tracks: the Montreal Canadiens (Habs), Toronto Blue Jays (Jays), or the user's softball/hockey team (Saints).",
+            "description": "Get the live or most recent game and standings for one of the NHL/MLB/NFL teams this dashboard tracks: the Montreal Canadiens (Habs), Toronto Blue Jays (Jays), or the New Orleans Saints.",
             "parameters": {
                 "type": "object",
                 "properties": {"team": {"type": "string", "enum": ["habs", "jays", "saints"]}},
