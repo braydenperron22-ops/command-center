@@ -17,6 +17,8 @@ to listening_for_wake_word (or straight back to listening, within
 FOLLOWUP_WINDOW_SECONDS, without needing the wake word again)."""
 
 import argparse
+import logging
+import os
 import sys
 import time
 
@@ -31,6 +33,22 @@ except Exception:  # pragma: no cover - the dashboard's own config.py should alw
 
 MAX_TOOL_HOPS = 3  # a real safety cap — a model that keeps calling tools forever must not hang the pipeline
 FALLBACK_ANSWER = "Sorry, I'm having trouble answering that right now."
+
+# Real gap found live during testing: voice/status.py only ever holds
+# the CURRENT state — the moment a turn finishes and state moves back
+# to listening_for_wake_word, whatever was just transcribed/answered is
+# gone with no way to check what Jarvis actually heard when a spoken
+# answer didn't make sense. This is the fix: every real turn (audio
+# mode only — text-mode already echoes both sides to the terminal it's
+# run from) gets one line here, transcript and answer together, in a
+# plain per-day-rotated log a session can just `tail` or `cat`.
+_LOG_DIR = os.path.expanduser("~/.local/state/jarvis-voice")
+os.makedirs(_LOG_DIR, exist_ok=True)
+_logger = logging.getLogger("jarvis")
+_logger.setLevel(logging.INFO)
+_handler = logging.FileHandler(os.path.join(_LOG_DIR, "conversations.log"))
+_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+_logger.addHandler(_handler)
 
 
 def _system_prompt() -> str:
@@ -143,12 +161,14 @@ def _run_audio_mode() -> None:
         text = stt.transcribe(audio)
         wake_frames = audio_io.wake_word_frames()
         if not text:
+            _logger.info("heard: (nothing transcribed)")
             status.set_state("listening_for_wake_word")
             history = None
             continue
 
         status.set_state("processing", detail=text)
         answer = run_turn(provider, history, text)
+        _logger.info("heard: %r -> answered: %r", text, answer)
 
         status.set_state("speaking")
         tts.speak(answer)
