@@ -118,8 +118,33 @@ def get_commute_status() -> dict:
     reminder.commute_status(), TomTom-backed, real traffic. This is the
     single tool that answers "should I leave for work" — the LLM must
     call this rather than ever guessing a travel time or a leave-by
-    time on its own."""
-    return _safe(commute_reminder.commute_status, _now())
+    time on its own.
+
+    Deliberately does NOT pass the raw commute_status() dict straight
+    through: its "route" carries a `points` polyline (every lat/lon
+    along the drive — hundreds of coordinate pairs, meant for drawing a
+    map, not for language reasoning) plus a couple of other UI-only
+    fields (`streets` as a redundant stringified set, `street_spans`,
+    `reference_duration_seconds`). Live-measured impact of skipping this
+    trim: a single tool result ballooned to 6000+ characters, which
+    measurably slowed the follow-up LLM call on this hardware (llama3.2:3b
+    benchmark, same session) processing a prompt that bloated for no
+    reason a human/LLM would ever need — every field below is something
+    an answer like "should I leave for work" could actually use."""
+    raw = _safe(commute_reminder.commute_status, _now())
+    if "error" in raw:
+        return raw
+    route = raw.get("route", {})
+    return {
+        "duration_minutes": round(route.get("duration_seconds", 0) / 60),
+        "delay_minutes": round(route.get("delay_seconds", 0) / 60),
+        "distance_km": route.get("distance_km"),
+        "incident": route.get("incident"),
+        "is_congested": raw.get("is_congested"),
+        "main_roads": route.get("streets_ordered"),
+        "destination": (raw.get("destination") or {}).get("label"),
+        "leave_by": raw.get("leave_by"),
+    }
 
 
 def get_schedule(day: str = "today") -> dict:
