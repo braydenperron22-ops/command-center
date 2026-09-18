@@ -42,7 +42,24 @@ ASSISTANT_NAME = _env("ASSISTANT_NAME", "Jarvis")
 # retrain the acoustic wake word — that's a real, separate future task,
 # called out honestly rather than silently pretended-away.
 WAKE_WORD_MODEL = _env("WAKE_WORD_MODEL", "hey_jarvis")
-WAKE_WORD_THRESHOLD = float(_env("WAKE_WORD_THRESHOLD", "0.5"))
+# Lowered from openWakeWord's own documented default of 0.5 after real
+# live testing (first successful human-voice session, see voice/
+# README.md) showed a genuinely bimodal score distribution for this
+# specific voice/mic/room combination: real "hey jarvis" utterances
+# either scored very high (0.86-0.99, unambiguous) or very low
+# (~0.0-0.02, no partial credit), with a handful of clear near-misses
+# sitting just under the old threshold as part of the same rising/
+# falling detection curve as the confident hits (0.4981, 0.4833,
+# 0.4567, 0.4943, 0.4607, 0.4669, 0.4370 — all measured the same
+# session). 0.4 catches those without moving anywhere near the noise
+# floor this same data showed (silence/ambient noise consistently
+# scored 0.0000-0.03). This is a real, data-grounded adjustment, not a
+# blind guess — but it's a modest one: most of the session's failed
+# trigger attempts scored near-zero, not just-under-threshold, so this
+# alone won't fix every miss. Re-tune (env override, no code change
+# needed) if false positives start showing up, or lower further if
+# genuine attempts are still missing.
+WAKE_WORD_THRESHOLD = float(_env("WAKE_WORD_THRESHOLD", "0.4"))
 
 # Fed into the LLM as the system prompt, alongside config.USER_PROFILE
 # (the same personal-context paragraph morning_briefing.py already
