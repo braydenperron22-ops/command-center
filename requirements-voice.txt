@@ -15,5 +15,11 @@ numpy
 # webrtcvad imports pkg_resources internally but doesn't declare
 # setuptools as its own dependency — confirmed live: a fresh venv
 # without this raises ModuleNotFoundError at import time despite
-# webrtcvad itself installing cleanly.
-setuptools
+# webrtcvad itself installing cleanly. Must be pinned below 81: newer
+# setuptools (84.0.0, confirmed live) dropped pkg_resources entirely —
+# a plain unpinned `pip install setuptools` still leaves webrtcvad
+# broken. Upstream is deprecating pkg_resources for real removal as
+# early as 2025-11-30; webrtcvad itself is unmaintained (no release in
+# years) and unlikely to be fixed — revisit this pin (or switch VAD
+# libraries, e.g. Silero VAD) if it ever stops being installable.
+setuptools<81
