@@ -1,0 +1,22 @@
+[Unit]
+Description=Spoken morning brief
+# A systemd --user unit (installed to ~/.config/systemd/user/, same as
+# the existing kiosk-dashboard.service and voice/systemd/jarvis-voice.
+# service) — no sudo/root needed to install or manage. Genuinely
+# lightweight: no Ollama, no wake-word model, no microphone — just a
+# once-a-minute check plus, once a day, one real Gemini call and one
+# Piper synthesis. Safe to enable on boot, unlike the full voice
+# pipeline this deliberately does not depend on.
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/command-center
+ExecStart=%h/projects/command-center/.venv/bin/python3 run_spoken_morning_brief.py
+Restart=on-failure
+RestartSec=10
+StartLimitIntervalSec=120
+StartLimitBurst=6
+
+[Install]
+WantedBy=default.target

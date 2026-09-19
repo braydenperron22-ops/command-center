@@ -29,8 +29,9 @@ fully testable today, independent of that gap, the same "prove what
 you can before the hardware arrives" approach this app's own voice/
 package already took with --text-mode."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
+import commute_reminder
 import gemini_client
 import morning_briefing
 import persisted_state
@@ -42,6 +43,36 @@ from config import USER_FIRST_NAME
 # camera decides what "on"/"off" means for the hardware itself.
 WINDOW_START_HOUR = 5
 WINDOW_END_HOUR = 10
+
+# Session follow-up, before a camera exists at all: "can you find a way
+# to reliably detect that I'm awake? without needing a webcam?"
+# commute_reminder.screen_wake_time() already answers almost exactly
+# this question, for a different existing feature (it's what ends
+# night mode and un-pauses the dashboard's own AI features each
+# morning) — a real, calendar-grounded "when is the user expected to
+# actually be up" time (leave-by minus a buffer, or sleep_tracker's own
+# next-commitment estimate), not a guess invented for this feature.
+# Reused here as the trigger moment for a SPOKEN brief specifically —
+# session request: "make the threshold 30 mins so I'm for sure awake
+# when it goes off." screen_wake_time is tuned for waking a SCREEN
+# (silent, easy to ignore if early); an audio announcement playing to
+# someone still actually asleep is a worse failure than firing a little
+# late, so this adds real margin rather than reusing that raw value.
+TRIGGER_BUFFER_MINUTES = 30
+
+
+def trigger_time(now: datetime) -> datetime | None:
+    """The real moment to fire the spoken brief today — screen_wake_time
+    plus TRIGGER_BUFFER_MINUTES — or None on a day with no real
+    commitment to wake up for at all (screen_wake_time's own contract,
+    inherited from sleep_tracker.wake_time_for: "a genuine day off
+    doesn't get a synthetic bedtime"). Naive, matching every other
+    `now` this app passes around outside sleep_tracker/commute_reminder's
+    own internal aware-datetime math."""
+    wake = commute_reminder.screen_wake_time(now)
+    if wake is None:
+        return None
+    return wake.replace(tzinfo=None) + timedelta(minutes=TRIGGER_BUFFER_MINUTES)
 
 # Real Gemini call, but no reason to ever generate this twice for the
 # same calendar day — once delivered, the facts it was built from are
