@@ -41,8 +41,16 @@ def _tick() -> None:
     text = spoken_morning_brief.generate(now, weather, None)
     if not text:
         return  # try again next tick rather than marking delivered on a real fetch/AI failure
-    tts.speak(text)
+
+    # Marked BEFORE speaking, not after: the real risk here is a crash or
+    # a systemd restart landing mid-speech, which would otherwise leave
+    # today's flag unset and cause the next tick (or the restarted
+    # process) to speak the whole brief again -- same "save before slow
+    # work" ordering already established in text_reminders.py for the
+    # identical reason. A speak() that then fails outright just costs one
+    # missed morning -- quieter than a jarring repeat.
     spoken_morning_brief.mark_delivered(today)
+    tts.speak(text)
 
 
 def main() -> None:
