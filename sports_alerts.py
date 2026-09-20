@@ -340,9 +340,10 @@ def _nfl_extra_status(game_id) -> str:
     """Down/distance (+ a RED ZONE flag) for the Saints' own live top-
     bar status — same real ESPN situation object pages_jumbotron.
     _nfl_situation_html already reads (sports_client.
-    fetch_nfl_competition), just the two fields this compact bar has
-    room for (no yards-out/possession/timeouts — that's the full
-    board's job). "" whenever there's genuinely no situation right now
+    fetch_nfl_competition), just the fields this compact bar has room
+    for (no yards-out/timeouts — that's the full board's job;
+    possession itself is handled separately, see _nfl_possession_home
+    below). "" whenever there's genuinely no situation right now
     (between plays, halftime — see fetch_nfl_competition's own
     docstring) rather than a stale leftover value."""
     try:
@@ -356,6 +357,36 @@ def _nfl_extra_status(game_id) -> str:
         return f"{down_text} · RED ZONE" if situation.get("isRedZone") else down_text
     except Exception:
         return ""
+
+
+def _nfl_possession_home(game_id) -> bool | None:
+    """Whether the HOME team currently has the ball — session report:
+    "how do i know who has the ball for NFL" (this compact bar showed
+    down/distance/red-zone but never actually said who's on offense,
+    per _nfl_extra_status's own "that's the full board's job" note
+    above — a real gap once the full board stopped auto-showing).
+
+    Same real match pages_jumbotron._nfl_possession_home already makes
+    (ESPN's own situation.possession is a team id, matched against this
+    competition's own competitors for their "homeAway" field, not a
+    name-match) — duplicated here rather than imported, same "re-derive
+    from the raw ESPN data locally" shape _nfl_extra_status already
+    uses, so this module doesn't take on a new cross-file dependency
+    for four lines of logic. Shares fetch_nfl_competition's own 5s
+    cache with _nfl_extra_status's own call — a cache hit, not a second
+    real fetch. None pregame/postgame or on any missing field."""
+    try:
+        data = sports_client.fetch_nfl_competition(game_id)
+        if not data:
+            return None
+        situation = data.get("situation") or {}
+        possession_id = situation.get("possession")
+        if not possession_id:
+            return None
+        competitors = data.get("competitors") or []
+        return next((c.get("homeAway") == "home" for c in competitors if c.get("id") == possession_id), None)
+    except Exception:
+        return None
 
 
 def _mlb_bases_html(game_id) -> str:
@@ -425,7 +456,7 @@ def _mini_status(sport: str, game_id) -> str:
 
 def _mini_jumbotron_html(
     league: dict, status: dict, game: dict, status_text: str,
-    win_prob_text: str = "", bases_html: str = "",
+    win_prob_text: str = "", bases_html: str = "", home_has_ball: bool | None = None,
 ) -> str:
     """The actual mini-jumbotron markup — away team left, home team
     right (same real-scoreboard convention pages_jumbotron._sides
@@ -441,7 +472,13 @@ def _mini_jumbotron_html(
     --side-rgb-style CSS custom property pages_jumbotron._side_html
     already established (theme.py's .mini-jumbo-abbr/.mini-jumbo-status
     read it back with the identical rgba(var(--x, fallback), a)
-    pattern) — one real per-sport identity color, no new lookup."""
+    pattern) — one real per-sport identity color, no new lookup.
+
+    home_has_ball — NFL only (see _nfl_possession_home above), None for
+    every other sport's call site. Session report: "how do i know who
+    has the ball for NFL" — same 🏈 glyph pages_jumbotron._side_html's
+    own possession icon already uses, planted directly next to
+    whichever abbreviation currently has it."""
     our_abbr, our_logo = league["abbr"], status.get("team_logo") or ""
     opp_abbr, opp_logo = game.get("opponent_abbr") or "", game.get("opponent_logo") or ""
     team_score, opp_score = game["team_score"], game["opp_score"]
@@ -454,14 +491,16 @@ def _mini_jumbotron_html(
     r, g, b = league["flash_color"]
     status_html = f'<span class="mini-jumbo-status">{html.escape(status_text)}</span>' if status_text else ""
     wp_html = f'<span class="mini-jumbo-wp">{html.escape(win_prob_text)}</span>' if win_prob_text else ""
+    away_ball = '<span class="mini-jumbo-ball">🏈</span>' if home_has_ball is False else ""
+    home_ball = '<span class="mini-jumbo-ball">🏈</span>' if home_has_ball is True else ""
     return (
         f'<div class="mini-jumbo" style="--mini-jumbo-accent:{r},{g},{b}">'
         f'<img class="mini-jumbo-logo" src="{html.escape(away_logo)}" />'
-        f'<span class="mini-jumbo-abbr">{html.escape(away_abbr)}</span>'
+        f'{away_ball}<span class="mini-jumbo-abbr">{html.escape(away_abbr)}</span>'
         f'<span class="mini-jumbo-score">{away_score}</span>'
         f'<span class="mini-jumbo-dash">–</span>'
         f'<span class="mini-jumbo-score">{home_score}</span>'
-        f'<span class="mini-jumbo-abbr">{html.escape(home_abbr)}</span>'
+        f'{home_ball}<span class="mini-jumbo-abbr">{html.escape(home_abbr)}</span>'
         f'<img class="mini-jumbo-logo" src="{html.escape(home_logo)}" />'
         f'{status_html}'
         f'{bases_html}'
@@ -508,16 +547,18 @@ def live_score_headline_candidates(now: datetime) -> dict[str, dict]:
         text = f'{league["label"].title()} {team_score}-{opp_score} {connector} {game["opponent"]}'
         status_text = _mini_status(league["sport"], game.get("game_id"))
         bases_html = ""
+        home_has_ball = None
         if league["sport"] == "nfl":
             extra = _nfl_extra_status(game.get("game_id"))
             status_text = f"{status_text} · {extra}" if status_text and extra else (extra or status_text)
+            home_has_ball = _nfl_possession_home(game.get("game_id"))
         elif league["sport"] == "mlb":
             bases_html = _mlb_bases_html(game.get("game_id"))
         win_prob_text = _win_probability_text(league["sport"], game)
         out[f'live_score_{league["sport"]}'] = {
             "text": text, "css_class": "rotation-score", "target_ms": None,
             "template": "{}", "zero_text": None,
-            "html": _mini_jumbotron_html(league, status, game, status_text, win_prob_text, bases_html),
+            "html": _mini_jumbotron_html(league, status, game, status_text, win_prob_text, bases_html, home_has_ball),
         }
     return out
 

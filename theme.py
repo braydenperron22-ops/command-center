@@ -3168,6 +3168,15 @@ html, body, [class*="css"] {
     letter-spacing: 0.04em;
     color: rgb(var(--mini-jumbo-accent, 160,170,200));
 }
+/* Session report: "how do i know who has the ball for NFL" — same 🏈
+   glyph pages_jumbotron._side_html's own possession icon already uses
+   (sports_alerts._nfl_possession_home), planted right next to
+   whichever team abbreviation currently has it. */
+.mini-jumbo-ball {
+    font-size: 1.3rem;
+    margin-right: 0.15rem;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+}
 .mini-jumbo-score {
     font-size: 2.9rem;
     font-variant-numeric: tabular-nums;
