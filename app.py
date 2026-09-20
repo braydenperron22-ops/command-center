@@ -2245,19 +2245,23 @@ try:
 except Exception:
     pass
 
-# Session request: "remove the jumbotron takeover mechanic since the
-# jumbotron isnt working rn. and ill fix it later" — a temporary kill
-# switch, not a removal of the feature. Only stops the automatic
-# hijack below (a real live game silently switching the whole kiosk
-# over to the board) — manual access is untouched: ?page=jumbotron
-# still works, and so does the S-key picker's own "Jumbotron" entry,
-# so it's still reachable to keep working on. Nothing else about
-# _resolve_takeover/_jumbotron_active/pages_jumbotron.py is touched —
-# game_live/Govee light sync still react to a real game exactly as
-# before, this is purely about which PAGE the kiosk shows. Flip back
-# to True to restore the old automatic behavior, no other changes
-# needed.
-JUMBOTRON_AUTO_TAKEOVER_ENABLED = False
+# Back ON as of 2026-09-20. This was flipped to False on 2026-09-12 as
+# a temporary kill switch — "remove the jumbotron takeover mechanic
+# since the jumbotron isnt working rn. and ill fix it later" — which
+# only ever stopped the automatic hijack below (a real live game
+# switching the whole kiosk over to the board); manual access via
+# ?page=jumbotron and the S-key picker kept working the whole time,
+# which is how the rebuild was developed against it.
+#
+# The board has since been rebuilt from the ground up (jumbotron_data.py
+# + pages_jumbotron.py + theme.py's whole JUMBOTRON section), including
+# the two things that actually made it read as broken: a resting-hidden
+# CSS band-aid that stopped the presence-gated overlays from ever
+# rendering, and a height budget that fought the app's stepped zoom
+# media queries instead of opting out of them. True is what makes the
+# board appear on its own during a real game again — a correct board
+# still reads as broken if it never shows up.
+JUMBOTRON_AUTO_TAKEOVER_ENABLED = True
 # Session follow-up: "get rid of the terminal one too" — same kill
 # switch shape as JUMBOTRON_AUTO_TAKEOVER_ENABLED just above, applied
 # to the OTHER automatic full-screen hijack (a big BRDN move switching
@@ -2622,24 +2626,26 @@ _night_mode_active = (
 )
 night_mode.sync_active_state(_night_mode_active)
 
-# Transition overlay — session feedback: the hard cut between the
-# everyday dashboard and the jumbotron "feels dystopian," worth a real
-# transition each way. Detected as a genuine flip in _jumbotron_active
-# since the last rerun (not "is jumbotron active right now" — that's
-# true for the whole ~1hr+ takeover window, this only needs to fire
-# once at the actual moment of change), same session-state-diff
-# pattern the page-flip crossfade and score-flash animations already
-# use elsewhere in this app.
+# Game-mode enter/exit announcement — session feedback: the hard cut
+# between the everyday dashboard and the jumbotron "feels dystopian,"
+# worth marking each way. Detected as a genuine flip in
+# _jumbotron_active since the last rerun (not "is jumbotron active right
+# now" — that's true for the whole ~1hr+ takeover window; this only
+# needs to fire at the actual moment of change), the same
+# session-state-diff pattern used elsewhere in this app.
 #
-# Rendered as a fixed, full-screen, pointer-events:none curtain with a
-# CSS animation that holds briefly then fades itself out — not a
-# second Streamlit rerun's worth of a blank/loading page. The real
-# destination page (jumbotron or the normal dashboard) still renders
-# underneath it in this exact same script run, so nothing is skipped
-# or delayed; the curtain just politely reveals it a couple seconds
-# later instead of cutting instantly. Only exists in the DOM for the
-# one rerun where the flip happened — the very next 5s rerun renders
-# with no overlay markup at all.
+# PRESENCE-GATED, and that is the only gate: this markup exists in the
+# DOM only on the single rerun where the flip happened, and theme.py
+# gives it no resting-hidden style at all. It used to be a full-screen
+# opaque curtain that relied on `animation: ... forwards` to fade itself
+# away, which the global animation kill switch permanently prevents —
+# and the band-aid added to stop that from blanking the whole dashboard
+# (opacity:0 !important) meant this never rendered once, captions
+# included. Reshaped in the 2026-09-20 jumbotron rebuild into a compact,
+# pointer-events:none banner instead: with no way to fade, a full-screen
+# opaque element would sit on top of everything for a whole outer rerun
+# cycle (up to ~75s), so "mark the moment" has to be something that
+# blocks nothing. See theme.py's .jumbo-transition for the full note.
 try:
     _prev_jumbotron_active = st.session_state.get("_prev_jumbotron_active", False)
     if _jumbotron_active and not _prev_jumbotron_active:
@@ -2666,27 +2672,24 @@ try:
 except Exception:
     pass
 
-# Ordinary page-to-page rotation curtain — session report: "the
-# transition between pages is quite choppy at times where different
-# elements from different pages kinda blend into one before delivering
-# the other ones. Can we make it so that the other page is preloaded
-# prior to the switch so that it's a seamless swap, or even a little
-# animation to switch between the two pages." Real preloading would
-# mean rendering (and fetching data for) every page on every single
-# rerun just to have a hidden one ready — a genuine, ongoing cost for
-# a purely cosmetic fix. Same trick .jumbo-transition above already
-# uses instead: a same-rerun curtain, detected the identical way (a
-# genuine flip since the last rerun, via st.session_state — see that
-# block's own comment), that masks the moment while the real new page
-# finishes streaming in underneath it, then fades away — the practical
-# effect of a seamless swap without the cost of a real one. Scoped to
-# skip both jumbotron entry and exit (_prev_page/page != "jumbotron")
-# since those already get their own, more deliberate curtain above —
-# this is only for a routine swap between two ordinary pages.
+# Ordinary page-to-page rotation curtain — REMOVED 2026-09-20, with the
+# jumbotron rebuild that removed theme.py's resting-hidden band-aid.
+#
+# It was an EMPTY, opaque, full-screen div whose entire job was a CSS
+# fade-out (masking the moment Streamlit streams a new page's elements
+# in one at a time). The global animation kill switch means that fade
+# can never run, which left it with exactly two possible states: hidden
+# (what the band-aid did — pointless, but harmless) or a solid black
+# screen covering the dashboard for a whole rerun cycle. There is no
+# animation-free form of "a curtain that fades away," so it's gone
+# rather than reworked — unlike the jumbotron's own enter/exit
+# announcement above, which had real content worth keeping and was
+# reshaped into a banner instead.
+#
+# _prev_page is still written (nothing else reads it today) so a future
+# "what page were we on last rerun?" need doesn't have to re-derive the
+# tracking from scratch — it costs one session_state key.
 try:
-    _prev_page = st.session_state.get("_prev_page")
-    if not _jumbotron_active and _prev_page is not None and _prev_page != page and _prev_page != "jumbotron" and page != "jumbotron":
-        st.markdown('<div class="page-transition-curtain"></div>', unsafe_allow_html=True)
     st.session_state["_prev_page"] = page
 except Exception:
     pass

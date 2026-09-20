@@ -103,29 +103,36 @@ CSS = """
     transition: clip-path 0.55s cubic-bezier(.4,0,.2,1), opacity 0.25s ease-in 0.55s !important;
 }
 
-/* Five full-screen/curtain-style elements relied on an `animation:
-   ... forwards` to ever REACH their correct resting appearance — their
-   own base (non-keyframe) rule never set opacity/visibility itself,
-   trusting the animation's own final keyframe to land there via fill-
-   mode. The blanket kill switch above has no idea what any keyframe's
-   end state was, so without this, each one would freeze at the
-   browser's plain default (opacity:1, visible) instead — for the three
-   full-screen curtains below (jumbo-transition/page-transition-curtain/
-   jumbo-play-overlay, all position:fixed;inset:0 with a real
-   background), that's not a cosmetic miss, it's the ENTIRE DASHBOARD
-   permanently hidden behind an opaque overlay the instant any one of
-   them ever triggers once — exactly the kind of thing that reads as
-   "unstable" if shipped without checking. Declared directly here
-   instead of trying to preserve just enough of the original animation
-   to land correctly (e.g. a near-zero duration) — simpler to reason
-   about and impossible to get subtly wrong. */
-.jumbo-transition, .page-transition-curtain, .jumbo-play-overlay {
-    opacity: 0 !important;
-    visibility: hidden !important;
-}
-.jumbo-transition-sub, .jumbo-transition-sub-normal {
-    opacity: 1 !important;
-}
+/* A resting-hidden band-aid used to live here, forcing `opacity: 0 !
+   important; visibility: hidden !important` onto .jumbo-transition,
+   .page-transition-curtain and .jumbo-play-overlay. It was written for
+   TOGGLE-BY-CLASS elements — things permanently in the DOM that an
+   animation was supposed to reveal — and the reasoning was sound for
+   that shape: the kill switch above can't know what a keyframe's end
+   state was, so a full-screen `position:fixed; inset:0` curtain frozen
+   at the browser default (opacity:1) would hide the entire dashboard.
+
+   All three were actually PRESENCE-GATED: Python only ever emits the
+   element on the exact rerun it should be visible. So the band-aid
+   didn't protect anything — it just made them never render at all. Net
+   effect, live for weeks: the game-mode enter/exit announcement and the
+   full-screen play-result announcement never appeared once, and two
+   caption lines inside them ("GAME MODE · [TEAM]" / "Back to your day")
+   were permanently invisible on top of that.
+
+   Removed 2026-09-20 with the jumbotron rebuild. The two jumbotron
+   elements were reshaped so they're correct with no animation at all
+   (see .jumbo-transition / .jumbo-play-overlay in the JUMBOTRON section
+   for the specifics, including why the enter/exit announcement is no
+   longer a full-screen curtain). .page-transition-curtain went away
+   entirely — it was an EMPTY opaque div whose only job was the fade, so
+   with animations permanently off its only two possible states were
+   "invisible" (pointless) or "black screen for a whole rerun cycle"
+   (actively harmful); app.py no longer emits it.
+
+   The rule for anything full-screen added here in future: if it's
+   toggled by class, give it an explicit resting opacity/visibility; if
+   it's presence-gated, give it NO resting-hidden style whatsoever. */
 
 .block-container {
     padding-top: 1.8rem;
@@ -138,7 +145,7 @@ CSS = """
        with ~235px of flatly empty margin on each side. 1800px keeps a
        small deliberate margin (60px each side at 1920px, matching
        .top-alert-bar's own inset) rather than corner-to-corner, same
-       reasoning .block-container:has(.jumbo)'s own max-width:100%
+       reasoning .block-container:has(.jumbo-root)'s own max-width:100%
        comment already established for the jumbotron ("right for
        tiles, wrong for a full-bleed scoreboard") — plain tiles
        shouldn't press against the bezel the way a broadcast board
@@ -182,15 +189,30 @@ CSS = """
    phone breakpoint above, which already has its own separate, unrelated
    sizing. Stepped rather than one cutoff since the actual deficit here
    is a browser-chrome/taskbar nibble, not a fixed known number — each
-   step is deliberately modest. */
+   step is deliberately modest.
+
+   `:not(:has(.jumbo-root))` excludes the jumbotron at the SOURCE.
+   Session report, new Ubuntu kiosk: "the lower third of the screen is
+   just cut out black... every other page sizes properly, except for
+   this one." Root cause: every normal page is flowing text/tiles that
+   shrinks uniformly under zoom and still looks right, but the jumbotron
+   computes its own height directly against the real viewport — that
+   already-correct box then got shrunk AGAIN by this ancestor zoom,
+   leaving a gap below it exactly the size of the shrink, reading as
+   solid black against config.toml's own black base. It was patched for
+   a while by a downstream `zoom: 1 !important` on
+   .block-container:has(.jumbo), a specificity race that had to be
+   re-won every time a new interaction surfaced; excluding the page here
+   means there's no race left to have. A browser without :has() support
+   simply falls back to the old (zoomed) behavior rather than breaking. */
 @media (min-width: 641px) and (max-height: 1040px) {
-    .block-container { zoom: 0.94; }
+    .block-container:not(:has(.jumbo-root)) { zoom: 0.94; }
 }
 @media (min-width: 641px) and (max-height: 950px) {
-    .block-container { zoom: 0.86; }
+    .block-container:not(:has(.jumbo-root)) { zoom: 0.86; }
 }
 @media (min-width: 641px) and (max-height: 850px) {
-    .block-container { zoom: 0.78; }
+    .block-container:not(:has(.jumbo-root)) { zoom: 0.78; }
 }
 
 .block-container > div {
@@ -4102,7 +4124,7 @@ html, body, [class*="css"] {
 /* Session request: "redesign the mobile UI... see the full pages...
    without issues and lag." Confirmed live (same root cause the
    jumbotron takeover already found and fixed for itself, see
-   .block-container:has(.jumbo) > div's own comment below): every one
+   .block-container:has(.jumbo-root) > div's own comment below): every one
    of these renders via position:fixed, or is a pure CSS/JS injection
    with no visible content at all — so its own box is already always
    0-height, but Streamlit's vertical block still applies its own flex
@@ -4495,2355 +4517,951 @@ html, body, [class*="css"] {
     font-weight: 700;
 }
 
-/* ============ JUMBOTRON (pages_jumbotron.py) ============
-   A self-contained arena-scoreboard skin that only ever renders while
-   sports_alerts.takeover_state() has the screen (T-60min through ~15min
-   past final). Every rule here is namespaced .jumbo* so none of it can
-   leak into the normal kiosk pages, which keep the Apple-glass look.
+/* ============ JUMBOTRON (pages_jumbotron.py / jumbotron_data.py) ============
+   "Scoreboard Console" — rebuilt from scratch 2026-09-20 after the
+   previous skin accumulated five separate "content is cut off"
+   incidents and one live regression from this app's own global
+   animation kill switch.
 
-   Session request: "make an HTML document with three different
-   versions [of a visual polish], I'll tell you which one I like
-   most" -> user picked "Network Primetime" (real ESPN/Fox pregame-
-   card DNA: a diagonal VS seam splitting two full team-color panels,
-   solid color-blocked panel headers, amber as the network ID mark)
-   over the prior soft blurred-glass look, then: "incorporate the
-   exact same systems that are currently in the dashboard into this
-   new system... no features should be lost." Every *_html function in
-   pages_jumbotron.py is untouched by this reskin — this is a token +
-   structural CSS change on top of the exact same markup, not a
-   rewrite; the one Python change is additive (_side_html gained an
-   optional accent_rgb param, see its own docstring) and defaults to
-   the same behavior for any caller that doesn't pass it. Apple-system
-   type throughout still (see --label's own comment for why this
-   never runs its own separate arena font stack) — "Network Primetime"
-   pushes weight/tracking, it doesn't swap in a decorative face. */
-.jumbo {
-    --led: #FFC400;
-    --ledglow: rgba(255,196,0,0.5);
-    --arena: #07070A;
-    /* Solid panel now, not translucent glass — "Network Primetime"'s
-       own broadcast-graphics panels are opaque color blocks, not a
-       blurred see-through surface. Every rule below that still also
-       carries a backdrop-filter alongside `background: var(--glass)`
-       was left as-is rather than hunted down individually — a no-op
-       once the surface behind it is fully opaque, not a bug. */
-    --glass: #101014;
-    --edge: #1E2634;
-    --edge-hi: #2E3B54;
-    /* Session request: "you know how we have the apple style thing for
-       the main page... I want that but keep the display dark." --edge
-       is arena identity (dividers, glyph strokes, accent fallbacks —
-       left untouched everywhere it already appears) and stays an
-       opaque blue-gray; this is a separate, dedicated tone specifically
-       for the handful of real card-surface borders below (.jumbo-panel,
-       .jumbo-marquee, etc.), matching the translucent white edge every
-       .tile elsewhere in this app already uses — the trait that actually
-       reads as "glass" rather than "flat dark panel," independent of
-       the arena color palette sitting on top of it. */
-    --glass-edge: rgba(255,255,255,0.10);
-    --bone: #F4F1E8;
-    /* Session feedback: "a lot of it is just gray... let's remove that
-       muted gray to a more visible color overall" — brightened both
-       secondary-text tones (records, start times, probables labels,
-       standings, captions — everywhere in the jumbotron that reads off
-       these two custom properties picks this up automatically, no
-       per-element changes needed). Kept two distinct tones rather than
-       one flat color so there's still a readable hierarchy between
-       "secondary" (--mut) and "tertiary" (--mut-2) text, just both
-       shifted much lighter than the original near-invisible grays. */
-    --mut: #C2CAD8;
-    --mut-2: #9BA6BA;
-    --live: #FF453A;
-    --ok: #32D583;
-    /* --label was JetBrains Mono, swapped for the small/secondary text
-       (standings, Around The Leagues rows, situation strip, stat
-       labels, blurb text) — session feedback: "pick a better font...
-       I can't really read the little fonts... it's still not very
-       apple-ish." --num (Bebas Neue) then got the same swap for the
-       big numeric displays (clock, countdown, records, standings/
-       leader scores) — "make the big numbers the same font as the ones
-       you just implemented." Session feedback on the result: "that
-       looks amazing, can you make every single text in the sheet that
-       font" — --disp (Oswald, the board's own default/heading font:
-       team names, division labels, everything that doesn't set its own
-       font-family) now points to the same stack too, so every one of
-       these three aliases the same system font. Kept as three separate
-       variables rather than collapsing to one, since a future session
-       asking to bring back a distinct display font only needs one line
-       changed here, not a hunt through every call site again. */
-    --label: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
-    --disp: var(--label);
-    --num: var(--label);
-    font-family: var(--disp);
-    color: var(--bone);
+   Three rules this section is built on. Breaking any one of them is how
+   every bug it replaced got in:
+
+   1. ONE HEIGHT BUDGET, COMPUTED ONCE. --jumbo-viewport-h below is the
+      only `vh` unit in this entire section. Everything else sizes as a
+      flex/grid fraction of the already-budgeted box. The old skin
+      chained calc() off 100vh in several places, then fought the app's
+      stepped zoom media queries with a `zoom: 1 !important` override —
+      the jumbotron is now excluded from those media queries at the
+      source instead (see the `:not(:has(.jumbo-root))` selectors up by
+      .block-container), so there is no specificity race left to win.
+
+   2. PAGINATION IS THE FIT MECHANISM; overflow:hidden IS ONLY THE
+      SAFETY NET. This kiosk never scrolls, so a row that doesn't fit is
+      permanently invisible, not below the fold. Every list that can
+      grow (Around The Leagues, standings, UFC card, batting order,
+      storylines) is paged on the Python side.
+
+   3. NOTHING WAITS ON AN ANIMATION TO BECOME VISIBLE. Animations are
+      permanently off app-wide, so every element's default state here is
+      already its correct final appearance. In particular the two
+      full-screen overlays (.jumbo-play-overlay, .jumbo-otc-overlay) and
+      the enter/exit announcement (.jumbo-transition) are PRESENCE-GATED
+      — jumbotron_data.py returns None and the markup simply isn't
+      emitted — so they must NEVER be given a resting opacity:0 or
+      visibility:hidden here. A resting-hidden band-aid written for
+      toggle-by-class elements is exactly what made the play-result
+      announcement and the game-mode caption invisible for good.
+
+   Visual language: flat rectangular panels, 1px hairlines instead of
+   glow/shadow, generous padding, real per-team accent colors as a flat
+   top rule (no diagonal clip-path geometry anywhere — that's what used
+   to clip live content), and exactly one warm accent (--jumbo-hot)
+   reserved for "live"/urgent state. Numerals use the same system font
+   stack + font-variant-numeric: tabular-nums the rest of this
+   stylesheet already uses for aligned digits; no separate arena font is
+   loaded (see this file's own top comment on why those @imports went
+   away). */
+.jumbo-root {
+    /* --- the single height budget --- */
+    --jumbo-viewport-h: 100vh;   /* the ONLY vh unit in this section */
+    --jumbo-chrome-h: 7rem;      /* kiosk top padding + the fixed bottom ticker strip */
+    --jumbo-safety-h: 10px;      /* real slack so sub-pixel rounding can never clip a panel */
+    --jumbo-budget-h: calc(var(--jumbo-viewport-h) - var(--jumbo-chrome-h) - var(--jumbo-safety-h));
+    /* Fixed, NOT content-dependent — the whole budget depends on this
+       being a number, not "however tall the marquee happens to be." */
+    --jumbo-marquee-h: 62px;
+    --jumbo-gap: 12px;
+    /* Clearance the rail column leaves for .st-key-jumbotron_controls
+       (position:fixed, left:34px, bottom:88px, ~44px tall) — confirmed
+       live via a real photo of the physical TV: without it the batting
+       order's last row rendered underneath the DELAY input, text
+       garbled together. A fixed overlay doesn't push flowed content out
+       of its own way.
+
+       Measured rather than guessed this time: at 1920x1080 the control
+       cluster's top lands 42px inside --jumbo-budget-h's bottom edge
+       (bottom:120px, ~44px tall), so 76px is that intrusion plus a real
+       34px margin. The previous 150px was a guess that cost ~90px of
+       rail height every render — measured live as 66px of My Teams
+       content and 2 full standings rows being clipped, i.e. the reserve
+       itself had become the cutoff bug it was added to prevent. */
+    --jumbo-controls-clear: 76px;
+
+    /* --- palette --- */
+    --jumbo-bg: #08080A;
+    --jumbo-panel: #0E0E11;
+    --jumbo-panel-2: #131317;
+    --jumbo-sunk: #0A0A0D;
+    --jumbo-line: rgba(255,255,255,0.11);
+    --jumbo-line-soft: rgba(255,255,255,0.055);
+    --jumbo-fg: #F2F3F5;
+    --jumbo-fg-2: #AEB6C2;
+    --jumbo-fg-3: #79808D;
+    /* The one warm accent. Reserved for live/urgent state and for "the
+       single thing that matters most" (best performer, our own
+       standings row). Everything else is neutral or a real team color. */
+    --jumbo-hot: #FF9F0A;
+    --jumbo-ok: #32D74B;
+    --jumbo-bad: #FF453A;
+    --jumbo-font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+
+    font-family: var(--jumbo-font);
+    color: var(--jumbo-fg);
+    background: var(--jumbo-bg);
+    height: var(--jumbo-budget-h);
     display: flex;
     flex-direction: column;
-    /* Fills the viewport minus the kiosk's own top padding and the
-       fixed ticker strip at the bottom — this page owns the whole
-       screen, unlike the normal pages that stack under the hero row. */
-    height: calc(100vh - 7rem);
+    gap: var(--jumbo-gap);
     min-height: 0;
-    gap: 10px;
+    overflow: hidden;
 }
-/* The normal kiosk caps content at 1450px and centers it vertically —
+/* Every numeral that has to line up column-to-column or frame-to-frame
+   (scores, clocks, countdowns, records, percentages) opts in to tabular
+   figures through this one declaration rather than each rule repeating
+   it. Same stack/technique the rest of this stylesheet already uses. */
+.jumbo-root .jumbo-clock,
+.jumbo-root .jumbo-countdown,
+.jumbo-root .jumbo-score-num,
+.jumbo-root .jumbo-situ-num,
+.jumbo-root .jumbo-situ-clock,
+.jumbo-root .jumbo-wp-pct,
+.jumbo-root .jumbo-wx-temp,
+.jumbo-root .jumbo-hero-rec-v,
+.jumbo-root .jumbo-gl-cd,
+.jumbo-root .jumbo-gl-score,
+.jumbo-root .jumbo-mini-score,
+.jumbo-root .jumbo-st-rec,
+.jumbo-root .jumbo-lineup-ops,
+.jumbo-root .jumbo-lineup-num,
+.jumbo-root .jumbo-mu-stat,
+.jumbo-root .jumbo-leader-value,
+.jumbo-root .jumbo-top3-score-num,
+.jumbo-root .jumbo-otc-timer,
+.jumbo-root .jumbo-ufc-stat-v,
+.jumbo-root .jumbo-ufc-tot-a,
+.jumbo-root .jumbo-ufc-tot-b {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+}
+
+/* The normal kiosk caps content at 1800px and pads it for tiles —
    right for tiles, wrong for a full-bleed scoreboard. Scoped via :has()
-   so it only applies on the takeover page; if a browser ever lacks
-   :has() support the jumbotron simply renders at the normal width
-   instead of breaking. */
-.block-container:has(.jumbo) {
+   so it only applies on the takeover page; a browser without :has()
+   support simply renders the board at the normal width instead of
+   breaking. No `zoom` override needed anymore — the stepped zoom media
+   queries near the top of this file now exclude this page by selector. */
+.block-container:has(.jumbo-root) {
     max-width: 100% !important;
-    /* Session report, new Ubuntu kiosk: "the lower third of the screen
-       is just cut out black... every other page sizes properly, except
-       for this one." Real cause: the stepped max-height media queries
-       below (.block-container { zoom: 0.94/0.86/0.78 }, added for the
-       normal pages' own short-viewport fix — see that rule's own
-       comment) still apply here too, since :has() doesn't opt this
-       selector OUT of a plain `.block-container { zoom }` rule
-       elsewhere in the cascade, only add MORE specific rules of its
-       own. Every normal page's content is plain flowing text/tiles, so
-       it shrinks uniformly with that zoom and still looks right — but
-       .jumbo (below) computes its own height directly against the REAL
-       viewport (`calc(100vh - 7rem)`), then that already-correct box
-       gets shrunk AGAIN by the ancestor zoom on top of it, leaving a
-       gap below it exactly the size of the shrink — which reads as
-       solid black, since the page's own base background (config.toml)
-       is already black. Explains every symptom reported: only this
-       page (the only one anchored to 100vh), the gap specifically at
-       the BOTTOM (zoom shrinks from the top-left origin, so the loss
-       shows up trailing, not leading), lowering the real browser zoom
-       "fixing" it (pushes the true viewport back above the 1040px
-       breakpoint, turning this rule off entirely) at the cost of
-       shrinking everything else too. `.jumbo` doesn't need this crutch
-       at all — 100vh already IS the adaptive-to-a-shorter-viewport fix
-       for this page, the exact thing zoom exists to approximate for
-       everyone else. Pinned to 1 here, at equal-or-higher specificity
-       than the plain `.block-container` media queries below regardless
-       of viewport height, so jumbotron is never touched by them again.
-       No effect on any other page — this selector only ever matches
-       while jumbotron is showing. */
-    zoom: 1 !important;
-    /* Session report on the real TV (post zoom-fix): "slightly cut off
-       at the top, just the slightest little bit." 0.4rem (~6px) left
-       almost no real margin above the marquee — bumped for genuine
-       breathing room against the physical screen edge. */
     padding-top: 1rem !important;
     padding-left: 1.1rem !important;
     padding-right: 1.1rem !important;
     justify-content: flex-start !important;
 }
-/* Confirmed live: with justify-content pinned to flex-start above, the
-   ~1.5-2 inch gap above the marquee was Streamlit's own per-element
-   vertical gap (repeated across several invisible 0-height markdown/
-   iframe containers that render ahead of the page body — the hotkey
-   listener, the sky/scenery markdown, staleness pills, etc.) plus the
-   autorefresh component's own 26px iframe height. None of that is
-   visible on the normal pages because centered layout just swallows it
-   as part of the whole block being centered — flex-start is what makes
-   it show up as a hard gap instead. Collapsed only while the jumbotron
-   is showing, since the normal pages still want that centering intact. */
-.block-container:has(.jumbo) > div {
+/* Confirmed live: with justify-content pinned to flex-start, the gap
+   above the marquee is Streamlit's own per-element vertical gap
+   (repeated across several invisible 0-height containers that render
+   ahead of the page body) plus the autorefresh component's iframe
+   height. Collapsed only while the jumbotron is showing. */
+.block-container:has(.jumbo-root) > div {
     gap: 0 !important;
 }
-.block-container:has(.jumbo) .element-container:has(iframe) {
+.block-container:has(.jumbo-root) .element-container:has(iframe) {
     height: 0 !important;
     min-height: 0 !important;
     overflow: hidden !important;
 }
 
+/* ---- Marquee ---- */
 .jumbo-marquee {
+    flex: 0 0 var(--jumbo-marquee-h);
+    height: var(--jumbo-marquee-h);
+    box-sizing: border-box;
     display: flex;
     align-items: center;
-    gap: 18px;
-    padding: 8px 22px 8px 26px;
-    flex: 0 0 auto;
-    background: var(--glass);
-    border: 1px solid var(--glass-edge);
-    /* Network Primetime: a clipped bottom-left corner (real broadcast-
-       graphics panels are cut, not universally rounded) instead of the
-       old fully-rounded pill. */
-    border-radius: 14px;
-    clip-path: polygon(0 0, 100% 0, 100% 100%, 16px 100%, 0 calc(100% - 16px));
-    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
-    position: relative;
-}
-/* Amber network-ID stripe down the left edge — the marquee's own
-   version of the same left-accent-bar language the featured board's
-   diagonal seam and the My Teams rail rows both use. */
-.jumbo-marquee::before {
-    content: "";
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 4px;
-    background: var(--led);
-}
-/* Jays blue on the left half, Habs red on the right — the arena's own
-   two-team identity, stated once at the top instead of repeated. */
-.jumbo-marquee::after {
-    content: "";
-    position: absolute;
-    left: 4px; right: 0; bottom: 0;
-    height: 2px;
-    background: linear-gradient(90deg, #3E7CC9 0 50%, #D8323F 50% 100%);
-    opacity: 0.85;
+    gap: 20px;
+    padding: 0 22px;
+    background: var(--jumbo-panel);
+    border: 1px solid var(--jumbo-line);
+    border-left: 3px solid var(--jumbo-hot);
+    overflow: hidden;
 }
 .jumbo-brand {
-    font-family: var(--num);
-    font-size: 26px;
+    font-size: 22px;
     font-weight: 800;
     letter-spacing: 0.06em;
-    color: var(--led);
-    text-shadow: 0 0 16px var(--ledglow);
-    line-height: 0.92;
+    color: var(--jumbo-fg);
+    line-height: 0.95;
+    flex: 0 0 auto;
 }
 .jumbo-brand span {
     display: block;
-    color: var(--mut);
-    font-family: var(--disp);
+    color: var(--jumbo-fg-3);
     font-weight: 700;
-    letter-spacing: 0.32em;
+    letter-spacing: 0.3em;
     font-size: 9px;
 }
-.jumbo-clock {
-    /* Session feedback: "make the big numbers the same font as the
-       ones you just implemented" — every genuinely numeric big display
-       (this clock, the weather temp, records, countdowns, standings/
-       leader stats) reads in the same --label font as the small text.
-       --num itself is now just an alias for --label (see its own
-       comment) — kept as its own explicit font-family here rather than
-       relying on inheritance so it's clear at a glance this element is
-       the same font on purpose, not by accident. */
-    font-family: var(--label);
-    font-size: 36px;
-    letter-spacing: 0.05em;
-    line-height: 1;
-}
-.jumbo-clock em { font-style: normal; font-size: 16px; color: var(--mut); margin-left: 5px; }
+.jumbo-clock { font-size: 34px; font-weight: 700; letter-spacing: 0.02em; line-height: 1.1; flex: 0 0 auto; }
+.jumbo-clock em { font-style: normal; font-size: 15px; color: var(--jumbo-fg-3); margin-left: 6px; }
 .jumbo-dateline {
     font-size: 11px;
-    font-weight: 300;
-    color: var(--mut);
-    letter-spacing: 0.2em;
+    font-weight: 600;
+    color: var(--jumbo-fg-3);
+    letter-spacing: 0.22em;
+    white-space: nowrap;
+    overflow: hidden;
 }
-.jumbo-spacer { flex: 1; }
+.jumbo-spacer { flex: 1 1 auto; min-width: 0; }
 .jumbo-wx {
     display: flex;
     align-items: baseline;
     gap: 9px;
-    border: 1px solid var(--glass-edge);
-    border-radius: 14px;
+    flex: 0 0 auto;
     padding: 5px 14px;
-    background: var(--glass);
-    backdrop-filter: blur(24px) saturate(160%);
-    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid var(--jumbo-line);
+    background: var(--jumbo-sunk);
 }
-.jumbo-wx-temp { font-family: var(--label); font-size: 26px; line-height: 1; }
-.jumbo-wx-loc { font-size: 9px; font-weight: 300; color: var(--mut); letter-spacing: 0.24em; }
+.jumbo-wx-temp { font-size: 24px; font-weight: 700; line-height: 1; }
+.jumbo-wx-loc { font-size: 9px; font-weight: 700; color: var(--jumbo-fg-3); letter-spacing: 0.24em; }
 
+/* ---- Grid + panels ----
+   Same three-column shape as before (rail / featured board / around the
+   leagues). That structure was never the source of the layout bugs —
+   the diagonal clip-path geometry inside the board was. */
 .jumbo-grid {
-    flex: 1;
-    display: grid;
-    /* Right column widened 340->370px — the Around The Leagues text
-       inside it just got noticeably bigger (see .jumbo-mini's own
-       comment); the Featured board's flexible middle column easily
-       absorbs the difference. */
-    grid-template-columns: 420px 1fr 370px;
-    gap: 12px;
+    flex: 1 1 auto;
     min-height: 0;
+    display: grid;
+    grid-template-columns: 420px minmax(0, 1fr) 370px;
+    gap: var(--jumbo-gap);
 }
 .jumbo-panel {
-    border: 1px solid var(--glass-edge);
-    /* Network Primetime: sharp broadcast-graphic corners, not the old
-       soft "squircle" glass curve — was 20px. */
-    border-radius: 6px;
-    background: var(--glass);
-    box-shadow: 0 10px 32px rgba(0,0,0,0.4);
+    background: var(--jumbo-panel);
+    border: 1px solid var(--jumbo-line);
     display: flex;
     flex-direction: column;
     min-height: 0;
+    min-width: 0;
     overflow: hidden;
 }
-/* Session request: "how can we improve the experience watching the
-   game... feel like its all orchestrated in a sophisticated manner" —
-   the two side panels recede a touch so the featured board (.jumbo-
-   board, styled separately below) reads as the visual hero at a
-   glance, not three equally-weighted boxes. Was a lighter/more-
-   transparent glass; now that panels are solid (--glass, see its own
-   comment), "recede" means a darker solid shade instead of a dimmer
-   one. Subtle on purpose — My Teams/Around The Leagues still need to
-   be read clearly, just not compete for attention with the actual
-   live game. */
-.jumbo-rail, .jumbo-around {
-    background: #0B0B0E;
-    border-color: rgba(255,255,255,0.07);
+.jumbo-col-rail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--jumbo-gap);
+    min-height: 0;
+    padding-bottom: var(--jumbo-controls-clear);
 }
+/* My Teams sizes to its own content but may shrink if it truly has to
+   (clipping its own lowest-priority bottom card) rather than starving
+   the standings panel, which keeps a real floor — a 4th rail card once
+   squeezed standings down to 124px live. */
+.jumbo-col-rail .jumbo-rail { flex: 0 1 auto; min-height: 0; }
+/* The floor is sized for the largest real division this rotates
+   through — 8 teams (NHL) at ~24px a row plus padding and the panel
+   header. Session report this exists for: "standings are only showing
+   the top 4 teams in each div." Re-measured live 2026-09-20 at a real
+   8-row division. */
+.jumbo-col-rail .jumbo-standings-panel { flex: 1 1 auto; min-height: 250px; }
+
 .jumbo-ph {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
-    padding: 11px 18px;
-    background: rgba(255,255,255,0.035);
-    border-bottom: 2px solid var(--led);
-    font-family: var(--label);
-    font-size: 12px;
+    gap: 12px;
+    padding: 9px 16px;
+    background: var(--jumbo-panel-2);
+    border-bottom: 1px solid var(--jumbo-line);
+    font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.2em;
-    color: var(--bone);
     text-transform: uppercase;
-}
-.jumbo-ph-right { margin-left: auto; letter-spacing: 0.1em; font-weight: 700; color: var(--mut-2); }
-.jumbo-live { color: var(--live); font-weight: 800; animation: jumbo-blink 1.4s infinite; }
-@keyframes jumbo-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
-
-/* ---- My Teams rail ---- */
-.jumbo-rail-body { flex: 1; min-height: 0; overflow: hidden; }
-/* Network Primetime, extended: session follow-up after the featured
-   board's own reskin — "show me what it would look like if you gave
-   the entire rest of the jumbotron this kind of emphasis... my teams
-   page, the standings, and then the around the leagues," then "build
-   it into the real jumbotron." Same rule as the featured board's own
-   reskin: every *_html function that builds this rail keeps its exact
-   existing signature/behavior — this is CSS only, no new Python param
-   needed, since --tc (each sport's real accent color, already set per
-   .jumbo-hero-{sport} below) was already available to read from. */
-.jumbo-hero {
-    /* Was 20px 20px 22px, then 13px 20px 14px 22px for a third team
-       (the Saints) — trimmed again for a real live report: "the
-       standings are cut off right now. It's in the pregame phase, and
-       we're having the same issue as in the game phase." Root cause,
-       confirmed via getBoundingClientRect: a 4th card (UFC) was added
-       to this rail after that Saints-era fix and never re-verified
-       against it — measured live at 614.97px for 4 cards (NHL/MLB/NFL/
-       UFC), leaving Division Standings only 124px (vs. the ~229-254px
-       it had after this session's own earlier batting-order-side
-       fixes) with a real 5-team MLB division's rows already clipped by
-       81px. This shares the exact same .jumbo-rail-col budget the
-       batting order rail competes with during a LIVE game — see that
-       section's own comments — just via a different rail content
-       (My Teams instead of Batting Order) that was never part of
-       those fixes. */
-    padding: 9px 20px 10px 22px;
-    border-bottom: 1px solid rgba(30,38,52,0.55);
-    position: relative;
+    color: var(--jumbo-fg-2);
+    white-space: nowrap;
     overflow: hidden;
 }
-.jumbo-hero:last-child { border-bottom: none; }
-/* Full-height team-color flag down the left edge (was a short 4px
-   pill floating mid-card) plus a soft color wash behind the whole
-   card — the same "team card" language the featured board's diagonal
-   panels use, just a flat wash here rather than a diagonal cut (this
-   rail is too narrow for a clean diagonal to read at a glance). */
-.jumbo-hero::before {
-    content: "";
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 6px;
-    background: var(--tc, var(--edge-hi));
-}
-.jumbo-hero::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    background: linear-gradient(100deg, rgba(var(--tc-rgb, 46,59,84), 0.16), rgba(var(--tc-rgb, 46,59,84), 0) 60%);
-}
-.jumbo-hero-nhl { --tc: #D8323F; --tc-rgb: 216,50,63; }
-.jumbo-hero-mlb { --tc: #3E7CC9; --tc-rgb: 62,124,201; }
-.jumbo-hero-nfl { --tc: #D3BC8D; --tc-rgb: 211,188,141; }
-.jumbo-hero-ufc { --tc: #D20A0A; --tc-rgb: 210,10,10; }
-.jumbo-hero-head { display: flex; align-items: center; gap: 14px; position: relative; z-index: 1; }
-/* Solid rounded badge behind the logo (background/padding/radius work
-   fine directly on an <img> — no wrapper element needed) — most of
-   these are transparent-background SVGs, so this reads as a real
-   broadcast team-card badge instead of a logo floating on bare panel. */
-.jumbo-hero-head img {
-    /* 58px -> 50px, same "standings cut off in pregame" pass as
-       .jumbo-hero's own padding trim just above — the head row's
-       height is logo-driven on every card that has one. */
-    width: 50px; height: 50px; padding: 5px; box-sizing: border-box;
-    object-fit: contain; flex: 0 0 auto;
-    background: rgba(255,255,255,0.08); border-radius: 10px;
-}
-.jumbo-hero-id { min-width: 0; white-space: nowrap; }
-.jumbo-hero-name { font-weight: 800; font-size: 21px; letter-spacing: 0.01em; line-height: 1.1; white-space: nowrap; }
-.jumbo-hero-div {
-    font-size: 13px;
-    font-weight: 300;
-    color: var(--mut);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    margin-top: 4px;
-}
-/* Session request: "playoff odds for each of my teams" — a compact
-   suffix on the division line rather than its own row, since this
-   card's vertical space is already tightly tuned (see this file's own
-   padding-trim comments elsewhere on .jumbo-hero/.jumbo-form/
-   .jumbo-gameline). var(--tc) is each sport's own hero accent color
-   (set per .jumbo-hero-{sport} above), so this reads as a highlight,
-   not routine muted text. */
-.jumbo-hero-odds { color: var(--tc); font-weight: 600; letter-spacing: 0.08em; }
-.jumbo-hero-rec { margin-left: auto; text-align: right; flex: 0 0 auto; padding-left: 10px; position: relative; z-index: 1; }
-.jumbo-hero-rec-v { font-family: var(--label); font-weight: 800; font-size: 28px; line-height: 1; white-space: nowrap; }
-.jumbo-hero-rec-l { font-size: 9px; font-weight: 700; color: var(--mut-2); letter-spacing: 0.26em; white-space: nowrap; }
-.jumbo-form { display: flex; gap: 6px; align-items: center; margin-top: 6px; position: relative; z-index: 1; }  /* was 13px, then 9px — see .jumbo-rail-col's own comment */
-.jumbo-form-label { font-size: 11px; font-weight: 700; color: var(--mut-2); letter-spacing: 0.2em; margin-right: 3px; }
-.jumbo-form i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-.jumbo-form-w { background: var(--ok); box-shadow: 0 0 6px rgba(50,213,131,0.5); }
-.jumbo-form-l { background: rgba(255,69,58,0.35); border: 1px solid rgba(255,69,58,0.5); }
-.jumbo-gameline {
-    /* margin-top/padding trimmed from 14px/12px 15px, then 9px/9px 15px
-       — see .jumbo-rail-col's own comment on why this rail got tighter
-       (most recently: a 4th "My Teams" card, UFC, pushing Division
-       Standings down to 124px live). Solid "ticket stub" plate now,
-       not blurred glass (see --glass's own comment on the wider token
-       change this follows) — border-radius pulled in from 14px to
-       match the rest of this reskin's sharper, less-rounded broadcast-
-       panel language. */
-    margin-top: 6px;
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 5px;
-    background: rgba(0,0,0,0.4);
-    padding: 6px 15px;
-    font-family: var(--label);
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--mut);
-    line-height: 1.4;
-    position: relative;
-    z-index: 1;
-}
-.jumbo-gameline b { color: var(--bone); font-weight: 600; }
-.jumbo-gl-score { color: var(--led); font-weight: 800; font-size: 19px; }
-.jumbo-gl-cd { font-family: var(--label); color: var(--bone); font-size: 24px; letter-spacing: 0.08em; margin-left: 10px; }
-/* Same "delayed instead of stuck at 0:00" fix as .jumbo-countdown-
-   delayed above, sized for this compact rail chip instead of the big
-   featured board. */
-.jumbo-gl-cd-delayed { color: #FF9F0A; font-size: 18px; }
-.jumbo-w { color: var(--ok); }
-.jumbo-l { color: var(--live); }
-.jumbo-offseason { border-style: dashed; color: var(--mut-2); letter-spacing: 0.28em; font-size: 13px; }
-/* Session request: "for the teams that aren't currently in season,
-   can we have a little countdown on their team bar" — replaces the
-   plain "OFFSEASON" text with a real sentence ("Preseason opener Aug
-   15 · in 20 days"), which .jumbo-offseason's own 0.28em letter-
-   spacing (fine for one all-caps word) would badly reflow. */
-.jumbo-offseason-countdown { letter-spacing: 0.02em; font-size: 14px; text-align: left; }
-.jumbo-hero-live .jumbo-gameline { border-color: rgba(255,69,58,0.45); box-shadow: 0 0 16px rgba(255,69,58,0.1); }
-/* My Teams + Division Standings share the left column as two stacked
-   panels — session request moved standings out of each hero card into
-   its own rotating panel at the bottom. My Teams sizes to its own
-   content; standings takes whatever's left. Session report adding a
-   third team (the Saints): "the standings are kinda cut off because
-   we added the saints to the left bar" — with 3 hero cards (one of
-   them potentially a full live/pregame card, not just a compact
-   OFFSEASON line) My Teams' own natural height can genuinely exceed
-   what's left for standings once flex: 0 0 auto (fixed, never shrinks)
-   met a column that's now consistently tighter than it was designed
-   for at 1-2 teams. My Teams can now shrink (flex-shrink: 1, was 0) if
-   it truly has to, clipping its own lowest-priority (bottom-most, per
-   COUNTDOWN_PRIORITY) card rather than starving standings entirely;
-   standings gets a real min-height floor so it's never squeezed to
-   the ~6px "may as well not exist" state this report was about. */
-/* padding-bottom reserves clearance for .st-key-jumbotron_controls
-   (position:fixed, left:34px, bottom:88px, z-index:9999) — confirmed
-   live via a real photo of the physical TV: the batting order rail's
-   own last row rendered directly under that fixed control, its text
-   garbled together with the DELAY input on top of it. A fixed overlay
-   doesn't push flowed content out of its way on its own; this column
-   needs to stop short of that zone itself. Only the rail column needs
-   it (this control sits at the LEFT edge) — the featured board and
-   Around The Leagues columns never reached down that far in the same
-   photo.
-
-   Session note: an earlier round scaled this whole jumbotron section's
-   font-sizes/dimensions down ~38-45% chasing a "text too big" report
-   that turned out to be the kiosk's own Windows browser stuck at 150%
-   zoom, not a real CSS sizing problem — reverted entirely back to
-   original once the zoom itself got fixed (see git history around
-   2026-08-26 if this ever needs the full story). This one fix is the
-   sole real, independent bug from that whole round and is kept on its
-   own, sized for the ORIGINAL (not scaled-down) control dimensions. */
-.jumbo-rail-col { display: flex; flex-direction: column; gap: 12px; min-height: 0; padding-bottom: 150px; }
-.jumbo-rail-col .jumbo-rail { flex: 0 0 auto; }
-.jumbo-rail-col .jumbo-standings-panel { flex: 1; min-height: 0; }
-
-/* Division standings panel (pages_jumbotron._rotating_standings_html)
-   — session request: real team logos per row, and its own dedicated
-   (now rotating, ~20s per league) panel instead of a cramped snippet
-   inside each hero card — same data/shape as pages_sports.py's own
-   _standings_table, restyled for the jumbotron's LED-mono look. */
-.jumbo-standings-body { flex: 1; min-height: 0; padding: 4px 18px 14px; overflow: hidden; }
-.jumbo-standings {
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 6px;
-    background: #0B0B0E;
-    overflow: hidden;
-    font-family: var(--label);
-    font-size: 14px;
-    font-weight: 600;
-}
-.jumbo-standings-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    /* Session report: "standings are only showing the top 4 teams in
-       each div" — confirmed live, an NHL division (8 teams) only had
-       184px to work with at 41px/row (~4.5 rows). Compacted padding
-       and .jumbo-standings-logo (below) together bring a row down to
-       roughly half that, paired with a second small trim to the
-       batting order rail above it (see .jumbo-lineup-row's own
-       comment) freeing a bit more real height too — between the two,
-       a full 8-team division should fit with real margin, not just
-       barely. */
-    padding: 4px 14px;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-    color: var(--mut);
-}
-.jumbo-standings-row:last-child { border-bottom: none; }
-/* Network Primetime, extended: a hard amber flag on our own team's
-   row (border + gradient wash fading right) instead of the old flat,
-   even wash across the whole row — same "real flag, not a tint"
-   language the featured board's win-glow and the My Teams rail's own
-   left bar both already use. */
-.jumbo-standings-row-team {
-    color: var(--led);
+.jumbo-ph-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.jumbo-ph-r { margin-left: auto; letter-spacing: 0.14em; color: var(--jumbo-fg-3); flex: 0 0 auto; }
+.jumbo-sl {
+    font-size: 10px;
     font-weight: 800;
-    background: linear-gradient(90deg, rgba(255,196,0,0.16), rgba(255,196,0,0) 70%);
-    border-left: 3px solid var(--led);
-    padding-left: 11px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--jumbo-fg-3);
+    margin-bottom: 8px;
+    flex: 0 0 auto;
 }
-.jumbo-standings-rank { flex: 0 0 18px; color: var(--mut-2); font-weight: 700; }
-.jumbo-standings-logo { width: 17px; height: 17px; border-radius: 5px; object-fit: contain; flex: 0 0 auto; background: rgba(255,255,255,0.08); }
-.jumbo-standings-team { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jumbo-standings-record { flex: 0 0 auto; font-weight: 700; }
-.jumbo-standings-extra { flex: 0 0 40px; text-align: right; color: var(--mut-2); }
-/* Session request: "playoff odds for each of my teams" — only ever
-   present on our own team's row (see pages_jumbotron._standings_rows_html's
-   own comment), so this never competes with .jumbo-standings-extra for
-   every OTHER row in the division. */
-.jumbo-standings-odds { flex: 0 0 auto; text-align: right; color: var(--led); font-weight: 800; margin-left: 8px; }
+.jumbo-quiet { color: var(--jumbo-fg-3); }
 
 /* ---- Featured board ---- */
-/* Session request: "how can we improve the experience watching the
-   game... feel good and seamless and like its all orchestrated in a
-   sophisticated manner." The three-panel grid (My Teams rail / this
-   featured board / Around The Leagues) used to share identical
-   .jumbo-panel styling with nothing setting the live game apart at
-   rest — this establishes the featured board as the visual hero: a
-   marginally brighter glass surface and edge than the two side panels
-   (see .jumbo-rail/.jumbo-around's own recede rule further down),
-   independent of the live-pulse glow below, so the hierarchy holds
-   pregame/postgame too, not just while a game's actually live. */
-.jumbo-board {
-    position: relative;
-    background: #121218;
-    border-color: rgba(255,255,255,0.13);
-}
-.jumbo-board-live {
-    /* --live-glow-rgb (pages_jumbotron._board_html) is OUR team's own
-       real accent color for whichever sport is live, not a fixed
-       generic red — falls back to the old red if a caller ever leaves
-       it unset. */
-    border-color: rgba(var(--live-glow-rgb, 255,69,58), 0.5);
-    animation: jumbo-boardpulse 2.6s ease-in-out infinite;
-}
-@keyframes jumbo-boardpulse {
-    0%, 100% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 0 rgba(var(--live-glow-rgb, 255,69,58), 0); }
-    50% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 26px rgba(var(--live-glow-rgb, 255,69,58), 0.22); }
-}
-/* Win celebration (pages_jumbotron._board_html) — session request:
-   "the j's win." One-shot gold burst around the whole board the
-   moment a win is first observed (session-guarded per game_id so it
-   never replays during the ~15min postgame hold — see the Python
-   side), instead of the live board's own continuous pulse. */
-.jumbo-win-burst {
-    animation: jumbo-win-burst 1.8s cubic-bezier(.2,.8,.2,1);
-}
-@keyframes jumbo-win-burst {
-    0% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 0 rgba(255,179,0,0); border-color: var(--edge); }
-    30% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 70px rgba(255,179,0,0.65); border-color: var(--led); }
-    100% { box-shadow: 0 10px 32px rgba(0,0,0,0.4), 0 0 0 rgba(255,179,0,0); border-color: var(--edge); }
-}
-/* Centers the board's contents in whatever height is left over. A
-   pregame board is just a matchup and a countdown, a live one adds a
-   linescore and scoring summary — without this the sparse version
-   clings to the top of a very tall panel with a void beneath it. */
+.jumbo-board { background: var(--jumbo-panel-2); }
+/* Live state is a flat warm hairline, not a pulse — the old glow
+   animation never played once the kill switch landed, so the "live"
+   cue has to be a resting appearance. */
+.jumbo-board-live { border-color: rgba(255,159,10,0.55); }
+/* One-time win marker, session-guarded per game_id on the Python side
+   so it marks the moment a win is first observed rather than re-firing
+   for the whole ~15min postgame hold. Static, same reason as above. */
+.jumbo-board-won { border-color: var(--jumbo-hot); box-shadow: inset 0 0 0 1px rgba(255,159,10,0.45); }
 .jumbo-board-body {
-    flex: 1;
+    flex: 1 1 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    /* Was center — with 901px of real height available and this
-       section's own content (matchup + win probability + current
-       matchup) not needing all of it, centering left one lump gap
-       below everything instead of spreading it out. space-evenly
-       distributes it between/around all 3 sections instead — see
-       .jumbo-matchup's own comment for the full story. */
-    justify-content: space-evenly;
     overflow: hidden;
 }
-/* Network Primetime's own centerpiece: two full-height diagonal team-
-   color panels meeting at a seam, with the actual matchup content (VS/
-   countdown/score) floating on a dark plate over the seam — real
-   ESPN/Fox pregame-card DNA. Restructured from the old grid (1fr auto
-   1fr, three plain columns) to a flex row where .jumbo-side itself
-   becomes a colored panel — but the color/clip lives on a ::before
-   pseudo-element behind the real content (logo/name/record), not on
-   .jumbo-side directly, specifically so the diagonal cut can never
-   clip actual content even if the angle or padding ever changes.
-   --side-rgb (pages_jumbotron._side_html's own optional accent_rgb
-   param) is each side's real color — the same away_rgb/home_rgb
-   _board_html already computed for the old ambient wash gradient, now
-   used at full strength instead of a faint 22%-alpha tint. Falls back
-   to a neutral slate if a caller ever leaves it unset (UFC's own hero
-   panel below sets its own two accent colors independently and never
-   touches this rule at all). */
+.jumbo-state { font-weight: 800; letter-spacing: 0.2em; color: var(--jumbo-fg-3); }
+.jumbo-state-live { color: var(--jumbo-hot); display: inline-flex; align-items: center; gap: 7px; }
+.jumbo-state-live i {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--jumbo-hot); display: inline-block;
+}
+
 .jumbo-matchup {
-    position: relative;
+    flex: 0 0 auto;
     display: flex;
     align-items: stretch;
-    /* Session report on the real TV: "there's a gap between the bottom
-       of the featured tab and the ticker bar... take up some of that
-       space." Confirmed live: .jumbo-board's own panel already
-       stretches to its full 901px grid-row height (matches the other
-       two columns exactly) — the gap was unfilled space INSIDE it,
-       since .jumbo-board-body's justify-content:center only centers
-       its 3 stacked sections (this one, the win-probability bar,
-       current matchup) rather than growing them. Bumped this section's
-       own min-height for a genuinely bigger, more filled-out matchup
-       card — paired with .jumbo-board-body's own justify-content
-       change below spreading the remaining space between all 3
-       sections instead of leaving it as one lump top/bottom.
-
-       Session follow-up: "current matchup... shift it up... can't see
-       the batter's OPS or sometimes the pitcher's full line because
-       it's cut off." Confirmed live with real getBoundingClientRect
-       measurements: 320px left .jumbo-leaders (Current Matchup) only
-       288px of its own 383px real content height to work with — a
-       95px shortfall that overflow:hidden silently ate off the
-       bottom, splitting the OPS stat across the clip line and hiding
-       the pitcher's line entirely. Pulled down to 210px (below the
-       236px this was before any of this round's changes) to free up
-       a real 110px — the measured 95px deficit plus genuine margin
-       ("shift it up by a decent chunk"), not just barely closing the
-       gap. A less-filled matchup card is the right trade against real
-       stats being cut off. */
-    min-height: 210px;
-    overflow: hidden;
+    border-bottom: 1px solid var(--jumbo-line-soft);
 }
-.jumbo-side { flex: 1; position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 20px 16px; text-align: center; }
-.jumbo-side::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    background: linear-gradient(135deg, rgba(var(--side-rgb, 58,64,80), 0.6), rgba(var(--side-rgb, 58,64,80), 0.14));
-}
-.jumbo-side:first-child::before { clip-path: polygon(0 0, 100% 0, 84% 100%, 0 100%); }
-.jumbo-side:last-child::before { clip-path: polygon(16% 0, 100% 0, 100% 100%, 0 100%); }
-.jumbo-side-dim { opacity: 0.55; }
-.jumbo-logobox { width: 120px; height: 120px; display: flex; align-items: center; justify-content: center; }
-.jumbo-logobox img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    filter: drop-shadow(0 5px 18px rgba(0,0,0,0.75));
-}
-.jumbo-tname { font-weight: 800; font-size: 25px; letter-spacing: 0.01em; }
-/* NFL possession icon next to the team name (pages_jumbotron.
-   _side_html) — session request: "make it more obvious who has the
-   ball... a little ball icon next to their name." */
-.jumbo-side-ball { margin-right: 8px; }
-.jumbo-trec { font-size: 13px; font-weight: 700; color: var(--mut); letter-spacing: 0.1em; }
-/* The floating dark plate over the diagonal seam — hairline borders
-   on both sides read as a real cut card sitting on top of the two
-   color panels, not just empty space between them. */
-.jumbo-center {
-    flex: 0 0 auto;
+.jumbo-side {
+    flex: 1 1 0;
+    min-width: 0;
     position: relative;
-    z-index: 2;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    padding: 16px 32px;
-    background: rgba(7,7,10,0.9);
-    border-left: 1px solid rgba(255,255,255,0.09);
-    border-right: 1px solid rgba(255,255,255,0.09);
-}
-.jumbo-score { display: flex; align-items: center; gap: 12px; }
-.jumbo-digitbox { display: flex; gap: 6px; }
-/* Plain numerals, not the amber LED-panel look this used to have —
-   session feedback: "why are the scoreboard numbers like a yellow
-   emoji? I don't really fuck with that. Can we just make it regular
-   numbers." */
-.jumbo-digit {
-    font-family: var(--label);
-    font-size: 88px;
-    line-height: 0.92;
-    width: 0.62em;
+    gap: 7px;
+    padding: 18px 16px 20px;
     text-align: center;
-    color: var(--bone);
+}
+/* The team's real color, as a flat 4px rule across the top of its own
+   column. Deliberately NOT a diagonal clip-path panel — that geometry
+   is what clipped real content whenever the angle or padding moved. */
+.jumbo-side-rule {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: rgb(var(--side-rgb, 122,130,144));
+}
+.jumbo-side-dim { opacity: 0.5; }
+.jumbo-logobox { width: 108px; height: 108px; display: flex; align-items: center; justify-content: center; }
+.jumbo-logobox img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.jumbo-tname {
     font-weight: 800;
+    font-size: 23px;
+    line-height: 1.15;
+    max-width: 100%;
 }
-/* Score-change flash (pages_jumbotron._board_html) — session request:
-   "are there animations for when the j score" (the original static
-   mockup's full-screen confetti blast on a score, which was dropped as
-   too fragile against Streamlit's rerun model — see sports_alerts.py's
-   module docstring). This is the same idea kept server-rendered-safe:
-   one box-scale-and-glow pulse the instant a score changes, gold for
-   our own side, a dimmer neutral pulse for the opponent's — applied
-   only for the single rerun right after the change (Python side), so
-   it can't get stuck replaying every 5s tick. */
-.jumbo-digitbox-flash-us .jumbo-digit {
-    animation: jumbo-score-flash-us 1.1s ease-out;
+.jumbo-side-ball { margin-right: 8px; }
+.jumbo-trec { font-size: 12px; font-weight: 700; color: var(--jumbo-fg-3); letter-spacing: 0.12em; }
+.jumbo-center {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 16px 34px;
+    background: var(--jumbo-sunk);
+    border-left: 1px solid var(--jumbo-line);
+    border-right: 1px solid var(--jumbo-line);
 }
-.jumbo-digitbox-flash-opp .jumbo-digit {
-    animation: jumbo-score-flash-opp 1.1s ease-out;
-}
-@keyframes jumbo-score-flash-us {
-    0% { transform: scale(1.35); text-shadow: 0 0 30px rgba(255,255,255,0.85); }
-    100% { transform: scale(1); text-shadow: none; }
-}
-@keyframes jumbo-score-flash-opp {
-    0% { transform: scale(1.12); text-shadow: 0 0 20px rgba(255,255,255,0.5); }
-    100% { transform: scale(1); text-shadow: none; }
-}
-.jumbo-dash { color: var(--edge-hi); font-family: var(--label); font-size: 50px; font-weight: 800; }
+.jumbo-score { display: flex; align-items: baseline; gap: 16px; }
+.jumbo-score-num { font-size: 86px; font-weight: 800; line-height: 1.1; color: var(--jumbo-fg); }
+/* A score that just changed keeps the warm accent for exactly the one
+   rerun the Python-side comparison flags it — a real resting state, not
+   a flash animation. */
+.jumbo-score-changed { color: var(--jumbo-hot); }
+.jumbo-score-sep { font-size: 44px; font-weight: 600; color: var(--jumbo-fg-3); }
 .jumbo-vs {
-    font-family: var(--num); font-size: 15px; font-weight: 800; letter-spacing: 0.14em; color: var(--led);
-    width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-    border: 2px solid var(--led); margin-bottom: 4px;
+    font-size: 13px; font-weight: 800; letter-spacing: 0.16em; color: var(--jumbo-fg-3);
+    border: 1px solid var(--jumbo-line); padding: 4px 12px;
 }
-.jumbo-countdown { font-family: var(--label); font-size: 88px; font-weight: 800; color: var(--bone); letter-spacing: 0.02em; line-height: 1; }
-/* Session request: "the jays game is delayed can you make it show
-   delayed instead of sitting at 0:00" — swaps in for .jumbo-countdown
-   once the scheduled start has passed with no live game yet (see
-   _board_html's own comment). A real status word/phrase, not a
-   number, so it needs a much smaller size than the 96px countdown
-   digits to avoid overflowing this same slot — sized and wrapped to
-   still comfortably fit MLB's own longer detail_state text ("Delayed
-   Start: Rain"), not just the plain "Delayed"/"Warmup" cases. Amber
-   rather than the countdown's own neutral --bone, matching this app's
-   established "something needs attention" color elsewhere. */
-.jumbo-countdown-delayed {
-    font-family: var(--disp);
-    font-size: 34px;
+.jumbo-countdown { font-size: 80px; font-weight: 800; line-height: 1; letter-spacing: 0.01em; }
+/* Session report: "the jays game is delayed can you make it show
+   delayed instead of sitting at 0:00." A real status phrase, not a
+   number, so it needs a far smaller size than the countdown digits to
+   fit MLB's own longer detail_state text ("Delayed Start: Rain"). */
+.jumbo-delayed {
+    font-size: 30px;
     font-weight: 700;
-    color: #FF9F0A;
-    letter-spacing: 0.04em;
+    color: var(--jumbo-hot);
     line-height: 1.2;
     text-align: center;
-    max-width: 320px;
+    max-width: 300px;
 }
-.jumbo-cd-label { font-size: 10px; font-weight: 300; color: var(--mut-2); letter-spacing: 0.4em; }
+.jumbo-cd-label { font-size: 10px; font-weight: 700; color: var(--jumbo-fg-3); letter-spacing: 0.32em; }
 .jumbo-final-badge {
-    font-family: var(--num);
-    font-size: 16px;
-    letter-spacing: 0.4em;
-    color: #0A0D12;
-    background: var(--led);
-    padding: 4px 14px 3px 18px;
-    border-radius: 6px;
-    margin-top: 8px;
-    box-shadow: 0 0 18px rgba(255,179,0,0.4);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.34em;
+    color: var(--jumbo-bg);
+    background: var(--jumbo-hot);
+    padding: 4px 12px;
+    margin-top: 6px;
 }
-/* Session feedback: "make the inning, bases, count, and outs more
-   visible from across the room" — sized up across the board (the
-   inning-by-inning linescore this used to sit above was dropped in
-   the same request, freeing up real room to grow into). */
+
+/* ---- Live situation strip ---- */
 .jumbo-situ {
-    /* Session request: "make the situation bar more visible ie bigger,
-       inning, bases, count, outs" — the whole strip (inning, base
-       diamond, strike%, outs) scaled up together, same proportions
-       just bigger, so it reads at a glance from across the room like
-       the rest of this board's own distance-readability pass already
-       treats its other big numbers. */
-    text-align: center;
-    font-family: var(--label);
-    font-size: 34px;
-    letter-spacing: 0.05em;
-    padding: 14px 26px 18px;
-    line-height: 1.7;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 14px 26px;
+    padding: 13px 22px;
+    border-bottom: 1px solid var(--jumbo-line-soft);
 }
-.jumbo-situ-hot { color: var(--led); font-weight: 700; margin-right: 20px; font-size: 38px; }
-.jumbo-dim { color: var(--mut-2); }
-.jumbo-clockbig { font-family: var(--label); font-size: 30px; color: var(--bone); letter-spacing: 0.06em; }
-/* Pregame venue/weather + probable starters (pages_jumbotron.
-   _pregame_extra_html) — session request, all free data off the same
-   feed already used for scoring plays. */
-.jumbo-pregame-venue {
+.jumbo-situ-key { font-size: 27px; font-weight: 800; letter-spacing: 0.04em; color: var(--jumbo-hot); }
+.jumbo-situ-clock { font-size: 27px; font-weight: 700; letter-spacing: 0.04em; }
+.jumbo-situ-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.jumbo-situ-cap { font-size: 9px; font-weight: 800; letter-spacing: 0.26em; color: var(--jumbo-fg-3); }
+.jumbo-situ-num { font-size: 27px; font-weight: 800; line-height: 1.25; }
+.jumbo-situ-sep { color: var(--jumbo-fg-3); margin: 0 3px; }
+/* Session request: "make it so a ball is green and a strike is red and
+   make it flash when [one] comes through." The color is permanent; the
+   "just happened" cue is the brighter weight/underline below, which is
+   a resting style rather than a flash the kill switch would eat. */
+.jumbo-ball { color: var(--jumbo-ok); }
+.jumbo-strike { color: var(--jumbo-bad); }
+.jumbo-count-new { border-bottom: 3px solid currentColor; padding-bottom: 1px; }
+.jumbo-situ-down { font-size: 19px; font-weight: 700; color: var(--jumbo-fg); letter-spacing: 0.02em; }
+.jumbo-situ-sub { font-size: 13px; font-weight: 700; color: var(--jumbo-fg-3); letter-spacing: 0.12em; }
+.jumbo-chip {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    padding: 5px 11px;
+    border: 1px solid var(--jumbo-line);
+    color: var(--jumbo-fg-2);
+}
+.jumbo-chip-alert { color: var(--jumbo-hot); border-color: rgba(255,159,10,0.6); }
+.jumbo-chip-us { color: var(--jumbo-fg); border-color: var(--jumbo-line); }
+.jumbo-chip-opp { color: var(--jumbo-fg-3); }
+.jumbo-diamond { width: 44px; height: 44px; flex: 0 0 auto; }
+.jumbo-diamond rect { fill: transparent; stroke: var(--jumbo-fg-3); stroke-width: 2; }
+.jumbo-diamond rect.on { fill: var(--jumbo-hot); stroke: var(--jumbo-hot); }
+/* A base that JUST became occupied (a real before/after comparison on
+   the Python side, keyed by game_id) reads brighter and outlined —
+   again a resting appearance, not a one-shot flash. */
+.jumbo-diamond rect.jumbo-base-new { fill: #FFFFFF; stroke: #FFFFFF; }
+
+/* ---- Pregame extras ---- */
+.jumbo-venue {
+    flex: 0 0 auto;
     text-align: center;
-    font-family: var(--label);
     font-size: 13px;
-    color: var(--mut);
-    letter-spacing: 0.03em;
-    padding: 2px 26px 4px;
+    color: var(--jumbo-fg-2);
+    padding: 8px 22px 0;
 }
 .jumbo-probables {
+    flex: 0 0 auto;
     display: flex;
     justify-content: center;
-    gap: 40px;
-    padding: 6px 0 10px;
-    font-family: var(--label);
-    font-size: 13px;
+    gap: 46px;
+    padding: 8px 22px 12px;
+    font-size: 14px;
 }
-.jumbo-probables b { color: var(--bone); font-weight: 700; font-size: 15px; }
-.jumbo-probables-label {
-    font-size: 9px;
-    letter-spacing: 0.26em;
-    color: var(--mut-2);
+.jumbo-probable { text-align: center; }
+.jumbo-probable b { color: var(--jumbo-fg); font-weight: 700; font-size: 16px; }
+.jumbo-probable-cap {
     display: block;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.24em;
+    color: var(--jumbo-fg-3);
     margin-bottom: 3px;
-    font-weight: 600;
 }
-/* Win probability bar (pages_jumbotron._win_probability_html) —
-   session request, from ESPN's own live model (see
-   scores_client.win_probability's own docstring for why the native
-   MLB/NHL feeds this board otherwise runs on can't provide this). */
-/* Session feedback: "find a better way to show the win odds since its
-   hard to see" — was a thin 11px bar with 11px-print percentages
-   underneath. Now the percentages are the headline, big and bold,
-   flanking a bar thick enough to actually read the split at a glance. */
-.jumbo-wp { padding: 12px 36px 8px; }
+
+/* ---- Win probability ----
+   Session feedback: "find a better way to show the win odds since its
+   hard to see" — the percentages are the headline, flanking a bar thick
+   enough to read the split from across the room. */
+.jumbo-wp { flex: 0 0 auto; padding: 14px 30px; border-bottom: 1px solid var(--jumbo-line-soft); }
 .jumbo-wp-title {
     text-align: center;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.4em;
-    color: var(--mut-2);
-    margin-bottom: 10px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.34em;
+    color: var(--jumbo-fg-3);
+    margin-bottom: 9px;
 }
 .jumbo-wp-row { display: flex; align-items: center; gap: 16px; }
-.jumbo-wp-pct {
-    font-family: var(--label);
-    font-size: 34px;
-    font-weight: 700;
-    flex: 0 0 auto;
-    min-width: 78px;
-}
+.jumbo-wp-pct { font-size: 32px; font-weight: 800; flex: 0 0 76px; }
 .jumbo-wp-row .jumbo-wp-pct:first-child { text-align: right; }
-.jumbo-wp-bar {
-    flex: 1;
-    height: 30px;
-    border-radius: 8px;
-    overflow: hidden;
-    display: flex;
-    border: 1px solid var(--edge);
-}
-.jumbo-wp-seg { transition: width 1s ease; }
+.jumbo-wp-bar { flex: 1 1 auto; min-width: 0; height: 26px; display: flex; border: 1px solid var(--jumbo-line); }
+.jumbo-wp-seg { min-width: 0; }
 .jumbo-wp-labels {
     display: flex;
     justify-content: space-between;
-    font-family: var(--label);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 700;
-    color: var(--bone);
-    margin-top: 8px;
-    letter-spacing: 0.03em;
+    color: var(--jumbo-fg-2);
+    margin-top: 7px;
 }
-/* Top Performers — single big rotating card with a real headshot
-   (pages_jumbotron._top_performers_html) — session request: "make top
-   performers bigger or put them in a single slot that rotates
-   continuously." Replaced the earlier shared-width grid entirely
-   (cramming 6-8 categories into one row left each card too small to
-   actually read at a glance) — one stat at a time, large, cycling
-   every 5s. */
-.jumbo-leaders { border-top: 1px solid var(--edge); padding: 12px 26px 16px; }
-.jumbo-leader-big {
+
+/* ---- AI blurb ---- */
+.jumbo-blurb { flex: 0 0 auto; padding: 12px 24px; border-bottom: 1px solid var(--jumbo-line-soft); }
+.jumbo-blurb-text { font-size: 15px; line-height: 1.5; color: var(--jumbo-fg-2); }
+
+/* ---- Feature panel ----
+   The board's one flexible section: it absorbs whatever height the
+   fixed sections above and below don't use, and clips inside itself
+   rather than pushing the last-play strip off the bottom of the panel.
+   Everything above it is flex: 0 0 auto, so the budget is explicit. */
+.jumbo-feature {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+}
+.jumbo-feature-inner {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 14px 24px 16px;
+    overflow: hidden;
+}
+
+/* Top performers — one spotlit big, the whole leaderboard beside it. */
+.jumbo-leader-card {
+    flex: 0 1 auto;
+    min-height: 0;
     display: flex;
     align-items: center;
     gap: 22px;
-    background: rgba(0,0,0,0.4);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 6px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-    padding: 16px 26px;
+    padding: 14px 20px;
+    background: var(--jumbo-sunk);
+    border: 1px solid var(--jumbo-line-soft);
+    overflow: hidden;
 }
-.jumbo-leader-big-hshot {
+.jumbo-leader-photo {
     width: 84px; height: 84px;
-    border-radius: 50%;
-    object-fit: cover;
-    object-position: top;
-    background: #141A25;
-    border: 2px solid var(--led);
+    object-fit: cover; object-position: top;
+    background: #16161B;
+    border: 1px solid var(--jumbo-line);
     flex: 0 0 auto;
 }
-.jumbo-leader-big-col { min-width: 0; }
-.jumbo-leader-big-stat {
-    font-family: var(--label);
-    font-size: 52px;
-    line-height: 1;
-    color: var(--bone);
-    letter-spacing: 0.03em;
-    white-space: nowrap;
-}
-.jumbo-leader-big-cat {
-    font-family: var(--label);
-    font-size: 13px;
+.jumbo-leader-big { flex: 0 0 auto; min-width: 0; }
+.jumbo-leader-value { font-size: 48px; font-weight: 800; line-height: 1; white-space: nowrap; }
+.jumbo-leader-cat {
+    font-size: 11px;
+    font-weight: 800;
     letter-spacing: 0.2em;
-    color: var(--led);
     text-transform: uppercase;
+    color: var(--jumbo-hot);
     margin-top: 6px;
-    font-weight: 700;
 }
-.jumbo-leader-big-who {
-    font-size: 16px;
-    font-weight: 400;
-    color: var(--bone);
+.jumbo-leader-name {
+    font-size: 15px;
+    color: var(--jumbo-fg-2);
     margin-top: 4px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* Full-roster list filling the rest of the card — session feedback:
-   "put the names in the big empty slot... kind of a waste of space
-   having it all empty." The currently-featured leader (highlighted)
-   still gets the big photo/stat treatment on the left; this is
-   everyone else, so the card reads as "here's the whole leaderboard,
-   spotlighting one" rather than one stat floating in a mostly-blank
-   card between rotations. */
-.jumbo-leader-namelist {
-    flex: 1;
+.jumbo-leader-list {
+    flex: 1 1 auto;
     min-width: 0;
+    min-height: 0;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding-left: 24px;
-    margin-left: 4px;
-    border-left: 1px solid var(--edge);
-    font-family: var(--label);
+    justify-content: center;
+    gap: 1px;
+    padding-left: 22px;
+    border-left: 1px solid var(--jumbo-line-soft);
     font-size: 13px;
 }
-.jumbo-leader-name-item {
+.jumbo-leader-item {
     display: flex;
     justify-content: space-between;
     gap: 14px;
-    padding: 5px 0;
-    color: var(--mut);
+    padding: 4px 0;
+    color: var(--jumbo-fg-3);
 }
-.jumbo-leader-name-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jumbo-leader-name-stat { flex: 0 0 auto; color: var(--mut-2); }
-.jumbo-leader-name-active {
-    color: var(--bone);
-    font-weight: 700;
-}
-.jumbo-leader-name-active .jumbo-leader-name-stat { color: var(--led); font-weight: 700; }
-/* Postgame "3 best players of the game," session request: "fix post
-   game so it shows the 3 best players... if not make your own
-   algorithm that ranks players." Real MLB Game Score ranking (see
-   sports_client.fetch_mlb_top_performers), always exactly 3 — laid out
-   as 3 equal cards side by side rather than the rotating single-card
-   pattern above, since all 3 are meant to be seen at once, not cycled
-   through. */
-.jumbo-top3 { display: flex; gap: 16px; }
+.jumbo-leader-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jumbo-leader-stat { flex: 0 0 auto; }
+.jumbo-leader-item-on { color: var(--jumbo-fg); font-weight: 700; }
+.jumbo-leader-item-on .jumbo-leader-stat { color: var(--jumbo-hot); }
+
+/* Postgame Game Score trio — all three at once (they're meant to be
+   compared, not cycled); the best one gets the single warm accent. */
+.jumbo-top3 { flex: 0 1 auto; min-height: 0; display: flex; gap: 14px; overflow: hidden; }
 .jumbo-top3-card {
-    flex: 1;
+    flex: 1 1 0;
     min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
     gap: 4px;
-    background: rgba(0,0,0,0.4);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 6px;
-    padding: 16px 12px;
-}
-/* Best of the 3 (always index 0 — MLB's own list is pre-sorted by
-   Game Score) gets the same gold spotlight border this board already
-   reserves for "the one that matters most" elsewhere, rather than all
-   3 cards looking identically weighted. */
-.jumbo-top3-card-best { border-color: var(--led); box-shadow: 0 0 0 1px rgba(255,179,0,0.3); }
-.jumbo-top3-photowrap { position: relative; width: 72px; height: 72px; margin-bottom: 4px; }
-.jumbo-top3-photo {
-    width: 72px; height: 72px;
-    border-radius: 50%;
-    object-fit: cover;
-    object-position: top;
-    background: #141A25;
-    border: 2px solid var(--edge);
-}
-.jumbo-top3-card-best .jumbo-top3-photo { border-color: var(--led); }
-.jumbo-top3-logo {
-    position: absolute;
-    bottom: -2px;
-    right: -2px;
-    width: 26px;
-    height: 26px;
-    object-fit: contain;
-    background: #0B0F16;
-    border-radius: 50%;
-    padding: 2px;
-    box-shadow: 0 0 0 2px #0B0F16;
-}
-.jumbo-top3-name {
-    font-family: var(--label);
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--bone);
-    white-space: nowrap;
+    padding: 12px 10px;
+    background: var(--jumbo-sunk);
+    border: 1px solid var(--jumbo-line-soft);
     overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
 }
-.jumbo-top3-role {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--mut-2);
-}
-.jumbo-top3-summary {
-    font-size: 13px;
-    color: var(--mut);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-}
-.jumbo-top3-score { margin-top: 6px; display: flex; flex-direction: column; align-items: center; }
-.jumbo-top3-score-num { font-family: var(--label); font-size: 34px; line-height: 1; color: var(--bone); font-variant-numeric: tabular-nums; }
-.jumbo-top3-card-best .jumbo-top3-score-num { color: var(--led); }
-.jumbo-top3-score-label { font-size: 9px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--mut-2); margin-top: 2px; }
-/* Pregame warm-up show — session request: "make it almost like a
-   show, like a pregame show," replacing the pregame board's plain AI
-   Preview blurb and season-stat-leaders card with real player/team
-   storyline cards (see pages_jumbotron._storyline_cards_html/
-   pregame_storylines.py for the data story — real transactions/news/
-   league-leaders/injuries fed to an AI that's forbidden from
-   inventing anything not in them).
+.jumbo-top3-best { border-color: rgba(255,159,10,0.55); }
+.jumbo-top3-photowrap { position: relative; flex: 0 0 auto; }
+.jumbo-top3-photo { width: 62px; height: 62px; object-fit: cover; object-position: top; background: #16161B; }
+.jumbo-top3-logo { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; object-fit: contain; }
+.jumbo-top3-name { font-size: 15px; font-weight: 700; line-height: 1.2; }
+.jumbo-top3-role { font-size: 9px; font-weight: 800; letter-spacing: 0.2em; color: var(--jumbo-fg-3); text-transform: uppercase; }
+.jumbo-top3-summary { font-size: 12px; color: var(--jumbo-fg-2); line-height: 1.35; overflow: hidden; }
+.jumbo-top3-score { margin-top: auto; display: flex; flex-direction: column; align-items: center; }
+.jumbo-top3-score-num { font-size: 28px; font-weight: 800; line-height: 1.15; }
+.jumbo-top3-best .jumbo-top3-score-num { color: var(--jumbo-hot); }
+.jumbo-top3-score-cap { font-size: 8px; font-weight: 800; letter-spacing: 0.2em; color: var(--jumbo-fg-3); }
 
-   Session follow-up: "the cards should be big and take up the whole
-   bottom part of the featured board and only show one card at a
-   time... make it look professional." Rebuilt from 3 small vertical
-   cards sharing the row to one full-width horizontal one — photo on
-   the left, name/role/stats along the top, storyline filling the rest
-   — same big-number/small-caption stat-block language _current_
-   matchup_html's own broadcast card already uses (.jumbo-live-
-   matchup-stat/-label), just laid out as its own set here since this
-   card's overall shape (one wide horizontal row) differs from that
-   one's (two narrow vertical columns). Sizes measured live against
-   .jumbo-board-body's own real height budget — see this session's own
-   history there (.jumbo-matchup/.jumbo-leaders starving each other,
-   twice, plus this same card's own first version needing a real-
-   margin correction) before changing these without a live
-   getBoundingClientRect check. */
-.jumbo-storyline-cards { display: flex; }
-.jumbo-storyline-card {
-    flex: 1;
-    min-width: 0;
+/* Pregame storyline card — one full-width card at a time (session
+   request: "big... take up the whole bottom part... one card at a
+   time... look professional"). --story-rgb is this sport's own real
+   accent, reused as a flat left rule rather than a gradient wash. */
+.jumbo-story-card {
+    flex: 0 1 auto;
+    min-height: 0;
     display: flex;
-    align-items: center;
-    gap: 30px;
-    background: rgba(0,0,0,0.4);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 8px;
-    /* Grown from an initial 22px/116px pass that measured 0px of real
-       clearance against .jumbo-board-body's own bottom edge (overflow:
-       hidden — this would have silently clipped) — root cause was a
-       forced height:100% on this card and its own .jumbo-storyline-
-       main, stretching it to fill the full row regardless of content;
-       removed, then sized back up from its own natural (too-small)
-       content height, re-measured live at each step rather than
-       guessed, same discipline this exact board's height-budget
-       history already required twice before. */
-    /* 30px/140px measured live at only 5.1px of real clearance once
-       the tag/headline/statline rows landed (more fixed content above
-       the storyline text than the previous stat-grid version had) —
-       pulled back once already; the matchup-history follow-up's own
-       longer real storyline text (2 full sentences weaving in vs-
-       opponent/venue context) measured back down to 3.9px on a real
-       card, so pulled back again here for a real safety margin rather
-       than the exact minimum, same discipline as every other size on
-       this exact card. */
-    padding: 16px 30px;
+    gap: 22px;
+    padding: 16px 20px;
+    background: var(--jumbo-sunk);
+    border: 1px solid var(--jumbo-line-soft);
+    border-left: 4px solid rgb(var(--story-rgb, 122,130,144));
+    overflow: hidden;
 }
-.jumbo-storyline-photowrap { flex: 0 0 auto; width: 124px; height: 124px; }
-.jumbo-storyline-photo {
-    width: 124px; height: 124px;
-    border-radius: 50%;
-    object-fit: cover;
-    object-position: top;
-    background: #141A25;
-    border: 3px solid var(--led);
+.jumbo-story-photowrap { flex: 0 0 auto; }
+.jumbo-story-photo {
+    width: 104px; height: 104px;
+    object-fit: cover; object-position: top;
+    background: #16161B;
+    border: 1px solid var(--jumbo-line);
+    display: block;
 }
-/* No real headshot available for this card's subject (see pages_
-   jumbotron._storyline_cards_html's own comment on when this
-   happens — most often a transaction-sourced storyline) — an initial
-   letter on a plain dark circle rather than a broken image or a
-   misleadingly-wrong team's logo. */
-.jumbo-storyline-photo-blank {
+.jumbo-story-photo-blank {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: var(--label);
     font-size: 42px;
-    font-weight: 700;
-    color: var(--mut-2);
-}
-.jumbo-storyline-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-/* Second follow-up (Lead UI/UX Designer + Sports Broadcast Producer
-   brief): "tag: 2-3 words, high-energy uppercase... distinct badge
-   coloring for streak/trend tags (vibrant accent for HOT HAND vs.
-   caution/gold for BOUNCE-BACK WATCH)... headline: one bold statement
-   ... prominent typography... high contrast." Tag pill + bold
-   headline + a single high-impact stat line replace the old role +
-   multi-stat grid — pregame_storylines._tag_category classifies
-   whatever real tag text the AI wrote (a keyword match, not a
-   separate field the AI could get out of sync with its own tag) into
-   one of these 5 real color buckets. */
-.jumbo-storyline-tag {
-    display: inline-block;
-    align-self: flex-start;
-    font-family: var(--label);
-    font-size: 13px;
     font-weight: 800;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    padding: 4px 14px;
-    border-radius: 20px;
-    margin-bottom: 6px;
+    color: var(--jumbo-fg-3);
 }
-.jumbo-storyline-tag-hot { color: #FF5A1F; background: rgba(255,90,31,0.16); border: 1px solid rgba(255,90,31,0.4); }
-.jumbo-storyline-tag-cold { color: var(--led); background: rgba(255,179,0,0.16); border: 1px solid rgba(255,179,0,0.4); }
-.jumbo-storyline-tag-career { color: #BF5AF2; background: rgba(191,90,242,0.16); border: 1px solid rgba(191,90,242,0.4); }
-.jumbo-storyline-tag-callup { color: #32D74B; background: rgba(50,215,75,0.16); border: 1px solid rgba(50,215,75,0.4); }
-.jumbo-storyline-tag-injury { color: #3DD9FF; background: rgba(61,217,255,0.16); border: 1px solid rgba(61,217,255,0.4); }
-/* Session follow-up: "matchup- and history-aware... a new tag type
-   'VS OPPONENT' or 'SERIES MATCHUP' with a dedicated color accent
-   (e.g. Teal/Cyan)." True teal (#30D5C8) rather than reusing -injury's
-   own icy cyan-blue (#3DD9FF) directly above — this app already has
-   an established teal for "its own distinct signal, not a shade of an
-   existing one" (see app.py's holiday hero badge, same real hex) —
-   close enough to satisfy "teal/cyan" while staying visually distinct
-   from the injury tag it'd otherwise sit right next to on this card. */
-.jumbo-storyline-tag-matchup { color: #30D5C8; background: rgba(48,213,200,0.16); border: 1px solid rgba(48,213,200,0.4); }
-.jumbo-storyline-tag-default { color: var(--bone); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.25); }
-.jumbo-storyline-headline {
-    font-family: var(--label);
-    font-size: 30px;
-    font-weight: 700;
-    color: var(--bone);
-    line-height: 1.15;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-}
-.jumbo-storyline-name {
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: var(--mut);
-    margin-top: 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-}
-.jumbo-storyline-statline {
-    /* Stat-line reads as a real broadcast lower-third figure — the
-       app's own numeral face (--label, already the "stencil/sports"
-       stand-in this whole board uses for every big number — see
-       .jumbo-live-matchup-stat's own comment on why a squat display
-       font read as a bold-faking blob at this weight) at real size,
-       not buried in body copy. */
-    font-family: var(--label);
-    font-size: 22px;
-    font-weight: 600;
-    color: var(--led);
-    margin-top: 8px;
-    font-variant-numeric: tabular-nums;
-    /* Kept to one line on purpose (same fixed-height reasoning as
-       .jumbo-storyline-headline/-name above it) — a long real stat
-       phrase truncates rather than wrapping and pushing the card's
-       own height past its measured margin. */
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-}
-.jumbo-storyline-text {
-    font-size: 17px;
-    line-height: 1.5;
-    color: var(--mut);
-    margin-top: 10px;
-    /* Real wrapped multi-line text, capped so one long AI response
-       still can't blow this card's own height and starve the board's
-       other sections — the exact class of bug this board's own
-       height-budget history already produced twice elsewhere. Room
-       for more lines now that one card owns the whole row instead of
-       splitting it 3 ways. */
-    display: -webkit-box;
-    -webkit-line-clamp: 5;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-.jumbo-storyline-dots { display: flex; justify-content: center; gap: 7px; margin-top: 12px; }
-.jumbo-storyline-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.15); }
-.jumbo-storyline-dot-active { background: var(--led); }
-/* Current batter/pitcher, live-game replacement for the Top Performers
-   card — session request: "during the game can you make the top
-   performers tab show current pitcher and batter and their stats use
-   OPS for batter and ERA for pitchers." Photo-up-top, stat-below-name
-   layout — session request: "add the pitcher and batter pics and put
-   the stats below them like youd see on a jumbotron in the ballpark."
-   Sized up further, and the stat split into a big number plus a small
-   caption underneath (same pattern as the Top Performers big card's
-   own jumbo-leader-big-stat/-cat) rather than one "4.31 ERA" string —
-   session feedback: "make the ops and era less clunky and easier to
-   read from across the room... the whole matchup thing needs to be
-   easier to read." */
-.jumbo-live-matchup { display: flex; align-items: center; justify-content: center; gap: 32px; padding: 4px 4px 6px; }
-.jumbo-live-matchup-col { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 3px; flex: 1; min-width: 0; }
-.jumbo-live-matchup-photo {
-    width: 104px;
-    height: 104px;
-    border-radius: 50%;
-    object-fit: cover;
-    object-position: top;
-    background: #141A25;
-    border: 3px solid var(--led);
-    margin-bottom: 6px;
-}
-.jumbo-live-matchup-tag {
-    font-family: var(--label);
-    font-size: 13px;
-    letter-spacing: 0.18em;
-    color: var(--led);
-    font-weight: 700;
-    text-transform: uppercase;
-}
-.jumbo-live-matchup-name {
-    /* Same fix as jumbo-live-matchup-stat below — this was silently
-       inheriting var(--disp) (Oswald at the time, condensed) at a
-       forced 700, same swollen/blobby look. Session feedback: "can we
-       make their name skinnier as well please i wanna be able to read
-       that too." --disp is --label's own alias now (see its comment),
-       so this explicit override is no longer strictly load-bearing —
-       left in place since it still documents that this element is
-       deliberately sized/weighted on its own, not just inheriting
-       whatever the board's default happens to be. */
-    font-family: var(--label);
-    font-size: 21px;
-    font-weight: 600;
-    color: var(--bone);
-    max-width: 100%;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-/* Session request: "for pitchers add number of pitches below ERA and
-   then just do average for batter" — a pitcher now carries two stat
-   blocks (ERA, pitch count) side by side, a batter just the one (AVG);
-   this row wraps however many _current_matchup_html's own col() built. */
-.jumbo-live-matchup-stat-row { display: flex; gap: 26px; margin-top: 4px; }
-.jumbo-live-matchup-stat-block { display: flex; flex-direction: column; align-items: center; }
-.jumbo-live-matchup-stat {
-    /* Session feedback: "the font is still so clunky that it just looks
-       like a blob. pick a skinnier font." var(--num) was Bebas Neue at
-       the time — a squat display font with no real bold weight of its
-       own, so font-weight:700 on it was faking a bold and coming out
-       swollen at this size. --label (see its own comment) has real
-       weight steps and tabular figures, reads far slimmer for a stat
-       number like this — and is what --num itself resolves to now too. */
-    font-family: var(--label);
-    font-size: 32px;
-    font-weight: 600;
-    color: var(--bone);
-    line-height: 1.1;
-}
-/* Session request: "make those stats fire coloured or ice coloured if
-   theyve been hot or cold lately... pulsing fire or pulsing ice
-   colour. if its in normal range just make it white." Applies to the
-   vs-pitcher line and the season OPS/ERA deltas only (sports_client's
-   _vs_pitcher_heat/_batter_season_heat/_pitcher_season_heat) —
-   everything else on this card stays the plain .jumbo-live-matchup-stat
-   white above. Same text-shadow-pulse pattern as .leave-headline's
-   intensity tiers, just fire/ice instead of amber/red. */
-/* Session feedback: "can you make the hot cold colours a little
-   better?" The old cold (#5AC8FA, Apple's own systemBlue-light) sat
-   too close to real team blues for comfort — this same card now shares
-   the screen with team-colored gradients/win-bar fills (see
-   pages_jumbotron._side_color), and a lot of MLB teams (Jays included)
-   are blue. A stat reading "cold" could get misread as just team
-   branding. Shifted to a distinctly electric cyan that no real team
-   color is likely to land on, and the same idea for hot — the old
-   #FF7A1A sat close enough to --led (#FFB300, this board's own
-   dominant amber accent, on every tag/label/section header) to lose
-   some of its own pop; shifted more saturated and red-leaning, further
-   from amber, closer to a genuine flame. Both keep the fire/ice
-   metaphor from the original request intact, just more distinct from
-   everything else already using warm/cool accents on this board. */
-.jumbo-live-matchup-stat-hot {
-    color: #FF5A1F;
-    animation: jumbo-matchup-pulse-hot 1.3s ease-in-out infinite;
-}
-.jumbo-live-matchup-stat-cold {
-    color: #3DD9FF;
-    animation: jumbo-matchup-pulse-cold 1.3s ease-in-out infinite;
-}
-@keyframes jumbo-matchup-pulse-hot {
-    0%, 100% { text-shadow: 0 0 10px rgba(255,90,31,0.5); }
-    50% { text-shadow: 0 0 22px rgba(255,90,31,0.95), 0 0 38px rgba(255,45,0,0.5); }
-}
-@keyframes jumbo-matchup-pulse-cold {
-    0%, 100% { text-shadow: 0 0 10px rgba(61,217,255,0.5); }
-    50% { text-shadow: 0 0 22px rgba(61,217,255,0.95), 0 0 38px rgba(61,217,255,0.5); }
-}
-.jumbo-live-matchup-stat-label {
-    font-family: var(--label);
-    font-size: 12px;
+.jumbo-story-main { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
+.jumbo-story-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 800;
     letter-spacing: 0.2em;
-    color: var(--led);
-    font-weight: 700;
     text-transform: uppercase;
-}
-/* Session request: "add the full line score for the active pitchers
-   below balls and strike count without making the pitchers name shift
-   up" — MLB's own ready-made per-pitcher boxscore summary (e.g. "2.2
-   IP, ER, 4 K, 3 BB"), appended strictly after the existing stat rows
-   (see col()'s own comment in pages_jumbotron.py). A plain centered
-   sentence rather than another stat-block: this is one whole line of
-   text, not a value+label pair, so it doesn't try to force-fit the
-   number/caption pattern the rows above use. */
-.jumbo-live-matchup-line {
-    margin-top: 6px;
-    font-family: var(--label);
-    font-size: 13px;
-    color: var(--mut);
-    text-align: center;
-    white-space: nowrap;
-}
-.jumbo-live-matchup-vs {
-    font-family: var(--label);
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--mut-2);
-    letter-spacing: 0.1em;
-    flex: 0 0 auto;
-}
-/* Session request: "add a strike zone between the 2 players... pull
-   the most recent pitches in their short form with speeds to go below
-   the zone" — replaces .jumbo-live-matchup-vs above in the same flex
-   slot (pages_jumbotron._strike_zone_block_html falls back to the
-   plain VS text itself when there's no pitch data yet, so this class
-   only ever appears with real content to show). */
-.jumbo-strikezone { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 0 0 auto; }
-.jumbo-strikezone-svg { width: 92px; height: auto; }
-.jumbo-pitch-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px 6px; max-width: 120px; }
-.jumbo-pitch-chip {
-    font-family: var(--label);
-    font-size: 11px;
-    font-weight: 600;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-}
-.jumbo-diamond { width: 84px; height: 84px; display: inline-block; vertical-align: -24px; margin: 0 22px; }
-/* Session request: "make the bases react when someone gets on with a
-   smooth lighting up animation" — the plain transition covers every
-   state change (a runner forced out fades back to dark, same as
-   lighting up fades bright), and .jumbo-base-flash layers a one-shot
-   brighter pulse on top specifically for the moment a base goes from
-   empty to occupied (pages_jumbotron._mlb_situation_html only adds
-   that class on a genuine off->on transition, not on every rerun a
-   base happens to still be on). Default animation-fill-mode (none)
-   means once the 0.7s flash finishes, this rect falls back to
-   whatever the plain rect.on rule below says — already the same
-   var(--led) color the flash itself ends on, so there's no visible
-   snap at the handoff. */
-.jumbo-diamond rect { fill: #1A2230; stroke: var(--edge-hi); stroke-width: 1.5; transition: fill 0.4s ease, stroke 0.4s ease; }
-.jumbo-diamond rect.on { fill: var(--led); stroke: var(--led); }
-.jumbo-diamond rect.jumbo-base-flash { animation: jumbo-base-flash 0.7s ease-out; }
-@keyframes jumbo-base-flash {
-    0% { fill: #FFFFFF; stroke: #FFFFFF; filter: drop-shadow(0 0 6px var(--led)); }
-    100% { fill: var(--led); stroke: var(--led); filter: none; }
-}
-/* Session request: "make counts and outs actual numbers instead of
-   dots" — replaces the old ball/strike/out dot rows. */
-.jumbo-situ-count, .jumbo-situ-outs {
-    display: inline-block;
-    font-weight: 700;
-    color: var(--bone);
-}
-.jumbo-situ-count { margin-left: 18px; }
-.jumbo-situ-outs { margin-left: 28px; }
-/* Session request (carried over from the old dots): "are there
-   animations for... there's a strikeout" — the count/outs number
-   pulses the instant it climbs instead of just silently updating
-   (pages_jumbotron._mlb_situation_html decides when that's genuine). */
-.jumbo-situ-pulse { animation: jumbo-situ-pulse 0.6s ease-out; display: inline-block; }
-@keyframes jumbo-situ-pulse {
-    0% { transform: scale(1.35); text-shadow: 0 0 16px var(--led); }
-    100% { transform: scale(1); text-shadow: none; }
-}
-/* Ball and strike digits get their own color and their own flash —
-   session request: "make it so a ball is green and a strike is red
-   and make it flash when a strike comes through and when a ball comes
-   through." Same scale+glow shape as .jumbo-situ-pulse above, just
-   colored per digit instead of one shared neutral pulse, so which of
-   the two just happened reads at a glance. display:inline-block is a
-   base rule here (not just set alongside the animation like
-   .jumbo-situ-pulse does) since .jumbo-count-digit needs a stable
-   layout whether or not it's actively flashing.
-   (A same-evening detour turned this into a single merged strike%
-   figure and back — session correction: "who wants the count shown as
-   a percentage... revert the count to what it was before." The
-   percentage version lives in _current_matchup_html's pitcher card
-   instead now, see .jumbo-matchup-strike-pct below.) */
-.jumbo-count-digit { display: inline-block; }
-.jumbo-ball-flash { animation: jumbo-ball-flash 0.6s ease-out; }
-.jumbo-strike-flash { animation: jumbo-strike-flash 0.6s ease-out; }
-@keyframes jumbo-ball-flash {
-    0% { transform: scale(1.35); color: #32D74B; text-shadow: 0 0 16px rgba(50,215,75,0.85); }
-    100% { transform: scale(1); color: var(--bone); text-shadow: none; }
-}
-@keyframes jumbo-strike-flash {
-    0% { transform: scale(1.35); color: #FF453A; text-shadow: 0 0 16px rgba(255,69,58,0.85); }
-    100% { transform: scale(1); color: var(--bone); text-shadow: none; }
-}
-
-/* NFL live situation strip (pages_jumbotron._nfl_situation_html) —
-   this used to only ever show quarter/clock/down-distance (built
-   during the offseason with no live game to check ESPN's real payload
-   against). First live game (Rams @ Saints, 2026-08-22) confirmed
-   ESPN's own scoreboard "situation" object already carries possession,
-   red zone, and per-team timeouts remaining too — the same request-
-   for-more-live-detail this app already gave MLB (bases/count/outs)
-   and NHL (period/intermission) of their own, now NFL's turn. Same
-   .jumbo-situ-pulse fade-in-on-change the down/distance figure below
-   already reuses (not a new animation) — consistency over novelty. */
-.jumbo-nfl-redzone-badge {
-    display: inline-block;
-    font-family: var(--num);
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: 0.3em;
-    color: #0A0D12;
-    background: #FF453A;
-    padding: 4px 14px 3px 16px;
-    border-radius: 6px;
-    margin-left: 18px;
-    box-shadow: 0 0 18px rgba(255,69,58,0.55);
-    vertical-align: middle;
-}
-.jumbo-possession {
-    display: inline-block;
-    font-family: var(--label);
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    margin-left: 22px;
-    font-size: 22px;
-}
-.jumbo-possession-ball { margin-right: 6px; }
-.jumbo-possession-us { color: var(--led); }
-.jumbo-possession-opp { color: var(--mut-2); }
-.jumbo-nfl-timeouts {
-    display: inline-block;
-    font-family: var(--label);
-    font-size: 18px;
-    color: var(--mut-2);
-    margin-left: 22px;
-    letter-spacing: 0.04em;
-}
-/* A .jumbo-nfl-lastplay ticker line lived here briefly — removed, see
-   pages_jumbotron._nfl_situation_html's own comment: it pushed the
-   actually-requested quarter/clock/down-distance strip out of this
-   fixed-height, overflow:hidden panel's visible area. */
-
-/* Batting order (pages_jumbotron._batting_order_rail_html) — session
-   request, after attending a real Jays game: "the only stat they
-   showed was OPS... gave me a very easy way of seeing who is the best
-   hitter." Plain rows, no photos or extra stat categories beyond what
-   the real ballpark board itself shows — deliberate minimalism, exactly
-   what made it scannable in person. Session follow-up, with a real
-   photo of Rogers Centre's own board as the reference: "make it just
-   the team that's up to bat... number, player, position, and OPS...
-   as close to that as possible... still legible from across the room."
-   Only 9 rows now (one team, not two stacked), so each one gets real
-   room — sized up well past the original two-team-stacked pass, closer
-   to how big the reference board's own rows read. */
-.jumbo-lineup-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding-bottom: 6px;
-    margin-bottom: 6px;
-    border-bottom: 1px solid var(--edge);
-}
-/* Higher specificity than the plain .jumbo-lineup-num/-name/-pos/-ops
-   rules below (2 classes vs. 1), so the header's own small caption
-   style wins there without needing a separate markup shape — same
-   compound-selector trick already used elsewhere in this app
-   (.prediction-row-outcome.prediction-direction-cut) for exactly this
-   "shared column widths, different type scale" situation. */
-.jumbo-lineup-header .jumbo-lineup-num,
-.jumbo-lineup-header .jumbo-lineup-name,
-.jumbo-lineup-header .jumbo-lineup-pos,
-.jumbo-lineup-header .jumbo-lineup-ops {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: var(--mut-2);
-}
-.jumbo-lineup-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    /* Session report on the real TV: "the standings are cut off to
-       just two teams... shrink the batting order or bring it up a
-       little." Confirmed live: batting order's own 9 rows + header
-       were taking 612px of the rail column's 751px real budget,
-       leaving only 127px (~2 rows) for standings below it — the two
-       sections share one column and compete for the same space.
-       Trimmed padding/font here rather than touching anything outside
-       this one rail, so standings gets a real, meaningfully bigger
-       share without shrinking anything else on the page. */
-    /* Session follow-up: "standings are only showing the top 4 teams in
-       each div" — NHL divisions run 8 teams, still more than fit even
-       after the first rail/standings rebalance above. A second, smaller
-       trim here (padding/font again) plus a real compact on the
-       standings row itself (see .jumbo-standings-row's own comment)
-       rather than another big cut to this rail alone — splitting the
-       space between both instead of squeezing batting order further
-       than it can take. */
-    padding: 3px 0;
-    font-family: var(--label);
-    font-size: 16px;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-}
-.jumbo-lineup-row:last-child { border-bottom: none; }
-/* Session request: "make the elements brighter" — num/pos/gameline
-   were sitting at --mut-2/--mut (this rail's dimmest tones, meant for
-   captions elsewhere), noticeably duller than the name/OPS columns
-   right next to them in the same row. Bumped one step brighter each
-   (--mut-2 -> --mut, --mut -> --bone) rather than matching name/OPS
-   exactly, so the jersey number/position/game-line still read as
-   secondary detail, just no longer dim enough to strain against from
-   across the room. */
-.jumbo-lineup-num {
-    flex: 0 0 30px;
-    color: var(--mut);
-    font-weight: 700;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-}
-.jumbo-lineup-name {
-    flex: 1;
-    min-width: 0;
-    color: var(--bone);
-    font-weight: 700;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.jumbo-lineup-pos { flex: 0 0 36px; color: var(--bone); font-size: 15px; text-align: center; }
-/* Today's-game hit line ("1/2", "0/4"), session request: "add the
-   results from the at bat in the lineup... gives meaningful context."
-   Not tier-colored like OPS below — this is a per-game line score, not
-   a "good or bad" judgment the way OPS percentile is. Empty for a
-   hitter with no at-bat yet this game (see _batting_order_row_html),
-   so the column silently holds its width rather than showing a
-   misleading 0/0. */
-.jumbo-lineup-gameline {
-    flex: 0 0 46px;
-    color: var(--bone);
-    font-size: 16px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-}
-.jumbo-lineup-ops {
-    flex: 0 0 64px;
-    color: var(--bone);
-    font-weight: 800;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-}
-/* League-context OPS color, session follow-up: "get me [the
-   performance-heat option], but... find the league average ops...
-   top ten percent gets brightest green, top twenty five medium green,
-   average or near average neutral white, bottom twenty five red...
-   dynamic so it shows exactly where they are in context to the entire
-   league." Tier itself (sports_client.ops_tier) is computed against a
-   real, current qualified-hitter percentile distribution, not a fixed
-   threshold — these four classes are just the color each tier maps
-   to. "average" gets no override at all (falls back to the plain
-   .jumbo-lineup-ops rule above), same "not inherently good or bad"
-   default this app uses everywhere else a number sits in the middle. */
-.jumbo-lineup-ops-elite { color: #32D74B; }
-.jumbo-lineup-ops-good { color: #4C9960; }
-.jumbo-lineup-ops-below { color: #FF6961; }
-/* Team identity block, session follow-up: "add the team logos at top.
-   Put, like, cardinal's logo, then lineup." Same logo asset _side_html
-   already uses for the Featured board's own team boxes, just at a much
-   smaller "compact identity strip" scale here — this rail is 420px
-   wide, nowhere near that card's own 132px hero treatment. */
-/* Network Primetime, extended — session follow-up: "show me what it
-   would look like if you gave the entire rest of the jumbotron this
-   kind of emphasis," then "build it into the real jumbotron." Same
-   diagonal team-color wash as the featured board's own .jumbo-side
-   (--side-rgb, pages_jumbotron._batting_order_rail_html's own
-   accent_rgb param) — a flat clip here rather than the board's two-
-   sided cut, since this is one team's own header strip, not a
-   matchup. */
-.jumbo-lineup-head {
-    /* Same rail-vs-standings space rebalance as .jumbo-lineup-row's
-       own comment — trimmed padding/margin here too. */
-    position: relative; display: flex; align-items: center; gap: 8px;
-    padding: 5px 4px 5px 8px; margin-bottom: 4px; overflow: hidden;
-}
-.jumbo-lineup-head::before {
-    content: ""; position: absolute; inset: 0; z-index: -1;
-    background: linear-gradient(100deg, rgba(var(--side-rgb, 46,59,84), 0.4), rgba(var(--side-rgb, 46,59,84), 0.05) 80%);
-    clip-path: polygon(0 0, 92% 0, 100% 100%, 0 100%);
-}
-.jumbo-lineup-logo { width: 32px; height: 32px; padding: 3px; box-sizing: border-box; object-fit: contain; flex: 0 0 auto; background: rgba(255,255,255,0.1); border-radius: 9px; }
-.jumbo-lineup-headtext { flex: 1; min-width: 0; }
-.jumbo-lineup-teamname {
-    font-family: var(--label);
-    font-size: 18px;
-    font-weight: 800;
-    color: var(--bone);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.jumbo-lineup-atbat {
-    font-family: var(--label);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--led);
-}
-/* Current batter highlight, session follow-up: "highlight who's
-   actually up to bat right now," then later "add a selector thing that
-   selects the entire bar of the player thats up to bat" — a full-row
-   selection box rather than just the left-edge accent bar the first
-   version used. Same --led gold this whole board already reserves for
-   "this is the one that matters right now" (.jumbo-final-badge, the
-   UFC card's own main-event row) rather than --live red — a batter
-   being up is the spotlight, not an alert.
-   A traced border + a faint tint rather than the very first version's
-   solid color wash — once OPS started carrying real tier color (see
-   .jumbo-lineup-ops-* above), a strong gold background behind an
-   elite-green or below-red OPS value read as two colors fighting in
-   the same row; a border "selects" the row the way a UI list item
-   does without recoloring what's inside it.
-   box-sizing: border-box (this row only — the rest of the rail stays
-   plain content-box) makes the border eat into this one row's own
-   content space instead of adding to its outer width, which is what
-   actually matters: a first attempt using negative margins to bleed
-   the box into the panel's gutter measured live at 7px past the real
-   panel edge on each side (getBoundingClientRect confirmed the row
-   spanning wider than .jumbo-panel.jumbo-rail itself) — this row is
-   just as wide as every sibling row now, no overflow possible. */
-.jumbo-lineup-row-current {
-    box-sizing: border-box;
-    border: 2px solid var(--led);
-    border-radius: 8px;
-    background: rgba(255, 179, 0, 0.10);
-    /* Session follow-up (extending Network Primetime to the rest of
-       the board): a touch more broadcast presence on the spotlighted
-       row — box-shadow only, no change to the fill/border above, so
-       the real color-clash fix those already went through (fighting
-       an elite/below OPS tier color in the same row, see this rule's
-       own comment above) stays intact. */
-    box-shadow: 0 0 18px rgba(255,196,0,0.18);
-}
-/* .jumbo-lineup-row:last-child's own border-bottom: none (above) is a
-   more specific selector (two classes-worth of specificity via the
-   pseudo-class) than plain .jumbo-lineup-row-current, so it would
-   silently win and erase this row's bottom edge whenever the batter
-   up right now also happens to be 9th in the order — confirmed live,
-   Jordan batting produced a broken bottom border before this rule was
-   added. Same specificity as that rule, so source order (this comes
-   after) decides in this one's favor. */
-.jumbo-lineup-row-current:last-child { border-bottom: 2px solid var(--led); }
-.jumbo-lineup-row-current .jumbo-lineup-num,
-.jumbo-lineup-row-current .jumbo-lineup-name { color: var(--led); }
-
-.jumbo-sl {
-    font-family: var(--label);
-    font-size: 8.5px;
-    letter-spacing: 0.32em;
-    color: var(--led);
-    text-transform: uppercase;
+    padding: 3px 9px;
+    border: 1px solid currentColor;
+    color: var(--jumbo-fg-2);
     margin-bottom: 7px;
 }
+.jumbo-story-tag-hot { color: var(--jumbo-hot); }
+.jumbo-story-tag-cold { color: #64B5F6; }
+.jumbo-story-tag-career { color: #C9A227; }
+.jumbo-story-tag-callup { color: var(--jumbo-ok); }
+.jumbo-story-tag-injury { color: var(--jumbo-bad); }
+.jumbo-story-tag-matchup { color: #B18CFF; }
+.jumbo-story-tag-default { color: var(--jumbo-fg-2); }
+.jumbo-story-headline { font-size: 21px; font-weight: 800; line-height: 1.2; }
+.jumbo-story-name { font-size: 15px; font-weight: 700; color: var(--jumbo-fg-2); margin-top: 4px; }
+.jumbo-story-stat { font-size: 13px; font-weight: 700; color: var(--jumbo-hot); letter-spacing: 0.06em; margin-top: 3px; }
+.jumbo-story-text { font-size: 14px; line-height: 1.45; color: var(--jumbo-fg-2); margin-top: 8px; overflow: hidden; }
 
-/* Session request: "make a pre and postgame ai overview thats only
-   generated once... have it do a pre and post game blurb." Same
-   border-top-divider treatment as .jumbo-leaders (Current Matchup)
-   right below it, so this reads as one more panel in the same stack,
-   not a visually distinct callout competing for attention. */
-.jumbo-blurb { border-top: 1px solid var(--edge); padding: 12px 26px 16px; }
-.jumbo-blurb-text { font-size: 15px; line-height: 1.5; color: var(--bone); }
-
-/* Last-play strip under the Current Matchup card — session request:
-   "add a play badge that shows the last play from the live game feed
-   and situation TOR LOGO 0-1 BOS LOGO ie: ____ grounded out to first
-   directly from the live feed... below the batter pitcher matchup."
-   Same border-top-divider treatment as .jumbo-leaders itself, just one
-   size down since this is a supporting line, not its own section. */
-.jumbo-lastplay {
-    border-top: 1px solid var(--edge);
-    margin-top: 10px;
-    padding-top: 10px;
-    text-align: center;
-}
-.jumbo-lastplay-score {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    margin-bottom: 6px;
-}
-.jumbo-lastplay-logo {
-    width: 26px;
-    height: 26px;
-    object-fit: contain;
-}
-.jumbo-lastplay-tally {
-    font-family: var(--label);
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--bone);
-    letter-spacing: 0.05em;
-}
-.jumbo-lastplay-desc {
-    font-family: var(--label);
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--mut-2);
-    line-height: 1.4;
-    padding: 0 8px;
-}
-
-/* ---- UFC board ---- */
-/* Session request: "add UFC to the jumbotron." A genuinely separate,
-   simpler layout from the team-scoreboard grid above — no My Teams
-   rail, no Around The Leagues, no LED score digits (none of that
-   applies to a multi-bout fight card, see pages_jumbotron._ufc_
-   board_html's own docstring) — just a hero panel for whichever bout
-   matters most right now, and the full ordered card underneath it. */
-/* Session follow-up: "I want the live fight to take up like the whole
-   screen... similar to how a baseball or hockey game would look" — the
-   hero row's own previous "auto" row sizing left it exactly as tall as
-   its content needed, which read as small/cramped next to the full
-   card list splitting the rest of the screen with it evenly. 3fr:1fr
-   makes the hero panel explicitly dominant regardless of exact content
-   height, the same way the team-scoreboard grid's own center column
-   (see .jumbo-grid above) is always the visual anchor of that board —
-   the full card list becomes a reference strip underneath it instead
-   of co-equal billing. */
-.jumbo-ufc-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: 3fr 1fr;
-}
-/* During "countdown" (before the card's first bout), _ufc_stats_html
-   never renders (nothing's happened yet to compare — see its own
-   docstring), so this panel's only children are the phase line and
-   the hero VS row, neither of which grows to fill the panel's new,
-   much taller 3fr share. Centered rather than left pinned to the top
-   with dead space below it once .jumbo-ufc-stats (flex:1, so it
-   already absorbs all real leftover space on its own) isn't there. */
-.jumbo-ufc-hero-panel { justify-content: center; }
-.jumbo-ufc-phase {
-    flex: 0 0 auto;
-    text-align: center;
-    font-family: var(--num);
-    font-size: 22px;
-    letter-spacing: 0.1em;
-    color: var(--mut);
-    padding: 10px 0 0;
-}
-.jumbo-ufc-phase-live { color: var(--live); animation: jumbo-blink 1.4s infinite; }
-/* Recent-action ticker (pages_jumbotron._ufc_board_html) — session
-   follow-up: "how else can we improve the viewing experience... I
-   genuinely want to enjoy watching this." Temporarily replaces the
-   plain round/clock line above with what just happened, colored by
-   which fighter did it (same red/blue corner pair as the photos/stat
-   bars) — no blink here (that's specifically the ever-present "LIVE"
-   cue above), a plain solid color reads as "this already happened,"
-   not "watch this space." */
-.jumbo-ufc-phase-recent-a, .jumbo-ufc-phase-recent-b { animation: none; }
-.jumbo-ufc-phase-recent-a { color: #FF3B30; }
-.jumbo-ufc-phase-recent-b { color: #5AC8FA; }
-.jumbo-ufc-hero {
-    flex: 0 0 auto;
-    position: relative;
-    display: flex;
-    align-items: stretch;
-    justify-content: center;
-    gap: 0;
-    padding: 18px 0 8px;
-    overflow: hidden;
-}
-/* Same diagonal-panel-behind-each-side treatment as the team-sport
-   board's own .jumbo-side (see that rule's own comment) — fixed red/
-   blue instead of a real per-fighter color (accent_rgb doesn't apply
-   here; see _ufc_fighter_hero_html's own docstring on why this stays
-   the broadcast-convention corner colors). The color/clip lives on a
-   ::before behind the real content for the same reason as .jumbo-side:
-   the diagonal cut can never clip the actual photo/name/record. */
-.jumbo-ufc-hero-fighter { flex: 1; position: relative; z-index: 1; text-align: center; min-width: 0; padding: 0 20px; }
-.jumbo-ufc-hero-fighter::before { content: ""; position: absolute; inset: 0; z-index: -1; }
-.jumbo-ufc-hero-fighter-a::before { background: linear-gradient(135deg, rgba(255,59,48,0.32), rgba(255,59,48,0.05)); clip-path: polygon(0 0, 100% 0, 82% 100%, 0 100%); }
-.jumbo-ufc-hero-fighter-b::before { background: linear-gradient(225deg, rgba(90,200,250,0.32), rgba(90,200,250,0.05)); clip-path: polygon(18% 0, 100% 0, 100% 100%, 0 100%); }
-/* Fighter photo — session request: "add player photos... make it feel
-   more professional." Sized to leave real room for the name/nickname/
-   record/method lines still below it in this same fixed-height,
-   non-scrolling panel (see _ufc_tale_of_tape_html's own docstring on
-   the live overflow bug elsewhere in this app that this stays
-   deliberately compact to avoid) — .jumbo-leader-big-hshot elsewhere
-   in this file uses the same 84px circle size in a comparably tight
-   panel, confirmed to fit there. The flag badge sits in the corner
-   the way a real broadcast lower-third does, not as a separate line
-   of its own text. onerror hides the whole wrap (not just the broken
-   image) rather than leaving an empty circle. */
-.jumbo-ufc-photo-wrap {
-    position: relative;
-    width: 84px;
-    height: 84px;
-    margin: 0 auto 10px;
-}
-.jumbo-ufc-photo {
-    width: 84px;
-    height: 84px;
-    border-radius: 50%;
-    object-fit: cover;
-    object-position: top;
-    background: #141A25;
-    border: 2.5px solid var(--edge-hi);
-}
-.jumbo-ufc-photo-a .jumbo-ufc-photo { border-color: #FF3B30; }
-.jumbo-ufc-photo-b .jumbo-ufc-photo { border-color: #5AC8FA; }
-.jumbo-ufc-flag {
-    position: absolute;
-    right: -2px;
-    bottom: -2px;
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 2px solid #0A0D12;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.5);
-}
-/* Trimmed from 56px to make room for the photo/nickname/method lines
-   above and below it within the same overall hero height — still
-   comfortably the largest text in this panel besides the live stat
-   bars' own big flanking numbers. */
-.jumbo-ufc-hero-name {
-    font-family: var(--disp);
-    font-weight: 800;
-    font-size: 36px;
-    letter-spacing: 0.01em;
-    line-height: 1.15;
-}
-.jumbo-ufc-hero-nickname {
-    font-family: var(--disp);
-    font-style: italic;
-    font-weight: 400;
-    font-size: 16px;
-    color: var(--mut);
-    margin-top: 2px;
-}
-.jumbo-ufc-hero-record {
-    font-family: var(--num);
-    font-size: 20px;
-    color: var(--mut);
-    margin-top: 8px;
-}
-.jumbo-ufc-hero-method {
-    font-family: var(--label);
-    font-size: 12px;
-    letter-spacing: 0.08em;
-    color: var(--mut-2);
-    margin-top: 3px;
-}
-.jumbo-ufc-winner .jumbo-ufc-hero-name { color: var(--ok); }
-/* Same floating dark plate over the seam as the team-sport board's
-   own .jumbo-center, for the same reason — reads as a real cut card
-   sitting on top of the two diagonal panels either side of it. */
-.jumbo-ufc-hero-mid {
-    flex: 0 0 auto; position: relative; z-index: 2; text-align: center;
-    padding: 10px 26px; background: rgba(7,7,10,0.9);
-    border-left: 1px solid rgba(255,255,255,0.09); border-right: 1px solid rgba(255,255,255,0.09);
-    display: flex; flex-direction: column; justify-content: center;
-}
-/* Tale of the tape — session request: "make it more obvious... more
-   professional," the height/reach/age comparison every real UFC
-   broadcast leads with. One compact row (see _ufc_tale_of_tape_html's
-   own docstring on why), same red/blue corner accent pair the photos/
-   stat bars already use so it reads as part of the same comparison,
-   not a separate feature. */
-.jumbo-ufc-tot {
-    flex: 0 0 auto;
-    display: flex;
-    justify-content: center;
-    gap: 36px;
-    padding: 2px 20px 10px;
-}
-.jumbo-ufc-tot-cell {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    font-family: var(--num);
-    font-size: 16px;
-}
-.jumbo-ufc-tot-a { color: #FF3B30; font-weight: 700; }
-.jumbo-ufc-tot-b { color: #5AC8FA; font-weight: 700; }
-.jumbo-ufc-tot-label {
-    font-family: var(--label);
-    font-size: 11px;
-    letter-spacing: 0.15em;
-    color: var(--mut-2);
-}
-.jumbo-ufc-hero-weight {
-    font-size: 13px;
-    font-weight: 300;
-    letter-spacing: 0.2em;
-    color: var(--mut-2);
-    text-transform: uppercase;
-}
-.jumbo-ufc-hero-vs {
-    font-family: var(--num);
-    font-size: 40px;
-    color: var(--led);
-    text-shadow: 0 0 16px var(--ledglow);
-    margin-top: 10px;
-}
-/* Knockdown callout — rare and dramatic enough (session follow-up:
-   "everything" this board can honestly show) to flag on its own next
-   to a fighter's record rather than bury inside the steadier volume
-   stats below (see _ufc_stats_html's own docstring on why it's split
-   out from the strikes/takedowns/control-time trio). */
-.jumbo-ufc-kd-badge {
-    display: inline-block;
-    margin-left: 8px;
-    padding: 2px 8px;
-    border-radius: 6px;
-    font-family: var(--label);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    color: #0A0D12;
-    background: var(--live);
-}
-/* Live stat comparison (pages_jumbotron._ufc_stats_html) — session
-   follow-up: "live fight stats... implied odds to win if that's
-   available." Same big-flanking-numbers-plus-bar shape as the team
-   board's own .jumbo-wp-* win-probability bar, deliberately its own
-   class family rather than reusing those directly: there's no real
-   MMA win-probability model behind this (ESPN's pickcenterAvailable is
-   false on every UFC bout — confirmed live, see ufc_client.
-   fetch_bout_stats' own docstring), so the bar here reflects each
-   fighter's actual share of real landed strikes/takedowns/control
-   seconds, not a probability the way the team board's bar does. Two
-   fixed accent colors rather than per-side team colors — fighters
-   don't have one the way a team's own color does (checked live across
-   three separate ESPN endpoints — scoreboard, athlete profile, core
-   API — none carry a trunk/corner color at all; UFC has no per-athlete
-   branding the way a franchise does). Session follow-up: "can we make
-   the bar be the trunk size... the trunk color" — recolored to the
-   classic red-corner/blue-corner broadcast convention instead of the
-   original gold/blue, on the explicit understanding (confirmed with
-   the user) that this still isn't each fighter's own real color, just
-   applied to whichever side ESPN's own fighter_a/fighter_b order lists
-   first/second. */
-.jumbo-ufc-stats { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 14px; padding: 4px 40px 20px; }
-.jumbo-ufc-stat-row {}
-.jumbo-ufc-stat-title {
-    text-align: center;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.35em;
-    color: var(--mut-2);
-    margin-bottom: 6px;
-}
-.jumbo-ufc-stat-line { display: flex; align-items: center; gap: 14px; }
-.jumbo-ufc-stat-value {
-    font-family: var(--label);
-    font-size: 22px;
-    font-weight: 700;
-    flex: 0 0 auto;
-    min-width: 64px;
-}
-.jumbo-ufc-stat-value.jumbo-ufc-stat-a { text-align: right; color: #FF3B30; }
-.jumbo-ufc-stat-value.jumbo-ufc-stat-b { color: #5AC8FA; }
-.jumbo-ufc-stat-bar {
-    flex: 1;
-    height: 16px;
-    border-radius: 6px;
-    overflow: hidden;
-    display: flex;
-    border: 1px solid var(--edge);
-}
-.jumbo-ufc-stat-seg-a { background: #FF3B30; }
-.jumbo-ufc-stat-seg-b { background: #5AC8FA; }
-.jumbo-ufc-stat-labels {
-    display: flex;
-    justify-content: space-between;
-    font-family: var(--label);
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--mut);
-    margin-top: 4px;
-    letter-spacing: 0.03em;
-}
-.jumbo-ufc-card-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
-.jumbo-ufc-card-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 9px 16px;
-    border-bottom: 1px solid var(--glass-edge);
-    font-family: var(--label);
-    font-size: 14px;
-}
-.jumbo-ufc-card-row:last-child { border-bottom: none; }
-/* Network Primetime consistency sweep: same hard amber flag as the
-   standings panel's own tracked-team row (border + gradient wash
-   fading right) instead of a flat, even tint, for the main-event row. */
-.jumbo-ufc-card-row-main {
-    background: linear-gradient(90deg, rgba(255,196,0,0.14), rgba(255,196,0,0) 70%);
-    border-left: 3px solid var(--led);
-    padding-left: 13px;
-}
-.jumbo-ufc-card-weight {
-    flex: 0 0 120px;
-    font-size: 10px;
-    font-weight: 300;
-    letter-spacing: 0.12em;
-    color: var(--mut-2);
-    text-transform: uppercase;
-}
-.jumbo-ufc-card-fighter { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.jumbo-ufc-card-fighter.jumbo-ufc-winner { color: var(--ok); font-weight: 600; }
-.jumbo-ufc-card-vs { flex: 0 0 auto; color: var(--mut-2); font-size: 11px; }
-.jumbo-ufc-card-status { flex: 0 0 160px; text-align: right; font-family: var(--num); font-size: 13px; color: var(--mut); }
-.jumbo-ufc-live { color: var(--live); }
-.jumbo-ufc-final { color: var(--mut); }
-.jumbo-ufc-upcoming { color: var(--mut-2); }
-
-/* ---- Around the leagues ---- */
-.jumbo-around-body { flex: 1; min-height: 0; overflow: hidden; }
-/* Session feedback: "improve the scoreboard to make it more visible
-   from a distance, especially the around the league portion... I'm
-   reading it from across the room." Every size in this section bumped
-   roughly 25-30% (17->22px abbreviations, 26->32px scores, 11-12->13-
-   14px status/leader lines, 28->34px team logos) — this panel is read
-   at arm's length from a bed, not up close like a phone screen. */
-/* Network Primetime, extended — session follow-up: "show me what it
-   would look like if you gave the entire rest of the jumbotron this
-   kind of emphasis... around the leagues," then "build it into the
-   real jumbotron." Solid section-label block instead of plain
-   letter-spaced text on bare panel, matching the same treatment
-   .jumbo-ph/.jumbo-al-sec-style headers use elsewhere in this reskin. */
-.jumbo-around-league {
-    font-family: var(--label);
-    font-weight: 800;
-    font-size: 11px;
-    letter-spacing: 0.2em;
-    color: var(--mut-2);
-    text-transform: uppercase;
-    background: rgba(255,255,255,0.02);
-    padding: 10px 18px 8px;
-}
-.jumbo-mini {
-    display: flex;
-    align-items: center;
-    padding: 13px 18px;
-    gap: 16px;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-}
-/* Session report: "final scores are... super grayed out... make sure
-   they're still visible and white" — was opacity 0.42, unreadable on
-   both the OTS overlay's big text and the sidebar rail's smaller
-   rows. Full opacity everywhere _mini_row_html's output appears
-   (pages_jumbotron.py's only two callers: the out-of-town grid and
-   Around The Leagues). Live-game rows keep their own red accent below
-   (.jumbo-mini-live / .jumbo-mini-live .jumbo-mini-status) — follow-up
-   report clarified only the dimming was unwanted, the red live tag
-   should stay red. */
-.jumbo-mini-final { opacity: 1; }
-.jumbo-mini-live { background: rgba(255,69,58,0.07); border-left: 3px solid var(--live); }
-.jumbo-mini-teams { flex: 1; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
-.jumbo-mini-team { display: flex; align-items: center; gap: 10px; }
-.jumbo-mini-team img { width: 34px; height: 34px; padding: 4px; box-sizing: border-box; object-fit: contain; flex: 0 0 auto; background: rgba(255,255,255,0.08); border-radius: 7px; }
-.jumbo-mini-abbr { font-size: 21px; font-weight: 800; color: var(--mut); letter-spacing: 0.04em; }
-.jumbo-mini-record { font-size: 12px; font-weight: 700; color: var(--mut-2); letter-spacing: 0.02em; }
-.jumbo-mini-score { margin-left: auto; font-family: var(--label); font-weight: 800; font-size: 30px; line-height: 1; color: var(--bone); }
-/* Session request: bring back the standout-performer line (see
-   scores_client.game_leader) that used to show on the regular
-   rotation's own Scores page. */
-.jumbo-mini-leader {
-    font-family: var(--label);
-    font-size: 13px;
-    color: var(--led);
-    letter-spacing: 0.01em;
-    margin-top: 3px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.jumbo-mini-leader-stat { color: var(--bone); font-weight: 700; }
-.jumbo-mini-status {
-    font-family: var(--label);
-    font-size: 14px;
-    color: var(--mut-2);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    text-align: right;
-    flex: 0 0 auto;
-    line-height: 1.5;
-}
-.jumbo-mini-live .jumbo-mini-status { color: var(--live); font-weight: 800; }
-
-/* Page-flip crossfade (pages_jumbotron._around_html) — session
-   request: "add a cool animation to make it less robotic." Two
-   identically-defined classes rather than one, alternated on each
-   genuine page change: Streamlit patches this markdown block in place
-   across reruns, and re-applying a class that's already finished
-   animating is a no-op, the same reason news.py's toast bars alternate
-   between two keyframe classes (see its own comment). Only applied for
-   the one rerun immediately after a real change (see the Python side),
-   so a page sitting still for 12s never re-triggers this every 5s tick. */
-.jumbo-around-fade-a, .jumbo-around-fade-b {
-    animation: jumbo-around-fade-in 0.5s cubic-bezier(.2,.8,.2,1) backwards;
-}
-@keyframes jumbo-around-fade-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-/* Takeover transition curtain (app.py) — session feedback: the hard
-   cut between the everyday dashboard and the jumbotron "feels
-   dystopian," worth a real transition each way. A fixed full-screen
-   layer that holds briefly then fades itself out via CSS alone (no JS,
-   no second Streamlit rerun needed) — the real destination page is
-   already rendering underneath it in the same script run, this just
-   reveals it a couple seconds later instead of cutting instantly.
-   pointer-events:none from the very first frame so it can never trap
-   a touch/click even before the fade finishes. */
-.jumbo-transition {
-    position: fixed;
-    inset: 0;
-    z-index: 9999;
+/* Live at-bat matchup — batter, strike zone, pitcher. */
+.jumbo-mu { flex: 0 1 auto; min-height: 0; display: flex; align-items: stretch; gap: 16px; overflow: hidden; }
+.jumbo-mu-col {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 14px;
-    pointer-events: none;
-    animation: jumbo-transition-hold-fade 2.4s cubic-bezier(.4,0,.2,1) forwards;
-}
-@keyframes jumbo-transition-hold-fade {
-    0% { opacity: 1; }
-    62% { opacity: 1; }
-    100% { opacity: 0; visibility: hidden; }
-}
-/* Entering the jumbotron — same LED-amber arena identity as the board
-   itself (color/glow, not font — see --label's own comment on why the
-   board no longer runs Bebas Neue/Oswald at all). Spelled out directly
-   rather than var(--label): this overlay (app.py) renders outside
-   .jumbo's own div entirely, so that custom property isn't in scope —
-   same reasoning .jumbo-transition-sub below already documented. */
-.jumbo-transition-in { background: #07070A; }
-.jumbo-transition-brand {
-    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
-    font-size: 72px;
-    letter-spacing: 0.12em;
-    color: #FFC400;
-    text-shadow: 0 0 30px rgba(255,196,0,0.6), 0 0 4px rgba(255,196,0,0.9);
-    line-height: 0.9;
     text-align: center;
-    animation: jumbo-transition-flicker 1.4s ease-out;
+    gap: 5px;
+    overflow: hidden;
 }
-.jumbo-transition-brand span {
-    display: block;
-    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
-    font-weight: 300;
-    letter-spacing: 0.5em;
-    font-size: 16px;
-    color: #7E8898;
-    margin-top: 8px;
+.jumbo-mu-photo { width: 72px; height: 72px; object-fit: cover; object-position: top; background: #16161B; flex: 0 0 auto; }
+.jumbo-mu-tag { font-size: 9px; font-weight: 800; letter-spacing: 0.26em; text-transform: uppercase; color: var(--jumbo-fg-3); }
+.jumbo-mu-name { font-size: 18px; font-weight: 700; line-height: 1.15; }
+.jumbo-mu-stat-row { display: flex; gap: 20px; justify-content: center; }
+.jumbo-mu-stat-block { display: flex; flex-direction: column; align-items: center; }
+.jumbo-mu-stat { font-size: 26px; font-weight: 800; line-height: 1.05; }
+/* Hot/cold heat comes from sports_client's own real comparisons
+   (vs-pitcher history, season deltas) and, for STRIKE%, from real
+   league-average thresholds — never a guess. */
+.jumbo-mu-stat-hot { color: var(--jumbo-hot); }
+.jumbo-mu-stat-cold { color: #64B5F6; }
+.jumbo-mu-stat-cap { font-size: 8px; font-weight: 800; letter-spacing: 0.2em; color: var(--jumbo-fg-3); }
+.jumbo-mu-line { font-size: 12px; color: var(--jumbo-fg-3); margin-top: 2px; }
+.jumbo-matchup-vs {
+    flex: 0 0 auto;
+    align-self: center;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    color: var(--jumbo-fg-3);
 }
-/* Same flicker-on beat the original static mockup's own boot splash
-   used for its logo — a dead-flat fade-in read as too clinical for
-   what's meant to feel like a stadium scoreboard powering up. */
-@keyframes jumbo-transition-flicker {
-    0% { opacity: 0; }
-    8% { opacity: 1; }
-    12% { opacity: 0.2; }
-    18% { opacity: 1; }
-    24% { opacity: 0.4; }
-    32% { opacity: 1; }
-    100% { opacity: 1; }
+.jumbo-zone { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 0; }
+.jumbo-zone-svg { width: 96px; height: 110px; flex: 0 0 auto; }
+.jumbo-pitch-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 8px; max-width: 150px; }
+.jumbo-pitch-chip { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
+
+/* ---- Last play ---- */
+.jumbo-lastplay {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 24px;
+    border-top: 1px solid var(--jumbo-line-soft);
+    background: var(--jumbo-sunk);
 }
-.jumbo-transition-sub {
-    /* Can't use var(--label) here — this overlay (app.py) renders
-       outside .jumbo's own div entirely, so that custom property isn't
-       in scope. Same font stack it now points to, just spelled out. */
-    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
-    font-size: 14px;
-    letter-spacing: 0.32em;
-    color: #FFC400;
-    text-transform: uppercase;
-    opacity: 0;
-    animation: jumbo-transition-sub-in 0.6s ease-out 1s forwards;
-}
-@keyframes jumbo-transition-sub-in {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-/* Leaving the jumbotron — back to the normal kiosk's own Apple-glass
-   identity (SF Pro stack), deliberately calmer than the arena look:
-   this is a return to "everyday," not another spectacle. */
-.jumbo-transition-out { background: rgba(5,7,12,0.97); }
-.jumbo-transition-brand-normal {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
-    font-size: 40px;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-    color: #F5F5F7;
-    animation: jumbo-transition-sub-in 0.8s ease-out;
-}
-.jumbo-transition-sub-normal {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+.jumbo-lastplay-score { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
+.jumbo-lastplay-logo { width: 26px; height: 26px; object-fit: contain; }
+.jumbo-lastplay-tally { font-size: 19px; font-weight: 800; }
+.jumbo-lastplay-desc {
+    flex: 1 1 auto;
+    min-width: 0;
     font-size: 15px;
-    color: #8E8E93;
-    opacity: 0;
-    animation: jumbo-transition-sub-in 0.6s ease-out 0.5s forwards;
+    color: var(--jumbo-fg-2);
+    line-height: 1.3;
+    overflow: hidden;
 }
 
-/* Ordinary page-to-page rotation (app.py, the plain "not jumbotron"
-   case — .jumbo-transition above already owns entering/leaving the
-   board specifically) — session report: "the transition between pages
-   is quite choppy at times where different elements from different
-   pages kinda blend into one before delivering the other ones." Root
-   cause: Streamlit doesn't swap a page atomically — it streams each
-   element of the new page in one at a time as the script computes it,
-   so for a brief window the DOM genuinely is a mix of the outgoing
-   page's not-yet-removed elements and the incoming page's not-yet-
-   arrived ones. Same fix shape as .jumbo-transition, just much
-   quicker: an opaque curtain matching the kiosk's own real base
-   background (.streamlit/config.toml's backgroundColor, #000000, not
-   the jumbotron's own near-black) holds for a beat while the real new
-   page finishes streaming in underneath it in this exact same rerun,
-   then fades away — the swap reads as a deliberate little crossfade
-   instead of the raw choppy patch. Below every toast bar's own
-   z-index:10000+ (a real alert should never be hidden behind a routine
-   rotation) and below .screen-picker's own 10000, same "manually-
-   opened UI stays on top" reasoning theme.py already documents there. */
-.page-transition-curtain {
-    position: fixed;
-    inset: 0;
-    z-index: 9990;
-    background: #000000;
-    pointer-events: none;
-    animation: page-transition-fade 0.6s cubic-bezier(.4,0,.2,1) forwards;
+/* ---- My Teams rail ---- */
+.jumbo-rail-body { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.jumbo-hero {
+    position: relative;
+    padding: 8px 18px 8px 20px;
+    border-bottom: 1px solid var(--jumbo-line-soft);
 }
-@keyframes page-transition-fade {
-    0% { opacity: 1; }
-    35% { opacity: 1; }
-    100% { opacity: 0; visibility: hidden; }
+.jumbo-hero:last-child { border-bottom: none; }
+/* Full-height team-color flag down the left edge — flat, no wash. */
+.jumbo-hero-rule {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 5px;
+    background: var(--tc, var(--jumbo-fg-3));
 }
+.jumbo-hero-nhl { --tc: #D8323F; }
+.jumbo-hero-mlb { --tc: #3E7CC9; }
+.jumbo-hero-nfl { --tc: #D3BC8D; }
+.jumbo-hero-ufc { --tc: #D20A0A; }
+.jumbo-hero-head { display: flex; align-items: center; gap: 13px; }
+.jumbo-hero-head img {
+    width: 46px; height: 46px; padding: 4px; box-sizing: border-box;
+    object-fit: contain; flex: 0 0 auto;
+    background: rgba(255,255,255,0.06);
+}
+.jumbo-hero-id { min-width: 0; }
+.jumbo-hero-name { font-weight: 800; font-size: 20px; line-height: 1.1; white-space: nowrap; }
+.jumbo-hero-div {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--jumbo-fg-3);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.jumbo-hero-odds { color: var(--tc, var(--jumbo-fg-2)); font-weight: 700; }
+.jumbo-hero-rec { margin-left: auto; text-align: right; flex: 0 0 auto; padding-left: 10px; }
+.jumbo-hero-rec-v { font-weight: 800; font-size: 26px; line-height: 1; white-space: nowrap; }
+.jumbo-hero-rec-c { font-size: 8px; font-weight: 800; color: var(--jumbo-fg-3); letter-spacing: 0.26em; }
+.jumbo-form { display: flex; gap: 5px; align-items: center; margin-top: 6px; }
+.jumbo-form-cap { font-size: 9px; font-weight: 800; color: var(--jumbo-fg-3); letter-spacing: 0.2em; margin-right: 3px; }
+.jumbo-form i { width: 9px; height: 9px; display: inline-block; }
+.jumbo-form-w { background: var(--jumbo-ok); }
+.jumbo-form-l { background: transparent; border: 1px solid rgba(255,69,58,0.65); }
+.jumbo-gameline {
+    margin-top: 5px;
+    padding: 6px 12px;
+    background: var(--jumbo-sunk);
+    border: 1px solid var(--jumbo-line-soft);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--jumbo-fg-2);
+    line-height: 1.35;
+}
+.jumbo-gameline-quiet { color: var(--jumbo-fg-3); border-style: dashed; letter-spacing: 0.04em; }
+.jumbo-gameline b { color: var(--jumbo-fg); font-weight: 700; }
+.jumbo-gl-score { color: var(--jumbo-fg); font-weight: 800; font-size: 18px; }
+.jumbo-gl-cd { color: var(--jumbo-fg); font-size: 20px; font-weight: 700; letter-spacing: 0.04em; margin-left: 9px; }
+.jumbo-gl-cd-delayed { color: var(--jumbo-hot); font-size: 16px; }
+.jumbo-hero-live .jumbo-gameline { border-color: rgba(255,159,10,0.5); }
+.jumbo-w { color: var(--jumbo-ok); }
+.jumbo-l { color: var(--jumbo-bad); }
 
-/* Full-screen "out of town scoreboard" during a natural break in the
-   featured game — session request: "between innings / periods can we
-   go to a full screen out of town scoreboard. with a timer till the
-   game resumes again." Same fixed-full-viewport approach as
-   .jumbo-transition above. Reuses the sidebar Around The Leagues
-   panel's own .jumbo-mini row markup (pages_jumbotron._mini_row_html)
-   inside a bigger grid rather than a separate template —
-   .jumbo-otc-grid-scoped overrides below just size those same rows up
-   for a full-screen read. No animation-hold timing here: this is
-   driven by real game state, up for exactly as long as the break
-   itself lasts. (A full-screen "new pitcher" intro used to share this
-   pattern at z-index 9998 — session feedback: "the pitchers toast
-   showed up at the end of the 9th... way too early, the data delay
-   didnt catch that... just get rid of them" — removed entirely.) */
+/* ---- Batting order rail (replaces My Teams during a live MLB game) ---- */
+.jumbo-lineup-head { position: relative; display: flex; align-items: center; gap: 12px; padding: 9px 16px 9px 18px; }
+.jumbo-lineup-head-rule {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 5px;
+    background: rgb(var(--side-rgb, 122,130,144));
+}
+.jumbo-lineup-logo { width: 38px; height: 38px; object-fit: contain; flex: 0 0 auto; }
+.jumbo-lineup-headtext { min-width: 0; }
+.jumbo-lineup-team { font-size: 18px; font-weight: 800; line-height: 1.1; }
+.jumbo-lineup-atbat { font-size: 9px; font-weight: 800; letter-spacing: 0.26em; color: var(--jumbo-fg-3); text-transform: uppercase; }
+.jumbo-lineup-head-row,
+.jumbo-lineup-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 16px 5px 18px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--jumbo-line-soft);
+}
+.jumbo-lineup-head-row {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    color: var(--jumbo-fg-3);
+    background: var(--jumbo-sunk);
+}
+.jumbo-lineup-num { flex: 0 0 26px; color: var(--jumbo-fg-3); font-weight: 700; }
+.jumbo-lineup-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.jumbo-lineup-pos { flex: 0 0 32px; color: var(--jumbo-fg-3); }
+.jumbo-lineup-ab { flex: 0 0 46px; text-align: right; color: var(--jumbo-fg-2); font-size: 12px; }
+.jumbo-lineup-ops { flex: 0 0 46px; text-align: right; font-weight: 700; color: var(--jumbo-fg-2); }
+/* OPS colored by this hitter's real, current league percentile tier
+   (sports_client.ops_tier against a live qualified-hitter
+   distribution), session request: "top ten percent gets brightest
+   green... bottom twenty five red... dynamic so it shows exactly where
+   they are in context to the entire league." */
+.jumbo-lineup-ops-elite { color: #32D74B; }
+.jumbo-lineup-ops-good { color: #8FD694; }
+.jumbo-lineup-ops-average { color: var(--jumbo-fg-2); }
+.jumbo-lineup-ops-below { color: #FF6961; }
+/* The current batter gets a left accent bar rather than a full-row
+   wash — deliberately, so it can't fight the OPS tier color sitting in
+   the same row (a real colour clash fixed once already). */
+.jumbo-lineup-row-on {
+    border-left: 3px solid var(--jumbo-hot);
+    padding-left: 15px;
+    background: rgba(255,159,10,0.07);
+}
+.jumbo-lineup-row-on .jumbo-lineup-name,
+.jumbo-lineup-row-on .jumbo-lineup-num { color: var(--jumbo-hot); }
+
+/* ---- Around The Leagues ---- */
+.jumbo-around-body { flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 10px; display: flex; flex-direction: column; gap: 7px; }
+.jumbo-mini {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 11px;
+    background: var(--jumbo-sunk);
+    border: 1px solid var(--jumbo-line-soft);
+}
+.jumbo-around-body > .jumbo-mini { flex: 1 1 auto; max-height: 112px; }
+.jumbo-mini-live { border-color: rgba(255,159,10,0.45); }
+.jumbo-mini-final { opacity: 0.72; }
+.jumbo-mini-teams { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.jumbo-mini-team { display: flex; align-items: center; gap: 7px; }
+.jumbo-mini-team img { width: 22px; height: 22px; object-fit: contain; flex: 0 0 auto; }
+.jumbo-mini-abbr { font-size: 15px; font-weight: 800; letter-spacing: 0.04em; }
+.jumbo-mini-rec { font-size: 10px; color: var(--jumbo-fg-3); font-weight: 600; }
+.jumbo-mini-score { margin-left: auto; font-size: 19px; font-weight: 800; }
+.jumbo-mini-status {
+    flex: 0 0 auto;
+    max-width: 96px;
+    text-align: right;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--jumbo-fg-3);
+    text-transform: uppercase;
+    line-height: 1.25;
+}
+.jumbo-mini-live .jumbo-mini-status { color: var(--jumbo-hot); }
+.jumbo-mini-leader { font-size: 11px; color: var(--jumbo-fg-3); margin-top: 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.jumbo-mini-leader-stat { color: var(--jumbo-fg-2); font-weight: 700; }
+
+/* ---- Division standings (rotating) ---- */
+.jumbo-st-body { flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 8px 12px 12px; }
+.jumbo-st { border: 1px solid var(--jumbo-line-soft); background: var(--jumbo-sunk); font-size: 14px; }
+.jumbo-st-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 12px;
+    border-bottom: 1px solid var(--jumbo-line-soft);
+    color: var(--jumbo-fg-2);
+}
+.jumbo-st-row:last-child { border-bottom: none; }
+.jumbo-st-row-us { color: var(--jumbo-hot); font-weight: 800; border-left: 3px solid var(--jumbo-hot); padding-left: 9px; }
+.jumbo-st-rank { flex: 0 0 18px; color: var(--jumbo-fg-3); font-weight: 700; }
+.jumbo-st-logo { flex: 0 0 auto; width: 17px; height: 17px; object-fit: contain; }
+.jumbo-st-team { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jumbo-st-rec { flex: 0 0 auto; font-weight: 700; }
+.jumbo-st-extra { flex: 0 0 40px; text-align: right; color: var(--jumbo-fg-3); }
+.jumbo-st-odds { flex: 0 0 auto; text-align: right; color: var(--jumbo-hot); font-weight: 800; margin-left: 6px; }
+
+/* ============ Presence-gated full-screen overlays ============
+   READ THIS BEFORE EDITING EITHER RULE BELOW.
+
+   Both elements are only ever in the DOM on the reruns they're meant to
+   be seen — jumbotron_data.py returns None otherwise and
+   pages_jumbotron.py emits nothing. There is therefore NO class toggle,
+   and NO resting opacity:0/visibility:hidden here. Adding one (even
+   "temporarily", even meant to be overridden by another class) makes
+   them invisible forever, which is exactly the live bug this rebuild
+   fixed. If it's in the DOM, it's visible. */
 .jumbo-otc-overlay {
     position: fixed;
     inset: 0;
     z-index: 9997;
     display: flex;
     justify-content: center;
-    background: rgba(5,7,12,0.98);
-    padding: 44px 60px;
+    background: #06070A;
+    padding: 40px 56px;
     overflow: hidden;
 }
 .jumbo-otc-inner { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 1440px; min-height: 0; }
-.jumbo-otc-title {
-    font-family: var(--label);
-    font-size: 20px;
-    letter-spacing: 0.32em;
-    color: var(--led);
-    text-transform: uppercase;
-    font-weight: 700;
-}
-.jumbo-otc-sub { font-family: var(--label); font-size: 30px; font-weight: 700; color: var(--bone); margin-top: 8px; }
-.jumbo-otc-timer-block { display: flex; flex-direction: column; align-items: center; margin: 16px 0 26px; }
-.jumbo-otc-timer { font-family: var(--label); font-size: 54px; font-weight: 700; color: var(--bone); line-height: 1.1; }
-.jumbo-otc-timer-label { font-family: var(--label); font-size: 13px; letter-spacing: 0.22em; color: var(--led); text-transform: uppercase; font-weight: 700; margin-top: 4px; }
+.jumbo-otc-title { font-size: 18px; font-weight: 800; letter-spacing: 0.3em; color: var(--jumbo-fg-3); text-transform: uppercase; }
+.jumbo-otc-sub { font-size: 30px; font-weight: 800; color: var(--jumbo-fg); margin-top: 8px; }
+.jumbo-otc-timer-block { display: flex; flex-direction: column; align-items: center; margin: 14px 0 24px; }
+.jumbo-otc-timer { font-size: 54px; font-weight: 800; line-height: 1.05; }
+.jumbo-otc-timer-cap { font-size: 11px; font-weight: 800; letter-spacing: 0.24em; color: var(--jumbo-hot); text-transform: uppercase; margin-top: 4px; }
 .jumbo-otc-league {
-    grid-column: 1 / -1;
-    font-family: var(--label);
-    font-size: 14px;
-    letter-spacing: 0.24em;
-    color: var(--led);
-    text-transform: uppercase;
-    font-weight: 700;
-    margin: 14px 0 4px;
-}
-.jumbo-otc-league:first-child { margin-top: 0; }
-/* Session request: "make the scores a little bigger so you can see
-   them from a glance," alongside the pagination fix above (pages_
-   jumbotron._between_play_overlay_html) that caps this to one
-   league's page at a time (_AROUND_PAGE_SIZE rows) instead of every
-   league's every game at once. overflow-y:auto removed — it's what
-   was silently hiding games past whatever fit on a kiosk nobody can
-   scroll; real pagination replaces it, so there's nothing left to
-   overflow. Two columns instead of three, now that a page is capped
-   to 6 rows instead of unbounded — real width per card to actually
-   grow the score digits into (24->30px abbr, 34->46px score, 36->44px
-   logos), not just bigger numbers squeezed into the same cramped
-   column. */
-.jumbo-otc-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px 32px;
     width: 100%;
-    min-height: 0;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.24em;
+    color: var(--jumbo-fg-3);
+    text-transform: uppercase;
+    margin: 12px 0 5px;
 }
-.jumbo-otc-grid .jumbo-mini { padding: 14px 20px; border-radius: 8px; }
-.jumbo-otc-grid .jumbo-mini-abbr { font-size: 30px; }
-.jumbo-otc-grid .jumbo-mini-score { font-size: 46px; }
-.jumbo-otc-grid .jumbo-mini-team img { width: 44px; height: 44px; }
-.jumbo-otc-grid .jumbo-mini-status { font-size: 17px; }
-.jumbo-otc-grid .jumbo-mini-leader { font-size: 15px; }
+/* Sized up for a full-screen read — session request: "make the scores a
+   little bigger so you can see them from a glance." Two columns, since
+   the Python side caps a page at AROUND_PAGE_SIZE rows; no overflow-y
+   anywhere, because pagination (not scrolling) is what makes this fit. */
+.jumbo-otc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 28px; width: 100%; min-height: 0; }
+.jumbo-otc-grid .jumbo-mini { padding: 12px 18px; }
+.jumbo-otc-grid .jumbo-mini-team img { width: 40px; height: 40px; }
+.jumbo-otc-grid .jumbo-mini-abbr { font-size: 28px; }
+.jumbo-otc-grid .jumbo-mini-rec { font-size: 13px; }
+.jumbo-otc-grid .jumbo-mini-score { font-size: 42px; }
+.jumbo-otc-grid .jumbo-mini-status { font-size: 16px; max-width: 150px; }
+.jumbo-otc-grid .jumbo-mini-leader { font-size: 14px; }
 
 /* Full-screen play-result announcement — session request: "add an
-   animation that takes up the screen after every play. Single,
-   Double, Triple, Home Run, Lineout, Strikout, Pop Out etc so i can
-   tell what happened." z-index sits above the out-of-town overlay
-   (9997, so a play result always wins if the two ever land on the
-   same rerun) but below the game-mode transition curtain and control
-   cluster (9999, both true top-level UI that should never be
-   obscured). pointer-events: none since this is purely informational —
-   never blocks the End Session button underneath, even before it
-   fades.
-
-   animation-duration here is just the fallback — pages_jumbotron.
-   _play_result_overlay_html always sets it (and animation-delay)
-   inline from PLAY_RESULT_HOLD_SECONDS, so this holds for as many
-   reruns as it takes to fill that many seconds rather than being
-   capped at whatever survives one 5s rerun cycle (session request:
-   "can the animation be longer than 3 seconds?" — that's what the old
-   fixed 3s version was actually bumping into). */
+   animation that takes up the screen after every play. Single, Double,
+   Triple, Home Run, Lineout, Strikout, Pop Out etc so i can tell what
+   happened." Held for PLAY_RESULT_HOLD_SECONDS of real elapsed time by
+   re-rendering across as many 5s fragment ticks as that takes, then
+   simply not emitted. Sits above the out-of-town overlay (9997) but
+   below the control cluster (9999), and pointer-events:none so it never
+   blocks the End Session button underneath. */
 .jumbo-play-overlay {
     position: fixed;
     inset: 0;
@@ -6852,86 +5470,235 @@ html, body, [class*="css"] {
     align-items: center;
     justify-content: center;
     pointer-events: none;
-    background: rgba(5,7,12,0.85);
-    animation: jumbo-play-hold-fade 5s cubic-bezier(.4,0,.2,1) forwards;
+    background: rgba(6,7,10,0.92);
 }
-@keyframes jumbo-play-hold-fade {
-    0% { opacity: 1; }
-    70% { opacity: 1; }
-    100% { opacity: 0; visibility: hidden; }
-}
-.jumbo-play-text {
-    font-family: var(--label);
-    font-size: 96px;
-    letter-spacing: 0.08em;
-    text-align: center;
-    line-height: 1.05;
-    max-width: 90%;
-    animation: jumbo-play-pop 0.5s cubic-bezier(.34,1.56,.64,1);
-}
-@keyframes jumbo-play-pop {
-    0% { transform: scale(0.6); opacity: 0; }
-    60% { transform: scale(1.08); opacity: 1; }
-    100% { transform: scale(1); opacity: 1; }
-}
-/* Hit/out/neutral — same three-tone idea as the ball/strike flashes
-   above (green for offense succeeding, red for an out, neutral white
-   for anything not classified either way — a walk-off review, a wild
-   pitch, etc.). */
-.jumbo-play-overlay-hit .jumbo-play-text { color: #32D74B; text-shadow: 0 0 40px rgba(50,215,75,0.7), 0 0 8px rgba(50,215,75,0.9); }
-.jumbo-play-overlay-out .jumbo-play-text { color: #FF453A; text-shadow: 0 0 40px rgba(255,69,58,0.7), 0 0 8px rgba(255,69,58,0.9); }
-.jumbo-play-overlay-neutral .jumbo-play-text { color: var(--bone); text-shadow: 0 0 40px rgba(255,255,255,0.4); }
+.jumbo-play-text { font-size: 92px; font-weight: 800; letter-spacing: 0.06em; text-align: center; line-height: 1.05; max-width: 90%; }
+/* Green for offense succeeding, red for an out, neutral for anything
+   MLB's own event field doesn't classify either way. */
+.jumbo-play-hit .jumbo-play-text { color: var(--jumbo-ok); }
+.jumbo-play-out .jumbo-play-text { color: var(--jumbo-bad); }
+.jumbo-play-neutral .jumbo-play-text { color: var(--jumbo-fg); }
 
-/* Bottom-left control cluster — End Session button (session request:
-   "an end session button... that closes out the game session therefore
-   closing the jumbotron") plus the live-data delay stepper (session
-   request: "make it a setting i can adjust throughout the game").
-   This app's only real interactive widgets (everything else is passive
-   display) — genuine st.button()s, grouped in one
-   st.container(key="jumbotron_controls") so they can be positioned and
-   laid out as a single row via that container's own st-key-* class,
-   rather than a bare div[data-testid="stButton"] selector (which only
-   ever worked while there was exactly one button in the whole app).
-   Position matches the old single-button placement — bottom-left,
-   clearing the toast alert bar below (see that block's own comment),
-   originally corrected from bottom-right which collided with
-   Streamlit's own "Made with Streamlit" badge there. Higher z-index
-   than the out-of-town-scoreboard overlay above (9997) so it's always
-   reachable if that's showing (it doesn't set pointer-events:none, so
-   without this it could get covered instead of just visually topped). */
+/* ---- UFC ----
+   Its own two-row grid rather than the rail/board/around layout — a
+   fight card is a genuinely different data shape from one team's
+   evolving score. The hero takes the dominant share (session request:
+   "I want the live fight to take up like the whole screen"), with the
+   full card as a fixed reference strip underneath. */
+.jumbo-ufc-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 3fr minmax(0, 1fr);
+}
+.jumbo-ufc-hero-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 14px 22px 16px;
+    overflow: hidden;
+}
+.jumbo-ufc-phase {
+    flex: 0 0 auto;
+    text-align: center;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    color: var(--jumbo-fg-3);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+.jumbo-ufc-phase-live { color: var(--jumbo-hot); }
+.jumbo-ufc-recent-a { color: #FF6961; }
+.jumbo-ufc-recent-b { color: #64B5F6; }
+.jumbo-ufc-hero { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; gap: 16px; overflow: hidden; }
+.jumbo-ufc-fighter {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 5px;
+    padding: 14px 12px;
+    background: var(--jumbo-sunk);
+    border: 1px solid var(--jumbo-line-soft);
+    overflow: hidden;
+}
+/* Red/blue corners are a broadcast convention, not each fighter's real
+   color — checked live, no such data exists anywhere in ESPN's UFC
+   feed, so this is deliberately not presented as one. */
+.jumbo-ufc-corner-rule { position: absolute; top: 0; left: 0; right: 0; height: 4px; }
+.jumbo-ufc-corner-a .jumbo-ufc-corner-rule { background: #D33A3A; }
+.jumbo-ufc-corner-b .jumbo-ufc-corner-rule { background: #3A7BD3; }
+.jumbo-ufc-winner { border-color: rgba(255,159,10,0.6); }
+.jumbo-ufc-winner .jumbo-ufc-name { color: var(--jumbo-hot); }
+.jumbo-ufc-photowrap { position: relative; flex: 0 1 auto; min-height: 0; }
+.jumbo-ufc-photo { max-height: 240px; width: auto; object-fit: contain; display: block; }
+.jumbo-ufc-flag { position: absolute; right: 0; bottom: 4px; width: 26px; height: 18px; object-fit: cover; }
+.jumbo-ufc-name { font-size: 24px; font-weight: 800; line-height: 1.1; }
+.jumbo-ufc-nick { font-size: 13px; font-style: italic; color: var(--jumbo-fg-3); }
+.jumbo-ufc-recordline { display: flex; align-items: center; gap: 9px; }
+.jumbo-ufc-record { font-size: 15px; font-weight: 700; color: var(--jumbo-fg-2); }
+.jumbo-ufc-kd { font-size: 11px; font-weight: 800; letter-spacing: 0.12em; color: var(--jumbo-hot); border: 1px solid rgba(255,159,10,0.6); padding: 2px 7px; }
+.jumbo-ufc-method { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: var(--jumbo-fg-3); }
+.jumbo-ufc-mid { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 0 6px; }
+.jumbo-ufc-weight { font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: var(--jumbo-fg-3); text-transform: uppercase; writing-mode: horizontal-tb; max-width: 110px; text-align: center; }
+.jumbo-ufc-vs { font-size: 15px; font-weight: 800; letter-spacing: 0.14em; color: var(--jumbo-fg-3); border: 1px solid var(--jumbo-line); padding: 5px 10px; }
+/* Tale of the tape — one compact row, never three stacked: this panel
+   is fixed-height and already carries two photos, two names, records
+   and the live stat bars below it. */
+.jumbo-ufc-tot { flex: 0 0 auto; display: flex; gap: 10px; margin-top: 10px; }
+.jumbo-ufc-tot-cell {
+    flex: 1 1 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 6px 12px;
+    background: var(--jumbo-sunk);
+    border: 1px solid var(--jumbo-line-soft);
+    font-size: 16px;
+    font-weight: 700;
+}
+.jumbo-ufc-tot-cap { font-size: 9px; font-weight: 800; letter-spacing: 0.2em; color: var(--jumbo-fg-3); }
+.jumbo-ufc-tot-a, .jumbo-ufc-tot-b { flex: 0 0 auto; }
+.jumbo-ufc-stats { flex: 0 0 auto; display: flex; gap: 18px; margin-top: 10px; }
+.jumbo-ufc-stat-row { flex: 1 1 0; min-width: 0; }
+.jumbo-ufc-stat-cap { font-size: 9px; font-weight: 800; letter-spacing: 0.22em; color: var(--jumbo-fg-3); text-align: center; text-transform: uppercase; }
+.jumbo-ufc-stat-line { display: flex; align-items: center; gap: 9px; margin-top: 4px; }
+.jumbo-ufc-stat-v { font-size: 17px; font-weight: 800; flex: 0 0 auto; }
+.jumbo-ufc-stat-va { color: #FF8A84; }
+.jumbo-ufc-stat-vb { color: #8FB8F0; }
+.jumbo-ufc-stat-bar { flex: 1 1 auto; min-width: 0; height: 9px; display: flex; border: 1px solid var(--jumbo-line); }
+.jumbo-ufc-seg { min-width: 0; }
+.jumbo-ufc-seg-a { background: #D33A3A; }
+.jumbo-ufc-seg-b { background: #3A7BD3; }
+.jumbo-ufc-stat-names { display: flex; justify-content: space-between; font-size: 10px; font-weight: 700; color: var(--jumbo-fg-3); margin-top: 3px; }
+.jumbo-ufc-card-body { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.jumbo-ufc-row {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 9px 20px;
+    border-bottom: 1px solid var(--jumbo-line-soft);
+    font-size: 16px;
+}
+.jumbo-ufc-row:last-child { border-bottom: none; }
+.jumbo-ufc-row-main { background: var(--jumbo-sunk); }
+.jumbo-ufc-row-weight { flex: 0 0 160px; font-size: 10px; font-weight: 800; letter-spacing: 0.16em; color: var(--jumbo-fg-3); text-transform: uppercase; }
+.jumbo-ufc-row-fighter { flex: 1 1 0; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jumbo-ufc-row-vs { flex: 0 0 auto; font-size: 11px; color: var(--jumbo-fg-3); }
+.jumbo-ufc-row-status { flex: 0 0 190px; text-align: right; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; }
+.jumbo-ufc-row-live { color: var(--jumbo-hot); }
+.jumbo-ufc-row-final { color: var(--jumbo-fg-3); }
+.jumbo-ufc-row-up { color: var(--jumbo-fg-3); }
+
+/* ============ Game-mode enter/exit announcement (app.py) ============
+   Presence-gated exactly like the two overlays above: app.py emits this
+   ONLY on the single rerun where _jumbotron_active actually flipped.
+
+   Deliberately NOT a full-screen opaque curtain. It used to be one,
+   relying on `animation: ... forwards` to fade itself away — which the
+   global animation kill switch permanently prevents. A full-screen
+   opaque element with no way to fade would sit on top of the entire
+   dashboard for a whole outer rerun cycle (up to ~75s), so the honest
+   animation-free form of "mark the moment" is a compact, pointer-events
+   :none banner that states it and blocks nothing. No resting-hidden
+   style here either, for the same reason as the overlays above: the
+   captions inside this were invisible for weeks because of one. */
+.jumbo-transition {
+    position: fixed;
+    top: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 14px 34px;
+    background: rgba(6,7,10,0.94);
+    border: 1px solid rgba(255,255,255,0.14);
+    max-width: 80vw;
+    text-align: center;
+}
+.jumbo-transition-in { border-bottom: 3px solid #FF9F0A; }
+.jumbo-transition-out { border-bottom: 3px solid rgba(255,255,255,0.3); }
+.jumbo-transition-brand {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: #F2F3F5;
+    line-height: 1;
+}
+.jumbo-transition-brand span { color: #FF9F0A; letter-spacing: 0.22em; font-size: 12px; margin-left: 10px; }
+.jumbo-transition-brand-normal {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+    color: #F5F5F7;
+    line-height: 1;
+}
+.jumbo-transition-sub {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: #AEB6C2;
+}
+.jumbo-transition-sub-normal {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 12px;
+    color: #8E8E93;
+    letter-spacing: 0.06em;
+}
+
+/* ============ Control cluster (pages_jumbotron._controls) ============
+   End Session + the live-data delay stepper — this app's only real
+   interactive widgets. Grouped in one st.container(key="jumbotron_
+   controls") so they lay out as a single fixed-position row via that
+   key's own class rather than a bare stButton selector. Bottom-left,
+   clearing the toast alert bar below it; z-index above the out-of-town
+   overlay (9997) so it stays reachable if that's showing.
+
+   bottom: 120px, raised from 88px — measured live 2026-09-20 against
+   .voice-status-badge (position:fixed, left:14px, bottom:60px, ~45px
+   tall, rendered by app.py whenever voice/status.py has reported in and
+   NOT suppressed during a takeover the way .system-health-corner is).
+   At 88px the two boxes genuinely overlapped in the same bottom-left
+   corner; 120px clears the badge's own top edge with real margin. The
+   rail column's own reserve (--jumbo-controls-clear) was re-measured to
+   match. */
 .st-key-jumbotron_controls {
     position: fixed;
     left: 34px;
-    bottom: 88px;
+    bottom: 120px;
     z-index: 9999;
     width: auto !important;
-    /* Streamlit's own div[data-testid="stVerticalBlock"] rule sets
-       flex-direction: column at higher selector specificity than a
-       plain class here can beat on its own (tag+attribute vs. one
-       class) — confirmed live: without !important this cluster still
-       stacked vertically, full viewport width, centered mid-screen
-       instead of sitting as a row pinned bottom-left. */
+    /* Streamlit's own stVerticalBlock rule sets flex-direction: column
+       at higher specificity than a plain class can beat — confirmed
+       live that without !important this stacked vertically at full
+       viewport width instead of sitting as a row pinned bottom-left. */
     display: flex !important;
     flex-direction: row !important;
     align-items: center;
     gap: 10px;
 }
-/* Streamlit gives each widget's own wrapper a fixed column-style
-   width by default — without this override the "−"/"+" buttons and
-   the label between them stretch apart instead of sitting snug. */
 .st-key-jumbotron_controls .stElementContainer {
     width: auto !important;
     flex: 0 0 auto;
 }
-/* The delay stepper (−/DELAY Xs/+) became its own st.fragment (see
-   pages_jumbotron._delay_stepper's own comment — instant, page-
-   independent responsiveness) after this cluster's layout was first
-   built. Streamlit wraps a fragment's own content in an extra
-   stLayoutWrapper > stVerticalBlock pair that didn't exist before and
-   defaults to the same column layout the outer container's own rule
-   above already had to override — confirmed live: without this, the
-   stepper dropped onto its own vertical column below End Session
-   instead of sitting in the same row. */
+/* The delay stepper is its own st.fragment, which Streamlit wraps in an
+   extra stLayoutWrapper > stVerticalBlock pair that defaults back to
+   column layout — confirmed live: without this the stepper dropped onto
+   its own column below End Session instead of sitting in the same row. */
 .st-key-jumbotron_controls div[data-testid="stLayoutWrapper"] {
     width: auto !important;
     flex: 0 0 auto;
@@ -6943,69 +5710,54 @@ html, body, [class*="css"] {
     gap: 10px;
 }
 .st-key-jumbotron_controls div[data-testid="stButton"] button {
-    background: rgba(0,0,0,0.5);
-    border: 1px solid rgba(255,255,255,0.1);
-    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
-    color: var(--mut);
-    font-family: var(--label);
-    font-weight: 700;
+    background: #0E0E11;
+    border: 1px solid rgba(255,255,255,0.14);
+    color: #AEB6C2;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-weight: 800;
     font-size: 12px;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    padding: 8px 16px;
-    border-radius: 6px;
+    padding: 10px 18px;
+    border-radius: 0;
     white-space: nowrap;
 }
 .st-key-jumbotron_controls div[data-testid="stButton"] button:hover {
-    border-color: var(--led);
-    color: var(--bone);
-}
-/* Session report: "make it easier to click up/down on it" — the
-   generic 12px/8px-16px button rule above was sized for a text label
-   like "End Session," not a fast-repeat +/- tap target on a kiosk
-   touchscreen. Bigger box, bigger glyph, same visual family. */
-.st-key-jumbotron_delay_minus div[data-testid="stButton"] button,
-.st-key-jumbotron_delay_plus div[data-testid="stButton"] button {
-    padding: 14px 22px;
-    font-size: 20px;
-    font-weight: 700;
-    line-height: 1;
+    border-color: #FF9F0A;
+    color: #F2F3F5;
 }
 .jumbo-delay-label {
-    font-family: var(--label);
-    font-size: 12px;
-    letter-spacing: 0.08em;
-    color: var(--mut);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    color: #79808D;
     white-space: nowrap;
 }
-/* Session request: "make it so i can type my ideal stream delay
-   please. the plus/minus boxes are finnicky" — replaced with a real
-   st.number_input (see pages_jumbotron._delay_stepper's own comment):
-   tapping into it brings up this touchscreen kiosk's own on-screen
-   numeric keypad, letting the value be typed directly. Streamlit's own
-   built-in label is already collapsed (label_visibility="collapsed")
-   but still occupies a hidden row of layout height by default —
-   zeroed out here so the field sits at the same compact size as the
-   buttons it replaced, matching the rest of this cluster's own dark-
-   glass treatment. */
+/* Session request: "make it so i can type my ideal stream delay please.
+   the plus/minus boxes are finnicky" — a real st.number_input, so
+   tapping it brings up this touchscreen kiosk's own numeric keypad.
+   Streamlit's built-in label is collapsed but still reserves a hidden
+   row of layout height by default; zeroed out so the field sits at the
+   same compact size as the button beside it. */
 .st-key-jumbotron_controls label[data-testid="stWidgetLabel"] {
     display: none;
 }
 .st-key-jumbotron_controls div[data-testid="stNumberInputContainer"] {
-    background: rgba(0,0,0,0.5);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 6px;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    background: #0E0E11;
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 0;
     width: 84px;
 }
 .st-key-jumbotron_controls input[data-testid="stNumberInputField"] {
     background: transparent;
-    color: var(--bone);
-    font-family: var(--label);
+    color: #F2F3F5;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
     font-size: 18px;
     font-weight: 700;
+    font-variant-numeric: tabular-nums;
     text-align: center;
-    padding: 12px 6px;
+    padding: 11px 6px;
 }
 
 /* ============ NIGHT MODE (night_mode.py) ============
