@@ -2464,7 +2464,30 @@ except Exception:
     _screen_wake_time = None
 if _screen_wake_time is not None:
     _screen_wake_naive = _screen_wake_time.replace(tzinfo=None)
-    if _screen_wake_naive.date() == now.date():
+    # Real live bug (session report: night mode active at 11:21am):
+    # screen_wake_time() is recomputed fresh every rerun from whatever
+    # commute_reminder considers the NEXT commitment right now, not a
+    # value fixed once at the start of the day. Once today's actual
+    # first commitment (softball, that morning) had already passed, the
+    # "next commitment" became a later one (an evening shift), and this
+    # unconditionally replaced _night_mode_day_start with ITS leave-by
+    # (8pm) — pushing the boundary into the future relative to a `now`
+    # that had already validly passed the sunrise default, which
+    # flips night mode back ON in the middle of the day. Guarded now:
+    # only ever pull this boundary in while we're still before it, i.e.
+    # still legitimately in what would be night-mode hours under the
+    # plain sunrise default — once the day has genuinely started under
+    # that rule, a later commitment surfacing on a later rerun must
+    # never retroactively re-arm night mode. Same "only ever pulls
+    # earlier, never pushes later" shape groq_client._in_pause_window's
+    # own real_wake override already uses (see that function's own
+    # comment) — this file's version was missing that half of the
+    # guard. Trade-off, accepted deliberately: this narrows the
+    # "hold night mode past sunrise for a genuinely late first
+    # commitment" case (per this block's own original comment below) to
+    # only take effect while still pre-dawn, since that theoretical
+    # case was never confirmed live the way this bug just was.
+    if _screen_wake_naive.date() == now.date() and now < _night_mode_day_start:
         _night_mode_day_start = _screen_wake_naive
 _night_mode_day_end = now.replace(hour=21, minute=30, second=0, microsecond=0)
 # Session follow-up: "the evening side isn't adaptive like the morning
