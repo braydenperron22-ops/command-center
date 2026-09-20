@@ -77,6 +77,7 @@ import seasons_client
 import sleep_tracker
 import sports_alerts
 import td_quarter_schedule
+import text_reminders
 import theme
 import toast_queue
 import ufc_client
@@ -4699,6 +4700,17 @@ def _gather_new_alerts(
         _device_alert = kiosk_hardware.device_change_toast()
         if _device_alert:
             alerts.append(_device_alert)
+    except Exception:
+        pass
+
+    # Session request: "I set up a reoccurring alert for send Chloe a
+    # goodnight text and send Chloe a good morning text... just a
+    # reminder [not] the whole leave in thing... remind me 15 minutes
+    # before... and then again when it's time." Two fixed clock-time
+    # reminders, no calendar event or commute math involved — see
+    # text_reminders.py's own docstring.
+    try:
+        alerts.extend(text_reminders.get_new_alerts(now))
     except Exception:
         pass
 
