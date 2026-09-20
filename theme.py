@@ -1832,7 +1832,15 @@ html, body, [class*="css"] {
    dot+label+text shape as the weather-statement bar above, tone-colored
    like everything else in the app (good/bad/neutral) rather than a
    fixed color, since what this says can genuinely be favorable,
-   unfavorable, or a growth/inflation-vs-risk-appetite mismatch. */
+   unfavorable, or a growth/inflation-vs-risk-appetite mismatch.
+   Audit finding: this sits on pages_home.py, the same page as the sky
+   canvas and .morning-briefing, and had the identical light-glass-on-
+   dark-assumption bug 8d8c662 fixed there — a light rgba(255,255,255,x)
+   tint under real light .regime-text (#F5F5F7) only reads correctly
+   assuming a dark app background, which stopped being guaranteed once
+   the sky canvas could paint bright fog/snow/heat-wave behind it.
+   Switched to the same dark rgba(12,12,16,x) family for the same
+   "must stay legible regardless of backdrop" reason. */
 .regime-bar {
     display: flex;
     align-items: center;
@@ -1840,7 +1848,7 @@ html, body, [class*="css"] {
     padding: 0.7rem 1.5rem;
     margin-bottom: 0.9rem;
     border-radius: 16px;
-    background: rgba(255,255,255,0.05);
+    background: rgba(12,12,16,0.6);
     backdrop-filter: blur(24px) saturate(160%);
     -webkit-backdrop-filter: blur(24px) saturate(160%);
     border: 1px solid rgba(255,255,255,0.12);
