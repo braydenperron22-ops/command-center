@@ -148,6 +148,27 @@ def _candidates(now: datetime, weather: dict | None) -> dict[str, dict]:
     # example: Jays and Saints playing simultaneously) and this
     # rotation already cycles through however many keys are eligible.
     out.update(sports_alerts.live_score_headline_candidates(now))
+    # Session request: "during sports times, just have the scores up...
+    # don't have the frost advisory or anything like that, unless it's
+    # genuinely breaking news." While any tracked team's game is live,
+    # the calm/notice-tier sources (a weather statement/watch, a
+    # moderate heat/cold/frost/fog advisory, the bedtime countdown, a
+    # BRDN move, kiosk-hardware chatter) step aside for the score bar
+    # entirely rather than taking their normal turn in the rotation —
+    # genuinely urgent sources (rotation-warning: a real storm warning,
+    # a hardware problem; rotation-critical: a circuit breaker, an
+    # extreme-severity alert) are untouched and still win outright, same
+    # as always. Real "breaking news" was already its own one-shot toast
+    # (see the comment just below), never a candidate in this rotation
+    # at all, so it was never competing with the score bar here to begin
+    # with — nothing further needed for that half of the request.
+    # "leave" is exempted by key, not by tier — it can itself legitimately
+    # be rotation-calm/rotation-notice early in its own window (2+ hours
+    # out), but unlike a weather statement or the bedtime countdown it's
+    # a real obligation (being late for work), not ambient FYI content,
+    # so a live game never hides it.
+    if any(c["css_class"] == "rotation-score" for c in out.values()):
+        out = {k: c for k, c in out.items() if k == "leave" or c["css_class"] not in ("rotation-calm", "rotation-notice")}
     # Session request: "breaking news should get its own toast alert"
     # — no longer a candidate here at all. news.get_new_alerts's own
     # one-shot toast (already wired independently into app.py's toast

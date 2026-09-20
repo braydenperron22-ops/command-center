@@ -162,7 +162,7 @@ def network_is_slow(net: dict | None) -> bool:
     return mbps is not None and mbps < MBPS_LOW_THRESHOLD
 
 
-def _concerns(perf: dict, boot: dict | None, smart: dict | None, net: dict | None) -> list[tuple[str, str]]:
+def _concerns(perf: dict, boot: dict | None, smart: dict | None) -> list[tuple[str, str]]:
     """[(short_reading, advice)] for every metric currently over its
     own threshold, worst-first — empty once the box is genuinely fine.
     Independent per-field checks (not the writer's own single "bad"
@@ -186,7 +186,17 @@ def _concerns(perf: dict, boot: dict | None, smart: dict | None, net: dict | Non
     own comment) — network_is_slow() above replaced it with a real,
     locally-owned threshold instead, same "don't trust an opaque
     external flag, judge the real number" move temp/CPU/RAM already
-    made above."""
+    made above.
+
+    Session follow-up, reversing the network half of the above: "get
+    rid of the Wi-Fi bad thing... just make the number in the corner...
+    red instead of having the full-fledged dashboard at the top." The
+    corner's own network_stats() tile (pages_system_health.py) already
+    turns its Mbps/ping numbers red via this same network_is_slow()
+    check independently of this function — a slow reading no longer
+    also earns the big top-bar takeover, it's just red in the corner
+    now, same as it already was. Temp/CPU/RAM/drive/boot are untouched;
+    this is scoped to network specifically, per the request."""
     out = []
     temp = perf.get("temp_c")
     if temp is not None and temp >= TEMP_HIGH_C:
@@ -197,8 +207,6 @@ def _concerns(perf: dict, boot: dict | None, smart: dict | None, net: dict | Non
     ram = perf.get("ram_pct")
     if ram is not None and ram >= RAM_HIGH_PCT:
         out.append((f"{ram}% RAM", _RAM_ADVICE))
-    if network_is_slow(net):
-        out.append((f"{net.get('mbps')} Mbps network", "check the kiosk's WiFi signal/router"))
     if smart is not None and smart.get("bad"):
         out.append(("drive wear/errors", "back up your data soon, drive may be failing"))
     if boot is not None and boot.get("clean") is False:
@@ -221,7 +229,7 @@ def hardware_headline_candidate(now) -> dict | None:
     perf = load_perf_stats()
     if perf is None:
         return None
-    concerns = _concerns(perf, load_boot_status(), load_smart_status(), load_network_test())
+    concerns = _concerns(perf, load_boot_status(), load_smart_status())
     if not concerns:
         return None
     reading, advice = concerns[0]

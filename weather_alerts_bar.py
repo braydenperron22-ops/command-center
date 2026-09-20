@@ -923,7 +923,18 @@ def _format_clock(remaining_seconds: float) -> str:
 _SEVERITY_TO_ROTATION_CLASS = {
     "extreme": "rotation-critical",
     "warning": "rotation-warning",
-    "warning-moderate": "rotation-warning",
+    # Session request: "during sports times, just have the scores up...
+    # don't have the frost advisory or anything like that, unless it's
+    # genuinely breaking news." A "warning-moderate" hazard (heat/cold/
+    # frost/fog/rainfall/snowfall/air quality — see _MODERATE_HAZARD_
+    # TERMS) is a routine, expected-tier condition, not an emergency —
+    # it used to share rotation-warning's own top color/priority with a
+    # genuine Severe Thunderstorm Warning, which is exactly why a frost
+    # advisory could out-rank and hide the live-score bar. Dropped to
+    # rotation-notice, the same tier a Watch/Statement already gets —
+    # real warning-tier hazards (storms, real cold/heat emergencies that
+    # escalate past "moderate") are untouched, still rotation-warning.
+    "warning-moderate": "rotation-notice",
     "watch": "rotation-notice",
     "statement": "rotation-notice",
 }
