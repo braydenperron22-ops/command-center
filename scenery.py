@@ -310,6 +310,20 @@ _SUN_Y_TOP_PCT = 10.0  # at max elevation, near the top of frame
 _SUN_Y_HORIZON_PCT = 88.0
 
 
+def sun_elevation_degrees(now) -> float:
+    """Real sun elevation in degrees (negative below the horizon) at
+    this app's own configured location — public wrapper around the
+    same astral call _sun_glow_position already makes, for callers
+    (app.py's sky canvas data) that need the raw angle itself rather
+    than a screen position derived from it. Session request: "I want
+    everything to be impacted together" — a continuous real angle, not
+    a categorical day/golden/night flag, is what lets the sky canvas
+    blend dawn/dusk warmth smoothly across a real, physically-sized
+    window instead of a fixed clock-minutes guess."""
+    now_aware = now if now.tzinfo else now.replace(tzinfo=_LOCATION.tzinfo)
+    return elevation(_LOCATION.observer, now_aware)
+
+
 def _sun_glow_position(now) -> tuple[float, float] | None:
     """(x_pct, y_pct) for the sun glow's own `circle at X% Y%` position,
     or None while the sun is genuinely below the horizon (real negative

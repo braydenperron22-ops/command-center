@@ -103,7 +103,7 @@ from config import (
 )
 import streamlit.components.v1 as components
 from icons import icon_for, label_for
-from scenery import FADE_SECONDS, condition_category, phase_for, scene_html, sky_style
+from scenery import FADE_SECONDS, condition_category, phase_for, scene_html, sky_style, sun_elevation_degrees
 import ticker
 from weather_client import daily_forecast, fetch_weather
 
@@ -1964,6 +1964,10 @@ components.html(
         "    return isDay ? 'cloudy-day' : 'cloudy-night';",
         "  }",
         "  function windFactor(){ var dataEl = document.getElementById('kiosk-sky-data'); var w = dataEl ? parseFloat(dataEl.dataset.wind || '10') : 10; return Math.max(0, Math.min(1, w/45)); }",
+        "  function elevationDeg(){ var dataEl = document.getElementById('kiosk-sky-data'); return dataEl ? parseFloat(dataEl.dataset.elevation || '45') : 45; }",
+        "  function cloudCoverFrac(){ var dataEl = document.getElementById('kiosk-sky-data'); var c = dataEl ? parseFloat(dataEl.dataset.cloudCover || '40') : 40; return Math.max(0, Math.min(1, c/100)); }",
+        "  var WARM_TOP=[64,86,148], WARM_BOTTOM=[247,170,110];",
+        "  function warmthFactor(elevDeg){ return Math.max(0, 1 - Math.abs(elevDeg)/18); }",
         "  var current = STATES['clear-day'];",
         "  var display = {top:current.top.slice(), bottom:current.bottom.slice(), clouds:current.clouds, rain:0, snow:0, fog:0, stars:0, storm:0, sunOpacity:1, moonOpacity:0, warm:0, heat:0};",
         "  var transition = {from:null, to:current, t:1};",
@@ -2000,7 +2004,18 @@ components.html(
         "  function drawFog(intensity, dt, tint){ if (intensity<=0.02) return; tint = tint || '255,255,255'; ctx.save(); fogBands.forEach(function(b){ b.x+=b.speed*dt; if (b.x-b.w>W) b.x=-b.w; var g=ctx.createLinearGradient(b.x,0,b.x+b.w,0); g.addColorStop(0,'rgba('+tint+',0)'); g.addColorStop(0.5,'rgba('+tint+','+(0.30*intensity)+')'); g.addColorStop(1,'rgba('+tint+',0)'); ctx.fillStyle=g; ctx.fillRect(b.x,b.y,b.w,b.h); }); ctx.fillStyle='rgba('+tint+','+(0.22*intensity)+')'; ctx.fillRect(0,0,W,H); ctx.restore(); }",
         "  function drawHeatShimmer(intensity, t){ if (intensity<=0.02) return; ctx.save(); ctx.strokeStyle='rgba(255,250,235,'+(0.10*intensity)+')'; ctx.lineWidth=3; for (var band=0;band<4;band++){ var y0=H*0.78+band*16; ctx.beginPath(); for (var x=0;x<=W;x+=20){ var yy=y0+Math.sin(x*0.02+t*3+band)*4; if (x===0) ctx.moveTo(x,yy); else ctx.lineTo(x,yy); } ctx.stroke(); } ctx.restore(); }",
         "  function drawStars(alpha, t){ if (alpha<=0.02) return; ctx.save(); stars.forEach(function(st){ var tw=0.55+0.45*Math.sin(t*st.speed+st.phase); ctx.fillStyle='rgba(255,255,255,'+(alpha*tw)+')'; ctx.beginPath(); ctx.arc(st.x,st.y,st.r,0,Math.PI*2); ctx.fill(); }); ctx.restore(); }",
-        "  function drawSun(alpha, warm){ if (alpha<=0.02) return; var x=W*0.80, y=H*0.20, r=Math.min(W,H)*0.09; ctx.save(); var core=warm?'255,196,140':'255,244,214'; var glow=ctx.createRadialGradient(x,y,0,x,y,r*(warm?4.4:3.4)); glow.addColorStop(0,'rgba('+core+','+(0.6*alpha)+')'); glow.addColorStop(1,'rgba('+core+',0)'); ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(x,y,r*(warm?4.4:3.4),0,Math.PI*2); ctx.fill(); ctx.fillStyle=warm?('rgba(255,214,170,'+alpha+')'):('rgba(255,251,235,'+alpha+')'); ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); ctx.restore(); }",
+        "  function drawSun(alpha, warm){",
+        "    if (alpha<=0.02) return;",
+        "    var x=W*0.80, y=H*0.20, r=Math.min(W,H)*0.09; ctx.save();",
+        "    var core=lerpArr([255,244,214],[255,196,140],warm).map(Math.round).join(',');",
+        "    var glowR=r*(3.4+warm*1.0);",
+        "    var glow=ctx.createRadialGradient(x,y,0,x,y,glowR);",
+        "    glow.addColorStop(0,'rgba('+core+','+(0.6*alpha)+')'); glow.addColorStop(1,'rgba('+core+',0)');",
+        "    ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(x,y,glowR,0,Math.PI*2); ctx.fill();",
+        "    var disk=lerpArr([255,251,235],[255,214,170],warm).map(Math.round).join(',');",
+        "    ctx.fillStyle='rgba('+disk+','+alpha+')'; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();",
+        "    ctx.restore();",
+        "  }",
         "  function drawMoon(alpha, phase){ if (alpha<=0.02) return; var x=W*0.80, y=H*0.16, r=Math.min(W,H)*0.055; ctx.save(); var glow=ctx.createRadialGradient(x,y,0,x,y,r*3.6); glow.addColorStop(0,'rgba(215,222,240,'+(0.30*alpha)+')'); glow.addColorStop(1,'rgba(215,222,240,0)'); ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(x,y,r*3.6,0,Math.PI*2); ctx.fill(); ctx.fillStyle='rgba(70,74,92,'+(0.55*alpha)+')'; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); ctx.save(); ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.clip(); ctx.fillStyle='rgba(238,240,248,'+alpha+')'; var rx=r*Math.cos(phase*2*Math.PI); ctx.beginPath(); if (phase<=0.5){ ctx.arc(x,y,r,-Math.PI/2,Math.PI/2,false); ctx.ellipse(x,y,Math.abs(rx),r,0,Math.PI/2,-Math.PI/2,rx<0); } else { ctx.arc(x,y,r,Math.PI/2,Math.PI*1.5,false); ctx.ellipse(x,y,Math.abs(rx),r,0,-Math.PI/2,Math.PI/2,rx>=0); } ctx.closePath(); ctx.fill(); ctx.restore(); ctx.restore(); }",
         "  var boltCooldown = 0;",
         "  function jaggedBolt(x0,y0,y1){ ctx.beginPath(); var x=x0,y=y0; ctx.moveTo(x,y); while (y<y1){ y+=26+Math.random()*30; x+=(Math.random()-0.5)*46; ctx.lineTo(x,y); } }",
@@ -2020,15 +2035,21 @@ components.html(
         "    display.clouds = lerp(from.clouds, transition.to.clouds, te); display.rain = lerp(from.rain, transition.to.rain, te);",
         "    display.snow = lerp(from.snow, transition.to.snow, te); display.fog = lerp(from.fog, transition.to.fog, te);",
         "    display.stars = lerp(from.stars, transition.to.stars, te); display.storm = lerp(from.storm, transition.to.storm, te);",
-        "    display.sunOpacity = lerp(from.sunOpacity, transition.to.sun?1:0, te); display.moonOpacity = lerp(from.moonOpacity, transition.to.moon?1:0, te);",
+        "    display.sunOpacity = lerp(typeof from.sunOpacity==='number'?from.sunOpacity:(from.sun?1:0), transition.to.sun?1:0, te); display.moonOpacity = lerp(typeof from.moonOpacity==='number'?from.moonOpacity:(from.moon?1:0), transition.to.moon?1:0, te);",
         "    display.warm = lerp(from.warm?1:(typeof from.warm==='number'?from.warm:0), transition.to.warm?1:0, te);",
         "    display.heat = lerp(from.heat||0, transition.to.heat||0, te);",
         "    var wind = windFactor();",
+        "    var cloudFrac = cloudCoverFrac();",
+        "    var warmth = warmthFactor(elevationDeg()) * (1 - cloudFrac*0.5) * (1 - display.storm*0.6);",
+        "    display.top = lerpArr(display.top, WARM_TOP, warmth*0.8);",
+        "    display.bottom = lerpArr(display.bottom, WARM_BOTTOM, warmth*0.8);",
+        "    display.clouds = lerp(display.clouds, cloudFrac, 0.6);",
+        "    display.warm = Math.max(display.warm, warmth);",
         "    ctx.clearRect(0,0,W,H);",
         "    var grad = ctx.createLinearGradient(0,0,0,H);",
         "    grad.addColorStop(0, 'rgb('+display.top.map(Math.round).join(',')+')'); grad.addColorStop(1, 'rgb('+display.bottom.map(Math.round).join(',')+')');",
         "    ctx.fillStyle = grad; ctx.fillRect(0,0,W,H);",
-        "    drawStars(display.stars, tSec); drawSun(display.sunOpacity, display.warm>0.5); drawMoon(display.moonOpacity, MOON_PHASE);",
+        "    drawStars(display.stars, tSec); drawSun(display.sunOpacity, display.warm); drawMoon(display.moonOpacity, MOON_PHASE);",
         "    drawClouds(display.clouds, display.stars>0.3, wind, reduced?0:dt);",
         "    if (!reduced){ drawRain(display.rain, dt, wind); drawSnow(display.snow, dt, tSec); drawFog(display.fog, dt, current.fogTint); drawHeatShimmer(display.heat, tSec); maybeStrikeLightning(dt, display.storm); }",
         "    else { if (display.rain>0.3) drawRain(display.rain, 0, wind); if (display.snow>0.3) drawSnow(display.snow, 0, tSec); if (display.fog>0.3) drawFog(display.fog, 0, current.fogTint); if (display.heat>0.3) drawHeatShimmer(display.heat, tSec); }",
@@ -2404,6 +2425,30 @@ try:
     _sky_mins_since_sunrise = (now - weather["sunrise"]).total_seconds() / 60 if weather else 999
     _sky_mins_to_sunset = (weather["sunset"] - now).total_seconds() / 60 if weather else 999
     _sky_golden = bool(weather and (0 <= _sky_mins_since_sunrise <= 45 or 0 <= _sky_mins_to_sunset <= 45))
+    # Session request: "add more sunrise, sunset options... I don't see
+    # any of them when I wake up in the morning... I want everything to
+    # be impacted together." _sky_golden above (a 45-clock-minute
+    # window) stays as the input to the discrete golden-hour STATE
+    # (still used when nothing else overrides it), but real elevation
+    # is what now drives a CONTINUOUS dawn/dusk warmth overlay client-
+    # side, on top of whatever base state is active — a much wider,
+    # physically real window (dawn/dusk light is visibly warm well
+    # beyond 45 minutes either side of the clock-time sunrise/sunset,
+    # and that window's real size varies by season) rather than a fixed
+    # guess, and it blends smoothly instead of snapping in/out.
+    try:
+        _sky_elevation = sun_elevation_degrees(now)
+    except Exception:
+        _sky_elevation = 45.0 if _sky_is_day else -45.0
+    # Session request: "look at cloud cover percentage." Real 0-100%
+    # reading (weather_client.py, added this session) drives a
+    # continuous cloud-density overlay client-side too, blended with
+    # whatever the base weather-code state already implies — the same
+    # "everything impacted together" combination as the elevation
+    # overlay above, not a separate standalone effect.
+    _sky_cloud_cover = (weather.get("cloud_cover_pct") if weather else None)
+    if _sky_cloud_cover is None:
+        _sky_cloud_cover = 40  # a plain mid-range guess only when the real reading is genuinely unavailable
     # Session request: "do the Environment Canada wiring" — a real
     # active warning-tier hazard (see weather_alerts_bar.current_
     # hazard_for_sky's own docstring) overrides the plain weather_code
@@ -2419,6 +2464,8 @@ try:
         f'data-code="{weather["weather_code"] if weather else 2}" '
         f'data-day="{"1" if _sky_is_day else "0"}" '
         f'data-golden="{"1" if _sky_golden else "0"}" '
+        f'data-elevation="{_sky_elevation:.2f}" '
+        f'data-cloud-cover="{_sky_cloud_cover}" '
         f'data-wind="{(weather.get("wind_speed_kmh") or 10) if weather else 10}" '
         f'data-hazard="{html.escape(_sky_hazard)}"></div>',
         unsafe_allow_html=True,

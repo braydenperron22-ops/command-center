@@ -150,7 +150,13 @@ def _fetch_combined_raw() -> dict:
         # Open-Meteo bills them as a pair and sustained speed is useful
         # context next to the gust figure even though gust is the one
         # the badge itself keys off.
-        "current": "temperature_2m,apparent_temperature,weather_code,uv_index,wind_speed_10m,wind_gusts_10m",
+        # cloud_cover added for the sky canvas (session request: "look
+        # at cloud cover percentage... I want everything to be impacted
+        # together") — a real 0-100% reading, continuous, distinct from
+        # weather_code's own coarse category buckets (a "clear" code
+        # and a "mostly clear" code can both report meaningfully
+        # different real cloud_cover values).
+        "current": "temperature_2m,apparent_temperature,weather_code,uv_index,wind_speed_10m,wind_gusts_10m,cloud_cover",
         "hourly": "temperature_2m,weather_code,precipitation_probability,wind_speed_10m,wind_direction_10m",
         "daily": (
             "sunrise,sunset,weather_code,temperature_2m_max,temperature_2m_min,"
@@ -196,6 +202,7 @@ def _fetch_weather_raw() -> dict | None:
         "uv_index": current.get("uv_index"),
         "wind_speed_kmh": current.get("wind_speed_10m"),
         "wind_gust_kmh": current.get("wind_gusts_10m"),
+        "cloud_cover_pct": current.get("cloud_cover"),
         "sunrise": sunrise,
         "sunset": sunset,
         "first_light": first_light,
