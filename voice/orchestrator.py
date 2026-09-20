@@ -18,6 +18,7 @@ FOLLOWUP_WINDOW_SECONDS, without needing the wake word again)."""
 
 import argparse
 import logging
+import logging.handlers
 import os
 import sys
 import time
@@ -61,7 +62,15 @@ _LOG_DIR = os.path.expanduser("~/.local/state/jarvis-voice")
 os.makedirs(_LOG_DIR, exist_ok=True)
 _logger = logging.getLogger("jarvis")
 _logger.setLevel(logging.INFO)
-_handler = logging.FileHandler(os.path.join(_LOG_DIR, "conversations.log"))
+# "Per-day-rotated" per the comment above, but a plain FileHandler never
+# actually rotated -- an always-on kiosk would grow this file forever.
+# TimedRotatingFileHandler is what "per-day-rotated" describes: a fresh
+# file at local midnight, 14 days kept (matches this app's own 14-day
+# retention convention elsewhere, e.g. the learned-notes history) before
+# the oldest day is deleted.
+_handler = logging.handlers.TimedRotatingFileHandler(
+    os.path.join(_LOG_DIR, "conversations.log"), when="midnight", backupCount=14,
+)
 _handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 _logger.addHandler(_handler)
 
