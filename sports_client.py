@@ -1230,7 +1230,16 @@ def fetch_nfl_competition(game_id) -> dict | None:
     strips (_mlb_situation_html/_nhl_situation_html) never had this bug
     — they were already built on fetch_mlb_live_detail/fetch_nhl_live_
     detail, this module's own 5s-cached paths; NFL was the one sport
-    still on the slow one."""
+    still on the slow one.
+
+    Session follow-up: "NFL should be slow as well" — this was the one
+    sport's live situation NOT run through delayed() (MLB has its own
+    _mlb_linescore_delayed, NHL wraps _fetch_nhl_boxscore_raw directly),
+    so down/distance/red-zone/possession all led the broadcast while
+    MLB/NHL trailed it. Delayed here, at the source, so every consumer
+    (this board's own situation strip, the compact top-bar status, and
+    the possession indicator) inherits the same live-data delay setting
+    in one place rather than needing three separate fixes."""
     try:
         events = _fetch_nfl_scoreboard_raw()
     except Exception:
@@ -1239,11 +1248,12 @@ def fetch_nfl_competition(game_id) -> dict | None:
         if e.get("id") != str(game_id):
             continue
         comp = (e.get("competitions") or [{}])[0]
-        return {
+        data = {
             "status": comp.get("status") or {},
             "situation": comp.get("situation") or {},
             "competitors": comp.get("competitors") or [],
         }
+        return delayed(f"nfl_competition_{game_id}", data)
     return None
 
 
