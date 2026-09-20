@@ -3127,14 +3127,12 @@ html, body, [class*="css"] {
 .headline-rotation.rotation-score {
     background: linear-gradient(90deg, #050505 0%, #1c1c1c 50%, #050505 100%);
     box-shadow: 0 4px 24px rgba(0,0,0,0.55);
-    /* Design pass: "look at how it's formatted... see what we can
-       improve." This bar has picked up real content since it was
-       first sized (win probability, base occupancy, NFL situation
-       detail all landed the same day) — the original 0.6rem/1.6rem
-       padding was tuned for the plainer score-only version and reads
-       cramped now that there's genuinely more to show. Bumped to
-       match the breathing room every other tier here already gets. */
-    padding: 0.75rem 1.9rem;
+    /* Design pass: "make it bigger and more scannable from a distance"
+       — the mini-jumbo content (logos/score/status below) just grew
+       noticeably; the bar's own padding grows with it so the enlarged
+       content still gets real breathing room instead of pressing
+       against the bar's edges. */
+    padding: 1.05rem 2.1rem;
 }
 /* The mini-jumbotron itself — away team left, home team right, real
    logos, real abbreviations, the live score, and a status line
@@ -3150,40 +3148,41 @@ html, body, [class*="css"] {
 .mini-jumbo {
     display: inline-flex;
     align-items: center;
-    gap: 0.55rem;
+    gap: 0.75rem;
     font-weight: 800;
     vertical-align: middle;
 }
 .mini-jumbo-logo {
-    /* Design pass: sized up slightly (was 2.1rem) — team identity is
-       the first thing a glance across the room should register, and
-       at the old size the logos read as an afterthought next to the
-       score. */
-    height: 2.3rem;
-    width: 2.3rem;
+    /* Design pass: "make it bigger and more scannable from a distance"
+       — the previous 2.3rem bump still read smaller than the plain-
+       text headlines sharing this same bar (2rem, 800 weight), which
+       is backwards for a kiosk read across a room. Team identity is
+       the first thing a glance should register. */
+    height: 3.1rem;
+    width: 3.1rem;
     object-fit: contain;
     filter: drop-shadow(0 1px 4px rgba(0,0,0,0.6));
 }
 .mini-jumbo-abbr {
-    font-size: 1.15rem;
+    font-size: 1.6rem;
     letter-spacing: 0.04em;
     color: rgb(var(--mini-jumbo-accent, 160,170,200));
 }
 .mini-jumbo-score {
-    font-size: 1.9rem;
+    font-size: 2.9rem;
     font-variant-numeric: tabular-nums;
     color: #FFFFFF;
 }
 .mini-jumbo-dash {
-    font-size: 1.3rem;
+    font-size: 2rem;
     color: rgba(255,255,255,0.4);
 }
 .mini-jumbo-status {
-    font-size: 1.05rem;
+    font-size: 1.4rem;
     font-weight: 700;
     letter-spacing: 0.03em;
-    margin-left: 0.4rem;
-    padding-left: 0.6rem;
+    margin-left: 0.5rem;
+    padding-left: 0.75rem;
     border-left: 2px solid rgba(255,255,255,0.22);
     color: rgb(var(--mini-jumbo-accent, 160,170,200));
 }
@@ -3196,43 +3195,42 @@ html, body, [class*="css"] {
    needed no new CSS — it's folded directly into the existing
    .mini-jumbo-status text above. */
 .mini-jumbo-wp {
-    font-size: 0.95rem;
+    font-size: 1.15rem;
     font-weight: 800;
     letter-spacing: 0.02em;
-    margin-left: 0.5rem;
-    padding: 0.1rem 0.45rem;
-    border-radius: 6px;
+    margin-left: 0.6rem;
+    padding: 0.15rem 0.6rem;
+    border-radius: 8px;
     background: rgba(var(--mini-jumbo-accent, 160,170,200), 0.18);
     color: rgb(var(--mini-jumbo-accent, 160,170,200));
 }
 .mini-jumbo-bases {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    margin-left: 0.5rem;
+    gap: 6px;
+    margin-left: 0.6rem;
     /* Same visual language as pages_jumbotron.py's own base diamond —
        rotated squares, not circles — just 3 in a row instead of a
        real diamond layout; this bar has room for a glance, not a
        diagram. */
     transform: rotate(45deg);
 }
-/* Design pass: "see what we can improve." These were the weakest
-   element on the bar — 7px, no glow at rest, genuinely unreadable at
-   real kiosk viewing distance even when lit, let alone the unlit
-   dots. Sized up and given a faint resting ring even when empty, so
-   the whole 3-dot cluster reads as "the bases" at a glance instead of
-   disappearing into the gradient until (and unless) one happens to be
-   lit. */
+/* Design pass: "make it bigger and more scannable from a distance" —
+   these had already been bumped once (from 7px) but still lagged
+   behind everything else on the bar after this same pass enlarged the
+   score/logos/status around them. Kept the resting ring even when
+   empty so the 3-dot cluster still reads as "the bases" at a glance
+   before (and unless) one lights up. */
 .mini-jumbo-base {
-    width: 9px;
-    height: 9px;
+    width: 13px;
+    height: 13px;
     background: rgba(255,255,255,0.12);
     border: 1px solid rgba(255,255,255,0.4);
 }
 .mini-jumbo-base.on {
     background: rgb(var(--mini-jumbo-accent, 160,170,200));
     border-color: rgb(var(--mini-jumbo-accent, 160,170,200));
-    box-shadow: 0 0 7px 2px rgba(var(--mini-jumbo-accent, 160,170,200), 0.75);
+    box-shadow: 0 0 9px 3px rgba(var(--mini-jumbo-accent, 160,170,200), 0.75);
 }
 .headline-rotation.rotation-warning {
     background: linear-gradient(90deg, #4a1512 0%, #a83a30 50%, #4a1512 100%);
