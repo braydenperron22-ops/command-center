@@ -60,6 +60,31 @@ WINDOW_END_HOUR = 10
 # late, so this adds real margin rather than reusing that raw value.
 TRIGGER_BUFFER_MINUTES = 30
 
+# Session report: "make it so the spoken brief is aware of time, if its
+# stupidly early dont give me the entire shpeel just the necessary
+# stuff." A shift that starts at 6am still means a real wake-and-speak
+# moment around 5:1X am (screen_wake_time + TRIGGER_BUFFER_MINUTES,
+# above) — the full multi-fact rundown is the wrong call at that hour
+# even though every individual fact in it is still true. Below this
+# hour, only genuinely necessary-to-get-out-the-door facts are eligible
+# for the brief at all — an actual filter, not just "keep it short," so
+# the AI can't decide a birthday or a market note is worth mentioning
+# instead of being trusted to leave it out on its own.
+EARLY_HOUR_CUTOFF = 6
+
+# The categories that matter for getting out the door safely and on
+# time: an active alert, real driving conditions, the commute itself,
+# and the day's actual schedule. Deliberately excludes routine context
+# (general weather chat, air quality, markets, birthdays, tonight's
+# game, etc.) that's true every single morning regardless of the hour
+# and isn't worth a stupidly-early brief's limited attention. Names
+# match morning_briefing.gather_facts' own clause-name column exactly.
+_ESSENTIAL_FACT_NAMES = {"alert", "precip", "nowcast", "road_ice", "commute", "agenda"}
+
+
+def is_stupidly_early(now: datetime) -> bool:
+    return now.hour < EARLY_HOUR_CUTOFF
+
 
 def trigger_time(now: datetime) -> datetime | None:
     """The real moment to fire the spoken brief today — screen_wake_time
@@ -96,8 +121,35 @@ def mark_delivered(today: date) -> None:
     persisted_state.save(_LAST_DELIVERED_KEY, today.isoformat())
 
 
-def _prompt(facts: list[str]) -> str:
+def _prompt(facts: list[str], terse: bool = False) -> str:
     facts_block = "\n".join(f"- {f}" for f in facts)
+    length_instruction = (
+        # terse=True: facts is already pre-filtered to just the
+        # essential categories (see _ESSENTIAL_FACT_NAMES) — this only
+        # needs to ask for BREVITY, not also re-ask it to skip
+        # anything, since the non-essential facts were never given to
+        # it to skip in the first place.
+        "It's stupidly early right now — he needs to get out the door, not sit through a "
+        "rundown. One or two short sentences, the bare essentials only: an active alert if "
+        "there is one, then the commute and/or his schedule, whichever actually matters. No "
+        "pleasantries beyond the greeting itself, no editorializing, nothing beyond what's "
+        "strictly useful to know before he leaves."
+        if terse else
+        "Write it as 3 to 5 short, complete sentences — real full stops for natural spoken "
+        "pauses between thoughts, not one long comma-spliced run-on stapled together. This is "
+        "the first thing he hears walking into the room — keep it brief enough to actually "
+        "listen to, not a recitation of every fact below.\n\n"
+        "Pick whichever 3 or 4 facts genuinely matter most for his day. Something genuinely "
+        "urgent — an active weather/road alert, a real commute delay — earns the opening line. "
+        "On an ordinary day, though, don't default to opening on the commute and closing on "
+        "the schedule (or vice versa): those are two facts among several, not bookends with "
+        "everything else sandwiched in between. Once you've covered whatever work-related "
+        "facts genuinely matter, move on and let something else — weather, a birthday, "
+        "tonight's game, whatever's actually there — round the brief out; don't circle back "
+        "to another commute/schedule mention as the closing line just because the day happens "
+        "to involve work. It's fine, and better, to leave less important facts out entirely "
+        "rather than mention everything."
+    )
     return (
         f"You are {USER_FIRST_NAME}'s personal assistant, greeting him out loud the moment he "
         f"walks into the room this morning. Address him as \"sir.\" Speak in the first person, "
@@ -106,21 +158,8 @@ def _prompt(facts: list[str]) -> str:
         f"impersonal list. Calm, formal, genuinely dutiful — think a butler or an executive "
         f"assistant who takes real pride in being thorough, not a hype man and not sarcastic. "
         f"This will be spoken aloud by a text-to-speech voice, not displayed as text: real "
-        f"digits not spelled-out numbers, no headers, no bullet points, no markdown. Write it "
-        f"as 3 to 5 short, complete sentences — real full stops for natural spoken pauses "
-        f"between thoughts, not one long comma-spliced run-on stapled together. This is the "
-        f"first thing he hears walking into the room — keep it brief enough to actually listen "
-        f"to, not a recitation of every fact below.\n\n"
-        f"Pick whichever 3 or 4 facts genuinely matter most for his day. Something genuinely "
-        f"urgent — an active weather/road alert, a real commute delay — earns the opening line. "
-        f"On an ordinary day, though, don't default to opening on the commute and closing on "
-        f"the schedule (or vice versa): those are two facts among several, not bookends with "
-        f"everything else sandwiched in between. Once you've covered whatever work-related "
-        f"facts genuinely matter, move on and let something else — weather, a birthday, "
-        f"tonight's game, whatever's actually there — round the brief out; don't circle back "
-        f"to another commute/schedule mention as the closing line just because the day happens "
-        f"to involve work. It's fine, and better, to leave less important facts out entirely "
-        f"rather than mention everything.\n\n"
+        f"digits not spelled-out numbers, no headers, no bullet points, no markdown.\n\n"
+        f"{length_instruction}\n\n"
         f"Open with a greeting (\"Good morning, sir.\") and never invent anything beyond what's "
         f"given.\n\n"
         f"What you've reviewed this morning:\n{facts_block}\n\n"
@@ -135,11 +174,17 @@ def generate(now: datetime, weather: dict | None, air_quality: dict | None) -> s
     render() treats as "show nothing") or the AI call itself fails.
     Cached for the whole morning via gemini_client.generate_periodic —
     a caller can call this every few seconds with no real cost; only
-    the first call each refresh window is a real request."""
-    facts = morning_briefing.gather_facts(now, weather, air_quality)
+    the first call each refresh window is a real request.
+
+    Below EARLY_HOUR_CUTOFF, `facts` is pre-filtered to just
+    _ESSENTIAL_FACT_NAMES and the prompt switches to its terse mode
+    (see _prompt's own comment) — a stupidly-early morning gets the
+    short, necessary-only version, not the full rundown."""
+    terse = is_stupidly_early(now)
+    facts = morning_briefing.gather_facts(now, weather, air_quality, only=_ESSENTIAL_FACT_NAMES if terse else None)
     if not facts:
         return None
-    prompt = _prompt(facts)
+    prompt = _prompt(facts, terse=terse)
     # The real "only once per morning" gate is already_delivered_today/
     # mark_delivered above, which whatever drives the camera is expected
     # to check before calling this at all and record right after
@@ -148,6 +193,14 @@ def generate(now: datetime, weather: dict | None, air_quality: dict | None) -> s
     # succession (a retry, a bounce on the motion trigger) reusing the
     # same text instead of spending a second real Gemini call on facts
     # that haven't changed in the last few minutes.
+    #
+    # Separate cache keys for terse vs. full: generate() can genuinely
+    # be called more than once in one morning (a bad tick that returns
+    # None doesn't mark delivered, so the next minute's tick tries
+    # again) — if that retry happens to straddle EARLY_HOUR_CUTOFF, a
+    # shared key would risk handing back a stale terse answer once it's
+    # no longer stupidly early, or vice versa.
+    feature_key = "spoken_morning_brief_terse" if terse else "spoken_morning_brief"
     return gemini_client.generate_periodic(
-        "spoken_morning_brief", refresh_seconds=4 * 3600, prompt=prompt, temperature=0.6, max_output_tokens=250
+        feature_key, refresh_seconds=4 * 3600, prompt=prompt, temperature=0.6, max_output_tokens=90 if terse else 250
     )

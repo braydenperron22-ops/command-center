@@ -1506,7 +1506,9 @@ def parse_headline_body(raw: str) -> tuple[str, str] | None:
     return headline, body
 
 
-def gather_facts(now: datetime, weather: dict | None, air_quality: dict | None) -> list[str]:
+def gather_facts(
+    now: datetime, weather: dict | None, air_quality: dict | None, only: set[str] | None = None
+) -> list[str]:
     """Every real fact today's *_clause functions have to offer, highest
     priority first — the same picked-facts step _generate_brief_now
     below runs, pulled out on its own so a second, differently-toned
@@ -1518,7 +1520,14 @@ def gather_facts(now: datetime, weather: dict | None, air_quality: dict | None) 
     _record_history/_update_learned_notes below — those are this
     file's own on-screen brief's bookkeeping, and stay owned by
     _generate_brief_now alone so a second brief reading these same
-    facts doesn't double-record them."""
+    facts doesn't double-record them.
+
+    `only`, if given, restricts the result to just these clause names
+    (the name column of the loop below) — the clause function isn't
+    even called for a name outside `only`, not just filtered out after
+    the fact, so an excluded clause's own network/DB calls never run
+    either. Used by spoken_morning_brief.generate() to cut a stupidly-
+    early brief down to only the necessary-to-get-out-the-door facts."""
     clauses = []
     for name, fn, args in (
         ("alert", _alert_clause, (now,)),
@@ -1545,6 +1554,8 @@ def gather_facts(now: datetime, weather: dict | None, air_quality: dict | None) 
         ("holiday", holidays_client.holiday_clause, (now,)),
         ("season", seasons_client.season_clause, (now,)),
     ):
+        if only is not None and name not in only:
+            continue
         try:
             result = fn(*args)
         except Exception:
