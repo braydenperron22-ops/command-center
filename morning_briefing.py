@@ -1311,9 +1311,27 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
         if history_block
         else ""
     )
+    # Audit finding, session report: "its become really profound but i
+    # dont see the AI accessing it or making connections to it." Every
+    # other background block in this prompt (USER_PROFILE just below,
+    # history_section right after this one) explicitly says "actively
+    # look here for a connection" — this block never did, just handed
+    # the note over with a label and left using it entirely to the
+    # model's own initiative. Same lesson _update_learned_notes' own
+    # docstring already re-learns elsewhere in this file: a vague
+    # instruction doesn't reliably produce the specific behavior
+    # wanted, being handed something isn't the same as being told to
+    # use it.
     notes_section = (
-        f"Long-term patterns you've built up about him across many past mornings (your own "
-        f"evolving understanding, distinct from the day-by-day record above): {_learned_notes}\n\n"
+        f"Long-term patterns you've built up about him across many past mornings, organized by "
+        f"category below (your own evolving understanding, distinct from the day-by-day record "
+        f"after this) — actively check it for a real, specific connection to today's facts (a "
+        f"routine it confirms or breaks, a person or interest that comes up again, a schedule "
+        f"pattern that lines up with today) and name that connection when there's a genuine one. "
+        f"This is the most valuable thing you know about him that isn't in today's facts alone — "
+        f"leaving it unused most mornings defeats the entire point of keeping it. Still never "
+        f"force a connection that isn't actually there, same rule as everywhere else here: "
+        f"{_learned_notes}\n\n"
         if _learned_notes
         else ""
     )
@@ -2340,8 +2358,36 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
         "emerging. Not every day changes anything, and it's fine to return it unchanged. If there "
         "truly isn't enough real history yet for even a tentative pattern (only a handful of days "
         "recorded so far), keep the note short rather than inventing one — but don't default to "
-        "silence just because a pattern isn't 100% certain when it's genuinely emerging. Plain prose, "
-        "no headers or bullet points."
+        "silence just because a pattern isn't 100% certain when it's genuinely emerging.\n\n"
+        # Session report: "its become really profound but... optimize it
+        # so its easier to understand." Free-form prose had no fixed
+        # place for any given kind of fact to live, so as the note grew
+        # genuinely rich it also got harder to scan — for a human ever
+        # reading it directly, and, more importantly, for a future day's
+        # own rewrite to find what it already said about one specific
+        # thing instead of re-deriving it from a wall of paragraphs.
+        # Fixed section headers give every fact a stable home across
+        # days (this is still the same one evolving note, just always
+        # organized the same way) without changing anything about the
+        # actual judgment above — same cross-referencing, same real-vs-
+        # invented rule, same emerging/established distinction, now
+        # just filed under a heading instead of woven into a paragraph.
+        "Format the note using EXACTLY these section headers, in this order, each followed by short "
+        "bullet points (one real, specific fact or pattern per line, starting with \"- \"). Omit a "
+        "section entirely if there's genuinely nothing for it yet — an empty placeholder header is "
+        "worse than no header at all. No content outside these sections:\n\n"
+        "IDENTITY & ROUTINES — job/role, usual working days, commute basics, regular gym split, "
+        "usual time of day he trains. Stable facts, rarely rewritten once established.\n"
+        "PEOPLE — real people who come up more than once and their relationship to him.\n"
+        "INTERESTS — hobbies, teams, recurring things he cares about.\n"
+        "SCHEDULE PATTERNS — weekday-shaped patterns in start times, commute, or gym split (e.g. "
+        "\"early starts cluster on Tuesdays (established)\", \"last two Fridays have been late starts "
+        "(emerging)\") — tag each one (established) or (emerging).\n"
+        "FINANCIAL PATTERNS — multi-day/week spending or account-usage rhythms, net-worth trend "
+        "direction, each tagged (established) or (emerging). Never a single dollar figure treated as "
+        "news on its own.\n"
+        "ENVIRONMENT PATTERNS — weather/market/gas multi-day trend directions currently worth "
+        "tracking, each tagged (established) or (emerging)."
     )
     try:
         # Session request: "just make it unlimited" — raised from 600
