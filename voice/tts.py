@@ -9,7 +9,9 @@ out of this box's own local speaker via sounddevice, since the voice
 assistant IS the thing sitting next to the speaker."""
 
 import io
+import re
 import sys
+import time
 import wave
 
 import numpy as np
@@ -97,3 +99,47 @@ def speak(text: str, length_scale: float | None = None) -> bool:
         return True
     except Exception:
         return False
+
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _split_sentences(text: str) -> list[str]:
+    return [s.strip() for s in _SENTENCE_SPLIT_RE.split(text.strip()) if s.strip()]
+
+
+# Session report: "make it so the spoken morning brief takes natural
+# pauses and doesn't just give me a work sandwich first thing in the
+# morning." Piper synthesizes whatever text it's given as ONE
+# continuous utterance — there's no way to ask it for inter-sentence
+# timing, so a multi-fact paragraph came out as one breathless run-on
+# regardless of how many real periods the text had. Splitting on real
+# sentence boundaries and inserting a genuine time.sleep() between each
+# speak() call is the only way to actually guarantee the pacing, rather
+# than hoping punctuation alone shapes Piper's prosody.
+#
+# A NEW function, not a change to speak() itself — this is deliberately
+# scoped to the morning brief's own one-shot delivery. voice/
+# orchestrator.py's live conversational replies still call speak()
+# directly: a quick back-and-forth answer shouldn't get artificial
+# pauses stapled onto it just because this one feature wanted them.
+MORNING_BRIEF_PAUSE_SECONDS = 0.45
+
+
+def speak_with_pauses(text: str, pause_seconds: float = MORNING_BRIEF_PAUSE_SECONDS, length_scale: float | None = None) -> bool:
+    """Same contract as speak() (blocks until done, returns False on
+    total failure) but synthesizes and plays one sentence at a time,
+    with `pause_seconds` of real silence between each. Only pauses after
+    a sentence that actually played out loud — on a box with no audio
+    device, speak() degrades to printing the text and returns False, and
+    there's nothing to pace a silent print against."""
+    sentences = _split_sentences(text)
+    if not sentences:
+        return False
+    any_ok = False
+    for i, sentence in enumerate(sentences):
+        played = speak(sentence, length_scale=length_scale)
+        any_ok = any_ok or played
+        if played and i < len(sentences) - 1:
+            time.sleep(pause_seconds)
+    return any_ok

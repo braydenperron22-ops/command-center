@@ -11,7 +11,8 @@ the time once at process start and sleeping until then.
 Run as its own systemd --user service (see systemd/spoken-morning-
 brief.service) — genuinely lightweight (no Ollama, no wake-word model,
 no microphone; just a periodic calendar/weather check and, once a day,
-one real Gemini call plus one Piper synthesis), unlike voice/
+one real Gemini call plus a handful of Piper synthesis calls, one per
+sentence — see voice/tts.speak_with_pauses), unlike voice/
 orchestrator.py's full pipeline. Safe to auto-start on boot."""
 
 import time
@@ -50,7 +51,12 @@ def _tick() -> None:
     # identical reason. A speak() that then fails outright just costs one
     # missed morning -- quieter than a jarring repeat.
     spoken_morning_brief.mark_delivered(today)
-    tts.speak(text)
+    # speak_with_pauses, not speak: session report: "make it so the
+    # spoken morning brief takes natural pauses" -- Piper has no
+    # inter-sentence timing control of its own, so this synthesizes and
+    # plays one sentence at a time with a real pause between each (see
+    # voice/tts.py's own docstring on why).
+    tts.speak_with_pauses(text)
 
 
 def main() -> None:
