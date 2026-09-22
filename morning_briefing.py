@@ -306,9 +306,16 @@ def _weather_record_clause(now: datetime, weather: dict) -> tuple[int, str] | No
         or (record["kind"] == "low" and record["value"] <= record["record"])
     )
     label = "a genuine record" if exceeded else "close to the record"
+    # Session report: "fix the record low/highs that say (since 1940)
+    # on them" — the old phrasing ("...for this date since 1940
+    # (previous: 31° in 2001)") reads as if the record dates to 1940
+    # itself, with 2001 doing something else; 1940 is only how far back
+    # the search goes, the actual record year belongs right next to its
+    # value instead. See app.py's own badge for the identical fix.
     return 4, (
-        f"today's {record['kind']} is {label} for this date since {weather_records_client.ARCHIVE_START_YEAR} "
-        f"(previous: {record['record']:.0f}° in {record['year']})"
+        f"today's {record['kind']} is {label} for this date "
+        f"(previous: {record['record']:.0f}° in {record['year']}, records checked back to "
+        f"{weather_records_client.ARCHIVE_START_YEAR})"
     )
 
 
