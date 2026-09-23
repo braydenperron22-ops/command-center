@@ -44,6 +44,8 @@ from typing import Literal
 
 from aiowebostv import WebOsClient
 
+import persisted_state
+
 TV_HOST = "192.168.0.152"
 TV_MAC = "d8:e3:5e:bb:2c:7a"
 # webOS's own app ids for each labeled HDMI port — confirmed live via
@@ -66,6 +68,14 @@ WOL_BOOT_WAIT_SECONDS = 10
 # concrete number rather than leaving it a fuzzy range — easy to
 # change here if 8 turns out too loud/quiet in practice.
 VOLUME_FLOOR = 8
+# Must match ntfy_client.py's own _TV_QUEUE_KEY on the Cloud side —
+# that's the one place every real phone push already funnels through
+# (see that module's own docstring), queuing a copy here for this box
+# to pick up. Session request: "anything that I get a notification for
+# on my phone I should get a notification for on the TV as well [while
+# I'm on my Xbox, not looking at the kiosk]."
+NOTIFICATION_QUEUE_KEY = "tv_notification_queue"
+NOTIFICATION_MAX_CHARS = 200
 
 Result = Literal["settled", "deferred"]
 
@@ -238,5 +248,59 @@ async def enforce_volume_floor(log=lambda msg: None) -> bool:
     except Exception as e:
         log(f"volume floor check failed: {e}")
         return False
+    finally:
+        await client.disconnect()
+
+
+async def send_pending_notifications(last_shown_at: float, log=lambda msg: None) -> float:
+    """Shows any queued phone-style notification (ntfy_client.py's own
+    _queue_for_tv — every real ntfy_client.send() call already queues
+    one here too) that arrived after last_shown_at, as a real on-screen
+    webOS toast (confirmed live: send_message overlays cleanly even
+    while genuinely on the Xbox input, not just on webOS's own home
+    screen).
+
+    Session follow-up: "I only get the on-screen messages though when
+    I'm on my Xbox, not on the kiosk" — an alert on the kiosk's own
+    input is already visible as a toast on the dashboard itself right
+    there, showing it again here would be pure noise. Gated on
+    get_current_app() the same way the other two action functions in
+    this module already are.
+
+    Returns the new watermark to persist. Deliberately UNCHANGED
+    (never advanced) when nothing was actually shown — TV off/
+    unreachable, or genuinely on the kiosk's own input — so a real
+    notification that arrives while away from any screen, or while
+    currently looking at the kiosk, is still waiting once genuinely
+    back on the Xbox, rather than silently marked "seen" and lost.
+    ntfy_client.py's own age cap (10 minutes) is what eventually prunes
+    a truly stale backlog, not this function."""
+    queue = persisted_state.load(NOTIFICATION_QUEUE_KEY, [])
+    pending = [n for n in queue if n.get("at", 0) > last_shown_at]
+    if not pending:
+        return last_shown_at
+
+    client = await _connect()
+    if client is None:
+        return last_shown_at  # TV off/unreachable -- leave watermark alone, try again later
+    try:
+        current = await _current_app_id(client)
+        if current == KIOSK_APP_ID:
+            log("TV is on the kiosk -- notifications already visible there, skipping TV toast")
+            return last_shown_at
+        newest = last_shown_at
+        for note in sorted(pending, key=lambda n: n.get("at", 0)):
+            title = (note.get("title") or "").strip()
+            message = (note.get("message") or "").strip()
+            text = f"{title}: {message}" if title and message else (title or message)
+            try:
+                await client.send_message(text[:NOTIFICATION_MAX_CHARS])
+                log(f"showed TV notification: {text[:60]!r}")
+            except Exception as e:
+                log(f"send_message failed for {text[:60]!r}: {e}")
+            newest = max(newest, note.get("at", 0))
+            if len(pending) > 1:
+                await asyncio.sleep(1)  # let toasts land one at a time rather than clobbering
+        return newest
     finally:
         await client.disconnect()

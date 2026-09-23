@@ -18,7 +18,10 @@ nothing more happens until night_mode_active genuinely flips again.
 
 Also runs the daily volume-floor check (lg_tv_control.
 enforce_volume_floor) independently of all of the above -- see its own
-docstring for why that one isn't gated on which input is active.
+docstring for why that one isn't gated on which input is active -- and
+forwards any queued phone-style notification (lg_tv_control.
+send_pending_notifications) to the TV screen every tick, but only ever
+while genuinely away from the kiosk's own input.
 
 Run as its own systemd --user service (see systemd/lg-tv-sync.service)
 — same lightweight, plain-polling-loop shape as run_spoken_morning_
@@ -52,6 +55,7 @@ _DEFAULT_STATE = {
     "next_check_at": 0.0,  # don't touch the TV again for the night-mode action before this time
     "volume_floor_date": None,  # ISO date the daily volume floor last actually ran
     "next_volume_check_at": 0.0,
+    "notifications_shown_at": 0.0,  # watermark for lg_tv_control.send_pending_notifications
 }
 
 
@@ -106,6 +110,10 @@ def _tick() -> None:
             state["volume_floor_date"] = today
         else:
             state["next_volume_check_at"] = now_ts + VOLUME_CHECK_RETRY_SECONDS
+
+    state["notifications_shown_at"] = asyncio.run(
+        lg_tv_control.send_pending_notifications(state["notifications_shown_at"], _log)
+    )
 
     _save_state(state)
 

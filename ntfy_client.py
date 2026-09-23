@@ -18,13 +18,46 @@ must be a random, unguessable string, not a memorable name like
 this app, never hardcoded here.
 """
 
+import time
+
 import requests
 import streamlit as st
 
+import persisted_state
 from config import DASHBOARD_URL
 
 NTFY_URL = "https://ntfy.sh"
 REQUEST_TIMEOUT_SECONDS = 10
+
+# Session request: "anything that I get a notification for on my phone
+# I should get a notification for on the TV as well [while I'm on my
+# Xbox, not looking at the kiosk] ... not like a breaking news
+# headline because I get those for free anywhere else." Every real
+# phone push already funnels through this one function -- queuing here
+# means any future alert source reaches the TV automatically with zero
+# extra wiring, and breaking news (removed from phone push entirely a
+# while back, see this module's own docstring) is naturally excluded
+# with no special-casing needed, exactly the same as it already is for
+# the phone. Capped by both count and age so a kiosk-box outage
+# doesn't dump a stale backlog onto the TV screen all at once once it's
+# back — read/cleared by lg_tv_control.py on the kiosk box itself, over
+# this same shared Upstash store (this Cloud app has no direct line to
+# that separate process).
+_TV_QUEUE_KEY = "tv_notification_queue"
+_TV_QUEUE_CAP = 20
+_TV_QUEUE_MAX_AGE_SECONDS = 10 * 60
+
+
+def _queue_for_tv(title: str, message: str) -> None:
+    try:
+        now = time.time()
+        queue = persisted_state.load(_TV_QUEUE_KEY, [])
+        queue = [n for n in queue if now - n.get("at", 0) <= _TV_QUEUE_MAX_AGE_SECONDS]
+        queue.append({"title": title, "message": message, "at": now})
+        del queue[:-_TV_QUEUE_CAP]
+        persisted_state.save(_TV_QUEUE_KEY, queue)
+    except Exception:
+        pass
 
 
 def send(title: str, message: str, priority: str = "default", tags: str | None = None, click: str | bool = True) -> bool:
@@ -46,6 +79,7 @@ def send(title: str, message: str, priority: str = "default", tags: str | None =
     can pass a more specific in-app URL instead (a real page/query-
     param deep link, once one exists) or False to omit the header
     entirely for a push that genuinely has nothing worth opening."""
+    _queue_for_tv(title, message)
     topic = st.secrets.get("NTFY_TOPIC")
     if not topic:
         return False
