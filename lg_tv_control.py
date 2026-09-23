@@ -39,6 +39,7 @@ apart."""
 
 import asyncio
 import socket
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -90,6 +91,10 @@ XBOX_LANDING_VOLUME = 5
 # I'm on my Xbox, not looking at the kiosk]."
 NOTIFICATION_QUEUE_KEY = "tv_notification_queue"
 NOTIFICATION_MAX_CHARS = 200
+# Must match ntfy_client.py's own _TV_QUEUE_MAX_AGE_SECONDS -- see
+# send_pending_notifications' own docstring for why staleness is
+# checked here too, not just relied on at write time.
+NOTIFICATION_MAX_AGE_SECONDS = 10 * 60
 
 Result = Literal["settled", "deferred"]
 
@@ -341,7 +346,7 @@ async def enforce_volume_floor(log=lambda msg: None) -> bool:
 
 async def send_pending_notifications(last_shown_at: float, log=lambda msg: None) -> float:
     """Shows any queued phone-style notification (ntfy_client.py's own
-    _queue_for_tv — every real ntfy_client.send() call already queues
+    queue_for_tv — every real ntfy_client.send() call already queues
     one here too) that arrived after last_shown_at, as a real on-screen
     webOS toast (confirmed live: send_message overlays cleanly even
     while genuinely on the Xbox input, not just on webOS's own home
@@ -360,10 +365,23 @@ async def send_pending_notifications(last_shown_at: float, log=lambda msg: None)
     notification that arrives while away from any screen, or while
     currently looking at the kiosk, is still waiting once genuinely
     back on the Xbox, rather than silently marked "seen" and lost.
-    ntfy_client.py's own age cap (10 minutes) is what eventually prunes
-    a truly stale backlog, not this function."""
+
+    Real gap, caught live: ntfy_client.py's own age cap only trims the
+    queue as a side effect of a NEW write -- it's not a background
+    timer. A kiosk-box outage (see run_lg_tv_sync.py's own systemd
+    Restart=on-failure) that catches exactly one notification with
+    nothing after it would leave that single entry sitting un-trimmed
+    indefinitely, so it could still show up looking "fresh" long after
+    it's genuinely stale once the box reconnects. Filtered by the same
+    age here too, at READ time, so staleness is caught either way --
+    whichever of the two checks (this one, or ntfy_client.py's own
+    write-time trim) runs first."""
     queue = persisted_state.load(NOTIFICATION_QUEUE_KEY, [])
-    pending = [n for n in queue if n.get("at", 0) > last_shown_at]
+    now_ts = time.time()
+    pending = [
+        n for n in queue
+        if n.get("at", 0) > last_shown_at and now_ts - n.get("at", 0) <= NOTIFICATION_MAX_AGE_SECONDS
+    ]
     if not pending:
         return last_shown_at
 
