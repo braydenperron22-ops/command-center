@@ -9,12 +9,26 @@ what "settled" vs "deferred" mean below.
 
 Session request: "check the state every 15 minutes until it's back to
 HDMI 1 or the TV is off itself, and then rest there." A fresh
-night_mode_active transition is acted on immediately; if that action
-comes back "deferred" (something else -- the Xbox -- is genuinely in
-use), this schedules its own recheck for RECHECK_INTERVAL_SECONDS
-later rather than waiting for the next real transition or hammering
-the TV every single 60s tick. Once an action comes back "settled",
-nothing more happens until night_mode_active genuinely flips again.
+night_mode_active transition to ENGAGING (bedtime) is acted on
+immediately; if that action comes back "deferred" (the Xbox is
+genuinely in use), this schedules its own recheck for RECHECK_INTERVAL_
+SECONDS later rather than hammering the TV every single 60s tick.
+Once "settled", nothing more happens on that side until the next real
+transition.
+
+Session follow-up: "there's a tangible difference between me playing
+Xbox at 8:30 in the morning being done... and me turning off the TV
+when it's time for bed. If I'm done playing Xbox and turn off the TV
+in the morning, I want you to turn that TV back on and put it to the
+kiosk... as simple as possible." The NOT-bedtime direction is
+therefore handled differently on purpose: wake_and_switch_if_safe runs
+on EVERY tick while night mode is inactive, not just once on a fresh
+transition with a 15-minute recheck -- it's already a safe no-op both
+when the TV's already on the kiosk (nothing to do) and when it's
+genuinely on the Xbox (defers, does nothing), so there's no real cost
+to checking continuously, and it means the TV comes back to the kiosk
+within about a minute of actually being turned off, any time of day,
+not just right after night mode ends.
 
 Also runs the daily volume-floor check (lg_tv_control.
 enforce_volume_floor) independently of all of the above -- see its own
@@ -93,15 +107,21 @@ def _tick() -> None:
             state["settled"] = False
             state["next_check_at"] = 0.0
 
-        if not state["settled"] and now_ts >= state["next_check_at"]:
-            if desired_active:
+        if desired_active:
+            # Bedtime: power off if ours, with the explicit 15-minute
+            # recheck cadence while deferred (Xbox in use at bedtime).
+            if not state["settled"] and now_ts >= state["next_check_at"]:
                 result = asyncio.run(lg_tv_control.power_off_if_ours(_log))
-            else:
-                result = asyncio.run(lg_tv_control.wake_and_switch_if_safe(_log))
-            if result == "settled":
-                state["settled"] = True
-            else:
-                state["next_check_at"] = now_ts + RECHECK_INTERVAL_SECONDS
+                if result == "settled":
+                    state["settled"] = True
+                else:
+                    state["next_check_at"] = now_ts + RECHECK_INTERVAL_SECONDS
+        else:
+            # Not bedtime: the TV should default to showing the kiosk
+            # unless the Xbox is genuinely in use -- checked every tick,
+            # not gated on "settled", per this module's own docstring.
+            asyncio.run(lg_tv_control.wake_and_switch_if_safe(_log))
+            state["settled"] = True
 
     today = date.today().isoformat()
     if state["volume_floor_date"] != today and now_ts >= state["next_volume_check_at"]:
