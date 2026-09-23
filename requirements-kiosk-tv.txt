@@ -1,0 +1,8 @@
+# Dependency for lg_tv_control.py / run_lg_tv_sync.py ONLY —
+# deliberately kept out of requirements.txt (the Streamlit Cloud app's
+# own dependency file). This code never runs on Streamlit Cloud, only
+# as a systemd --user service on the kiosk box itself, talking to the
+# TV over the local network. Install into the same repo's venv on the
+# kiosk box only:
+#   .venv/bin/pip install -r requirements-kiosk-tv.txt
+aiowebostv

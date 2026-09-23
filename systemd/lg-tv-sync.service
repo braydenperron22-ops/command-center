@@ -1,0 +1,20 @@
+[Unit]
+Description=LG webOS TV sync (power/input follows dashboard night mode)
+# A systemd --user unit (installed to ~/.config/systemd/user/, same as
+# kiosk-dashboard.service and spoken-morning-brief.service) — no sudo
+# needed. Lightweight: no browser, just a once-a-minute Upstash check
+# plus, on a real transition, one aiowebostv call (a handful of local
+# network requests, not the internet).
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/command-center
+ExecStart=%h/projects/command-center/.venv/bin/python3 run_lg_tv_sync.py
+Restart=on-failure
+RestartSec=10
+StartLimitIntervalSec=120
+StartLimitBurst=6
+
+[Install]
+WantedBy=default.target
