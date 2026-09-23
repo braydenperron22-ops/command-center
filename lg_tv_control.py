@@ -129,6 +129,30 @@ async def _connect() -> WebOsClient | None:
     return client
 
 
+# Real bug, confirmed live: wake_and_switch_if_safe's "is the TV
+# already on Xbox?" check used a single _connect() attempt -- one
+# transient failure (a slow/flaky websocket accept on a TV that was
+# genuinely ON and on Xbox at the time) got misread as "TV is off,"
+# which fell through to Wake-on-LAN + switching the input away from a
+# real, active Xbox session. A single failed attempt is fine for
+# power_off_if_ours (the safe default there is "do nothing"), but not
+# for this one, where "presumed off" triggers a real, hard-to-undo
+# action. A couple of quick retries costs at most a few seconds and
+# closes that gap.
+_STATE_CHECK_ATTEMPTS = 3
+_STATE_CHECK_RETRY_DELAY_SECONDS = 2.0
+
+
+async def _connect_for_state_check() -> WebOsClient | None:
+    for attempt in range(_STATE_CHECK_ATTEMPTS):
+        client = await _connect()
+        if client is not None:
+            return client
+        if attempt < _STATE_CHECK_ATTEMPTS - 1:
+            await asyncio.sleep(_STATE_CHECK_RETRY_DELAY_SECONDS)
+    return None
+
+
 async def _current_app_id(client: WebOsClient) -> str | None:
     """aiowebostv's own type hint on get_current_app() claims a dict,
     but confirmed live it actually returns the plain app-id string
@@ -183,8 +207,15 @@ async def wake_and_switch_if_safe(log=lambda msg: None) -> Result:
     genuinely on something else (the Xbox); "settled" for every other
     outcome (already on ours, or a real wake + switch attempt, success
     or failure -- a failed WoL/reconnect isn't "someone's using it"
-    either, see power_off_if_ours' own reasoning for the same call)."""
-    client = await _connect()
+    either, see power_off_if_ours' own reasoning for the same call).
+
+    Uses _connect_for_state_check (a few retries) rather than a single
+    _connect() attempt for this specific check -- confirmed live, a
+    single failed attempt here once misread a TV that was genuinely ON
+    and on Xbox as "off," and proceeded to wake + switch it away from a
+    real, active session. See that helper's own comment for the full
+    story."""
+    client = await _connect_for_state_check()
     if client is not None:
         try:
             current = await _current_app_id(client)
