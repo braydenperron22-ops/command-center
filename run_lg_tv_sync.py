@@ -1,46 +1,37 @@
-"""Entry point for LG TV sync — checks once a minute whether the
-dashboard's real night_mode_active state (night_mode.sync_active_state,
-read the same way run_spoken_morning_brief.py already reads its own
-Upstash-backed signals) has flipped, and if so, either powers the TV
-off (night mode engaging) or wakes it back to our input (night mode
-ending) — see lg_tv_control.py's own docstring for the real "don't
-interrupt what's already playing" logic behind both of those, and for
-what "settled" vs "deferred" mean below.
+"""Entry point for LG TV sync — runs two things concurrently:
 
-Session request: "check the state every 15 minutes until it's back to
-HDMI 1 or the TV is off itself, and then rest there." A fresh
-night_mode_active transition to ENGAGING (bedtime) is acted on
-immediately; if that action comes back "deferred" (the Xbox is
-genuinely in use), this schedules its own recheck for RECHECK_INTERVAL_
-SECONDS later rather than hammering the TV every single 60s tick.
-Once "settled", nothing more happens on that side until the next real
-transition.
+1. lg_tv_control.watch_state: a PERSISTENT connection to the TV,
+   reacting instantly the moment the TV itself pushes a state change
+   (see that function's own docstring — this is the real "push
+   subscriptions" half, confirmed live to need no manual subscribe_x()
+   calls, aiowebostv already wires this up inside connect()). Right
+   now that means: a manual volume nudge while on the kiosk snaps back
+   to KIOSK_VOLUME within about a second, not up to a minute later.
 
-Session follow-up: "there's a tangible difference between me playing
-Xbox at 8:30 in the morning being done... and me turning off the TV
-when it's time for bed. If I'm done playing Xbox and turn off the TV
-in the morning, I want you to turn that TV back on and put it to the
-kiosk... as simple as possible." The NOT-bedtime direction is
-therefore handled differently on purpose: wake_and_switch_if_safe runs
-on EVERY tick while night mode is inactive, not just once on a fresh
-transition with a 15-minute recheck -- it's already a safe no-op both
-when the TV's already on the kiosk (nothing to do) and when it's
-genuinely on the Xbox (defers, does nothing), so there's no real cost
-to checking continuously, and it means the TV comes back to the kiosk
-within about a minute of actually being turned off, any time of day,
-not just right after night mode ends.
+2. _poll_loop below: the dashboard's own desired state (night_mode_
+   active, queued notifications) lives in Upstash, a plain REST key/
+   value store with no push/webhook mechanism on the free tier — there
+   is no way to make that half instant, only faster-polled. Session
+   request: "if it means everything will start reacting in real time,
+   that's good" — CHECK_INTERVAL_SECONDS dropped from 60s to 20s (3x),
+   a real responsiveness gain, but deliberately NOT dropped further:
+   this app has a documented, shared 500k-command/month Upstash budget
+   across every feature that uses it, and 20s already roughly triples
+   this one service's own share of that rather than pushing it toward
+   dominating it the way something far more aggressive (5-10s) would.
 
-Also runs the daily volume-floor check (lg_tv_control.
-enforce_volume_floor) independently of all of the above -- see its own
-docstring for why that one isn't gated on which input is active -- and
-forwards any queued phone-style notification (lg_tv_control.
-send_pending_notifications) to the TV screen every tick, but only ever
-while genuinely away from the kiosk's own input.
+Session request (still true, unchanged): "check the state every 15
+minutes until it's back to HDMI 1 or the TV is off itself, and then
+rest there" for bedtime engaging (power_off_if_ours, RECHECK_INTERVAL_
+SECONDS while deferred); "as simple as possible... turn off TV, you
+put kiosk on" for the not-bedtime direction (wake_and_switch_if_safe,
+every poll tick, no recheck gating — see lg_tv_control.py's own
+docstrings for why each is a safe, cheap no-op when there's nothing to
+actually do).
 
 Run as its own systemd --user service (see systemd/lg-tv-sync.service)
-— same lightweight, plain-polling-loop shape as run_spoken_morning_
-brief.py, reusing this same venv (aiowebostv installed alongside
-everything else here) rather than a separate one."""
+— reusing this same venv (aiowebostv installed alongside everything
+else here) rather than a separate one."""
 
 import asyncio
 import json
@@ -51,10 +42,10 @@ from pathlib import Path
 import lg_tv_control
 import persisted_state
 
-CHECK_INTERVAL_SECONDS = 60
+CHECK_INTERVAL_SECONDS = 20
 RECHECK_INTERVAL_SECONDS = 15 * 60
 # How often to retry the daily volume floor if the TV wasn't reachable
-# the last time -- not every single 60s tick (the TV being off most of
+# the last time -- not every single poll tick (the TV being off most of
 # the night is the normal case, no reason to hammer a connect attempt
 # that often for a check that only needs to succeed once a day).
 VOLUME_CHECK_RETRY_SECONDS = 30 * 60
@@ -93,7 +84,7 @@ def _save_state(state: dict) -> None:
     _STATE_FILE.write_text(json.dumps(state))
 
 
-def _tick() -> None:
+async def _tick() -> None:
     now_ts = time.time()
     state = _load_state()
 
@@ -111,7 +102,7 @@ def _tick() -> None:
             # Bedtime: power off if ours, with the explicit 15-minute
             # recheck cadence while deferred (Xbox in use at bedtime).
             if not state["settled"] and now_ts >= state["next_check_at"]:
-                result = asyncio.run(lg_tv_control.power_off_if_ours(_log))
+                result = await lg_tv_control.power_off_if_ours(_log)
                 if result == "settled":
                     state["settled"] = True
                 else:
@@ -120,31 +111,39 @@ def _tick() -> None:
             # Not bedtime: the TV should default to showing the kiosk
             # unless the Xbox is genuinely in use -- checked every tick,
             # not gated on "settled", per this module's own docstring.
-            asyncio.run(lg_tv_control.wake_and_switch_if_safe(_log))
+            await lg_tv_control.wake_and_switch_if_safe(_log)
             state["settled"] = True
 
     today = date.today().isoformat()
     if state["volume_floor_date"] != today and now_ts >= state["next_volume_check_at"]:
-        ran = asyncio.run(lg_tv_control.enforce_volume_floor(_log))
+        ran = await lg_tv_control.enforce_volume_floor(_log)
         if ran:
             state["volume_floor_date"] = today
         else:
             state["next_volume_check_at"] = now_ts + VOLUME_CHECK_RETRY_SECONDS
 
-    state["notifications_shown_at"] = asyncio.run(
-        lg_tv_control.send_pending_notifications(state["notifications_shown_at"], _log)
+    state["notifications_shown_at"] = await lg_tv_control.send_pending_notifications(
+        state["notifications_shown_at"], _log
     )
 
     _save_state(state)
 
 
-def main() -> None:
+async def _poll_loop() -> None:
     while True:
         try:
-            _tick()
+            await _tick()
         except Exception as e:
             _log(f"tick failed: {e}")
-        time.sleep(CHECK_INTERVAL_SECONDS)
+        await asyncio.sleep(CHECK_INTERVAL_SECONDS)
+
+
+async def _main_async() -> None:
+    await asyncio.gather(_poll_loop(), lg_tv_control.watch_state(_log))
+
+
+def main() -> None:
+    asyncio.run(_main_async())
 
 
 if __name__ == "__main__":

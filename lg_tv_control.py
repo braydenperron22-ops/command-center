@@ -367,3 +367,80 @@ async def send_pending_notifications(last_shown_at: float, log=lambda msg: None)
         return newest
     finally:
         await client.disconnect()
+
+
+# Session request: "do the push subscriptions... if it means everything
+# will start reacting in real time, that's good." aiowebostv already
+# subscribes to the TV's own state (power/current app/volume/etc.)
+# automatically as part of connect() -- confirmed live by reading the
+# library's own connect_handler (_get_states_and_subscribe_state_
+# updates runs unprompted, no manual subscribe_x() calls needed) --
+# register_state_update_callback below just taps into that already-
+# running stream. This is the one real "instant, not polled" half of
+# the sync: the TV pushes a change the moment it happens (someone
+# nudges the kiosk volume, switches input by hand) instead of run_lg_tv
+# _sync.py finding out up to CHECK_INTERVAL_SECONDS later.
+#
+# What's still genuinely polled: night_mode_active and the
+# notification queue live in Upstash, a plain REST key/value store
+# with no push/webhook mechanism on the free tier -- there's no way to
+# make THAT half instant, only faster-polled (see run_lg_tv_sync.py's
+# own reduced interval). This function is purely about the TV's own
+# state, not the dashboard's.
+STATE_WATCH_RECONNECT_DELAY_SECONDS = 15
+
+
+async def watch_state(log=lambda msg: None) -> None:
+    """Runs forever (until cancelled) — maintains one persistent
+    connection to the TV and reacts instantly to its own state pushes.
+    Right now that means: the moment the TV reports it's on our own
+    input, enforce KIOSK_VOLUME immediately, rather than waiting for
+    the next poll tick to notice a manual volume nudge. When the TV
+    goes offline (sleeps, loses network), this simply waits
+    STATE_WATCH_RECONNECT_DELAY_SECONDS and tries again — it does NOT
+    attempt to wake the TV itself (that's run_lg_tv_sync.py's own
+    Upstash-driven job, via wake_and_switch_if_safe); this function
+    only ever reacts to a TV that's already reachable on its own."""
+    while True:
+        try:
+            await _watch_state_once(log)
+        except Exception as e:
+            # Same "one bad cycle must never kill the loop" rule every
+            # other long-running poller in this app already follows
+            # (run_spoken_morning_brief.py's own main(), etc.) -- a
+            # single unexpected error here (e.g. client.disconnect()
+            # itself raising on an already-broken socket) would
+            # otherwise propagate out of watch_state entirely, taking
+            # down the asyncio.gather() it runs under in
+            # run_lg_tv_sync.py and killing the OTHER coroutine
+            # (_poll_loop) right along with it.
+            log(f"state watcher error: {e}")
+            await asyncio.sleep(STATE_WATCH_RECONNECT_DELAY_SECONDS)
+
+
+async def _watch_state_once(log) -> None:
+    client = await _connect()
+    if client is None:
+        await asyncio.sleep(STATE_WATCH_RECONNECT_DELAY_SECONDS)
+        return
+
+    log("state watcher connected -- live TV pushes active")
+
+    async def on_state_update(state) -> None:
+        # Reacts to EVERY push while on our own input, not just the
+        # edge into it -- a manual volume nudge while already watching
+        # the kiosk is itself one of these pushes, and should snap
+        # back immediately too, not just on the next input switch.
+        # _enforce_kiosk_volume is a safe no-op once volume is already
+        # correct (including the follow-up push ITS OWN set_volume
+        # call triggers), so no feedback loop.
+        if state.current_app_id == KIOSK_APP_ID:
+            await _enforce_kiosk_volume(client, log)
+
+    client.register_state_update_callback(on_state_update)
+    try:
+        while client.is_connected():
+            await asyncio.sleep(2)
+    finally:
+        log("state watcher lost connection to TV -- will retry")
+        await client.disconnect()
