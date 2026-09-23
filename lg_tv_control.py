@@ -68,6 +68,13 @@ WOL_BOOT_WAIT_SECONDS = 10
 # concrete number rather than leaving it a fuzzy range — easy to
 # change here if 8 turns out too loud/quiet in practice.
 VOLUME_FLOOR = 8
+# Session follow-up: "the base kiosk volume is 20, always... when I
+# move to the Xbox, it can be moved as need be, but as soon as it
+# comes back to the kiosk, make it 20 flat." Unlike VOLUME_FLOOR (a
+# floor, applies regardless of input, only ever raises), this is a
+# fixed value enforced specifically while on the kiosk's own input —
+# see wake_and_switch_if_safe below for where it's applied.
+KIOSK_VOLUME = 20
 # Must match ntfy_client.py's own _TV_QUEUE_KEY on the Cloud side —
 # that's the one place every real phone push already funnels through
 # (see that module's own docstring), queuing a copy here for this box
@@ -200,6 +207,24 @@ async def power_off_if_ours(log=lambda msg: None) -> Result:
         await client.disconnect()
 
 
+async def _enforce_kiosk_volume(client: WebOsClient, log) -> None:
+    """Session follow-up: "the base kiosk volume is 20, always... when
+    I move to the Xbox, it can be moved as need be, but as soon as it
+    comes back to the kiosk, make it 20 flat." Called only from places
+    that have already confirmed the TV is genuinely on the kiosk's own
+    input -- reuses the caller's already-open connection rather than a
+    fresh one. Unlike VOLUME_FLOOR (a floor, only ever raises, applies
+    regardless of input), this sets an exact value and can lower the
+    volume too."""
+    try:
+        volume = await client.get_volume()
+        if volume is not None and volume != KIOSK_VOLUME:
+            await client.set_volume(KIOSK_VOLUME)
+            log(f"kiosk volume was {volume} -- set to {KIOSK_VOLUME}")
+    except Exception as e:
+        log(f"kiosk volume enforcement failed: {e}")
+
+
 async def wake_and_switch_if_safe(log=lambda msg: None) -> Result:
     """Night mode ending: bring the TV back to our input, defaulting to
     HDMI_1 -- but same "don't interrupt" rule, checked BEFORE waking
@@ -214,22 +239,28 @@ async def wake_and_switch_if_safe(log=lambda msg: None) -> Result:
     single failed attempt here once misread a TV that was genuinely ON
     and on Xbox as "off," and proceeded to wake + switch it away from a
     real, active session. See that helper's own comment for the full
-    story."""
+    story.
+
+    Also enforces KIOSK_VOLUME (see _enforce_kiosk_volume) every time
+    the TV is confirmed on our input -- both the already-there case and
+    right after a fresh switch -- so it stays at a known level any time
+    the kiosk is genuinely what's showing."""
     client = await _connect_for_state_check()
     if client is not None:
-        try:
-            current = await _current_app_id(client)
-        finally:
-            await client.disconnect()
+        current = await _current_app_id(client)
         if current is not None and current != KIOSK_APP_ID:
+            await client.disconnect()
             log(f"TV is already on {_label_for(current)} -- leaving it alone, will recheck later")
             return "deferred"
         if current == KIOSK_APP_ID:
+            await _enforce_kiosk_volume(client, log)
+            await client.disconnect()
             log("TV already on our input -- nothing to do")
             return "settled"
         # current is None despite being reachable (e.g. a screensaver
         # app with no clean appId) -- fall through and just make sure
         # our input is selected, same as the unreachable/off path below.
+        await client.disconnect()
 
     log("waking TV via Wake-on-LAN")
     send_wol()
@@ -242,6 +273,7 @@ async def wake_and_switch_if_safe(log=lambda msg: None) -> Result:
     try:
         await client.set_input(KIOSK_INPUT_ID)
         log("switched TV to our input")
+        await _enforce_kiosk_volume(client, log)
     except Exception as e:
         log(f"input-switch attempt failed: {e}")
     finally:
