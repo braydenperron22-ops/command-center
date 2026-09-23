@@ -23,25 +23,36 @@ committed either).
 Session requirement, both directions: never interrupt something
 already playing. get_current_app() is checked before acting either
 way — the TV is only powered off at night if it's currently showing
-OUR OWN input (webOS reports HDMI_1 as "com.webos.app.hdmi1"), and
-only woken + switched back to our input in the morning if the TV is
-either already off or already sitting on our own input. Anything else
-(a different HDMI port, a smart-TV app like Netflix) is left alone.
-"""
+OUR OWN input, and only woken + switched back to our input in the
+morning if the TV is either already off or already sitting on ours.
+Anything else (the Xbox on HDMI_2, a smart-TV app) is left alone.
+
+Session follow-up: "check the state every 15 minutes until it's back
+to HDMI 1 or the TV is off itself, and then rest there." Both action
+functions below return "settled" (goal achieved, or confirmed not
+applicable — nothing left to do until the NEXT real night_mode_active
+transition) or "deferred" (something else is genuinely in use right
+now — see run_lg_tv_sync.py's own caller for how it turns "deferred"
+into a 15-minute recheck rather than silently giving up for the night)
+rather than returning None, so the caller can tell those two outcomes
+apart."""
 
 import asyncio
 import socket
 from pathlib import Path
+from typing import Literal
 
 from aiowebostv import WebOsClient
 
 TV_HOST = "192.168.0.152"
 TV_MAC = "d8:e3:5e:bb:2c:7a"
-# webOS's own app id for whichever HDMI port the kiosk box is plugged
-# into — confirmed live via get_current_app() while the kiosk was the
-# active input (see this module's own pairing/verification session).
-OUR_APP_ID = "com.webos.app.hdmi1"
-OUR_INPUT_ID = "HDMI_1"
+# webOS's own app ids for each labeled HDMI port — confirmed live via
+# get_inputs()/get_current_app() while each device was actually the
+# active input. Session request: "HDMI 1 is my kiosk, and HDMI 2 is my
+# Xbox... mark these so you know which one they are."
+KIOSK_APP_ID = "com.webos.app.hdmi1"
+KIOSK_INPUT_ID = "HDMI_1"
+XBOX_APP_ID = "com.webos.app.hdmi2"
 KEY_FILE = Path.home() / ".config" / "kiosk-lg-tv-key"
 CONNECT_TIMEOUT_SECONDS = 5
 # Rough real-world boot time for webOS to come back up enough to accept
@@ -50,6 +61,21 @@ CONNECT_TIMEOUT_SECONDS = 5
 # nothing here, a too-short wait would just mean a failed connect and a
 # wasted cycle (the poller tries again next minute regardless).
 WOL_BOOT_WAIT_SECONDS = 10
+# Session request: "set a floor for the volume every single day...
+# probably like 7 to 10." Picked the middle of that range as one
+# concrete number rather than leaving it a fuzzy range — easy to
+# change here if 8 turns out too loud/quiet in practice.
+VOLUME_FLOOR = 8
+
+Result = Literal["settled", "deferred"]
+
+
+def _label_for(app_id: str | None) -> str:
+    if app_id == KIOSK_APP_ID:
+        return "kiosk"
+    if app_id == XBOX_APP_ID:
+        return "Xbox"
+    return repr(app_id)
 
 
 def _client_key() -> str | None:
@@ -65,7 +91,7 @@ def send_wol(mac: str = TV_MAC) -> None:
     server, and therefore every other command in this module, is
     unreachable at that point; only a low-power WoL listener stays up,
     and only if Wake on LAN is enabled in the TV's own network
-    settings)."""
+    settings — confirmed live already on)."""
     mac_bytes = bytes.fromhex(mac.replace(":", "").replace("-", ""))
     packet = b"\xff" * 6 + mac_bytes * 16
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -113,49 +139,53 @@ async def _current_app_id(client: WebOsClient) -> str | None:
     return app_id or None
 
 
-async def power_off_if_ours(log=lambda msg: None) -> None:
+async def power_off_if_ours(log=lambda msg: None) -> Result:
     """Night mode engaging: power the TV off, but only if it's
-    currently showing OUR OWN input — see this module's own docstring
-    for why. Silently does nothing if the TV's already off/unreachable
-    (nothing to turn off) or on something else entirely (not ours to
-    touch)."""
+    currently showing OUR OWN input. "settled" whenever there's
+    genuinely nothing left to do this cycle -- already off/unreachable
+    (that's the goal state already), or a successful power-off just
+    now. "deferred" only when something else (the Xbox, a smart-TV
+    app) is actually in use right now -- see this module's own
+    docstring for how the caller turns that into a 15-minute recheck."""
     client = await _connect()
     if client is None:
-        log("TV unreachable or not yet paired -- skipping power-off")
-        return
+        log("TV unreachable (presumed already off) -- nothing to do")
+        return "settled"
     try:
         current = await _current_app_id(client)
-        if current != OUR_APP_ID:
-            log(f"TV is on a different input/app ({current!r}) -- leaving it alone")
-            return
+        if current != KIOSK_APP_ID:
+            log(f"TV is on {_label_for(current)} -- leaving it alone, will recheck later")
+            return "deferred"
         await client.power_off()
         log("TV was on our input -- powered off")
+        return "settled"
     except Exception as e:
         log(f"power-off attempt failed: {e}")
+        return "settled"  # a transient error isn't "someone's using it" -- don't wait 15 min on it
     finally:
         await client.disconnect()
 
 
-async def wake_and_switch_if_safe(log=lambda msg: None) -> None:
-    """Night mode ending: bring the TV back to our input — but same
-    "don't interrupt" rule, checked BEFORE waking anything. If the TV
-    is already reachable and on something other than our own input, it
-    means someone's actively using it (or already on it, no-op either
-    way) -- left alone. Only reachable-and-idle-on-ours or genuinely
-    unreachable (presumed off, since we're the only thing that turns it
-    off) leads to a real wake + switch."""
+async def wake_and_switch_if_safe(log=lambda msg: None) -> Result:
+    """Night mode ending: bring the TV back to our input, defaulting to
+    HDMI_1 -- but same "don't interrupt" rule, checked BEFORE waking
+    anything. "deferred" only if the TV is already reachable and
+    genuinely on something else (the Xbox); "settled" for every other
+    outcome (already on ours, or a real wake + switch attempt, success
+    or failure -- a failed WoL/reconnect isn't "someone's using it"
+    either, see power_off_if_ours' own reasoning for the same call)."""
     client = await _connect()
     if client is not None:
         try:
             current = await _current_app_id(client)
         finally:
             await client.disconnect()
-        if current is not None and current != OUR_APP_ID:
-            log(f"TV is already on a different input/app ({current!r}) -- leaving it alone")
-            return
-        if current == OUR_APP_ID:
+        if current is not None and current != KIOSK_APP_ID:
+            log(f"TV is already on {_label_for(current)} -- leaving it alone, will recheck later")
+            return "deferred"
+        if current == KIOSK_APP_ID:
             log("TV already on our input -- nothing to do")
-            return
+            return "settled"
         # current is None despite being reachable (e.g. a screensaver
         # app with no clean appId) -- fall through and just make sure
         # our input is selected, same as the unreachable/off path below.
@@ -167,11 +197,46 @@ async def wake_and_switch_if_safe(log=lambda msg: None) -> None:
     client = await _connect()
     if client is None:
         log("could not reach TV after Wake-on-LAN -- will retry next cycle")
-        return
+        return "settled"
     try:
-        await client.set_input(OUR_INPUT_ID)
+        await client.set_input(KIOSK_INPUT_ID)
         log("switched TV to our input")
     except Exception as e:
         log(f"input-switch attempt failed: {e}")
+    finally:
+        await client.disconnect()
+    return "settled"
+
+
+async def enforce_volume_floor(log=lambda msg: None) -> bool:
+    """Bumps the TV's volume up to VOLUME_FLOOR if it's currently
+    below that -- session request: "set a floor for the volume every
+    single day." Never lowers it (someone deliberately turning it up
+    is untouched); only raises a volume that's dropped below the
+    floor (a kid/guest turning it down, or it just defaulting low).
+    Returns whether it actually got to run (True) or the TV was
+    unreachable (False, run_lg_tv_sync.py's own caller just tries
+    again later the same day) -- deliberately NOT gated on which input
+    is active, unlike the two functions above: a volume floor is about
+    the TV as a whole, not specifically the kiosk's own input, and
+    raising (never lowering) the volume doesn't interrupt whatever's
+    playing the way a power-off or input-switch would."""
+    client = await _connect()
+    if client is None:
+        return False
+    try:
+        volume = await client.get_volume()
+        if volume is None:
+            log("could not read current volume -- skipping floor check")
+            return False
+        if volume < VOLUME_FLOOR:
+            await client.set_volume(VOLUME_FLOOR)
+            log(f"volume was {volume}, below the floor of {VOLUME_FLOOR} -- raised")
+        else:
+            log(f"volume is {volume}, already at or above the floor of {VOLUME_FLOOR} -- left alone")
+        return True
+    except Exception as e:
+        log(f"volume floor check failed: {e}")
+        return False
     finally:
         await client.disconnect()
