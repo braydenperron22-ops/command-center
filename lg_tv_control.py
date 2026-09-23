@@ -75,6 +75,13 @@ VOLUME_FLOOR = 8
 # fixed value enforced specifically while on the kiosk's own input —
 # see wake_and_switch_if_safe below for where it's applied.
 KIOSK_VOLUME = 20
+# Session follow-up: "set the volume to like five when we're going to
+# the Xbox... so it's not blasting at 20 volume... when I'm
+# transferring to the Xbox." A one-time landing value applied only on
+# the EDGE into Xbox (see _watch_state_once's own edge-tracking) — not
+# re-enforced afterward, unlike KIOSK_VOLUME, since "it can be moved as
+# need be" once there was already the explicit rule for this input.
+XBOX_LANDING_VOLUME = 5
 # Must match ntfy_client.py's own _TV_QUEUE_KEY on the Cloud side —
 # that's the one place every real phone push already funnels through
 # (see that module's own docstring), queuing a copy here for this box
@@ -223,6 +230,23 @@ async def _enforce_kiosk_volume(client: WebOsClient, log) -> None:
             log(f"kiosk volume was {volume} -- set to {KIOSK_VOLUME}")
     except Exception as e:
         log(f"kiosk volume enforcement failed: {e}")
+
+
+async def _set_xbox_landing_volume(client: WebOsClient, log) -> None:
+    """Session follow-up: "set the volume to like five when we're going
+    to the Xbox... so it's not blasting at 20." Called once, only on
+    the EDGE into Xbox (see _watch_state_once) -- unlike
+    _enforce_kiosk_volume this is a one-shot landing value, not
+    something re-applied on every push while already there, since the
+    whole point of the Xbox input is that volume is free to move
+    afterward."""
+    try:
+        volume = await client.get_volume()
+        if volume is not None and volume != XBOX_LANDING_VOLUME:
+            await client.set_volume(XBOX_LANDING_VOLUME)
+            log(f"landed on Xbox at volume {volume} -- set to {XBOX_LANDING_VOLUME}")
+    except Exception as e:
+        log(f"Xbox landing volume failed: {e}")
 
 
 async def wake_and_switch_if_safe(log=lambda msg: None) -> Result:
@@ -425,17 +449,27 @@ async def _watch_state_once(log) -> None:
         return
 
     log("state watcher connected -- live TV pushes active")
+    last_app_id: str | None = None
 
     async def on_state_update(state) -> None:
-        # Reacts to EVERY push while on our own input, not just the
-        # edge into it -- a manual volume nudge while already watching
-        # the kiosk is itself one of these pushes, and should snap
-        # back immediately too, not just on the next input switch.
+        nonlocal last_app_id
+        current = state.current_app_id
+        # Kiosk: reacts to EVERY push while on our own input, not just
+        # the edge into it -- a manual volume nudge while already
+        # watching the kiosk is itself one of these pushes, and should
+        # snap back immediately too, not just on the next input switch.
         # _enforce_kiosk_volume is a safe no-op once volume is already
         # correct (including the follow-up push ITS OWN set_volume
         # call triggers), so no feedback loop.
-        if state.current_app_id == KIOSK_APP_ID:
+        if current == KIOSK_APP_ID:
             await _enforce_kiosk_volume(client, log)
+        # Xbox: the OPPOSITE shape on purpose -- only on the edge INTO
+        # Xbox from something else, a one-time landing volume, never
+        # re-applied while already there (volume is free to move
+        # afterward, per the session's own explicit "as need be").
+        elif current == XBOX_APP_ID and last_app_id != XBOX_APP_ID:
+            await _set_xbox_landing_volume(client, log)
+        last_app_id = current
 
     client.register_state_update_callback(on_state_update)
     try:
