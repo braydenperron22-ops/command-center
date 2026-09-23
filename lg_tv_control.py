@@ -97,11 +97,20 @@ async def _current_app_id(client: WebOsClient) -> str | None:
     """aiowebostv's own type hint on get_current_app() claims a dict,
     but confirmed live it actually returns the plain app-id string
     directly (or None) -- get_current_app() -> res.get("appId") inside
-    the library itself, already unwrapped."""
+    the library itself, already unwrapped.
+
+    Also confirmed live: a TV that was JUST powered off can still
+    briefly answer this over the websocket (a transitional/quick-start
+    grace period, not fully asleep yet) with an EMPTY string rather
+    than None -- treated the same as "no real app info" below (falsy),
+    not as "a genuinely different app," or wake_and_switch_if_safe
+    would wrongly read a TV we ourselves just turned off as someone
+    else's in-use input and refuse to wake it back up."""
     try:
-        return await client.get_current_app()
+        app_id = await client.get_current_app()
     except Exception:
         return None
+    return app_id or None
 
 
 async def power_off_if_ours(log=lambda msg: None) -> None:
