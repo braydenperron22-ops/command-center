@@ -3526,20 +3526,18 @@ if weather:
         # floor of what the archive API can provide, confirmed live).
         #
         # Session report, later: "fix the record low/highs that say
-        # (since 1940) on them." The old layout put "(since 1940)"
-        # directly next to the label and the ACTUAL record year right
-        # after it — "Record high (since 1940) · 31° in 2001" reads as
-        # if 1940 might be when the record happened, with 2001 doing
-        # something else. 1940 is only how far back the search window
-        # goes; the record itself can be (and usually is) from any year
-        # in between. Reordered so the real record year sits right next
-        # to its value, and the archive depth trails as its own clearly
-        # separate note.
+        # (since 1940) on them" (fixed by reordering so the real record
+        # year sat next to its value instead of next to 1940), then
+        # "get completely rid of the records back to 1940... its
+        # ridiculous" — the archive-depth note itself was the thing to
+        # go, not just its placement. The record's own value and year
+        # are the actual useful fact; ARCHIVE_START_YEAR now only backs
+        # the real "how far back was this checked" math in
+        # weather_records_client, never shown on screen.
         extras.append(
             f'<span class="weather-extra" style="color:{record_color}; '
             f'background:{record_bg}; border-color:{record_color};">'
-            f'{record_label} {record["kind"]} · {record["record"]:.0f}° in {record["year"]} '
-            f'(records back to {weather_records_client.ARCHIVE_START_YEAR})</span>'
+            f'{record_label} {record["kind"]} · {record["record"]:.0f}° in {record["year"]}</span>'
         )
     # Wildfire smoke is a real recurring issue for this region — same
     # provider as the weather call above (Open-Meteo's Air Quality
