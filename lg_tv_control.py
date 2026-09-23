@@ -43,12 +43,22 @@ import time
 from pathlib import Path
 from typing import Literal
 
-from aiowebostv import WebOsClient
+from aiowebostv import WebOsClient, WebOsTvPairError
 
+import ntfy_client
 import persisted_state
 
 TV_HOST = "192.168.0.152"
 TV_MAC = "d8:e3:5e:bb:2c:7a"
+# Session audit: "is there a gap we haven't bridged yet" -- TV_HOST is
+# a hardcoded IP with no confirmed DHCP reservation on the router (no
+# admin access available from here to check). Rather than depend on
+# that assumption, verify_tv_ip (called once a day, see run_lg_tv_
+# sync.py) re-discovers the TV over SSDP -- the exact same real
+# discovery that found it in the first place -- and caches whatever it
+# finds here, so a router-assigned IP change self-heals instead of
+# silently breaking every function in this module.
+_DISCOVERED_IP_FILE = Path.home() / ".config" / "kiosk-lg-tv-ip"
 # webOS's own app ids for each labeled HDMI port — confirmed live via
 # get_inputs()/get_current_app() while each device was actually the
 # active input. Session request: "HDMI 1 is my kiosk, and HDMI 2 is my
@@ -58,6 +68,19 @@ KIOSK_INPUT_ID = "HDMI_1"
 XBOX_APP_ID = "com.webos.app.hdmi2"
 KEY_FILE = Path.home() / ".config" / "kiosk-lg-tv-key"
 CONNECT_TIMEOUT_SECONDS = 5
+# Session audit: "is there a gap we haven't bridged yet" surfaced a
+# real one -- the persistent state watcher's connection was dropping
+# and reconnecting every 2-15 minutes on no fixed schedule (confirmed
+# live in lg-tv-sync.log). aiowebostv's own default heartbeat (5s,
+# passed straight through to aiohttp's ws_connect) pings the TV every
+# 5 seconds and kills the connection on a missed pong -- aggressive
+# for a WiFi-connected TV that can have brief, completely normal radio
+# power-save hiccups. Loosened well past that; a genuinely dead
+# connection still gets caught, just not mistaken for one as easily.
+# Harmless for every OTHER (short-lived, connect-act-disconnect)
+# caller of _connect() too -- they're gone long before this would ever
+# matter.
+HEARTBEAT_SECONDS = 30
 # Rough real-world boot time for webOS to come back up enough to accept
 # a fresh websocket connection after a Wake-on-LAN packet — tuned loose
 # rather than tight, a few extra seconds of "TV still says off" costs
@@ -114,6 +137,60 @@ def _client_key() -> str | None:
     return None
 
 
+def _current_tv_host() -> str:
+    if _DISCOVERED_IP_FILE.exists():
+        cached = _DISCOVERED_IP_FILE.read_text().strip()
+        if cached:
+            return cached
+    return TV_HOST
+
+
+_SSDP_MSEARCH = (
+    'M-SEARCH * HTTP/1.1\r\n'
+    'HOST: 239.255.255.250:1900\r\n'
+    'MAN: "ssdp:discover"\r\n'
+    'MX: 3\r\n'
+    'ST: ssdp:all\r\n'
+    '\r\n'
+).encode()
+
+
+def _discover_tv_ip() -> str | None:
+    """Real SSDP scan for the TV's current IP -- same M-SEARCH this TV
+    was originally found with, matched the same way (LG's own webOS
+    devices identify themselves in their SSDP response). None if
+    nothing answers within the timeout (the TV being off is the normal
+    case here, not conclusive proof the IP is wrong)."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(4)
+    try:
+        sock.sendto(_SSDP_MSEARCH, ("239.255.255.250", 1900))
+        while True:
+            try:
+                data, addr = sock.recvfrom(4096)
+            except socket.timeout:
+                return None
+            if "lge" in data.decode(errors="replace").lower():
+                return addr[0]
+    finally:
+        sock.close()
+
+
+async def verify_tv_ip(log=lambda msg: None) -> None:
+    """Call once a day (see run_lg_tv_sync.py's own daily-check shape,
+    same as enforce_volume_floor) -- re-discovers the TV over SSDP and
+    updates the cached IP if it's genuinely different from what's
+    currently in use. See _DISCOVERED_IP_FILE's own comment for why
+    this exists at all."""
+    discovered = _discover_tv_ip()
+    if discovered is None:
+        return
+    current = _current_tv_host()
+    if discovered != current:
+        _DISCOVERED_IP_FILE.write_text(discovered)
+        log(f"TV IP changed from {current} to {discovered} -- updated")
+
+
 def send_wol(mac: str = TV_MAC) -> None:
     """Broadcasts a standard Wake-on-LAN magic packet — the only way to
     reach a webOS TV that's gone into full standby (its websocket
@@ -131,18 +208,55 @@ def send_wol(mac: str = TV_MAC) -> None:
         sock.close()
 
 
+# Session audit: "is there a gap we haven't bridged yet" -- a revoked
+# pairing (a webOS firmware update, a factory reset, or the TV's own
+# "connected devices" settings) would otherwise fail silently forever,
+# indistinguishable from "the TV is just off" to every caller here.
+# aiowebostv raises WebOsTvPairError specifically for a rejected/
+# expired client-key (confirmed by reading its own _check_registration
+# — a genuine registration rejection, not a connection-level timeout),
+# which IS distinguishable — so this is the one failure mode worth a
+# real phone alert instead of the usual silent "try again later."
+# Deduped to once per real day (persisted, survives a service
+# restart) so a TV that stays unpaired doesn't re-alert every poll
+# tick forever.
+_PAIRING_ALERT_DATE_KEY = "lg_tv_pairing_broken_alert_date"
+
+
+def _alert_pairing_broken() -> None:
+    from datetime import date
+
+    today = date.today().isoformat()
+    if persisted_state.load(_PAIRING_ALERT_DATE_KEY, None) == today:
+        return
+    persisted_state.save(_PAIRING_ALERT_DATE_KEY, today)
+    ntfy_client.send(
+        title="TV pairing broken",
+        message="The kiosk's LG TV pairing was rejected -- re-run lg_tv_pair.py on the kiosk box.",
+        priority="high",
+        tags="warning",
+    )
+
+
 async def _connect() -> WebOsClient | None:
     """A connected, already-paired client, or None if there's no saved
     pairing yet or the TV genuinely isn't reachable right now (off, or
     off the network) — never raises, every caller treats None the same
     way a CEC "no adapter" result already had to be treated: skip this
-    cycle, try again later."""
+    cycle, try again later. The one exception that DOES get a real
+    phone alert first is a genuinely revoked pairing — see
+    _alert_pairing_broken's own comment."""
     key = _client_key()
     if key is None:
         return None
-    client = WebOsClient(TV_HOST, client_key=key, connect_timeout=CONNECT_TIMEOUT_SECONDS)
+    client = WebOsClient(
+        _current_tv_host(), client_key=key, connect_timeout=CONNECT_TIMEOUT_SECONDS, heartbeat=HEARTBEAT_SECONDS
+    )
     try:
         await client.connect()
+    except WebOsTvPairError:
+        _alert_pairing_broken()
+        return None
     except Exception:
         return None
     return client

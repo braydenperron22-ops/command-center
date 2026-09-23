@@ -60,6 +60,7 @@ _DEFAULT_STATE = {
     "next_check_at": 0.0,  # don't touch the TV again for the night-mode action before this time
     "volume_floor_date": None,  # ISO date the daily volume floor last actually ran
     "next_volume_check_at": 0.0,
+    "ip_check_date": None,  # ISO date lg_tv_control.verify_tv_ip last actually ran
     "notifications_shown_at": 0.0,  # watermark for lg_tv_control.send_pending_notifications
 }
 
@@ -121,6 +122,15 @@ async def _tick() -> None:
             state["volume_floor_date"] = today
         else:
             state["next_volume_check_at"] = now_ts + VOLUME_CHECK_RETRY_SECONDS
+
+    # Session audit: "is there a gap we haven't bridged yet" -- see
+    # lg_tv_control.verify_tv_ip's own docstring. Once a day, no retry-
+    # if-it-fails gating needed the way volume/notifications have --
+    # an SSDP scan that finds nothing just means the TV's off right
+    # now, same as any other day it'll answer next time this runs.
+    if state["ip_check_date"] != today:
+        await lg_tv_control.verify_tv_ip(_log)
+        state["ip_check_date"] = today
 
     state["notifications_shown_at"] = await lg_tv_control.send_pending_notifications(
         state["notifications_shown_at"], _log
