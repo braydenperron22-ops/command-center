@@ -94,11 +94,14 @@ async def _connect() -> WebOsClient | None:
 
 
 async def _current_app_id(client: WebOsClient) -> str | None:
+    """aiowebostv's own type hint on get_current_app() claims a dict,
+    but confirmed live it actually returns the plain app-id string
+    directly (or None) -- get_current_app() -> res.get("appId") inside
+    the library itself, already unwrapped."""
     try:
-        app = await client.get_current_app()
+        return await client.get_current_app()
     except Exception:
         return None
-    return (app or {}).get("appId")
 
 
 async def power_off_if_ours(log=lambda msg: None) -> None:
