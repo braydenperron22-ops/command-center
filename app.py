@@ -3889,6 +3889,16 @@ try:
 except Exception:
     pass
 
+# Session follow-up: "treated like the leave-in countdown... bedtime in
+# two hours, bedtime in an hour, 30 minutes... keep going down and
+# down." A whole milestone ladder of TV-only toasts, not just the one
+# phone push above — see sleep_tracker.maybe_queue_tv_bedtime_milestone
+# and ntfy_client.queue_for_tv's own docstrings.
+try:
+    sleep_tracker.maybe_queue_tv_bedtime_milestone(now)
+except Exception:
+    pass
+
 # Bottom-right system-health glance. History: started as a percentage
 # bar, then "AI: Active/Rate Limited" text, then one row per model,
 # then up to 3-4 small slots taking turns on a timer (AI/Dashboard/

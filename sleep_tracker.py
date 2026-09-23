@@ -368,3 +368,66 @@ def maybe_push_wind_down(now: datetime) -> None:
         priority="default",
         tags="crescent_moon",
     )
+
+
+# Session follow-up: "for the alerts, can we make it so just on the TV
+# there's like it gets treated like the leave-in countdown? ... bedtime
+# in two hours, bedtime in an hour, 30 minutes ... keep going down and
+# down." Same milestone ladder commute_reminder.MILESTONES_MINUTES
+# already uses for the leave-in countdown -- duplicated locally rather
+# than imported (commute_reminder.py already imports THIS module, for
+# its own gym-session bedtime estimate, so importing it back here would
+# be circular; same "small, module-specific duplication" convention
+# this file's own _format_clock already follows for the identical
+# reason). TV-only: queues straight into the shared TV-notification
+# store (ntfy_client.queue_for_tv) without also sending a real phone
+# push -- maybe_push_wind_down above already covers the phone with its
+# own single alert, and turning that into 6+ separate phone pushes was
+# never asked for.
+_TV_MILESTONES_MINUTES = [120, 90, 60, 45, 30, 20, 15, 10, 5, 3, 0]
+_TV_MILESTONES_SHOWN_KEY = "sleep_bedtime_tv_milestones_shown"
+_tv_milestones_shown: dict = persisted_state.load(_TV_MILESTONES_SHOWN_KEY, {"date": None, "shown": []})
+
+
+def _bedtime_tv_text(minutes: int) -> str:
+    if minutes == 0:
+        return "Bedtime now"
+    if minutes % 60 == 0:
+        hours = minutes // 60
+        return "Bedtime in an hour" if hours == 1 else f"Bedtime in {hours} hours"
+    return f"Bedtime in {minutes} min"
+
+
+def maybe_queue_tv_bedtime_milestone(now: datetime) -> None:
+    """Call once per rerun, same shape as maybe_push_wind_down above --
+    a whole ladder of TV-only toasts as bedtime approaches, not just
+    one. lg_tv_control.send_pending_notifications already gates every
+    queued item on "not currently on the kiosk" (the kiosk already
+    shows this on screen via the bedtime countdown ticker), so this
+    doesn't need to check that itself -- it just queues; the TV side
+    decides whether it's the right moment to actually show it."""
+    bedtime = bedtime_for(now)
+    if bedtime is None:
+        return
+    now_aware = now.replace(tzinfo=bedtime.tzinfo) if bedtime.tzinfo else now
+    minutes_until = (bedtime - now_aware).total_seconds() / 60
+    if minutes_until > max(_TV_MILESTONES_MINUTES) or minutes_until < -30:
+        return
+
+    global _tv_milestones_shown
+    today = now.date().isoformat()
+    if _tv_milestones_shown["date"] != today:
+        _tv_milestones_shown = {"date": today, "shown": []}
+
+    candidates = [m for m in _TV_MILESTONES_MINUTES if minutes_until <= m]
+    if not candidates:
+        return
+    due = min(candidates)
+    if due in _tv_milestones_shown["shown"]:
+        return
+    for m in _TV_MILESTONES_MINUTES:
+        if m >= due:
+            _tv_milestones_shown["shown"].append(m)
+    persisted_state.save(_TV_MILESTONES_SHOWN_KEY, _tv_milestones_shown)
+
+    ntfy_client.queue_for_tv("Wind down", _bedtime_tv_text(due))

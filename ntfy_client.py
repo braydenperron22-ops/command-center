@@ -43,12 +43,21 @@ REQUEST_TIMEOUT_SECONDS = 10
 # back — read/cleared by lg_tv_control.py on the kiosk box itself, over
 # this same shared Upstash store (this Cloud app has no direct line to
 # that separate process).
+#
+# Public (not underscore-prefixed) — session follow-up: "treated like
+# the leave-in countdown... bedtime in two hours, bedtime in an hour,
+# 30 minutes..." wanted a whole milestone ladder of TV-only toasts,
+# with no real phone push at all for each one (the phone already gets
+# its own single "Wind down" alert) — sleep_tracker.py calls this
+# directly for that, same "promote to public once a second real caller
+# exists" convention this app already follows elsewhere (e.g.
+# pages_system_health.py's dashboard_stats/kiosk_stats/network_stats).
 _TV_QUEUE_KEY = "tv_notification_queue"
 _TV_QUEUE_CAP = 20
 _TV_QUEUE_MAX_AGE_SECONDS = 10 * 60
 
 
-def _queue_for_tv(title: str, message: str) -> None:
+def queue_for_tv(title: str, message: str) -> None:
     try:
         now = time.time()
         queue = persisted_state.load(_TV_QUEUE_KEY, [])
@@ -79,7 +88,7 @@ def send(title: str, message: str, priority: str = "default", tags: str | None =
     can pass a more specific in-app URL instead (a real page/query-
     param deep link, once one exists) or False to omit the header
     entirely for a push that genuinely has nothing worth opening."""
-    _queue_for_tv(title, message)
+    queue_for_tv(title, message)
     topic = st.secrets.get("NTFY_TOPIC")
     if not topic:
         return False
