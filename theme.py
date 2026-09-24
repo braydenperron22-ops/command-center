@@ -3701,20 +3701,26 @@ html, body, [class*="css"] {
    blue-tint every bit of text inside it (an <a>'s color/text-decoration
    inherit down through its children unless reset) — this makes the
    link itself invisible as a link, so the badge still reads as a
-   plain glass status widget, not a suddenly-blue hyperlink. position:
-   fixed still lives on .system-health-corner itself below, not this
-   wrapper — an <a> around a fixed-position child doesn't affect that
-   child's own fixed positioning, so this needed no layout changes. */
+   plain glass status widget, not a suddenly-blue hyperlink. Real bug
+   caught live: position:fixed originally stayed on .system-health-
+   corner itself with the <a> left as a plain (default display:inline)
+   wrapper — an inline element wrapping a fixed-position (i.e.
+   out-of-flow) child collapses to 0x0 with no content to size itself
+   against, making the whole link invisible to clicks despite rendering
+   correctly. Fixed positioning now lives on the <a> itself instead
+   (display:block so it actually sizes to its content), and
+   .system-health-corner below is just a normal flex child within it. */
 .system-health-corner-link {
+    position: fixed;
+    bottom: 60px;
+    right: 14px;
+    z-index: 400;
+    display: block;
     text-decoration: none;
     color: inherit;
     cursor: pointer;
 }
 .system-health-corner {
-    position: fixed;
-    bottom: 60px;
-    right: 14px;
-    z-index: 400;
     display: flex;
     flex-direction: column;
     align-items: center;
