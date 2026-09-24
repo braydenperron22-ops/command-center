@@ -2645,7 +2645,10 @@ if _bedtime is not None:
 # ORed in here (not into the whole expression) so an active jumbotron/
 # game/leave-timer/storm still correctly overrides it the same as any
 # other morning.
-_night_mode_wake_grace_active = sleep_tracker.in_wake_grace_window(now)
+try:
+    _night_mode_wake_grace_active = sleep_tracker.in_wake_grace_window(now)
+except Exception:
+    _night_mode_wake_grace_active = False
 _night_mode_active = (
     not _jumbotron_active
     and not game_live
