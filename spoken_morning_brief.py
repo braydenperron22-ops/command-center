@@ -201,6 +201,27 @@ def generate(now: datetime, weather: dict | None, air_quality: dict | None) -> s
     # shared key would risk handing back a stale terse answer once it's
     # no longer stupidly early, or vice versa.
     feature_key = "spoken_morning_brief_terse" if terse else "spoken_morning_brief"
-    return gemini_client.generate_periodic(
+    text = gemini_client.generate_periodic(
         feature_key, refresh_seconds=4 * 3600, prompt=prompt, temperature=0.6, max_output_tokens=90 if terse else 250
     )
+    if text is None:
+        return None
+    # Session report, live: got yesterday's brief spoken back at him.
+    # generate_periodic's own fallback-to-last-good-value on a failed
+    # real call (see its own docstring) is the right default for a
+    # silent dashboard tile, but this is SPOKEN with "Good morning,
+    # sir, I've reviewed your commute" framing -- reading out a stale
+    # cross-day fallback as if it were freshly reviewed this morning is
+    # actively misleading, not just a little behind. Most likely cause
+    # that morning: the kiosk box's own real WiFi instability (already
+    # documented elsewhere this session) took out the real Gemini call
+    # during the trigger window, same as any other network-dependent
+    # feature that morning. Checked here, not inside generate_periodic
+    # itself, so every other periodic feature keeps its normal silent-
+    # staleness tolerance -- run_spoken_morning_brief._tick already
+    # retries next minute on a None, so this just makes it keep
+    # retrying instead of speaking something wrong.
+    generated_at = gemini_client.periodic_cache_status().get(feature_key)
+    if generated_at is None or datetime.fromtimestamp(generated_at).date() != now.date():
+        return None
+    return text
