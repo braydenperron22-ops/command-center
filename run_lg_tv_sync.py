@@ -80,7 +80,23 @@ _DEFAULT_STATE = {
     "next_volume_check_at": 0.0,
     "ip_check_date": None,  # ISO date lg_tv_control.verify_tv_ip last actually ran
     "notifications_shown_at": 0.0,  # watermark for lg_tv_control.send_pending_notifications
+    "next_notification_check_at": 0.0,  # Upstash cost audit -- see NOTIFICATION_CHECK_INTERVAL_SECONDS
 }
+
+# Upstash cost audit, live: send_pending_notifications does a real
+# Upstash read (the shared TV notification queue) on every single call
+# -- unlike the volume-floor/IP checks just above, it had no gate of
+# its own at all, so it rode CHECK_INTERVAL_SECONDS (20s) around the
+# clock: ~129,600 commands/month from this one line, roughly 40% of
+# this account's entire monthly usage that month on its own. A phone-
+# mirrored notification showing up on the TV within ~80s instead of
+# ~20s is not a noticeable difference -- unlike night_mode_active
+# itself (checked every tick, deliberately, for the TV-follows-
+# dashboard reactivity that was explicitly asked to be fast), nothing
+# about a notification needs sub-minute latency. Same shape as the
+# existing next_volume_check_at/next_check_at gates just above, not a
+# new pattern.
+NOTIFICATION_CHECK_INTERVAL_SECONDS = 90
 
 
 def _log(msg: str) -> None:
@@ -190,9 +206,11 @@ async def _tick() -> None:
         await lg_tv_control.verify_tv_ip(_log)
         state["ip_check_date"] = today
 
-    state["notifications_shown_at"] = await lg_tv_control.send_pending_notifications(
-        state["notifications_shown_at"], _log
-    )
+    if now_ts >= state["next_notification_check_at"]:
+        state["notifications_shown_at"] = await lg_tv_control.send_pending_notifications(
+            state["notifications_shown_at"], _log
+        )
+        state["next_notification_check_at"] = now_ts + NOTIFICATION_CHECK_INTERVAL_SECONDS
 
     _save_state(state)
 

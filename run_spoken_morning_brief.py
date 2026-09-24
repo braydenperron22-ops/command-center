@@ -30,9 +30,15 @@ CHECK_INTERVAL_SECONDS = 60
 def _tick() -> None:
     now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
     today = now.date()
-    if spoken_morning_brief.already_delivered_today(today):
-        return
+    # Upstash cost audit: already_delivered_today is a real Upstash
+    # read, and this tick runs every CHECK_INTERVAL_SECONDS around the
+    # clock -- checking it BEFORE in_window (a plain local hour
+    # comparison, free) meant 19 of every 24 hours spent a real command
+    # confirming what the free check below would already have said.
+    # Cheapest check first.
     if not spoken_morning_brief.in_window(now):
+        return
+    if spoken_morning_brief.already_delivered_today(today):
         return
     trigger = spoken_morning_brief.trigger_time(now)
     if trigger is None or now < trigger:
