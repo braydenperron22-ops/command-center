@@ -2480,6 +2480,23 @@ except Exception:
 
 try:
     _night_mode_day_start = weather["sunrise"].replace(second=0, microsecond=0) if weather else None
+    # Session bug report, live, 12:05am: weather_client caches
+    # _fetch_weather_raw for 15 min (st.cache_data ttl=15*60), reading
+    # Open-Meteo's daily["sunrise"][0] as of whenever that cache last
+    # actually refreshed. Right after local midnight, that cached value
+    # can still be YESTERDAY's sunrise -- hours in the past relative to
+    # `now` -- for up to that same 15 minutes, until the cache naturally
+    # rolls over. A stale, already-past day_start paired with the still-
+    # future day_end fallback just below to make [day_start, day_end)
+    # look like it already contained `now` right after midnight, which
+    # flipped night_mode_active to False at exactly the wrong moment
+    # (and, downstream, made lg_tv_control.wake_and_switch_if_safe wake
+    # the TV back on mid-sleep). Same date-safety idiom this block
+    # already applies to _screen_wake_naive/_bedtime_naive just below --
+    # discard a cross-midnight-stale sunrise the same way, falling
+    # through to the plain 4:30am default instead of trusting it.
+    if _night_mode_day_start is not None and _night_mode_day_start.date() != now.date():
+        _night_mode_day_start = None
 except Exception:
     _night_mode_day_start = None
 if _night_mode_day_start is None:
