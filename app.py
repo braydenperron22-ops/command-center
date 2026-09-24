@@ -3991,16 +3991,18 @@ if not _jumbotron_active and not _night_mode_active and not _terminal_active:
         # href the mobile nav's own "Dev" link already uses (see
         # _maint_active's own comment) — plain query-param navigation
         # Streamlit's own routing already handles, no new JS needed.
-        # .system-health-corner ITSELF is now the <a> (see theme.py's
-        # own comment on this class) — a <div> wrapped in a separate
-        # <a> got silently flattened out of the DOM by Streamlit's own
-        # markdown sanitizer (block content isn't allowed nested inside
-        # an inline element), caught live only after the CSS-only fix
-        # attempt still left it unclickable.
+        # Two real live bugs before landing here (see theme.py's own
+        # .system-health-corner-hitbox comment for the full story) —
+        # short version: Streamlit's markdown sanitizer strips block
+        # content out of ANY <a> it renders, so the real badge stays a
+        # plain <div> (nothing stripped, all its content intact) and a
+        # second, empty sibling <a> sits on top of it as an invisible
+        # click target — nothing inside it for the sanitizer to strip.
         st.markdown(
-            '<a class="system-health-corner" href="?page=maintenance">'
+            '<div class="system-health-corner">'
             f'<div class="system-health-corner-section"><div class="system-health-corner-title">{_corner_title}</div>{_corner_stats_fn()}</div>'
-            "</a>",
+            "</div>"
+            '<a class="system-health-corner-hitbox" href="?page=maintenance"></a>',
             unsafe_allow_html=True,
         )
     except Exception:

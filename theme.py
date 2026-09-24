@@ -3696,24 +3696,32 @@ html, body, [class*="css"] {
    construction, not just visually matched). Score and the pulse-dot/
    text row are both gone entirely per that report. */
 /* Session request: "clicking on that little box in the bottom right
-   opened the dev window." Two real bugs caught live getting here, both
-   from treating .system-health-corner as a <div> wrapped in a separate
-   <a>: (1) an inline <a> wrapping a position:fixed (out-of-flow) child
-   collapses to 0x0, invisible to clicks despite rendering fine — tried
-   fixing by moving position:fixed onto the <a> itself, which exposed
-   (2) the real blocker: Streamlit's own markdown sanitizer flattens a
-   <div> (block-level) nested inside an <a> (inline-level) right out of
-   the DOM entirely, target="_blank"/rel getting silently added in the
-   process — no amount of CSS fixes that, the content is just gone.
-   Fixed by making .system-health-corner ITSELF the <a> tag (app.py no
-   longer emits a separate wrapper) — a single element with its own
-   attributes survives sanitization intact; nesting was the actual
-   problem, not which element had position:fixed. text-decoration/
-   color reset here so the badge still reads as a plain glass widget,
-   not a suddenly-blue-and-underlined hyperlink. */
-a.system-health-corner {
-    text-decoration: none;
-    color: inherit;
+   opened the dev window." Three real bugs caught live getting here.
+   Attempt 1: .system-health-corner as a <div> wrapped in a separate
+   <a> — an inline <a> wrapping a position:fixed (out-of-flow) child
+   collapses to 0x0, invisible to clicks despite rendering fine.
+   Attempt 2: moved position:fixed onto the <a> itself — exposed the
+   real blocker instead: Streamlit's own markdown sanitizer strips
+   block-level content (a <div>) out of ANY <a> it renders, nested or
+   not, target="_blank"/rel getting silently added in the process. Even
+   making .system-health-corner ITSELF the <a> (a single element, no
+   nesting) still came back with its content stripped — this isn't a
+   nesting problem, <a> in this app's st.markdown pipeline just can't
+   carry block children at all, full stop.
+   Fixed the only way that actually survives sanitization: .system-
+   health-corner stays a plain <div> (all its real content intact), and
+   .system-health-corner-hitbox is a second, EMPTY sibling <a> —
+   nothing to strip since it has no children — positioned as an exact
+   transparent overlay on top of the same fixed coordinates, one z-index
+   higher so it actually catches the click. */
+.system-health-corner-hitbox {
+    position: fixed;
+    bottom: 60px;
+    right: 14px;
+    z-index: 401;
+    display: block;
+    width: 170px;
+    height: 92px;
     cursor: pointer;
 }
 .system-health-corner {
@@ -6301,7 +6309,7 @@ a.system-health-corner {
        debug telemetry, not something a quick phone glance needs; the
        kiosk (where scrolling never happens, so this never overlaps
        anything) keeps it. */
-    .system-health-corner { display: none; }
+    .system-health-corner, .system-health-corner-hitbox { display: none; }
 
     /* Same position:fixed-on-a-scrolling-phone-page bug as
        .system-health-corner just above, same fix — see that rule's
