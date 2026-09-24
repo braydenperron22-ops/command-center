@@ -102,6 +102,14 @@ UNDEFINED_MAGNITUDE = 4
 # even running unattended 24/7 — 15 min was needlessly conservative and
 # let the shown time lag real conditions by up to a quarter hour.
 CACHE_TTL_SECONDS = 5 * 60
+# Session request: "if I'm not deliberately driving, there's no point
+# in having super duper up to date data... throttle it when we're not
+# within a window of like two hours of leaving... update every like 30
+# minutes or so." Distinct from CACHE_TTL_SECONDS above -- that stays
+# the near-leave/"about to actually drive" freshness, this is the
+# far-out default the rest of the day rides instead. See route()'s own
+# near_leave docstring for exactly which tier a given call uses.
+FAR_FROM_LEAVE_CACHE_TTL_SECONDS = 30 * 60
 # Session request: a predictive call using TomTom's departAt parameter
 # (IQ Routes historical speed profiles for a specific future time — the
 # recurring 8-8:30am bus jam this was built to catch is baked into that
@@ -147,8 +155,7 @@ MAPBOX_ROUTE_URL = "https://api.mapbox.com/directions/v5/mapbox/driving-traffic/
 _HEAVY_CONGESTION = {"heavy", "severe"}
 
 
-@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_route_mapbox_raw(
+def _fetch_route_mapbox_core(
     access_token: str, origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float, record_history: bool
 ) -> dict:
     """Same return shape as _fetch_route_raw (TomTom) above, so every
@@ -256,6 +263,24 @@ def _fetch_route_mapbox_raw(
         # as TomTom's own shape whenever no alternative was needed.
         "reference_duration_seconds": duration,
     }
+
+
+# Same near-leave/far-from-leave two-tier shape as _fetch_route_raw/
+# _fetch_route_raw_throttled above, mirrored here so the fallback path
+# gets the exact same throttling once TomTom has already failed --
+# see route()'s own near_leave docstring.
+@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_route_mapbox_raw(
+    access_token: str, origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float, record_history: bool
+) -> dict:
+    return _fetch_route_mapbox_core(access_token, origin_lat, origin_lon, dest_lat, dest_lon, record_history)
+
+
+@st.cache_data(ttl=FAR_FROM_LEAVE_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_route_mapbox_raw_throttled(
+    access_token: str, origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float, record_history: bool
+) -> dict:
+    return _fetch_route_mapbox_core(access_token, origin_lat, origin_lon, dest_lat, dest_lon, record_history)
 
 
 def _incident_label(route_data: dict) -> str | None:
@@ -418,8 +443,7 @@ def _round_depart_at(depart_at: datetime) -> datetime:
     return depart_at.replace(minute=minute, second=0, microsecond=0)
 
 
-@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_route_raw(
+def _fetch_route_core(
     api_key: str, origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float,
     record_history: bool, depart_at_iso: str | None = None,
 ) -> dict:
@@ -564,7 +588,38 @@ def _fetch_route_raw(
     }
 
 
-def route(destination: dict | None = None, depart_at: datetime | None = None, origin: dict | None = None) -> dict | None:
+# Session request: "if I'm not deliberately driving, there's no point
+# in having super duper up to date data." Two cache tiers over the
+# exact same _fetch_route_core, not two different fetch functions —
+# route() (see its own near_leave docstring) picks whichever wrapper
+# to call based on how far off the relevant shift's start time still
+# is, so a route many hours out only actually refreshes every
+# FAR_FROM_LEAVE_CACHE_TTL_SECONDS instead of riding the same
+# CACHE_TTL_SECONDS meant for "I'm about to actually leave" freshness.
+# Each wrapper gets its own independent st.cache_data namespace, so
+# switching tiers as a shift crosses into the near-leave window just
+# means the fresh tier's own cache is empty the first time it's asked
+# — one real extra call at that crossing, not a correctness issue.
+@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_route_raw(
+    api_key: str, origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float,
+    record_history: bool, depart_at_iso: str | None = None,
+) -> dict:
+    return _fetch_route_core(api_key, origin_lat, origin_lon, dest_lat, dest_lon, record_history, depart_at_iso)
+
+
+@st.cache_data(ttl=FAR_FROM_LEAVE_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_route_raw_throttled(
+    api_key: str, origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float,
+    record_history: bool, depart_at_iso: str | None = None,
+) -> dict:
+    return _fetch_route_core(api_key, origin_lat, origin_lon, dest_lat, dest_lon, record_history, depart_at_iso)
+
+
+def route(
+    destination: dict | None = None, depart_at: datetime | None = None, origin: dict | None = None,
+    near_leave: bool = True,
+) -> dict | None:
     """`destination` is {"lat", "lon"} (a "label" key, if present, is
     ignored here) — None routes to the default COMMUTE_DESTINATION.
     The last-good fallback only applies to the plain live default call
@@ -595,7 +650,18 @@ def route(destination: dict | None = None, depart_at: datetime | None = None, or
     — same hybrid predictive+live machinery, same incident detection,
     same everything, just not hardcoded to always start from home
     anymore. Distinct origin/destination pairs get their own cache
-    entries for free (both are now real @st.cache_data parameters)."""
+    entries for free (both are now real @st.cache_data parameters).
+
+    `near_leave` — session request: "if I'm not deliberately driving,
+    there's no point in having super duper up to date data... throttle
+    it when we're not within a window of like two hours of leaving."
+    True (the default — every existing caller keeps today's behavior
+    unless it explicitly opts out) uses CACHE_TTL_SECONDS (5 min);
+    False uses FAR_FROM_LEAVE_CACHE_TTL_SECONDS (30 min) instead.
+    commute_reminder.py is the one place that actually passes False —
+    it already knows a shift's own start time for free, no route fetch
+    needed to make that call, so it decides the tier before ever
+    reaching here (see its own near-leave threshold)."""
     global _last_good_route
     api_key = st.secrets.get("TOMTOM_API_KEY")
     if not api_key:
@@ -608,8 +674,10 @@ def route(destination: dict | None = None, depart_at: datetime | None = None, or
         localized = depart_at if depart_at.tzinfo else depart_at.replace(tzinfo=ZoneInfo(TIMEZONE))
         depart_at_iso = _round_depart_at(localized).isoformat(timespec="seconds")
     record_history = is_default and depart_at is None
+    fetch_tomtom = _fetch_route_raw if near_leave else _fetch_route_raw_throttled
+    fetch_mapbox = _fetch_route_mapbox_raw if near_leave else _fetch_route_mapbox_raw_throttled
     try:
-        result = _fetch_route_raw(api_key, org["lat"], org["lon"], dest["lat"], dest["lon"], record_history, depart_at_iso)
+        result = fetch_tomtom(api_key, org["lat"], org["lon"], dest["lat"], dest["lon"], record_history, depart_at_iso)
     except Exception:
         # Session decision, live, after the InsufficientFunds incident:
         # "default to TomTom, and when TomTom is not responding or is
@@ -625,7 +693,7 @@ def route(destination: dict | None = None, depart_at: datetime | None = None, or
         mapbox_token = st.secrets.get("MAPBOX_ACCESS_TOKEN")
         if mapbox_token:
             try:
-                result = _fetch_route_mapbox_raw(mapbox_token, org["lat"], org["lon"], dest["lat"], dest["lon"], record_history)
+                result = fetch_mapbox(mapbox_token, org["lat"], org["lon"], dest["lat"], dest["lon"], record_history)
             except Exception:
                 return _last_good_route if (is_default and depart_at is None) else None
             data_health.record_success("commute_route")

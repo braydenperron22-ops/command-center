@@ -72,6 +72,26 @@ MILESTONES_MINUTES = [120, 90, 60, 45, 30, 20, 15, 10, 5, 3, 0]
 # window, and "Leave now" 40 minutes after the fact isn't useful.
 LATEST_FIRE_MINUTES = -30
 
+# Session request: "if I'm not deliberately driving, there's no point
+# in having super duper up to date data... throttle it when we're not
+# within a window of like two hours of leaving... update every like 30
+# minutes or so." A bit wider than MILESTONES_MINUTES' own 120-minute
+# widest milestone on purpose — the fast cache tier needs to already
+# be warm by the time that first milestone can even fire, not switch
+# tiers mid-toast.
+NEAR_LEAVE_WINDOW_MINUTES = 150
+
+
+def _is_near_leave(shift_start: datetime, now: datetime) -> bool:
+    """Whether commute_client.route calls for this shift should use its
+    fast (near-leave) cache tier or the slower far-from-leave one — see
+    that function's own near_leave docstring. Cheap: just compares the
+    shift's own already-known start time against `now`, no route fetch
+    needed to make this call (that's the whole point — deciding the
+    tier can't itself depend on data from the tier being decided)."""
+    now_aware = now.replace(tzinfo=shift_start.tzinfo) if shift_start.tzinfo else now
+    return (shift_start - now_aware) <= timedelta(minutes=NEAR_LEAVE_WINDOW_MINUTES)
+
 # Session request: "give me a toast and visible cue to go start my car
 # based on the conditions to give it adequate time to warm up... warmer
 # weather shorter time, colder weather longer time... full discretion
@@ -597,7 +617,11 @@ def commute_status(now: datetime) -> dict | None:
 
     destination = todays_destination(now)
     using_default = destination is COMMUTE_DESTINATION
-    route = commute_client.route(None if using_default else destination)
+    # No active shift reached this point at all (see _current_shift
+    # above) -- there's nothing to actually leave for right now by
+    # definition, so this always uses the throttled tier regardless of
+    # how far off today's next shift might be.
+    route = commute_client.route(None if using_default else destination, near_leave=False)
     if not route:
         return None
     return {"route": route, "destination": destination, "leave_by": None, "is_congested": is_congested(route)}
@@ -631,7 +655,9 @@ def _due_milestone(minutes_until_leave: float, shown_for_event: set[int], now_ho
     return due
 
 
-def _hybrid_route(destination: dict | None, live: dict, target_time: datetime, origin: dict | None = None) -> dict:
+def _hybrid_route(
+    destination: dict | None, live: dict, target_time: datetime, origin: dict | None = None, near_leave: bool = True,
+) -> dict:
     """The worse (by duration_seconds) of the already-fetched LIVE route
     and a fresh predictive route for `target_time` — see this module's
     own AMBER_DELAY_THRESHOLD_SECONDS comment for the two real gaps
@@ -645,8 +671,9 @@ def _hybrid_route(destination: dict | None, live: dict, target_time: datetime, o
     already the right (or the only available) answer. `origin`
     defaults to home (commute_client.route's own default) — a caller
     building the reverse commute (see maybe_push_commute_home) passes
-    the actual starting point instead."""
-    predictive = commute_client.route(destination, depart_at=target_time, origin=origin)
+    the actual starting point instead. `near_leave` just passes through
+    to commute_client.route — see this module's own _is_near_leave."""
+    predictive = commute_client.route(destination, depart_at=target_time, origin=origin, near_leave=near_leave)
     if predictive is None or predictive["duration_seconds"] <= live["duration_seconds"]:
         return {**live, "predicted": False}
     return {**predictive, "predicted": True}
@@ -667,12 +694,13 @@ def _hybrid_route_for_shift(shift: dict) -> tuple[dict, datetime] | None:
     if _is_home_event(shift):
         return None
     destination = _destination_for_shift(shift)
-    live = commute_client.route(destination)
+    near_leave = _is_near_leave(shift["start"], datetime.now())
+    live = commute_client.route(destination, near_leave=near_leave)
     if not live:
         return None
     buffer_minutes = _adaptive_buffer_minutes(using_default_destination=destination is None)
     rough_leave_by = shift["start"] - timedelta(seconds=live["duration_seconds"]) - timedelta(minutes=buffer_minutes)
-    route = _hybrid_route(destination, live, rough_leave_by)
+    route = _hybrid_route(destination, live, rough_leave_by, near_leave=near_leave)
     leave_by = shift["start"] - timedelta(seconds=route["duration_seconds"]) - timedelta(minutes=buffer_minutes)
     return route, leave_by
 
@@ -1172,7 +1200,12 @@ def check_traffic_change(now: datetime) -> dict | None:
         return None
 
     destination = _destination_for_shift(shift)
-    live = commute_client.route(destination)  # cache hit — _hybrid_route_for_shift already fetched this this rerun
+    # Must match _hybrid_route_for_shift's own near_leave exactly (same
+    # shift, same `now`-ish moment) or this misses the cache tier that
+    # call actually populated and fires a genuinely redundant fetch —
+    # see this module's own _is_near_leave.
+    near_leave = _is_near_leave(shift["start"], now)
+    live = commute_client.route(destination, near_leave=near_leave)  # cache hit — _hybrid_route_for_shift already fetched this this rerun
     if not live:
         return None
     delay = live.get("delay_seconds", 0)
