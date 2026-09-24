@@ -2634,12 +2634,27 @@ if _bedtime is not None:
         game_live = False
         if page == "jumbotron":
             page, _, _ = _scheduled_page(_rotation_epoch)
+# Session bug report, live: real sunrise ended night mode at 7:06am
+# while the wake-preview window (Gym - Pull 9:30am -> wake_time_for
+# 8:30am -> window opens 7:30am) hadn't opened yet -- night mode was
+# already off by the time it would have mattered, so lg_tv_control.
+# wake_preview_if_due (gated on night_mode_active) never ran, and the
+# "get up in..." countdown (rendered inside night mode's own markdown)
+# had nowhere left to show even once the TV did come on the ordinary
+# daytime way. See sleep_tracker.in_wake_grace_window's own docstring —
+# ORed in here (not into the whole expression) so an active jumbotron/
+# game/leave-timer/storm still correctly overrides it the same as any
+# other morning.
+_night_mode_wake_grace_active = sleep_tracker.in_wake_grace_window(now)
 _night_mode_active = (
     not _jumbotron_active
     and not game_live
     and not _night_mode_leave_active
     and not _night_mode_storm_active
-    and not (_night_mode_day_start <= now < _night_mode_day_end)
+    and (
+        not (_night_mode_day_start <= now < _night_mode_day_end)
+        or _night_mode_wake_grace_active
+    )
 )
 night_mode.sync_active_state(_night_mode_active)
 

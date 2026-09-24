@@ -443,6 +443,29 @@ def wake_countdown_span_html(now: datetime) -> tuple[str, str] | None:
     return tier, html_snippet
 
 
+# Session bug report, live: the wake-preview TV feature ("turn the TV
+# on an hour before I have to get up... get up in blah blah blah") went
+# completely dark one morning -- night mode's own day-start boundary is
+# driven by real sunrise (app.py's _night_mode_day_start), which has
+# nothing to do with wake_time_for. On any morning sunrise lands before
+# this window opens (Gym - Pull at 9:30am -> wake_time_for 8:30am ->
+# window opens 7:30am, but sunrise was 7:06am that day -- late
+# September; only gets more common as mornings get lighter into
+# spring), night mode ended, lg_tv_control.wake_and_switch_if_safe took
+# over as a plain daytime handoff before wake_preview_if_due (gated on
+# night_mode_active still being True) ever got a chance to run, and the
+# wake countdown itself -- rendered as part of night mode's own
+# markdown -- had nowhere left to display even if the TV had come on.
+# app.py ORs this into its day-window check so night mode (and
+# everything that lives inside it, screen content and the TV wake both)
+# stays up through the wake-preview/overdue span regardless of sunrise.
+def in_wake_grace_window(now: datetime) -> bool:
+    """True from WAKE_PREVIEW_MINUTES before the real wake time through
+    WAKE_OVERDUE_GRACE_MINUTES after it — same span _wake_countdown_info
+    already gates on, exposed as a plain bool for that override."""
+    return _wake_countdown_info(now) is not None
+
+
 def render_ticker_bedtime_bar(now: datetime) -> None:
     """The jumbotron ticker-slot version — same .jumbo-leave-ticker
     class/shape as commute_reminder.render_ticker_leave_bar (matches
