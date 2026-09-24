@@ -3696,31 +3696,31 @@ html, body, [class*="css"] {
    construction, not just visually matched). Score and the pulse-dot/
    text row are both gone entirely per that report. */
 /* Session request: "clicking on that little box in the bottom right
-   opened the dev window." The whole badge is now wrapped in a plain
-   <a href="?page=maintenance">, which by default would underline and
-   blue-tint every bit of text inside it (an <a>'s color/text-decoration
-   inherit down through its children unless reset) — this makes the
-   link itself invisible as a link, so the badge still reads as a
-   plain glass status widget, not a suddenly-blue hyperlink. Real bug
-   caught live: position:fixed originally stayed on .system-health-
-   corner itself with the <a> left as a plain (default display:inline)
-   wrapper — an inline element wrapping a fixed-position (i.e.
-   out-of-flow) child collapses to 0x0 with no content to size itself
-   against, making the whole link invisible to clicks despite rendering
-   correctly. Fixed positioning now lives on the <a> itself instead
-   (display:block so it actually sizes to its content), and
-   .system-health-corner below is just a normal flex child within it. */
-.system-health-corner-link {
-    position: fixed;
-    bottom: 60px;
-    right: 14px;
-    z-index: 400;
-    display: block;
+   opened the dev window." Two real bugs caught live getting here, both
+   from treating .system-health-corner as a <div> wrapped in a separate
+   <a>: (1) an inline <a> wrapping a position:fixed (out-of-flow) child
+   collapses to 0x0, invisible to clicks despite rendering fine — tried
+   fixing by moving position:fixed onto the <a> itself, which exposed
+   (2) the real blocker: Streamlit's own markdown sanitizer flattens a
+   <div> (block-level) nested inside an <a> (inline-level) right out of
+   the DOM entirely, target="_blank"/rel getting silently added in the
+   process — no amount of CSS fixes that, the content is just gone.
+   Fixed by making .system-health-corner ITSELF the <a> tag (app.py no
+   longer emits a separate wrapper) — a single element with its own
+   attributes survives sanitization intact; nesting was the actual
+   problem, not which element had position:fixed. text-decoration/
+   color reset here so the badge still reads as a plain glass widget,
+   not a suddenly-blue-and-underlined hyperlink. */
+a.system-health-corner {
     text-decoration: none;
     color: inherit;
     cursor: pointer;
 }
 .system-health-corner {
+    position: fixed;
+    bottom: 60px;
+    right: 14px;
+    z-index: 400;
     display: flex;
     flex-direction: column;
     align-items: center;

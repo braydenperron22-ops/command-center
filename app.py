@@ -3991,15 +3991,15 @@ if not _jumbotron_active and not _night_mode_active and not _terminal_active:
         # href the mobile nav's own "Dev" link already uses (see
         # _maint_active's own comment) — plain query-param navigation
         # Streamlit's own routing already handles, no new JS needed.
-        # The whole floating badge is the link (see theme.py's own
-        # .system-health-corner-link for why an <a> needed extra rules
-        # to not visually change this from a plain badge to look like
-        # one), not just the current section's text.
+        # .system-health-corner ITSELF is now the <a> (see theme.py's
+        # own comment on this class) — a <div> wrapped in a separate
+        # <a> got silently flattened out of the DOM by Streamlit's own
+        # markdown sanitizer (block content isn't allowed nested inside
+        # an inline element), caught live only after the CSS-only fix
+        # attempt still left it unclickable.
         st.markdown(
-            '<a class="system-health-corner-link" href="?page=maintenance">'
-            '<div class="system-health-corner">'
+            '<a class="system-health-corner" href="?page=maintenance">'
             f'<div class="system-health-corner-section"><div class="system-health-corner-title">{_corner_title}</div>{_corner_stats_fn()}</div>'
-            "</div>"
             "</a>",
             unsafe_allow_html=True,
         )
