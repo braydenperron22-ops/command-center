@@ -4003,7 +4003,7 @@ if not _jumbotron_active and not _night_mode_active and not _terminal_active:
         f"""{_hero_spacer}<div class="hero-row">
             <div class="hero-time">
                 <div class="clock">{now.strftime('%I:%M %p').lstrip('0')}</div>
-                <div class="date-sub">{now.strftime('%A, %B %d')} [DEPLOYCHK-ffb9310]</div>
+                <div class="date-sub">{now.strftime('%A, %B %d')}</div>
             </div>{weather_block}
         </div>""",
         unsafe_allow_html=True,
