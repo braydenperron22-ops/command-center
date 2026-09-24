@@ -10,7 +10,21 @@ Replaces an earlier OSRM-based version: OSRM's public server routes
 the static road network only (speed limits/road class), no live
 conditions, so it could never actually answer "how bad is traffic
 right now" — the entire point of this tile.
-"""
+
+Session incident: a TomTom account-credit outage (403
+InsufficientFunds) took the entire leave-in countdown down for a real
+morning with zero on-screen indication. Two fixes: data_health now
+tracks both "commute_route" (does the leave-timer work at all) and
+"commute_route_tomtom" (is the PRIMARY provider specifically healthy,
+so a quiet fallback doesn't hide a real TomTom problem forever — see
+route()'s own comment); and route() now falls back to Mapbox's
+driving-traffic API (MAPBOX_ACCESS_TOKEN, free tier: 100k requests/
+month, no card) whenever a real TomTom call fails, not as a parallel
+or preferred path. "Predictive is not needed all the time" — the
+fallback has no future-depart_at equivalent to TomTom's IQ Routes, so
+a predictive call that falls through to it just answers with live-only
+conditions, same degraded-but-real shape a live-only TomTom call
+already returns today."""
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -111,6 +125,137 @@ DEPART_AT_BUCKET_MINUTES = 5
 GEOCODE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 
 _last_good_route: dict | None = None
+
+# Session decision, live: TomTom hit a real account-credit outage (403
+# InsufficientFunds) and took the whole leave-in countdown down with
+# it, uncovered by data_health until that same incident. "Default to
+# TomTom, and when TomTom is not responding or is rate limited, go to
+# Mapbox" — kept TomTom primary (predictive depart_at/IQ Routes, the
+# richer incident taxonomy, commute_history's existing baseline all
+# stay TomTom-only) rather than switching providers outright; Mapbox
+# only gets a real request on a genuine TomTom failure. "Predictive is
+# not needed all the time" — Mapbox's driving-traffic profile has no
+# future-depart_at equivalent, so a predictive call that falls through
+# to Mapbox just answers with live-only conditions instead, same as
+# today's live-only call already does on its own.
+MAPBOX_ROUTE_URL = "https://api.mapbox.com/directions/v5/mapbox/driving-traffic/{lon1},{lat1};{lon2},{lat2}"
+# Mapbox congestion annotation buckets, one per route geometry
+# coordinate pair: "unknown"/"low"/"moderate"/"heavy"/"severe". Treated
+# as "there's a real incident-worthy delay here" the same rough way
+# TomTom's own SEVERE_MAGNITUDE check above does, just against Mapbox's
+# own vocabulary instead of TomTom's numeric magnitude/speed fields.
+_HEAVY_CONGESTION = {"heavy", "severe"}
+
+
+@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_route_mapbox_raw(
+    access_token: str, origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float, record_history: bool
+) -> dict:
+    """Same return shape as _fetch_route_raw (TomTom) above, so every
+    existing caller (commute_reminder._main_road_for_route,
+    check_traffic_change, road_conditions_511, ...) works unchanged
+    regardless of which provider actually answered. Deliberately a
+    simpler mapping where the two providers' data genuinely don't
+    correspond 1:1 (street_spans is real metres here, not TomTom's
+    point-index span, but every real caller only ever uses it to rank
+    streets against each other via max(), never reads the raw number
+    — see _main_road_for_route's own spans.get(name, 0) default,
+    already null-safe for a route with none of this filled in at
+    all). This function only ever runs when TomTom has already failed
+    (see route() below), so "good enough to keep the leave-timer
+    honest" is the actual bar, not exact parity."""
+    url = MAPBOX_ROUTE_URL.format(lon1=origin_lon, lat1=origin_lat, lon2=dest_lon, lat2=dest_lat)
+    fetch_throttle.wait_turn()
+    resp = requests.get(
+        url,
+        params={
+            "access_token": access_token,
+            "annotations": "congestion,distance",
+            "geometries": "geojson",
+            "overview": "full",
+            "steps": "true",
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if data.get("code") != "Ok" or not data.get("routes"):
+        raise ValueError(f"Mapbox routing failed: {data.get('code', 'no routes')}")
+    route_data = data["routes"][0]
+    leg = route_data["legs"][0]
+    steps = leg.get("steps", [])
+
+    duration = route_data["duration"]
+    # Inside the cached function, not the route() call site -- same
+    # "only once per real cache miss" discipline _fetch_route_raw's own
+    # comment documents, not once per rerun/cache-hit.
+    if record_history:
+        commute_history.record(duration)
+    # duration_typical (no-traffic baseline) is what the driving-
+    # traffic profile adds over the plain driving profile -- the
+    # closest Mapbox equivalent to TomTom's trafficDelayInSeconds.
+    # Falls back to 0 delay (not a crash) on the rare response that
+    # omits it.
+    typical = route_data.get("duration_typical", duration)
+    delay = max(0, duration - typical)
+
+    # Mapbox returns [lon, lat] pairs -- flipped here so callers (e.g.
+    # road_conditions_511.py) see the exact same (lat, lon) convention
+    # TomTom's own "points" already uses.
+    points = [(lat, lon) for lon, lat in route_data.get("geometry", {}).get("coordinates", [])]
+
+    streets_ordered: list[str] = []
+    street_spans: dict[str, float] = {}
+    for step in steps:
+        name = step.get("name")
+        if not name:
+            continue
+        if not streets_ordered or streets_ordered[-1] != name:
+            streets_ordered.append(name)
+        street_spans[name] = street_spans.get(name, 0.0) + step.get("distance", 0.0)
+    streets = set(streets_ordered)
+
+    congestion = leg.get("annotation", {}).get("congestion", [])
+    heavy_fraction = (sum(1 for c in congestion if c in _HEAVY_CONGESTION) / len(congestion)) if congestion else 0.0
+    incident = "heavy traffic" if heavy_fraction >= 0.15 else None
+    # Which named street(s) actually carry the heavy congestion --
+    # approximated by splitting the congestion array proportionally to
+    # each step's own share of total distance (Mapbox doesn't publish
+    # a direct step<->congestion-index mapping the way TomTom's
+    # section/guidance correlation does). Good enough to name the
+    # right road on a real slowdown, not pretending to TomTom's own
+    # point-level precision.
+    traffic_roads: list[str] = []
+    if congestion and incident:
+        total_distance = sum(s.get("distance", 0.0) for s in steps) or 1.0
+        idx = 0.0
+        for step in steps:
+            name = step.get("name")
+            span = step.get("distance", 0.0)
+            start = int(idx / total_distance * len(congestion))
+            end = int((idx + span) / total_distance * len(congestion))
+            idx += span
+            if name and end > start:
+                segment = congestion[start:end]
+                if any(c in _HEAVY_CONGESTION for c in segment) and name not in traffic_roads:
+                    traffic_roads.append(name)
+
+    return {
+        "duration_seconds": duration,
+        "delay_seconds": delay,
+        "distance_km": route_data["distance"] / 1000,
+        "incident": incident,
+        "points": points,
+        "streets": streets,
+        "streets_ordered": streets_ordered,
+        "street_spans": street_spans,
+        "traffic_roads": traffic_roads,
+        # No distinct "reference vs. chosen" route concept in this
+        # simpler fallback path (see TomTom's own reference_duration_
+        # seconds docstring above) -- equal to duration_seconds, same
+        # as TomTom's own shape whenever no alternative was needed.
+        "reference_duration_seconds": duration,
+    }
 
 
 def _incident_label(route_data: dict) -> str | None:
@@ -466,6 +611,27 @@ def route(destination: dict | None = None, depart_at: datetime | None = None, or
     try:
         result = _fetch_route_raw(api_key, org["lat"], org["lon"], dest["lat"], dest["lon"], record_history, depart_at_iso)
     except Exception:
+        # Session decision, live, after the InsufficientFunds incident:
+        # "default to TomTom, and when TomTom is not responding or is
+        # rate limited, go to Mapbox... hopefully enough for a full
+        # month without any issues." TomTom stays the primary call
+        # above unconditionally -- Mapbox is only ever tried once
+        # TomTom itself has already failed, not a parallel/preferred
+        # path. No depart_at support on this fallback (see _fetch_
+        # route_mapbox_raw's own docstring) -- a predictive call that
+        # falls through here just gets a live-only answer instead,
+        # same degraded-but-real shape a live-only TomTom call already
+        # returns today.
+        mapbox_token = st.secrets.get("MAPBOX_ACCESS_TOKEN")
+        if mapbox_token:
+            try:
+                result = _fetch_route_mapbox_raw(mapbox_token, org["lat"], org["lon"], dest["lat"], dest["lon"], record_history)
+            except Exception:
+                return _last_good_route if (is_default and depart_at is None) else None
+            data_health.record_success("commute_route")
+            if is_default and depart_at is None:
+                _last_good_route = result
+            return result
         return _last_good_route if (is_default and depart_at is None) else None
     # Session report, live: a TomTom account-credit outage (403
     # InsufficientFunds) silently took out the entire leave-in
@@ -474,6 +640,7 @@ def route(destination: dict | None = None, depart_at: datetime | None = None, or
     # key/account is genuinely working right now, regardless of which
     # destination/origin this particular call was for.
     data_health.record_success("commute_route")
+    data_health.record_success("commute_route_tomtom")
     if is_default and depart_at is None:
         _last_good_route = result
     return result

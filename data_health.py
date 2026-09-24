@@ -116,6 +116,17 @@ THRESHOLDS_SECONDS = {
     # enough not to false-alarm on one genuinely commute-free day (a
     # vacation day, a Sunday with nothing on the calendar).
     "commute_route": 24 * 60 * 60,
+    # Session follow-up: added a Mapbox fallback so a repeat of the
+    # InsufficientFunds incident above doesn't take the leave-timer
+    # down again -- but that fallback would ALSO quietly absorb a real,
+    # ongoing TomTom outage forever, and "commute_route" above only
+    # tracks whether the leave-timer works AT ALL (either provider).
+    # This tracks TomTom specifically (commute_client.route only
+    # records this one on a real TomTom success, never on a Mapbox
+    # fallback success) so a TomTom-specific problem still surfaces on
+    # its own instead of hiding behind Mapbox covering for it. Same
+    # 24h window and reasoning as "commute_route".
+    "commute_route_tomtom": 24 * 60 * 60,
 }
 
 LABELS = {
@@ -133,7 +144,8 @@ LABELS = {
     "portfolio_positions": "Portfolio holdings",
     "lightning": "Lightning (Xweather)",
     "precip_nowcast": "Rain nowcast (Xweather)",
-    "commute_route": "Commute routing (TomTom)",
+    "commute_route": "Commute routing (any provider)",
+    "commute_route_tomtom": "Commute routing (TomTom specifically)",
 }
 
 
