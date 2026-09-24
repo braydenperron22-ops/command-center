@@ -40,6 +40,7 @@ apart."""
 import asyncio
 import socket
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -47,6 +48,7 @@ from aiowebostv import WebOsClient, WebOsTvPairError
 
 import ntfy_client
 import persisted_state
+import sleep_tracker
 
 TV_HOST = "192.168.0.152"
 TV_MAC = "d8:e3:5e:bb:2c:7a"
@@ -544,6 +546,55 @@ async def send_pending_notifications(last_shown_at: float, log=lambda msg: None)
 # own reduced interval). This function is purely about the TV's own
 # state, not the dashboard's.
 STATE_WATCH_RECONNECT_DELAY_SECONDS = 15
+
+
+# Session request: "have the TV turn on like an hour before I have to
+# get up... check... if I wake up I know how much time I have and
+# whether it's worth going back to bed." Deliberately independent of
+# night_mode_active itself -- this fires WHILE still in night mode,
+# waking the TV to the SAME night-mode-styled screen (which now
+# includes sleep_tracker's own wake-countdown block) rather than
+# ending night mode early into the full bright daytime dashboard.
+# Shares sleep_tracker.WAKE_PREVIEW_MINUTES with that display so "the
+# TV turns on" and "the countdown is visible" always agree on timing.
+#
+# Only ever wakes a TV that's currently UNREACHABLE (presumed off) --
+# if it's already reachable (on the kiosk, on Xbox, whatever), this is
+# a no-op; the whole point is waking a sleeping TV for an early check-
+# in, never fighting something already active. This also means it
+# naturally never re-fires once the TV's awake for the window: the
+# very next call finds it reachable and does nothing, no separate dedup
+# state needed. Deliberately does NOT auto-power the TV back off if
+# left on and unused -- out of scope for what was actually asked; a
+# known trade-off, not an oversight.
+async def wake_preview_if_due(log=lambda msg: None) -> None:
+    wake_time = sleep_tracker.wake_time_for(datetime.now())
+    if wake_time is None:
+        return
+    now_aware = datetime.now(wake_time.tzinfo)
+    remaining_minutes = (wake_time - now_aware).total_seconds() / 60
+    if not (0 <= remaining_minutes <= sleep_tracker.WAKE_PREVIEW_MINUTES):
+        return
+
+    client = await _connect()
+    if client is not None:
+        await client.disconnect()
+        return  # already reachable (on, whatever it's showing) -- nothing to do
+
+    log(f"waking TV for early wake-preview ({remaining_minutes:.0f} min before wake time)")
+    send_wol()
+    await asyncio.sleep(WOL_BOOT_WAIT_SECONDS)
+    client = await _connect()
+    if client is None:
+        log("could not reach TV after wake-preview WoL -- will retry next cycle")
+        return
+    try:
+        await client.set_input(KIOSK_INPUT_ID)
+        log("switched TV to kiosk for wake-preview")
+    except Exception as e:
+        log(f"wake-preview input-switch failed: {e}")
+    finally:
+        await client.disconnect()
 
 
 async def watch_state(log=lambda msg: None) -> None:

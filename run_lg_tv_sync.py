@@ -123,6 +123,13 @@ async def _tick() -> None:
                     state["settled"] = True
                 else:
                     state["next_check_at"] = now_ts + RECHECK_INTERVAL_SECONDS
+            # Session request: "have the TV turn on like an hour before
+            # I have to get up... if I wake up I know how much time I
+            # have." Independent of the power-off settling above --
+            # runs every tick while still in night mode, own internal
+            # window/dedup (see its own docstring), so it can fire even
+            # after this cycle's power-off action has already settled.
+            await lg_tv_control.wake_preview_if_due(_log)
         else:
             # Not bedtime: the TV should default to showing the kiosk
             # unless the Xbox is genuinely in use -- checked every tick,
