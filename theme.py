@@ -6011,6 +6011,21 @@ html, body, [class*="css"] {
     color: #FF3B30;
     text-shadow: 0 0 26px rgba(255, 59, 48, 0.65), 0 0 56px rgba(255, 59, 48, 0.35);
 }
+/* Session request: "when it says get into bed, we get a little timer
+   that shows when the screen's going to go to sleep... how long I
+   have to stare at my beautiful clock." Deliberately a small secondary
+   detail next to .night-bedtime-cta, not competing with it — smaller,
+   no glow, same "plainest treatment" reasoning .night-wakeup's own
+   comment already gives for a fact that's real but not the main
+   focus. */
+.night-sleep-countdown {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 1.3rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: #9C2E24;
+    margin-top: 0.3rem;
+}
 /* Session request: "the leave in timer [can] show up during the night
    screen... just a heads up, you're gonna be waking up soon, buddy,
    but not in a very serious... way." Deliberately the plainest

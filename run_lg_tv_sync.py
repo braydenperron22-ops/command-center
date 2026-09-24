@@ -29,6 +29,14 @@ every poll tick, no recheck gating — see lg_tv_control.py's own
 docstrings for why each is a safe, cheap no-op when there's nothing to
 actually do).
 
+Session correction: the FIRST power-off attempt each night no longer
+fires a flat NIGHT_MODE_OFF_DELAY_SECONDS after night mode simply
+engages -- it now waits for sleep_tracker.screen_sleep_time (the real
+calculated bedtime + a grace period), falling back to the old flat
+delay only when there's no real bedtime to anchor to (e.g. a genuine
+day off). The flat delay used to mean the TV could go to sleep hours
+before the real "Get into bed" CTA on the dashboard ever showed.
+
 Run as its own systemd --user service (see systemd/lg-tv-sync.service)
 — reusing this same venv (aiowebostv installed alongside everything
 else here) rather than a separate one."""
@@ -36,11 +44,12 @@ else here) rather than a separate one."""
 import asyncio
 import json
 import time
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import lg_tv_control
 import persisted_state
+import sleep_tracker
 
 CHECK_INTERVAL_SECONDS = 20
 RECHECK_INTERVAL_SECONDS = 15 * 60
@@ -65,7 +74,8 @@ _LOG_FILE = _STATE_DIR / "lg-tv-sync.log"
 _DEFAULT_STATE = {
     "desired_active": None,  # last night_mode_active value this module has seen/acted on
     "settled": True,  # whether that desired state has been fully achieved (or confirmed N/A)
-    "next_check_at": 0.0,  # don't touch the TV again for the night-mode action before this time
+    "next_check_at": 0.0,  # don't recheck (Xbox-deferred case) again before this time
+    "night_engaged_at": 0.0,  # epoch time night mode most recently engaged -- fallback target basis
     "volume_floor_date": None,  # ISO date the daily volume floor last actually ran
     "next_volume_check_at": 0.0,
     "ip_check_date": None,  # ISO date lg_tv_control.verify_tv_ip last actually ran
@@ -103,26 +113,35 @@ async def _tick() -> None:
         if state["desired_active"] != desired_active:
             state["desired_active"] = desired_active
             state["settled"] = False
+            state["next_check_at"] = 0.0
             if desired_active:
-                # Night mode just engaged -- grace period before the
-                # first power-off attempt, see NIGHT_MODE_OFF_DELAY_
-                # SECONDS' own comment.
-                state["next_check_at"] = now_ts + NIGHT_MODE_OFF_DELAY_SECONDS
-                _log(f"night mode engaged -- will check TV in {NIGHT_MODE_OFF_DELAY_SECONDS // 60} min")
-            else:
-                # Night mode ending -- act right away, don't wait for a
-                # recheck window that belonged to the PREVIOUS state.
-                state["next_check_at"] = 0.0
+                state["night_engaged_at"] = now_ts
+                _log("night mode engaged")
 
         if desired_active:
-            # Bedtime: power off if ours, with the explicit 15-minute
-            # recheck cadence while deferred (Xbox in use at bedtime).
+            # Bedtime: power off if ours, but not until the REAL
+            # calculated bedtime (+ grace) has passed -- see sleep_
+            # tracker.screen_sleep_time's own docstring for why this is
+            # anchored to real bedtime, not the fixed night-mode-engage
+            # moment (session correction: a flat delay from engage could
+            # put the TV to sleep hours before "Get into bed" ever
+            # showed). Falls back to the old flat-delay-from-engage
+            # shape only when there's no real bedtime to anchor to at
+            # all (e.g. a genuine day off). The explicit 15-minute
+            # recheck cadence while deferred (Xbox in use) still applies
+            # once past that target.
             if not state["settled"] and now_ts >= state["next_check_at"]:
-                result = await lg_tv_control.power_off_if_ours(_log)
-                if result == "settled":
-                    state["settled"] = True
-                else:
-                    state["next_check_at"] = now_ts + RECHECK_INTERVAL_SECONDS
+                sleep_time = sleep_tracker.screen_sleep_time(datetime.now())
+                target_ts = (
+                    sleep_time.timestamp() if sleep_time is not None
+                    else state["night_engaged_at"] + NIGHT_MODE_OFF_DELAY_SECONDS
+                )
+                if now_ts >= target_ts:
+                    result = await lg_tv_control.power_off_if_ours(_log)
+                    if result == "settled":
+                        state["settled"] = True
+                    else:
+                        state["next_check_at"] = now_ts + RECHECK_INTERVAL_SECONDS
             # Session request: "have the TV turn on like an hour before
             # I have to get up... if I wake up I know how much time I
             # have." Independent of the power-off settling above --

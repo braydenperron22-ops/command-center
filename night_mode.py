@@ -247,6 +247,20 @@ def render(now: datetime, weather: dict | None, category: str, phase: str, dim: 
         _cta_class = " night-bedtime-cta" if _tier in ("critical", "overdue") else ""
         bedtime_html = f'<div class="night-bedtime{_cta_class}">{_span_html}</div>'
 
+    # Session request: "when it says get into bed, we get a little
+    # timer that shows when the screen's going to go to sleep... how
+    # long I have to stare at my beautiful clock." Only ever non-None
+    # during the same window bedtime_html's own CTA is showing (see
+    # screen_sleep_countdown_span_html's own docstring), so no extra
+    # gating needed here.
+    sleep_countdown_html = ""
+    try:
+        _sleep_span = sleep_tracker.screen_sleep_countdown_span_html(now)
+    except Exception:
+        _sleep_span = None
+    if _sleep_span is not None:
+        sleep_countdown_html = f'<div class="night-sleep-countdown">{_sleep_span}</div>'
+
     # Session request: "have the TV turn on like an hour before I have
     # to get up... this same thing that says like get up in blah blah
     # blah... if I wake up I know how much time I have and whether it's
@@ -301,6 +315,7 @@ def render(now: datetime, weather: dict | None, category: str, phase: str, dim: 
         f'<div class="night-date">{date_str}</div>'
         f"{weather_html}"
         f"{bedtime_html}"
+        f"{sleep_countdown_html}"
         f"{wake_html}"
         f"{tomorrow_html}"
         f"{wakeup_html}"

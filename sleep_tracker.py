@@ -205,6 +205,61 @@ def bedtime_for(now: datetime) -> datetime | None:
     return _apply_bedtime_cap(wake - timedelta(hours=SLEEP_TARGET_HOURS))
 
 
+# Session correction: "the TV doesn't turn off until... 15 minutes
+# after night mode is kicked in" was originally implemented as a flat
+# delay from night_mode_active's own fixed ~9:30pm engage time — which
+# meant the TV could (and typically would) go to sleep well before the
+# real calculated bedtime ever arrived, since bedtime_for is usually
+# well after 9:45pm. That silently defeated the "Get into bed" CTA:
+# most nights it would only ever exist on an already-powered-off
+# screen. Re-anchored here to the REAL bedtime instead — lg_tv_
+# control.py (kiosk box) uses this exact function for when to actually
+# power the TV off, and screen_sleep_countdown_span_html below shows
+# the matching on-screen countdown, so both always agree.
+SCREEN_SLEEP_GRACE_MINUTES = 15
+
+
+def screen_sleep_time(now: datetime) -> datetime | None:
+    """Real bedtime plus SCREEN_SLEEP_GRACE_MINUTES — None whenever
+    bedtime_for itself is None (no real commitment to compute a
+    bedtime from at all, e.g. a genuine day off); callers treat that
+    the same way commute_reminder's own leave-timer treats "nothing to
+    leave for" — fall back to whatever their own default already was
+    rather than never sleeping the TV at all."""
+    bedtime = bedtime_for(now)
+    if bedtime is None:
+        return None
+    return bedtime + timedelta(minutes=SCREEN_SLEEP_GRACE_MINUTES)
+
+
+def screen_sleep_countdown_span_html(now: datetime) -> str | None:
+    """Session request: "when it says get into bed, we get a little
+    timer that shows when the screen's going to go to sleep... how
+    long I have to stare at my beautiful clock." Deliberately only
+    shown alongside the main "Get into bed" CTA itself (bedtime tier
+    critical/overdue) — a small secondary detail next to that
+    countdown, not its own separate focal point on screen, so no tier/
+    brightening system of its own. None once the target has actually
+    passed (nothing useful left to show — the TV is about to, or
+    already has, gone dark)."""
+    info = _countdown_info(now)
+    if info is None or info[1] not in ("critical", "overdue"):
+        return None
+    sleep_time = screen_sleep_time(now)
+    if sleep_time is None:
+        return None
+    now_aware = now.replace(tzinfo=sleep_time.tzinfo) if sleep_time.tzinfo else now
+    remaining = (sleep_time - now_aware).total_seconds()
+    if remaining <= 0:
+        return None
+    target_ms = int(sleep_time.timestamp() * 1000)
+    text = f"Screen sleeps in {_format_clock(remaining)}"
+    return (
+        f'<span class="live-countdown" data-target-ms="{target_ms}" data-format="clock" '
+        f'data-template="Screen sleeps in {{}}" data-zero-text="Screen sleeping…">{text}</span>'
+    )
+
+
 def _format_clock(remaining_seconds: float) -> str:
     """Same H:MM:SS/MM:SS shape commute_reminder._format_clock and
     pages_jumbotron's own countdown fallback already use — first-frame
