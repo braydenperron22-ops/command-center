@@ -119,6 +119,23 @@ async def _tick() -> None:
                 _log("night mode engaged")
 
         if desired_active:
+            # Session bug, live: night mode's own day-window now also
+            # engages during the morning wake-preview/overdue span (see
+            # sleep_tracker.in_wake_grace_window's own docstring) -- not
+            # just real evening bedtime. screen_sleep_time's "bedtime"
+            # math, evaluated at THIS hour, resolves to LAST NIGHT's
+            # already-passed bedtime (_apply_bedtime_cap pulls a same-
+            # morning wake_time_for back onto the previous evening), so
+            # the power-off-after-bedtime check below saw a target
+            # already in the past and immediately powered the TV off
+            # right as wake_preview_if_due should have been showing it
+            # (confirmed live: engaged 08:44:42, powered off 08:44:46).
+            # Skip the power-off branch entirely while in this window --
+            # it was never a real bedtime to begin with -- and let
+            # wake_preview_if_due (still called every tick below) own
+            # the TV instead.
+            if sleep_tracker.in_wake_grace_window(datetime.now()):
+                pass
             # Bedtime: power off if ours, but not until the REAL
             # calculated bedtime (+ grace) has passed -- see sleep_
             # tracker.screen_sleep_time's own docstring for why this is
@@ -130,7 +147,7 @@ async def _tick() -> None:
             # all (e.g. a genuine day off). The explicit 15-minute
             # recheck cadence while deferred (Xbox in use) still applies
             # once past that target.
-            if not state["settled"] and now_ts >= state["next_check_at"]:
+            elif not state["settled"] and now_ts >= state["next_check_at"]:
                 sleep_time = sleep_tracker.screen_sleep_time(datetime.now())
                 target_ts = (
                     sleep_time.timestamp() if sleep_time is not None
