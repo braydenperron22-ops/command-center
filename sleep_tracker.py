@@ -448,22 +448,50 @@ def wake_countdown_span_html(now: datetime) -> tuple[str, str] | None:
 # completely dark one morning -- night mode's own day-start boundary is
 # driven by real sunrise (app.py's _night_mode_day_start), which has
 # nothing to do with wake_time_for. On any morning sunrise lands before
-# this window opens (Gym - Pull at 9:30am -> wake_time_for 8:30am ->
-# window opens 7:30am, but sunrise was 7:06am that day -- late
-# September; only gets more common as mornings get lighter into
-# spring), night mode ended, lg_tv_control.wake_and_switch_if_safe took
-# over as a plain daytime handoff before wake_preview_if_due (gated on
-# night_mode_active still being True) ever got a chance to run, and the
-# wake countdown itself -- rendered as part of night mode's own
-# markdown -- had nowhere left to display even if the TV had come on.
-# app.py ORs this into its day-window check so night mode (and
-# everything that lives inside it, screen content and the TV wake both)
-# stays up through the wake-preview/overdue span regardless of sunrise.
+# this window opens, night mode ended, lg_tv_control.wake_and_switch_
+# if_safe took over as a plain daytime handoff before wake_preview_if_
+# due (gated on night_mode_active still being True) ever got a chance
+# to run, and the wake countdown itself -- rendered as part of night
+# mode's own markdown -- had nowhere left to display even if the TV had
+# come on. app.py ORs this into its day-window check so night mode (and
+# everything inside it, screen content and the TV wake both) can engage
+# regardless of sunrise.
+#
+# Session correction, live, 8:58am with a real 9:30 commitment: this
+# window originally ran through WAKE_OVERDUE_GRACE_MINUTES past
+# wake_time (9:00am for an 8:30 wake_time) -- kept night mode's own dim
+# screen up well past when there was real getting-ready time left.
+# "we shouldn't be in night mode right now... the leave-in timer would
+# be for eight a.m... an hour and a half to get ready... night mode
+# should have turned off at eight a.m." A fixed getting-ready buffer
+# directly ahead of the real commitment, not wake_time's own
+# (deliberately shorter, already session-corrected-to-60) buffer at
+# all -- confirmed explicitly over alternatives anchored to wake_time.
+# Deliberately a DIFFERENT upper bound than _wake_countdown_info's own
+# (wake_time + WAKE_OVERDUE_GRACE_MINUTES): that span is still exactly
+# right for the countdown's own displayed text (still ticks down
+# correctly on its own terms whenever this window happens to have it
+# on screen), but night mode/the TV wake feature that gate on THIS
+# function need to step aside earlier -- GETTING_READY_MINUTES before
+# the commitment, not wake_time's own later buffer.
+GETTING_READY_MINUTES = 90
+
+
 def in_wake_grace_window(now: datetime) -> bool:
-    """True from WAKE_PREVIEW_MINUTES before the real wake time through
-    WAKE_OVERDUE_GRACE_MINUTES after it — same span _wake_countdown_info
-    already gates on, exposed as a plain bool for that override."""
-    return _wake_countdown_info(now) is not None
+    """True from (WAKE_BUFFER_MINUTES + WAKE_PREVIEW_MINUTES) minutes
+    before the real commitment through GETTING_READY_MINUTES before it
+    — i.e. the pre-wake preview stretch, ending once there's only
+    GETTING_READY_MINUTES of real prep time left rather than running
+    all the way to/past wake_time itself."""
+    commitment = _next_commitment(now)
+    if commitment is None:
+        return False
+    start = commitment["start"]
+    now_aware = now.replace(tzinfo=start.tzinfo) if start.tzinfo else now
+    remaining = (start - now_aware).total_seconds()
+    lower = GETTING_READY_MINUTES * 60
+    upper = (WAKE_BUFFER_MINUTES + WAKE_PREVIEW_MINUTES) * 60
+    return lower < remaining <= upper
 
 
 def render_ticker_bedtime_bar(now: datetime) -> None:
