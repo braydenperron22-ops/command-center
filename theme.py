@@ -3695,6 +3695,21 @@ html, body, [class*="css"] {
    -value/-label classes those emit, genuinely the same formatting by
    construction, not just visually matched). Score and the pulse-dot/
    text row are both gone entirely per that report. */
+/* Session request: "clicking on that little box in the bottom right
+   opened the dev window." The whole badge is now wrapped in a plain
+   <a href="?page=maintenance">, which by default would underline and
+   blue-tint every bit of text inside it (an <a>'s color/text-decoration
+   inherit down through its children unless reset) — this makes the
+   link itself invisible as a link, so the badge still reads as a
+   plain glass status widget, not a suddenly-blue hyperlink. position:
+   fixed still lives on .system-health-corner itself below, not this
+   wrapper — an <a> around a fixed-position child doesn't affect that
+   child's own fixed positioning, so this needed no layout changes. */
+.system-health-corner-link {
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+}
 .system-health-corner {
     position: fixed;
     bottom: 60px;

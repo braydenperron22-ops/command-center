@@ -36,6 +36,7 @@ import streamlit as st
 
 import dashboard_health
 import dashboard_score
+import data_health
 import kiosk_hardware
 import tiles
 
@@ -190,6 +191,29 @@ def network_stats() -> str:
     return _stat_row(
         _stat(f"{net.get('mbps')}", "MBPS", tone),
         _stat(f"{net.get('latency_ms')}", "MS PING", tone),
+    )
+
+
+def data_health_stats() -> str:
+    """Public — see dashboard_stats' own comment, same reason. Session
+    request: "a health score of our sources... how many sources are
+    actively responding and healthy and flag it." Reuses data_health's
+    own all_status() directly -- no new tracking or network calls, just
+    a glanceable roll-up of what that module already knows (the same
+    per-source detail pages_maintenance.py's own "D" hotkey view
+    shows). "unknown" sources (never succeeded yet this process, e.g.
+    right after a fresh redeploy) are excluded from the count entirely,
+    same "give it a minute, not a false alarm" reasoning data_health.
+    check() itself already applies -- otherwise this would read as
+    broken for the first few minutes after every single restart."""
+    statuses = [s for s in data_health.all_status() if s["status"] != "unknown"]
+    if not statuses:
+        return _stat_row(_stat("—", "SOURCES OK"))
+    stale = [s for s in statuses if s["status"] == "stale"]
+    tone = "low" if stale else "good"
+    return _stat_row(
+        _stat(f"{len(statuses) - len(stale)}/{len(statuses)}", "SOURCES OK", tone),
+        _stat(str(len(stale)), "STALE", tone),
     )
 
 

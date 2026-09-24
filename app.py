@@ -3967,17 +3967,40 @@ STATUS_ROTATE_SECONDS = 20
 
 if not _jumbotron_active and not _night_mode_active and not _terminal_active:
     try:
+        # Session request: "a health score of our sources... how many
+        # sources are actively responding and healthy and flag it."
+        # Joins the existing rotation as a 5th section, same shape as
+        # its siblings — pages_system_health.data_health_stats reuses
+        # data_health.all_status() directly, no new tracking. render()
+        # (the full System Health rotation page) deliberately does NOT
+        # get this same tile — see that function's own comment on why
+        # a "Sources" tile was dropped from there (Current Issues
+        # already surfaces a real stale source, redundant there); this
+        # corner has no Current Issues section at all, so no such
+        # overlap here.
         _corner_sections = [
             ("Dashboard", pages_system_health.dashboard_stats),
             ("Kiosk", pages_system_health.kiosk_stats),
             ("Internet", pages_system_health.network_stats),
             ("Household", pages_system_health.household_stats),
+            ("Sources", pages_system_health.data_health_stats),
         ]
         _corner_title, _corner_stats_fn = _corner_sections[int(time.time() // STATUS_ROTATE_SECONDS) % len(_corner_sections)]
+        # Session request: "it would also be nice if clicking on that
+        # little box in the bottom right opened the dev window." Same
+        # href the mobile nav's own "Dev" link already uses (see
+        # _maint_active's own comment) — plain query-param navigation
+        # Streamlit's own routing already handles, no new JS needed.
+        # The whole floating badge is the link (see theme.py's own
+        # .system-health-corner-link for why an <a> needed extra rules
+        # to not visually change this from a plain badge to look like
+        # one), not just the current section's text.
         st.markdown(
+            '<a class="system-health-corner-link" href="?page=maintenance">'
             '<div class="system-health-corner">'
             f'<div class="system-health-corner-section"><div class="system-health-corner-title">{_corner_title}</div>{_corner_stats_fn()}</div>'
-            "</div>",
+            "</div>"
+            "</a>",
             unsafe_allow_html=True,
         )
     except Exception:
