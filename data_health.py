@@ -106,6 +106,16 @@ THRESHOLDS_SECONDS = {
     # actually down.
     "lightning": 3 * 60 * 60,
     "precip_nowcast": 3 * 60 * 60,
+    # Session report, live: the leave-in countdown went silent app-wide
+    # (every shift, not just one) with zero on-screen indication --
+    # traced to TomTom's routing API returning 403 InsufficientFunds
+    # (a real account-credit outage, not a code bug), and this source
+    # had no data_health coverage at all so it just looked like the
+    # feature quietly stopped existing. Gym/work shifts happen most
+    # days, so a real outage would show up same-day; 24h is generous
+    # enough not to false-alarm on one genuinely commute-free day (a
+    # vacation day, a Sunday with nothing on the calendar).
+    "commute_route": 24 * 60 * 60,
 }
 
 LABELS = {
@@ -123,6 +133,7 @@ LABELS = {
     "portfolio_positions": "Portfolio holdings",
     "lightning": "Lightning (Xweather)",
     "precip_nowcast": "Rain nowcast (Xweather)",
+    "commute_route": "Commute routing (TomTom)",
 }
 
 

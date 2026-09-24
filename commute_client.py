@@ -19,6 +19,7 @@ import requests
 import streamlit as st
 
 import commute_history
+import data_health
 import fetch_throttle
 from config import COMMUTE_DESTINATION, COMMUTE_ORIGIN, TIMEZONE
 
@@ -466,6 +467,13 @@ def route(destination: dict | None = None, depart_at: datetime | None = None, or
         result = _fetch_route_raw(api_key, org["lat"], org["lon"], dest["lat"], dest["lon"], record_history, depart_at_iso)
     except Exception:
         return _last_good_route if (is_default and depart_at is None) else None
+    # Session report, live: a TomTom account-credit outage (403
+    # InsufficientFunds) silently took out the entire leave-in
+    # countdown with zero visible indication -- this had no data_health
+    # coverage at all. Any real, non-exception result here means the
+    # key/account is genuinely working right now, regardless of which
+    # destination/origin this particular call was for.
+    data_health.record_success("commute_route")
     if is_default and depart_at is None:
         _last_good_route = result
     return result
