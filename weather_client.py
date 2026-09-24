@@ -212,6 +212,13 @@ def _fetch_weather_raw() -> dict | None:
         "precip_chance": precip[2] if precip else None,
         "forecast_high_c": highs[0] if highs else None,
         "forecast_low_c": lows[0] if lows else None,
+        # Session request: night mode's own weather block wants "what to
+        # expect when I wake up" — forecast_high_c above is TODAY's high
+        # (already passed by the time night mode is even showing), this
+        # is tomorrow's, from the same already-fetched 7-day daily array
+        # (forecast_days=7 above), just index 1 instead of 0. No new
+        # network call.
+        "tomorrow_high_c": highs[1] if len(highs) > 1 else None,
     }
 
 

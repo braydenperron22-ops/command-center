@@ -92,7 +92,9 @@ OVERDUE_GRACE_MINUTES = 60
 # own client-side script (app.py's kiosk-live-countdown) already uses
 # for ITS "critical" tier — not a coincidence, reusing that exact
 # vocabulary/threshold rather than inventing bedtime's own.
-BEDTIME_CTA_MINUTES = 10
+# Session request: "make it last a little longer" (the bright "Get into
+# bed" state) — doubled from the original 10.
+BEDTIME_CTA_MINUTES = 20
 
 
 def _shift_events_for(calendars: list[dict], day: date) -> list[dict]:
@@ -165,6 +167,22 @@ def wake_time_for(now: datetime) -> datetime | None:
     if commitment is None:
         return None
     return commitment["start"] - timedelta(minutes=WAKE_BUFFER_MINUTES)
+
+
+# Session request: "I think tomorrow's first commitment is nice" — for
+# night mode's own display. Reuses _next_commitment directly rather
+# than a second calendar scan; at any real nighttime hour that function
+# already resolves to tomorrow's commitment (today's own morning window
+# has passed), so no separate "tomorrow specifically" variant is
+# needed.
+def next_commitment_label(now: datetime) -> str | None:
+    """"Work · 9:00 AM" for the next real morning commitment, or None if
+    there's nothing on the calendar to show (a genuine day off — night
+    mode simply omits this line rather than showing a placeholder)."""
+    commitment = _next_commitment(now)
+    if commitment is None:
+        return None
+    return f'{commitment["summary"]} · {commitment["start"].strftime("%-I:%M %p")}'
 
 
 def _apply_bedtime_cap(bedtime: datetime) -> datetime:
@@ -307,6 +325,65 @@ def countdown_span_html(now: datetime) -> tuple[str, str] | None:
     html_snippet = (
         f'<span class="live-countdown" data-intensity data-target-ms="{target_ms}" '
         f'data-format="clock" data-template="{template}" data-zero-text="{_ZERO_TEXT}">{text}</span>'
+    )
+    return tier, html_snippet
+
+
+# Session request: "have the TV turn on like an hour before I have to
+# get up... have this same thing that says like get up in blah blah
+# blah... if I wake up I know how much time I have and whether it's
+# worth going back to bed." Same countdown/tier shape as bedtime's own
+# _countdown_info/countdown_span_html just above, mirrored for the
+# wake side — WAKE_PREVIEW_MINUTES is also the exact window
+# lg_tv_control.py (on the kiosk box) uses to decide when to physically
+# wake the TV for this, so the display window and "the TV turns on"
+# window always agree with each other.
+WAKE_PREVIEW_MINUTES = 60
+WAKE_CTA_MINUTES = 15
+WAKE_OVERDUE_GRACE_MINUTES = 30
+_WAKE_TIER_TEMPLATE = {
+    "calm": "Get up in {}",
+    "urgent": "Get up in {}",
+    "critical": "Get up — {}",
+}
+_WAKE_ZERO_TEXT = "Get up now"
+
+
+def _wake_countdown_info(now: datetime) -> tuple[int, str, str] | None:
+    """wake_time_for's own version of _countdown_info above. Active
+    from WAKE_PREVIEW_MINUTES before the real wake time through
+    WAKE_OVERDUE_GRACE_MINUTES after it."""
+    wake = wake_time_for(now)
+    if wake is None:
+        return None
+    now_aware = now.replace(tzinfo=wake.tzinfo) if wake.tzinfo else now
+    remaining = (wake - now_aware).total_seconds()
+    if not (-WAKE_OVERDUE_GRACE_MINUTES * 60 <= remaining <= WAKE_PREVIEW_MINUTES * 60):
+        return None
+    target_ms = int(wake.timestamp() * 1000)
+    if remaining <= 0:
+        tier = "overdue"
+        text = _WAKE_ZERO_TEXT
+    elif remaining <= WAKE_CTA_MINUTES * 60:
+        tier = "critical"
+        text = f"Get up — {_format_clock(remaining)}"
+    else:
+        tier = "urgent" if remaining <= 30 * 60 else "calm"
+        text = f"Get up in {_format_clock(remaining)}"
+    return target_ms, tier, text
+
+
+def wake_countdown_span_html(now: datetime) -> tuple[str, str] | None:
+    """(tier, html) for the raw live-countdown <span> — wake_time_for's
+    own version of countdown_span_html above, same shape."""
+    info = _wake_countdown_info(now)
+    if info is None:
+        return None
+    target_ms, tier, text = info
+    template = _WAKE_TIER_TEMPLATE.get(tier, "Get up in {}")
+    html_snippet = (
+        f'<span class="live-countdown" data-intensity data-target-ms="{target_ms}" '
+        f'data-format="clock" data-template="{template}" data-zero-text="{_WAKE_ZERO_TEXT}">{text}</span>'
     )
     return tier, html_snippet
 

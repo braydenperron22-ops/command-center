@@ -5914,6 +5914,14 @@ html, body, [class*="css"] {
     padding-left: 0.9rem;
     border-left: 1px solid #3D1512;
 }
+/* Session request: "tomorrow's forecast high is nice" — same treatment
+   as .night-weather-low just above, its own separator since both can
+   show at once (tonight's low, tomorrow's high). */
+.night-weather-high {
+    font-size: 1.4rem;
+    padding-left: 0.9rem;
+    border-left: 1px solid #3D1512;
+}
 /* Session history: "subtle urgency... a little tab that shows it's
    still active when I wake up" (small static corner pill) -> "make it
    bigger and write it out fully... not very visible in the corner"
@@ -6012,6 +6020,36 @@ html, body, [class*="css"] {
    warm family, dimmer than .night-bedtime since it's the lesser of
    the two on the rare occasion both could theoretically show at once. */
 .night-wakeup {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 1.5rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: #9C2E24;
+}
+/* Session request: "have the TV turn on like an hour before I have to
+   get up... this same thing that says like get up in blah blah blah...
+   if I wake up I know how much time I have and whether it's worth
+   going back to bed." Deliberately given the SAME prominent, bold
+   treatment as .night-bedtime/.night-bedtime-cta just above (not
+   .night-wakeup's deliberately-calm styling) -- this is meant to be
+   read at a glance the moment the TV wakes up for it, same "the
+   actionable thing on this screen" role bedtime already has in its
+   own window. */
+.night-wake {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+    font-size: 4rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: #D9382A;
+    font-variant-numeric: tabular-nums;
+}
+.night-wake-cta {
+    color: #FF3B30;
+    text-shadow: 0 0 26px rgba(255, 59, 48, 0.65), 0 0 56px rgba(255, 59, 48, 0.35);
+}
+/* Session request: "I think tomorrow's first commitment is nice."
+   Purely informational, same calm treatment as .night-wakeup. */
+.night-tomorrow {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
     font-size: 1.5rem;
     font-weight: 500;

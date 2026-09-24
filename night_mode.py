@@ -140,12 +140,22 @@ def render(now: datetime, weather: dict | None, category: str, phase: str, dim: 
         # rather than a second network call for something new.
         low = weather.get("forecast_low_c")
         low_html = f'<span class="night-weather-low">Low {round(low)}°</span>' if low is not None else ""
+        # Session request: "tomorrow's forecast high is nice" — from the
+        # same already-fetched daily array, index 1 instead of 0 (see
+        # weather_client.py's own comment), so "what to expect when I
+        # wake up" sits right next to tonight's low.
+        tomorrow_high = weather.get("tomorrow_high_c")
+        high_html = (
+            f'<span class="night-weather-high">Tomorrow {round(tomorrow_high)}°</span>'
+            if tomorrow_high is not None else ""
+        )
         weather_html = (
             f'<div class="night-weather">'
             f'<span class="night-weather-icon">{icon_svg}</span>'
             f'<span class="night-weather-temp">{temp}°</span>'
             f'<span class="night-weather-cond">{condition}</span>'
             f"{low_html}"
+            f"{high_html}"
             f"</div>"
         )
 
@@ -237,6 +247,36 @@ def render(now: datetime, weather: dict | None, category: str, phase: str, dim: 
         _cta_class = " night-bedtime-cta" if _tier in ("critical", "overdue") else ""
         bedtime_html = f'<div class="night-bedtime{_cta_class}">{_span_html}</div>'
 
+    # Session request: "have the TV turn on like an hour before I have
+    # to get up... this same thing that says like get up in blah blah
+    # blah... if I wake up I know how much time I have and whether it's
+    # worth going back to bed." Same embed-the-raw-span pattern as
+    # bedtime above, given the same prominent .night-wake/.night-wake-
+    # cta treatment (see theme.py's own comment) rather than .night-
+    # wakeup's deliberately calm one — this is meant to be read at a
+    # glance, same "the actionable thing on screen" role bedtime has in
+    # its own window. In practice this and bedtime_html are never both
+    # populated at the real same moment (opposite ends of the sleep
+    # cycle), so no explicit exclusivity check is needed here.
+    wake_html = ""
+    try:
+        _wake_info = sleep_tracker.wake_countdown_span_html(now)
+    except Exception:
+        _wake_info = None
+    if _wake_info is not None:
+        _wake_tier, _wake_span_html = _wake_info
+        _wake_cta_class = " night-wake-cta" if _wake_tier in ("critical", "overdue") else ""
+        wake_html = f'<div class="night-wake{_wake_cta_class}">{_wake_span_html}</div>'
+
+    # Session request: "I think tomorrow's first commitment is nice."
+    tomorrow_html = ""
+    try:
+        _tomorrow_label = sleep_tracker.next_commitment_label(now)
+    except Exception:
+        _tomorrow_label = None
+    if _tomorrow_label is not None:
+        tomorrow_html = f'<div class="night-tomorrow">{html.escape(_tomorrow_label)}</div>'
+
     # Session request: "you can have the leave in timer show up during
     # the night screen... just a heads up, you're gonna be waking up
     # soon, buddy, but not in a very serious way." Same embed-the-raw-
@@ -261,6 +301,8 @@ def render(now: datetime, weather: dict | None, category: str, phase: str, dim: 
         f'<div class="night-date">{date_str}</div>'
         f"{weather_html}"
         f"{bedtime_html}"
+        f"{wake_html}"
+        f"{tomorrow_html}"
         f"{wakeup_html}"
         f"{ticker_html}"
         f"{overlay_html}"
