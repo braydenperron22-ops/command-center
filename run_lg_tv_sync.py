@@ -44,6 +44,14 @@ import persisted_state
 
 CHECK_INTERVAL_SECONDS = 20
 RECHECK_INTERVAL_SECONDS = 15 * 60
+# Session request: "the TV doesn't turn off until... 15 minutes after
+# night mode is kicked in." A flat grace window on the ENGAGING
+# transition only -- the TV stays on for this long after night mode
+# starts before the first power-off attempt is even made. Distinct
+# from RECHECK_INTERVAL_SECONDS above (which governs re-attempts once
+# already deferred because the Xbox is in use) -- this just delays the
+# very first attempt.
+NIGHT_MODE_OFF_DELAY_SECONDS = 15 * 60
 # How often to retry the daily volume floor if the TV wasn't reachable
 # the last time -- not every single poll tick (the TV being off most of
 # the night is the normal case, no reason to hammer a connect attempt
@@ -93,11 +101,18 @@ async def _tick() -> None:
     if night_mode is not None:
         desired_active = bool(night_mode.get("active"))
         if state["desired_active"] != desired_active:
-            # A genuine transition -- act right away, don't wait for a
-            # recheck window that belonged to the PREVIOUS desired state.
             state["desired_active"] = desired_active
             state["settled"] = False
-            state["next_check_at"] = 0.0
+            if desired_active:
+                # Night mode just engaged -- grace period before the
+                # first power-off attempt, see NIGHT_MODE_OFF_DELAY_
+                # SECONDS' own comment.
+                state["next_check_at"] = now_ts + NIGHT_MODE_OFF_DELAY_SECONDS
+                _log(f"night mode engaged -- will check TV in {NIGHT_MODE_OFF_DELAY_SECONDS // 60} min")
+            else:
+                # Night mode ending -- act right away, don't wait for a
+                # recheck window that belonged to the PREVIOUS state.
+                state["next_check_at"] = 0.0
 
         if desired_active:
             # Bedtime: power off if ours, with the explicit 15-minute
