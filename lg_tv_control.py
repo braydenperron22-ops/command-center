@@ -568,20 +568,31 @@ STATE_WATCH_RECONNECT_DELAY_SECONDS = 15
 # left on and unused -- out of scope for what was actually asked; a
 # known trade-off, not an oversight.
 async def wake_preview_if_due(log=lambda msg: None) -> None:
-    wake_time = sleep_tracker.wake_time_for(datetime.now())
+    # Session bug, live: this used to gate on its own narrower window
+    # (0 <= remaining <= WAKE_PREVIEW_MINUTES) -- only the run-up to
+    # wake_time, never the WAKE_OVERDUE_GRACE_MINUTES after it that
+    # sleep_tracker.in_wake_grace_window (and the dashboard's own "Get
+    # up now" countdown) already covers. Caught live: the TV went
+    # unreachable at 8:30 wake time and this stayed silent through the
+    # whole overdue stretch instead of bringing it back -- if anything,
+    # overdue is the moment you most want the TV actually on. Reuses
+    # the exact same window the dashboard countdown uses so the two can
+    # never disagree with each other.
+    now = datetime.now()
+    if not sleep_tracker.in_wake_grace_window(now):
+        return
+    wake_time = sleep_tracker.wake_time_for(now)
     if wake_time is None:
         return
-    now_aware = datetime.now(wake_time.tzinfo)
+    now_aware = now.replace(tzinfo=wake_time.tzinfo) if wake_time.tzinfo else now
     remaining_minutes = (wake_time - now_aware).total_seconds() / 60
-    if not (0 <= remaining_minutes <= sleep_tracker.WAKE_PREVIEW_MINUTES):
-        return
 
     client = await _connect()
     if client is not None:
         await client.disconnect()
         return  # already reachable (on, whatever it's showing) -- nothing to do
 
-    log(f"waking TV for early wake-preview ({remaining_minutes:.0f} min before wake time)")
+    log(f"waking TV for wake-preview ({remaining_minutes:+.0f} min relative to wake time)")
     send_wol()
     await asyncio.sleep(WOL_BOOT_WAIT_SECONDS)
     client = await _connect()
