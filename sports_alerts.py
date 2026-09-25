@@ -57,7 +57,6 @@ import requests
 import streamlit as st
 
 import fetch_throttle
-import kiosk_tts
 import persisted_state
 import pregame_storylines
 import scores_client
@@ -1633,17 +1632,15 @@ def render_alert_bar(alert: dict) -> None:
     score_text = f"{alert.get('team_score')}–{alert.get('opp_score')}" if has_score else ""
     team_logo = alert.get("team_logo", "")
     opponent_logo = alert.get("opponent_logo", "")
-    # Session request: "add the scoring play for the Habs, Jays and
-    # Saints [voice]" — only "score" and "final" alerts carry a real
-    # "spoken" sentence (see get_new_alerts's own comments on both);
-    # every other type (pregame, warmup, start, streak, lead_change)
-    # leaves it unset, same "no summary, no audio, chime only" shape
-    # weather_alerts_bar/commute_reminder already use for their own
-    # optional voice lines.
-    spoken_text = alert.get("spoken") or ""
-    summary_attr = html.escape(spoken_text)
-    audio_b64 = kiosk_tts.synthesize_base64(spoken_text) if spoken_text else None
-    audio_attr = f' data-audio-b64="{audio_b64}"' if audio_b64 else ""
+    # Session report: "turn off the spoken toast notifications... just
+    # kiosk sports voice[...] they're way too obnoxious." get_new_alerts
+    # still sets alert["spoken"] for score/goal_line/mlb_threat/final
+    # (kept in case a future feature wants that text again), but this
+    # renderer no longer reads it into a summary or synthesizes audio for
+    # it — every sports toast is chime-only now, kioskPlaySportsVoice's
+    # own spoken-audio branch simply never has anything to play.
+    summary_attr = ""
+    audio_attr = ""
     st.markdown(
         f'<div class="{bar_class}" data-summary="{summary_attr}"{audio_attr}>'
         f'<span class="news-breaking-label">{label_text}</span>'
