@@ -4772,6 +4772,20 @@ def _gather_new_alerts(
     except Exception:
         pass
 
+    # Session request: "the volume's on 20, so it should be heard. Can
+    # you have like a five second audio chime with like a little, good
+    # morning, Brayden. It's time to wake up." One-shot, own dedup
+    # (date-keyed), same append-to-the-queue shape as every source
+    # above it — see sleep_tracker.maybe_wake_chime_alert's own
+    # docstring for why it rides commute_reminder.render_bar via
+    # kind="commute" instead of a new renderer.
+    try:
+        _wake_chime_alert = sleep_tracker.maybe_wake_chime_alert(now)
+        if _wake_chime_alert:
+            alerts.append(_wake_chime_alert)
+    except Exception:
+        pass
+
     # Session request: "I want to know when people are here, and when
     # people leave" — device count on the home network, up or down,
     # from the kiosk box's own 2-minute cycle. One-shot, own dedup, same

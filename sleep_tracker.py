@@ -41,6 +41,7 @@ import streamlit as st
 import calendar_client
 import ntfy_client
 import persisted_state
+from config import USER_FIRST_NAME
 
 # Session correction: "I don't think it takes me ninety minutes to get
 # ready for the gym. Sixty at most. Get up, get some breakfast, have a
@@ -551,6 +552,71 @@ def maybe_push_wind_down(now: datetime) -> None:
         priority="default",
         tags="crescent_moon",
     )
+
+
+# Session request: "the volume's on 20, so it should be heard. Can you
+# have like a five second audio chime with like a little, good
+# morning, Brayden. It's time to wake up." A real SPOKEN toast at the
+# actual wake_time_for() moment, not another silent TV overlay like
+# maybe_queue_tv_bedtime_milestone below (that's a webOS native toast,
+# no audio) — raised as an alternative to a phone-alarm idea in the
+# same conversation, once the kiosk's own speaker volume was confirmed
+# loud enough to actually be heard from the living room.
+#
+# Reuses commute_reminder.render_bar wholesale by returning the exact
+# same alert-dict shape (kind="commute") every leave-timer/car-prep
+# toast already returns — that renderer only ever reads label/headline/
+# summary/silent/volume/long_form_audio off whatever dict it's given,
+# so it doesn't care that this one didn't come from commute_reminder
+# itself. Gets kind="commute" specifically (not a new kind) so it rides
+# app.py's existing tier-0 priority (_alert_priority) and its existing
+# kioskPlayLeaveVoice playback path — a genuine wake-up moment deserves
+# that same near-top billing, not the effort of a whole new renderer/
+# JS function pair for one alert.
+_WAKE_CHIME_PUSHED_KEY = "sleep_wake_chime_pushed_dates"
+_wake_chime_pushed_dates: list[str] = persisted_state.load(_WAKE_CHIME_PUSHED_KEY, [])
+# Fires in a short window right AT wake_time_for(), not before it —
+# this is the actual "wake up now" moment, unlike the 60-minute-ahead
+# wake_preview window that just brightens the TV. Small and
+# past-only (never early) so it can't ever announce a wake-up that
+# hasn't happened yet if a rerun lands a few seconds ahead of it.
+WAKE_CHIME_GRACE_MINUTES = 3
+
+
+def maybe_wake_chime_alert(now: datetime) -> dict | None:
+    """Call once per rerun (app.py's _gather_new_alerts, same
+    append-to-the-queue shape as commute_reminder.check_car_prep) — a
+    single spoken chime in the WAKE_CHIME_GRACE_MINUTES window right at
+    wake_time_for(), never more than one per calendar date. Same
+    date-keyed dedup shape as _pushed_dates above, kept as its own
+    separate list rather than reused — bedtime and wake-up are
+    different moments that can both legitimately fire the same day."""
+    wake_time = wake_time_for(now)
+    if wake_time is None:
+        return None
+    now_aware = now.replace(tzinfo=wake_time.tzinfo) if wake_time.tzinfo else now
+    minutes_until = (wake_time - now_aware).total_seconds() / 60
+    if not (-WAKE_CHIME_GRACE_MINUTES <= minutes_until <= 0):
+        return None
+
+    global _wake_chime_pushed_dates
+    today = now.date().isoformat()
+    if today in _wake_chime_pushed_dates:
+        return None
+    _wake_chime_pushed_dates.append(today)
+    del _wake_chime_pushed_dates[:-30]
+    persisted_state.save(_WAKE_CHIME_PUSHED_KEY, _wake_chime_pushed_dates)
+
+    text = f"Good morning, {USER_FIRST_NAME}. It's time to wake up."
+    return {
+        "headline": "Good morning",
+        "category": "Wake up",
+        "important": True,
+        "kind": "commute",
+        "label": "Good morning",
+        "summary": text,
+        "volume": 1.0,
+    }
 
 
 # Session follow-up: "for the alerts, can we make it so just on the TV
