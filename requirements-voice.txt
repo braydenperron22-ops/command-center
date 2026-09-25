@@ -5,8 +5,16 @@
 #   .venv/bin/pip install -r requirements-voice.txt
 #
 # streamlit, requests, astral, icalendar, recurring-ical-events, and
-# piper-tts are already in requirements.txt and are reused as-is by
-# voice/tools.py and voice/tts.py — not repeated here.
+# kokoro-onnx are already in requirements.txt and are reused as-is by
+# voice/tools.py and voice/tts.py — not repeated here, but DO need to
+# actually be installed into whichever venv runs this file. Session
+# note: voice/tts.py now needs Python <3.14 (a real kokoro-onnx/
+# onnxruntime incompatibility, confirmed live — see that module's own
+# docstring), so on a box whose system/default venv is 3.14, this is
+# no longer necessarily the SAME venv requirements.txt's own deps
+# already live in — install both files into whichever venv actually
+# runs voice/ (e.g. .venv-voice/bin/pip install -r requirements.txt
+# -r requirements-voice.txt), not just this one.
 openwakeword
 faster-whisper
 sounddevice
