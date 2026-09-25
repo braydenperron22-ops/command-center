@@ -1,43 +1,22 @@
 """Local text-to-speech for the voice assistant — reuses the EXACT
-Kokoro voice (am_echo) kiosk_tts.py already ships and uses for the
-dashboard's own toast alerts, so Jarvis sounds like the same voice,
-not a second, different-sounding one (see that module's own docstring
-for why Kokoro replaced an earlier Piper-based version, and how
-am_echo specifically was picked). The only real difference from
-kiosk_tts.py: that module returns base64 WAV for a browser <audio>
-element (the dashboard runs on Streamlit Cloud, nowhere near a
-speaker); this one plays audio directly out of this box's own local
-speaker via sounddevice, since the voice assistant IS the thing
-sitting next to the speaker.
+Piper voice (en_US-hfc_male-medium) and hand-tuned synthesis parameters
+kiosk_tts.py already ships and uses for the dashboard's own toast
+alerts, so Jarvis sounds like the same voice, not a second, different-
+sounding one. The only real difference from kiosk_tts.py: that module
+returns base64 WAV for a browser <audio> element (the dashboard runs on
+Streamlit Cloud, nowhere near a speaker); this one plays audio directly
+out of this box's own local speaker via sounddevice, since the voice
+assistant IS the thing sitting next to the speaker."""
 
-Model file: the full-precision build here, not kiosk_tts.py's own
-int8 one — that module's int8 choice is specifically about staying
-under GitHub's 100MB no-LFS commit limit for Streamlit Cloud, a
-constraint that doesn't apply here at all (this file is placed
-directly on the kiosk box's own disk, scp'd in, never committed to
-git — see voice/README.md). Full precision is both higher quality AND
-faster to synthesize on this exact hardware (confirmed live: ~1.2-2s
-vs ~3.5s for the int8 build) — strictly better on every axis once the
-git-size constraint is out of the picture, which matters even more
-here than for kiosk_tts.py: a live conversational reply waiting on
-synthesis is a much more noticeable delay than a toast that renders
-once and gets cached.
-
-Needs Python <3.14 (a real kokoro-onnx/onnxruntime incompatibility,
-confirmed live — see kiosk_tts.py's own docstring for the exact
-error). This box's system Python is 3.14, so the voice assistant runs
-out of its own dedicated .venv-voice (Python 3.12 via uv) rather than
-the shared .venv every other box-side service uses — deliberately
-kept separate rather than downgrading the shared venv's own Python,
-since run_lg_tv_sync.py/run_spoken_morning_brief.py/the kiosk watchdog
-are all already working on 3.14 and have no reason to risk disturbing."""
-
+import io
 import re
 import sys
 import time
+import wave
 
 import numpy as np
-from kokoro_onnx import Kokoro
+from piper import PiperVoice
+from piper.config import SynthesisConfig
 
 from voice import config
 
@@ -59,13 +38,19 @@ try:
 except OSError:
     sd = None
 
-_voice: Kokoro | None = None
+# Same values kiosk_tts.py's own docstring documents as A/B-tested
+# against 6 other voices and picked live — reused verbatim rather than
+# re-tuned, so the two surfaces (toast alerts, live conversation) sound
+# identical.
+_SYNTHESIS_CONFIG = SynthesisConfig(noise_scale=0.5, noise_w_scale=0.5)
+
+_voice: PiperVoice | None = None
 
 
-def _get_voice() -> Kokoro:
+def _get_voice() -> PiperVoice:
     global _voice
     if _voice is None:
-        _voice = Kokoro(config.KOKORO_VOICE_MODEL_PATH, config.KOKORO_VOICES_PATH)
+        _voice = PiperVoice.load(config.PIPER_VOICE_MODEL_PATH, config_path=config.PIPER_VOICE_CONFIG_PATH)
     return _voice
 
 
@@ -83,13 +68,7 @@ def speak(text: str, length_scale: float | None = None) -> bool:
     `sd`) prints the text to stdout instead of speaking it and returns
     False — real degradation, not a crash, and genuinely useful for
     --text-mode testing on a box that hasn't had libportaudio2
-    installed yet.
-
-    `length_scale` — same contract kiosk_tts.py's own synthesize_base64
-    already uses (Piper's convention: >1.0 = slower), converted here
-    into Kokoro's `speed` (>1.0 = faster, a plain playback-rate
-    multiplier — the opposite convention) so both modules agree on
-    what a caller's own number means regardless of which one they call."""
+    installed yet."""
     if not text:
         return False
     if sd is None:
@@ -97,12 +76,25 @@ def speak(text: str, length_scale: float | None = None) -> bool:
         return False
     try:
         voice = _get_voice()
-        speed = 1.0 / length_scale if length_scale is not None else 1.0
-        samples, sample_rate = voice.create(text, voice=config.KOKORO_VOICE, speed=speed, lang=config.KOKORO_LANG)
-        # Kokoro already returns float32 samples in [-1, 1] -- sounddevice
-        # plays that dtype natively, no WAV-container round-trip needed
-        # the way Piper's own synthesize_wav output required.
-        sd.play(np.asarray(samples, dtype=np.float32), samplerate=sample_rate)
+        buffer = io.BytesIO()
+        syn_config = (
+            SynthesisConfig(length_scale=length_scale, noise_scale=0.5, noise_w_scale=0.5)
+            if length_scale is not None
+            else _SYNTHESIS_CONFIG
+        )
+        with wave.open(buffer, "wb") as wav_file:
+            voice.synthesize_wav(text, wav_file, syn_config=syn_config)
+        buffer.seek(0)
+        with wave.open(buffer, "rb") as wav_file:
+            n_channels = wav_file.getnchannels()
+            sample_width = wav_file.getsampwidth()
+            frame_rate = wav_file.getframerate()
+            raw = wav_file.readframes(wav_file.getnframes())
+        dtype = {1: np.uint8, 2: np.int16, 4: np.int32}.get(sample_width, np.int16)
+        audio = np.frombuffer(raw, dtype=dtype)
+        if n_channels > 1:
+            audio = audio.reshape(-1, n_channels)
+        sd.play(audio, samplerate=frame_rate)
         sd.wait()
         return True
     except Exception:
@@ -118,14 +110,13 @@ def _split_sentences(text: str) -> list[str]:
 
 # Session report: "make it so the spoken morning brief takes natural
 # pauses and doesn't just give me a work sandwich first thing in the
-# morning." Neither Piper nor Kokoro synthesizes with real inter-
-# sentence timing control of its own — there's no way to ask either
-# for pacing, so a multi-fact paragraph comes out as one breathless
-# run-on regardless of how many real periods the text had. Splitting
-# on real sentence boundaries and inserting a genuine time.sleep()
-# between each speak() call is the only way to actually guarantee the
-# pacing, rather than hoping punctuation alone shapes the model's own
-# prosody.
+# morning." Piper synthesizes whatever text it's given as ONE
+# continuous utterance — there's no way to ask it for inter-sentence
+# timing, so a multi-fact paragraph came out as one breathless run-on
+# regardless of how many real periods the text had. Splitting on real
+# sentence boundaries and inserting a genuine time.sleep() between each
+# speak() call is the only way to actually guarantee the pacing, rather
+# than hoping punctuation alone shapes Piper's prosody.
 #
 # A NEW function, not a change to speak() itself — this is deliberately
 # scoped to the morning brief's own one-shot delivery. voice/

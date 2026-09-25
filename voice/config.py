@@ -122,23 +122,11 @@ STT_MODEL_SIZE = _env("STT_MODEL_SIZE", "tiny.en")
 STT_COMPUTE_TYPE = _env("STT_COMPUTE_TYPE", "int8")
 
 # --- Text-to-speech --------------------------------------------------------
-# Reuses the exact voice kiosk_tts.py already ships (Kokoro, am_echo)
-# so Jarvis sounds like the same voice the dashboard's own toast alerts
-# do — see that module's own docstring for the full Piper -> Kokoro
-# switch story and why am_echo specifically. Deliberately NOT under
-# _REPO_ROOT/kokoro_voices the way the old Piper path lived under
-# piper_voices/: that directory IS git-tracked now (holds the smaller
-# int8 build kiosk_tts.py needs to stay under GitHub's 100MB no-LFS
-# limit for Streamlit Cloud) — this box wants the full-precision build
-# instead (higher quality AND faster on this exact hardware once the
-# git-size constraint is irrelevant, see voice/tts.py's own docstring),
-# which only ever needs to exist as a plain file on this one box's own
-# disk, same "box-only, never committed" convention every other
-# kiosk-local file already follows (kiosk-watchdog.sh, kiosk-watchdog.env).
-KOKORO_VOICE_MODEL_PATH = os.path.expanduser("~/kokoro_voices_local/kokoro-v1.0.onnx")
-KOKORO_VOICES_PATH = os.path.expanduser("~/kokoro_voices_local/voices-v1.0.bin")
-KOKORO_VOICE = "am_echo"
-KOKORO_LANG = "en-us"
+# Reuses the exact voice kiosk_tts.py already ships (en_US-hfc_male-medium,
+# already committed in piper_voices/, already hand-tuned) so Jarvis
+# sounds like the same voice the dashboard's own toast alerts do.
+PIPER_VOICE_MODEL_PATH = os.path.join(_REPO_ROOT, "piper_voices", "en_US-hfc_male-medium.onnx")
+PIPER_VOICE_CONFIG_PATH = os.path.join(_REPO_ROOT, "piper_voices", "en_US-hfc_male-medium.onnx.json")
 
 # --- Audio -----------------------------------------------------------------
 SAMPLE_RATE = 16000  # required by both openWakeWord and whisper
