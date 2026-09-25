@@ -133,16 +133,6 @@ ZONE_SVG_W, ZONE_SVG_H = 140, 160
 MAX_PITCHES_SHOWN = 8
 PITCH_RESULT_COLOR = {"ball": "#32D74B", "strike": "#FF6961", "foul_frozen": "#9BA6BA"}
 
-# MLB's own short classification for a play (result.event), grouped just
-# enough to tone the full-screen announcement by what actually happened
-# rather than re-deriving it from the free-text description. Not
-# exhaustive — anything unlisted still shows, in the neutral tone.
-HIT_EVENTS = {"Single", "Double", "Triple", "Home Run", "Walk", "Intent Walk", "Hit By Pitch"}
-OUT_EVENTS = {
-    "Strikeout", "Groundout", "Flyout", "Lineout", "Pop Out", "Double Play", "Triple Play",
-    "Sac Fly", "Sac Bunt", "Field Out", "Force Out", "Grounded Into DP", "Fielders Choice Out",
-}
-
 # sports_client.delayed() already trails the raw feed by the jumbotron's
 # own delay stepper, but that's a flat buffer on whatever state happened
 # to get polled — it doesn't guarantee the moment the batting team
@@ -161,11 +151,6 @@ NFL_HALFTIME_SECONDS = 10 * 60
 # Session request: "delay the out of town scoreboard by like 15 seconds
 # so i can actually see the last play of the inning."
 OVERLAY_DELAY_SECONDS = 15
-# Session request: "can the animation be longer than 3 seconds?" — the
-# play-result announcement is re-rendered across as many reruns as it
-# takes to fill this many real seconds, tracked from when the play was
-# first detected rather than capped at whatever one rerun survives.
-PLAY_RESULT_HOLD_SECONDS = 5
 
 
 # --------------------------------------------------------------------
@@ -1169,43 +1154,6 @@ def between_play_overlay_data(state: dict, now: datetime) -> dict | None:
     }
 
 
-def play_result_data(state: dict) -> dict | None:
-    """Full-screen announcement of what the last play actually was, held
-    for PLAY_RESULT_HOLD_SECONDS of real elapsed time across however
-    many reruns that takes. MLB-live only (NHL has no per-play "event"
-    classification to key off), non-neutral only (same id-space reason
-    as everything else that polls MLB Stats API directly).
-
-    Session-guarded per (game_id, this play's identity): a genuinely new
-    play resets the hold window; the same play re-detected later keeps
-    counting from when it was first seen. Returns None the moment the
-    window has elapsed — which is what takes the element out of the DOM
-    entirely."""
-    if (
-        state.get("phase") != "live"
-        or not state.get("game")
-        or state["league"]["sport"] != "mlb"
-        or state["league"].get("neutral")
-    ):
-        return None
-    game_id = state["game"]["game_id"]
-    play = sports_client.fetch_mlb_last_play(game_id)
-    if not play or not play.get("event"):
-        return None
-    identity = f'{play.get("description")}|{play["away_score"]}|{play["home_score"]}'
-    key = f"jumbotron_last_play_shown_{game_id}"
-    now_ts = time.time()
-    tracked = st.session_state.get(key)
-    if not tracked or tracked.get("identity") != identity:
-        tracked = {"identity": identity, "started_at": now_ts}
-        st.session_state[key] = tracked
-    if now_ts - tracked["started_at"] >= PLAY_RESULT_HOLD_SECONDS:
-        return None
-    event = play["event"]
-    tone = "hit" if event in HIT_EVENTS else "out" if event in OUT_EVENTS else "neutral"
-    return {"text": event.upper(), "tone": tone}
-
-
 # --------------------------------------------------------------------
 # Featured board
 # --------------------------------------------------------------------
@@ -1605,7 +1553,6 @@ def page_data(now: datetime, state: dict, weather: dict | None) -> dict:
         "board": board_data(state, now),
         "around": around_data(now_ts),
         "standings": standings_data(now_ts),
-        "play_result": play_result_data(state),
         "between_play": between_play_overlay_data(state, now),
         "has_game": bool(state.get("game")),
     }

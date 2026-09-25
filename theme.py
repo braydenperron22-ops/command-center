@@ -120,11 +120,13 @@ CSS = """
    caption lines inside them ("GAME MODE · [TEAM]" / "Back to your day")
    were permanently invisible on top of that.
 
-   Removed 2026-09-20 with the jumbotron rebuild. The two jumbotron
-   elements were reshaped so they're correct with no animation at all
-   (see .jumbo-transition / .jumbo-play-overlay in the JUMBOTRON section
-   for the specifics, including why the enter/exit announcement is no
-   longer a full-screen curtain). .page-transition-curtain went away
+   Removed 2026-09-20 with the jumbotron rebuild. The game-mode
+   announcement was reshaped so it's correct with no animation at all
+   (see .jumbo-transition in the JUMBOTRON section for the specifics,
+   including why the enter/exit announcement is no longer a full-screen
+   curtain — the full-screen play-result announcement mentioned
+   alongside it here was itself removed 2026-09-25, see that section's
+   own history). .page-transition-curtain went away
    entirely — it was an EMPTY opaque div whose only job was the fade, so
    with animations permanently off its only two possible states were
    "invisible" (pointless) or "black screen for a whole rerun cycle"
@@ -4572,14 +4574,22 @@ html, body, [class*="css"] {
 
    3. NOTHING WAITS ON AN ANIMATION TO BECOME VISIBLE. Animations are
       permanently off app-wide, so every element's default state here is
-      already its correct final appearance. In particular the two
-      full-screen overlays (.jumbo-play-overlay, .jumbo-otc-overlay) and
-      the enter/exit announcement (.jumbo-transition) are PRESENCE-GATED
-      — jumbotron_data.py returns None and the markup simply isn't
-      emitted — so they must NEVER be given a resting opacity:0 or
-      visibility:hidden here. A resting-hidden band-aid written for
-      toggle-by-class elements is exactly what made the play-result
-      announcement and the game-mode caption invisible for good.
+      already its correct final appearance. In particular the full-
+      screen overlay (.jumbo-otc-overlay) and the enter/exit
+      announcement (.jumbo-transition) are PRESENCE-GATED — jumbotron_
+      data.py returns None and the markup simply isn't emitted — so they
+      must NEVER be given a resting opacity:0 or visibility:hidden here.
+      A resting-hidden band-aid written for toggle-by-class elements is
+      exactly what made the game-mode caption invisible for good.
+
+      A full-screen play-result overlay (.jumbo-play-overlay) used to
+      live here too, on the same presence-gated pattern — removed
+      2026-09-25 (session report: "because of our 75 second refresh
+      timer it just stays for 75 seconds" — its own 5s hold logic lived
+      in jumbotron_data.py's session-state tracking, not in CSS, but
+      nothing here ever forced a shorter on-screen time when a fragment
+      tick landed late). Don't reintroduce it without solving that
+      timing gap first.
 
    Visual language: flat rectangular panels, 1px hairlines instead of
    glow/shadow, generous padding, real per-team accent colors as a flat
@@ -5482,31 +5492,6 @@ html, body, [class*="css"] {
 .jumbo-otc-grid .jumbo-mini-score { font-size: 42px; }
 .jumbo-otc-grid .jumbo-mini-status { font-size: 16px; max-width: 150px; }
 .jumbo-otc-grid .jumbo-mini-leader { font-size: 14px; }
-
-/* Full-screen play-result announcement — session request: "add an
-   animation that takes up the screen after every play. Single, Double,
-   Triple, Home Run, Lineout, Strikout, Pop Out etc so i can tell what
-   happened." Held for PLAY_RESULT_HOLD_SECONDS of real elapsed time by
-   re-rendering across as many 5s fragment ticks as that takes, then
-   simply not emitted. Sits above the out-of-town overlay (9997) but
-   below the control cluster (9999), and pointer-events:none so it never
-   blocks the End Session button underneath. */
-.jumbo-play-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 9998;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-    background: rgba(6,7,10,0.92);
-}
-.jumbo-play-text { font-size: 92px; font-weight: 800; letter-spacing: 0.06em; text-align: center; line-height: 1.05; max-width: 90%; }
-/* Green for offense succeeding, red for an out, neutral for anything
-   MLB's own event field doesn't classify either way. */
-.jumbo-play-hit .jumbo-play-text { color: var(--jumbo-ok); }
-.jumbo-play-out .jumbo-play-text { color: var(--jumbo-bad); }
-.jumbo-play-neutral .jumbo-play-text { color: var(--jumbo-fg); }
 
 /* ---- UFC ----
    Its own two-row grid rather than the rail/board/around layout — a

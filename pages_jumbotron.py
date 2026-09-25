@@ -728,22 +728,12 @@ def _standings_render(standings: dict | None) -> str:
 
 
 # --------------------------------------------------------------------
-# Presence-gated full-screen overlays
+# Presence-gated full-screen overlay
 #
-# Emitted ONLY on the reruns their data function says they belong on.
-# No CSS rule gives either one a resting opacity:0/visibility:hidden —
-# if the div is in the DOM it is visible, full stop.
+# Emitted ONLY on the reruns its data function says it belongs on. No
+# CSS rule gives it a resting opacity:0/visibility:hidden — if the div
+# is in the DOM it is visible, full stop.
 # --------------------------------------------------------------------
-
-def _play_result_render(play: dict | None) -> str:
-    if not play:
-        return ""
-    return (
-        f'<div class="jumbo-play-overlay jumbo-play-{_e(play["tone"])}">'
-        f'<div class="jumbo-play-text">{_e(play["text"])}</div>'
-        "</div>"
-    )
-
 
 def _between_play_render(data: dict | None) -> str:
     if not data:
@@ -1048,7 +1038,6 @@ def render(now: datetime, state: dict | None, weather: dict | None, ufc_state: d
         f'{_board_render(data["board"])}'
         f'{_around_render(data["around"])}'
         "</div>"
-        f'{_play_result_render(data["play_result"])}'
         f'{_between_play_render(data["between_play"])}'
         "</div>",
         unsafe_allow_html=True,
