@@ -5144,10 +5144,12 @@ def _toast_fragment(
             # actually is.
             pre_bedtime_active=_pre_bedtime_phase_active,
         )
-        # sync_plug used to run here (a fixed 4:30am/9:30pm on/off window
-        # for the monitor's own smart plug) — removed along with the plug
-        # itself; see night_mode.py's own module docstring and the trigger
-        # computed right after _jumbotron_active above for what replaced it.
+        # Session request: the same physical plug now lives in the new
+        # apartment wired to a lamp instead of the old bedroom monitor —
+        # see govee_lighting.sync_lamp's own module-level comment for the
+        # actual schedule/rules (all new, not a revival of the old
+        # monitor-power logic).
+        govee_lighting.sync_lamp(now, storm_active=storm_phase_name is not None)
     except Exception:
         pass
 

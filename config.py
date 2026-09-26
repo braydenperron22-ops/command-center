@@ -339,15 +339,18 @@ MARKET_INSTRUMENTS_ALWAYS = [
     {"key": "oil", "label": "Crude Oil", "symbol": "CL=F"},
 ]
 
-# Govee smart-home bedroom light. Identifier only — not secret on its
-# own, control still requires GOVEE_API_KEY in .streamlit/secrets.toml.
+# Govee smart-home devices. Identifiers only — not secret on their own,
+# control still requires GOVEE_API_KEY in .streamlit/secrets.toml.
 # Pulled from the account's own device list via the Govee API, which
 # uses a different (longer) device-id format than the MAC address
 # printed on the device itself.
-#
-# A GOVEE_PLUG entry used to live here too, for a smart plug that cut
-# power to the monitor overnight — removed (session request: "get rid
-# of the smart plug generation... replace [it] by a designated night
-# mode," once the physical setup moved to a display meant to stay
-# powered on; see night_mode.py's own module docstring).
 GOVEE_LIGHT = {"sku": "H6167", "device": "0C:1A:D4:39:C1:86:02:47"}
+# Same physical plug that used to cut power to the bedroom monitor
+# overnight (removed entirely, session request: "get rid of the smart
+# plug generation... replace [it] by a designated night mode" — see
+# night_mode.py's own module docstring) — now living in the new
+# apartment wired to a lamp instead. Restored under a new name
+# (govee_lighting.sync_lamp) with all-new rules suited to a lamp rather
+# than reusing the old monitor-power logic; see that function's own
+# docstring for the actual schedule.
+GOVEE_LAMP = {"sku": "H5080", "device": "1A:82:5C:E7:53:93:A5:56"}
