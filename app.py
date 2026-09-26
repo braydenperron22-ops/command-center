@@ -2182,7 +2182,19 @@ def _resolve_takeover(now: datetime, jumbotron_requested: bool) -> tuple[dict | 
     the tracked team wins. A tracked team already-live still beats UFC
     unconditionally (unchanged); a tracked team merely pregame/postgame
     now also beats UFC UNLESS UFC itself is live, in which case UFC
-    still gets to fill the wait the same way it always could.
+    still gets to fill the wait the same way it always could. This is
+    the Jays/Saints rule below.
+
+    Session correction, specifically for Habs: "make it so that a Habs
+    game in the pregame mode is prioritized over UFC" — then, once a
+    real live-UFC-vs-pregame-Habs conflict actually happened: "its
+    still showing live ufc over pre-game habs." Unlike the Jays/Saints
+    rule above (whichever is actually live wins), a real tracked Habs
+    game — pregame, live, or postgame — beats UFC unconditionally, even
+    a UFC card that's itself already live. Scoped to the genuinely
+    tracked Habs game specifically (excludes a neutral playoff game
+    that happens to also be "nhl" — see _neutral_playoff_candidates —
+    since the user's own words were "a Habs game," not "any NHL game").
 
     `jumbotron_requested`: True for an explicit ?page=jumbotron (a
     manual preview from a phone, for a day with no game in its window
@@ -2201,13 +2213,15 @@ def _resolve_takeover(now: datetime, jumbotron_requested: bool) -> tuple[dict | 
         ufc_takeover = ufc_client.takeover_state(now)
     except Exception:
         ufc_takeover = None
-    if (
-        ufc_takeover is not None
-        and takeover
-        and takeover["league"]["sport"] in ("nhl", "mlb", "nfl")
-        and (takeover["phase"] == "live" or ufc_takeover["phase"] != "live")
-    ):
-        ufc_takeover = None
+    if ufc_takeover is not None and takeover:
+        sport = takeover["league"]["sport"]
+        if sport == "nhl" and not takeover["league"].get("neutral"):
+            # The real, tracked Habs game beats UFC unconditionally —
+            # see this function's own docstring for the two session
+            # corrections that landed on this specific carve-out.
+            ufc_takeover = None
+        elif sport in ("mlb", "nfl") and (takeover["phase"] == "live" or ufc_takeover["phase"] != "live"):
+            ufc_takeover = None
     if jumbotron_requested:
         takeover = takeover or sports_alerts.takeover_preview_state()
     return takeover, ufc_takeover
