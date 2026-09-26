@@ -3947,6 +3947,14 @@ try:
 except Exception:
     pass
 
+# Session request: "make it so that the list automatically clears. On
+# Monday night." Own dedup, same shape as maybe_push_wind_down above —
+# see pages_shopping.maybe_clear_weekly's own docstring.
+try:
+    pages_shopping.maybe_clear_weekly(now)
+except Exception:
+    pass
+
 # Session follow-up: "treated like the leave-in countdown... bedtime in
 # two hours, bedtime in an hour, 30 minutes... keep going down and
 # down." A whole milestone ladder of TV-only toasts, not just the one

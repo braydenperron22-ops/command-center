@@ -25,6 +25,7 @@ harder one.
 """
 
 import time
+from datetime import datetime
 
 import streamlit as st
 
@@ -39,6 +40,36 @@ def _load_items() -> list[dict]:
 
 def _save_items(items: list[dict]) -> None:
     persisted_state.save(_ITEMS_KEY, items)
+
+
+# Session request: "make it so that the list automatically clears. On
+# Monday night." Fires once, the first rerun at/after CLEAR_HOUR on a
+# Monday — keyed by that Monday's own date (not just "did it run
+# today") so it can't fire twice for the same week even across the many
+# reruns still left in that Monday night. Same load-once-at-import,
+# save-only-on-the-real-event shape sleep_tracker's own _pushed_dates
+# uses — never call persisted_state.load() on every rerun, only at
+# import time and right after an actual write.
+MONDAY = 0
+CLEAR_HOUR = 21  # 9pm — "Monday night"
+_CLEARED_WEEK_KEY = "shopping_list_last_cleared_monday"
+_last_cleared_monday: str | None = persisted_state.load(_CLEARED_WEEK_KEY, None)
+
+
+def maybe_clear_weekly(now: datetime) -> None:
+    """Call once per rerun (app.py, unconditional — same shape as
+    sleep_tracker.maybe_push_wind_down) regardless of whether the
+    shopping page itself is currently open, so the reset actually
+    happens even if nobody looks at the list that night."""
+    global _last_cleared_monday
+    if now.weekday() != MONDAY or now.hour < CLEAR_HOUR:
+        return
+    today_key = now.date().isoformat()
+    if _last_cleared_monday == today_key:
+        return
+    _save_items([])
+    _last_cleared_monday = today_key
+    persisted_state.save(_CLEARED_WEEK_KEY, today_key)
 
 
 def render() -> None:
