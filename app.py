@@ -60,6 +60,7 @@ import pages_portfolio
 import pages_predictions
 import pages_radar
 import pages_scores
+import pages_shopping
 import pages_sports
 import pages_system_health
 import pages_timeline
@@ -2281,6 +2282,11 @@ try:
         # as jumbotron. Session request: "add a maintenance tab... by
         # pressing D." See pages_maintenance.py.
         page = "maintenance"
+    elif _requested_page == "shopping":
+        # Same "hidden unless asked for" treatment as maintenance above
+        # — reached only via a direct bookmarked link on a phone, never
+        # part of the ambient kiosk rotation. See pages_shopping.py.
+        page = "shopping"
     elif _requested_page == "terminal" and brayden_index.ENABLED:
         page = "terminal"
     elif _requested_page == "brdn" and brayden_index.ENABLED:
@@ -2799,7 +2805,7 @@ _picker_tiles = "".join(
 # "?": _requested_page already holds the real ?page= value (or None
 # for auto-rotation), same source the mobile-nav's own "Auto" link
 # above is built from.
-_close_href = f"?page={_requested_page}" if _requested_page in PAGES or _requested_page in ("jumbotron", "maintenance", "terminal") else "?"
+_close_href = f"?page={_requested_page}" if _requested_page in PAGES or _requested_page in ("jumbotron", "maintenance", "terminal", "shopping") else "?"
 st.markdown(
     f'<div class="screen-picker{" screen-picker-open" if _picker_open else ""}">'
     f'<a class="screen-picker-backdrop" href="{_close_href}"></a>'
@@ -4459,6 +4465,8 @@ with st.container(key="page_body"):
         _safe_render(pages_system_health.render)
     elif page == "maintenance":
         _safe_render(pages_maintenance.render)
+    elif page == "shopping":
+        _safe_render(pages_shopping.render)
     elif page == "terminal":
         _safe_render(pages_brdn_terminal.render, now, market_primary_symbol, market_intraday_pct)
     else:
