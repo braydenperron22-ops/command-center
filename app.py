@@ -3098,6 +3098,23 @@ try:
             scene_html(category, phase, weather["weather_code"] if weather else 2, now, weather_temp_extreme),
             unsafe_allow_html=True,
         )
+    elif _jumbotron_active:
+        # Session report: "you can see the sky on the borders of the
+        # jumbotron... black it out when jumbotron mode is active." Not
+        # painting a NEW sky (the branch above) turned out not to be
+        # enough on its own — .block-container:has(.jumbo-root)'s own
+        # 1.1rem side / 1rem top padding (theme.py) leaves a visible
+        # strip of stAppViewContainer showing around the jumbotron's
+        # edges, and the LAST sky_style() call from before the takeover
+        # started can still be painted there. An explicit override,
+        # rather than trusting the absence of a call above to also
+        # erase a previous one's CSS.
+        st.markdown(
+            '<style>[data-testid="stAppViewContainer"] { '
+            "background-image: none !important; background-color: #000 !important; "
+            "}</style>",
+            unsafe_allow_html=True,
+        )
 
     # Dim the whole UI at night — not just the background, since bright
     # white tile text/badges in a pitch-black room is still harsh even
