@@ -31,7 +31,6 @@ import streamlit as st
 import govee_client
 import market_yf_client
 import scenery
-import sleep_tracker
 from config import AQI_EXTREME, GOVEE_LAMP, GOVEE_LIGHT
 
 MIN_CALL_GAP_SECONDS = 10
@@ -644,60 +643,27 @@ def sync_lights(
 
 # Session request: "the smart plug... is connected to a lamp now...
 # adjust the formula to treat it like a lamp and make rules for it for
-# when to turn on and turn off... full discretion." Designed around
-# what a room lamp is actually for — light when it's dark/needed, off
-# when it isn't — rather than adapting the old monitor-power logic,
-# which had no equivalent reason to exist here (a lamp isn't powering
-# anything else that depends on it staying on).
+# when to turn on and turn off... full discretion." First pass at this
+# reused wake_time_for/bedtime_for (calendar-commitment math built for
+# the old monitor/screen) — session correction, blunt and fair: "stop
+# trying to treat it like a monitor. It's a fucking lamp." Torn out
+# entirely. This is just a lamp: on for the evening, off at a plain
+# fixed bedtime hour. No calendar, no commute, no "getting ready"
+# window — nothing here cares what day it is or what's on the
+# calendar tomorrow.
 #
-# Two fixed daily windows, reusing the exact wake_time_for/bedtime_for
-# the bedtime countdown, screen-sleep timing, and the spoken wake chime
-# (sleep_tracker.maybe_wake_chime_alert) already use, so the lamp always
-# agrees with everything else about when "morning" and "bedtime" are —
-# real shift/gym commitments included, not a fixed clock guess:
-#
-#   1. Wake window — ON at wake_time_for(now), OFF WAKE_LAMP_ON_MINUTES
-#      later (deliberately == WAKE_BUFFER_MINUTES, i.e. right at the
-#      real commitment's own start time — the same getting-ready runway
-#      wake_time_for already carves out). A real, physical "get up" cue
-#      alongside the spoken chime, off again once there's no reason left
-#      to still be in bed.
-#   2. Evening window — ON at a fixed EVENING_ON_HOUR, OFF at the real
-#      bedtime_for(now). Deliberately a FIXED on-hour rather than real
-#      sunset: this app already walked back an astronomical schedule
-#      once for this exact physical device ("instead of having it turn
-#      off at a different time every day, make it go into dim night
-#      mode at nine PM" — the old sync_plug's own history) and there's
-#      no reason to reintroduce that seasonal drift here.
-#
-# On a genuine day off (wake_time_for/bedtime_for both None — no real
-# morning commitment) window 1 is skipped outright, and window 2 falls
-# back to sleep_tracker's own BEDTIME_CAP_HOUR/MINUTE instead of never
-# closing — reusing that existing "latest reasonable bedtime" ceiling
-# rather than inventing a second number for the same idea. If a
-# genuinely early commitment ever pushes the real bedtime earlier than
-# EVENING_ON_HOUR, window 2 is simply skipped for that evening too
-# (nothing to turn on for, already past bedtime) rather than inverting.
-#
-# No leave-timer/game-live override, unlike the old sync_plug — those
-# existed because the plug powered the SCREEN, and an invisible
-# countdown/game was a real problem if the monitor had no power yet. A
-# lamp has no such dependency.
-#
-# Storm override kept, reusing the same storm-active signal sync_lights
-# and night_mode already treat as an always-wake exception (thunder-
-# storm/tornado/hurricane/tropical storm/tsunami proximity only — see
-# weather_alerts_bar.current_storm_phase) — real light in the room is a
-# genuine safety upgrade during actual severe weather, the same reason
-# the bedroom light already flashes awake for this, regardless of
-# whether it's currently one of the two windows above.
-WAKE_LAMP_ON_MINUTES = 60
-EVENING_ON_HOUR = 19
-# Same "don't cut off the instant a condition ends" reasoning the old
-# sync_plug's own PLUG_OFF_GRACE_SECONDS used — scoped here to just the
-# storm signal (the only genuinely flappy one; the schedule windows are
-# stable, computed fresh every call) so a storm phase flickering right
-# at its own boundary can't snap the lamp off and on again.
+# Storm override kept — real light in the room during an actual severe
+# thunderstorm/tornado/hurricane/tropical-storm/tsunami is a genuine
+# safety thing, the same reason the bedroom light already flashes awake
+# for this (weather_alerts_bar.current_storm_phase) — unrelated to the
+# monitor-coupling that got torn out above, so it stayed.
+LAMP_ON_HOUR = 19  # 7pm
+LAMP_OFF_HOUR = 23  # 11pm
+# Same "don't cut off the instant a condition ends" idea the old
+# sync_plug's own PLUG_OFF_GRACE_SECONDS used, scoped to just the storm
+# signal (the only flappy one here — the fixed on/off hours are stable)
+# so a storm phase flickering right at its own boundary can't snap the
+# lamp off and on again.
 LAMP_STORM_GRACE_SECONDS = 5 * 60
 
 _lamp_applied: bool | None = None
@@ -705,33 +671,12 @@ _lamp_last_call_ts: float = 0.0
 _lamp_storm_last_true_at: float | None = None
 
 
-def _wake_window_active(now: datetime) -> bool:
-    wake = sleep_tracker.wake_time_for(now)
-    if wake is None:
-        return False
-    now_aware = now.replace(tzinfo=wake.tzinfo) if wake.tzinfo else now
-    remaining = (wake - now_aware).total_seconds()
-    return -WAKE_LAMP_ON_MINUTES * 60 <= remaining <= 0
-
-
-def _evening_window_active(now: datetime) -> bool:
-    bedtime = sleep_tracker.bedtime_for(now)
-    now_aware = now.replace(tzinfo=bedtime.tzinfo) if bedtime and bedtime.tzinfo else now
-    if bedtime is None:
-        bedtime = now_aware.replace(
-            hour=sleep_tracker.BEDTIME_CAP_HOUR, minute=sleep_tracker.BEDTIME_CAP_MINUTE, second=0, microsecond=0
-        )
-    evening_on = now_aware.replace(hour=EVENING_ON_HOUR, minute=0, second=0, microsecond=0)
-    if bedtime <= evening_on:
-        return False
-    return evening_on <= now_aware < bedtime
-
-
 def sync_lamp(now: datetime, storm_active: bool = False) -> None:
     """Call once per rerun (app.py, same shape as sync_lights above).
-    See the module-level comment just above for the actual schedule —
-    this is just the apply-only-on-change/rate-limited plumbing, same
-    pattern the old sync_plug used."""
+    On from LAMP_ON_HOUR to LAMP_OFF_HOUR, off the rest of the day —
+    that's the whole schedule. Storm override aside, this is just the
+    apply-only-on-change/rate-limited plumbing, same pattern sync_lights
+    and the old sync_plug both used."""
     global _lamp_applied, _lamp_last_call_ts, _lamp_storm_last_true_at
     if not st.secrets.get("GOVEE_API_KEY"):
         return
@@ -743,7 +688,7 @@ def sync_lamp(now: datetime, storm_active: bool = False) -> None:
         storm_grace_active = (
             _lamp_storm_last_true_at is not None and (now_ts - _lamp_storm_last_true_at) < LAMP_STORM_GRACE_SECONDS
         )
-        want_on = storm_grace_active or _wake_window_active(now) or _evening_window_active(now)
+        want_on = storm_grace_active or (LAMP_ON_HOUR <= now.hour < LAMP_OFF_HOUR)
     if _lamp_applied == want_on:
         return
     if now_ts - _lamp_last_call_ts < MIN_CALL_GAP_SECONDS:
