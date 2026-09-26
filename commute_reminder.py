@@ -522,15 +522,22 @@ def _destination_for_shift(shift: dict) -> dict | None:
     Session follow-up: "change the address for my Saturday night
     hockey to the same address as my gym... commute time is saying 30
     minutes when it literally shouldn't be any longer than ten" — same
-    real building, so Hockey reuses GYM_DESTINATION's exact coordinates
-    (guaranteed same, correct travel time) rather than trying to fix
-    whatever address/geocode the hockey event's own location field was
-    giving. Own dict (not a bare return of GYM_DESTINATION) so the
-    leave-timer's own tile label still reads "Hockey," not "Gym."""
+    real building, so this one event reuses GYM_DESTINATION's exact
+    coordinates (guaranteed same, correct travel time) rather than
+    trying to fix whatever address/geocode its own location field was
+    giving. Matched on the exact event title, NOT a bare "hockey"
+    substring like the gym check above — session correction: "I didn't
+    say any with hockey. I said Saturday night hockey. I named it that
+    on the calendar so that not all of my events get routed there."
+    Any other hockey-related event (a watch-party, fantasy hockey,
+    anything else with "hockey" in it) is deliberately left alone,
+    exactly as the user's own naming choice intended. Own dict (not a
+    bare return of GYM_DESTINATION) so the leave-timer's own tile label
+    still reads "Hockey," not "Gym."""
     summary_lower = shift["summary"].lower()
     if "gym" in summary_lower:
         return GYM_DESTINATION
-    if "hockey" in summary_lower:
+    if summary_lower == "saturday night hockey":
         return {**GYM_DESTINATION, "label": "Hockey"}
     location = (shift.get("location") or "").strip()
     if not location:
