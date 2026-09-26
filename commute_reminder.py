@@ -517,9 +517,21 @@ def _destination_for_shift(shift: dict) -> dict | None:
     (titled "Gym" or "Gym - Push"/"Pull"/"Legs", see the RemoteTrigger
     prompt) carry no location field at all, and even if one were added
     later a typo'd/differently-formatted address shouldn't silently
-    reroute the leave-in timer somewhere wrong."""
-    if "gym" in shift["summary"].lower():
+    reroute the leave-in timer somewhere wrong.
+
+    Session follow-up: "change the address for my Saturday night
+    hockey to the same address as my gym... commute time is saying 30
+    minutes when it literally shouldn't be any longer than ten" — same
+    real building, so Hockey reuses GYM_DESTINATION's exact coordinates
+    (guaranteed same, correct travel time) rather than trying to fix
+    whatever address/geocode the hockey event's own location field was
+    giving. Own dict (not a bare return of GYM_DESTINATION) so the
+    leave-timer's own tile label still reads "Hockey," not "Gym."""
+    summary_lower = shift["summary"].lower()
+    if "gym" in summary_lower:
         return GYM_DESTINATION
+    if "hockey" in summary_lower:
+        return {**GYM_DESTINATION, "label": "Hockey"}
     location = (shift.get("location") or "").strip()
     if not location:
         return None
