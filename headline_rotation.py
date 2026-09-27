@@ -134,6 +134,15 @@ def _candidates(now: datetime, weather: dict | None) -> dict[str, dict]:
     bedtime = sleep_tracker.bedtime_headline_candidate(now)
     if bedtime is not None:
         out["bedtime"] = bedtime
+    # Session bug fix: the "Get up in..." countdown used to only ever
+    # render inside night mode's own view — once night mode legitimately
+    # steps aside GETTING_READY_MINUTES before the real commitment (see
+    # sleep_tracker.in_wake_grace_window), the countdown had nowhere
+    # left to show for the rest of its own active window. Same wiring
+    # shape as bedtime just above.
+    wake = sleep_tracker.wake_headline_candidate(now)
+    if wake is not None:
+        out["wake"] = wake
     # Session request: "the Brayden Index" — a genuinely big single-cycle
     # move earns the same red-headline treatment as a circuit-breaker
     # event. Same wiring shape as every other source here.

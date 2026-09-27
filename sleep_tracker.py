@@ -429,6 +429,41 @@ def _wake_countdown_info(now: datetime) -> tuple[int, str, str] | None:
     return target_ms, tier, text
 
 
+def wake_headline_candidate(now: datetime) -> dict | None:
+    """{"text", "css_class", "target_ms", "template", "zero_text"} —
+    same shape every other headline_rotation.py source uses, same
+    underlying data as wake_countdown_span_html below (night_mode.py's
+    own view).
+
+    Session report, confirmed live with real data: "is the night
+    screen in the morning where it says get up... has that been
+    working? I haven't seen it once." Root cause — in_wake_grace_window
+    deliberately steps night mode aside GETTING_READY_MINUTES before
+    the real commitment (a separate, earlier, correct fix: night mode's
+    own dim aesthetic lingering that late into the morning was itself
+    the complaint that added that cutoff). But the wake countdown used
+    to ONLY ever render inside night mode's own markup — traced with
+    today's real calendar data, the countdown had nowhere left to show
+    for the back half of its own active window, right through the
+    moments it matters most ("Get up — 15:00", "Get up now"), because
+    night mode had already legitimately handed back to the normal
+    daytime dashboard by then. Surfacing it here too, in the same
+    shared rotation bedtime_headline_candidate already uses, means it's
+    visible on the ordinary dashboard for exactly the stretch night
+    mode no longer covers."""
+    info = _wake_countdown_info(now)
+    if info is None:
+        return None
+    target_ms, tier, text = info
+    return {
+        "text": text,
+        "css_class": _TIER_TO_ROTATION_CLASS[tier],
+        "target_ms": target_ms,
+        "template": _WAKE_TIER_TEMPLATE.get(tier, "Get up in {}"),
+        "zero_text": _WAKE_ZERO_TEXT,
+    }
+
+
 def wake_countdown_span_html(now: datetime) -> tuple[str, str] | None:
     """(tier, html) for the raw live-countdown <span> — wake_time_for's
     own version of countdown_span_html above, same shape."""
