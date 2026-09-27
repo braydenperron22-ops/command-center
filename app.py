@@ -5191,12 +5191,14 @@ def _toast_fragment(
             # actually is.
             pre_bedtime_active=_pre_bedtime_phase_active,
         )
-        # Session request: the same physical plug now lives in the new
-        # apartment wired to a lamp instead of the old bedroom monitor —
-        # see govee_lighting.sync_lamp's own module-level comment for the
-        # actual schedule/rules (all new, not a revival of the old
-        # monitor-power logic).
-        govee_lighting.sync_lamp(now, storm_active=storm_phase_name is not None)
+        # Session request: the same physical plug now lives in the
+        # bedroom wired to a lamp instead of the old bedroom monitor —
+        # see govee_lighting.sync_lamp's own module-level comment for
+        # the actual schedule/rules. No storm_active param — session
+        # correction: "don't do the severe weather override for the
+        # lamp" (unlike the bedroom's other Govee light, which still
+        # gets that treatment via sync_lights above).
+        govee_lighting.sync_lamp(now)
     except Exception:
         pass
 

@@ -679,24 +679,13 @@ def sync_lights(
 # there's deliberately no fixed-time fallback to fall back on; a day
 # with nothing to wake up for just doesn't get either cue.
 #
-# Storm override kept, and arguably fits even better now that this is
-# the bedroom specifically — real light during an actual severe
-# thunderstorm/tornado/hurricane/tropical-storm/tsunami is a genuine
-# safety wake-up, the same reason the bedroom's OTHER Govee light
-# already flashes awake for this (weather_alerts_bar.current_storm_
-# phase).
+# No storm override, unlike the bedroom's OTHER Govee light — session
+# correction: "don't do the severe weather override for the lamp."
 WAKE_LAMP_ON_MINUTES = 60
 LAMP_WIND_DOWN_MINUTES = 30
-# Same "don't cut off the instant a condition ends" idea the old
-# sync_plug's own PLUG_OFF_GRACE_SECONDS used, scoped to just the storm
-# signal (the only flappy one here — wake_time_for/bedtime_for are
-# stable within a given day) so a storm phase flickering right at its
-# own boundary can't snap the lamp off and on again.
-LAMP_STORM_GRACE_SECONDS = 5 * 60
 
 _lamp_applied: bool | None = None
 _lamp_last_call_ts: float = 0.0
-_lamp_storm_last_true_at: float | None = None
 
 
 def _wake_window_active(now: datetime) -> bool:
@@ -717,23 +706,16 @@ def _wind_down_window_active(now: datetime) -> bool:
     return 0 < remaining <= LAMP_WIND_DOWN_MINUTES * 60
 
 
-def sync_lamp(now: datetime, storm_active: bool = False) -> None:
+def sync_lamp(now: datetime) -> None:
     """Call once per rerun (app.py, same shape as sync_lights above).
     See the module-level comment just above for the actual schedule —
     this is just the apply-only-on-change/rate-limited plumbing, same
     pattern sync_lights and the old sync_plug both used."""
-    global _lamp_applied, _lamp_last_call_ts, _lamp_storm_last_true_at
+    global _lamp_applied, _lamp_last_call_ts
     if not st.secrets.get("GOVEE_API_KEY"):
         return
     now_ts = time.time()
-    if storm_active:
-        _lamp_storm_last_true_at = now_ts
-        want_on = True
-    else:
-        storm_grace_active = (
-            _lamp_storm_last_true_at is not None and (now_ts - _lamp_storm_last_true_at) < LAMP_STORM_GRACE_SECONDS
-        )
-        want_on = storm_grace_active or _wake_window_active(now) or _wind_down_window_active(now)
+    want_on = _wake_window_active(now) or _wind_down_window_active(now)
     if _lamp_applied == want_on:
         return
     if now_ts - _lamp_last_call_ts < MIN_CALL_GAP_SECONDS:
