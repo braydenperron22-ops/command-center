@@ -663,7 +663,7 @@ def sync_lights(
 # turned down for being mostly redundant with night mode's own screen
 # treatment there).
 #
-# Two real, data-driven windows:
+# Three real, data-driven windows:
 #   1. Wake window — ON at wake_time_for(now), OFF WAKE_LAMP_ON_MINUTES
 #      later (== WAKE_BUFFER_MINUTES, i.e. right at the real
 #      commitment's own start time) — a physical light cue alongside
@@ -674,16 +674,25 @@ def sync_lights(
 #      minute figure app.py's own WARM_TINT_START_MINUTES already uses
 #      for killing the bedroom's OTHER Govee light before bedtime — one
 #      real "wind-down starts now" moment, not two disagreeing ones.
+#   3. Leave window — session request: "make my bedroom light turn on
+#      when I have to get out of bed to leave... within five minutes...
+#      when the leave-in timer is below five minutes, make the light
+#      turn on so that way if I'm laying down in bed waiting to leave,
+#      I know that's my cue." ON at commute_reminder.leave_by_time(now)
+#      minus LEAVE_LAMP_LEAD_MINUTES, OFF right at leave_by itself —
+#      the real leave-in countdown's own target, not a separate guess.
 #
-# Both windows are skipped outright on a genuine day off (wake_time_for
-# /bedtime_for both None) — this whole feature is about REAL data, so
-# there's deliberately no fixed-time fallback to fall back on; a day
-# with nothing to wake up for just doesn't get either cue.
+# All three windows are skipped outright whenever their own underlying
+# real data is missing (no real commitment/commute today) — this whole
+# feature is about REAL data, so there's deliberately no fixed-time
+# fallback for any of them; a day with nothing to wake up for, wind
+# down from, or leave for just doesn't get that cue.
 #
 # No storm override, unlike the bedroom's OTHER Govee light — session
 # correction: "don't do the severe weather override for the lamp."
 WAKE_LAMP_ON_MINUTES = 60
 LAMP_WIND_DOWN_MINUTES = 30
+LEAVE_LAMP_LEAD_MINUTES = 5
 
 _lamp_applied: bool | None = None
 _lamp_last_call_ts: float = 0.0
@@ -716,6 +725,15 @@ def _wind_down_window_active(now: datetime) -> bool:
     return 0 < remaining <= LAMP_WIND_DOWN_MINUTES * 60
 
 
+def _leave_window_active(now: datetime) -> bool:
+    leave_by = commute_reminder.leave_by_time(now)
+    if leave_by is None:
+        return False
+    now_aware = now.replace(tzinfo=leave_by.tzinfo) if leave_by.tzinfo else now
+    remaining = (leave_by - now_aware).total_seconds()
+    return 0 <= remaining <= LEAVE_LAMP_LEAD_MINUTES * 60
+
+
 def sync_lamp(now: datetime) -> None:
     """Call once per rerun (app.py, same shape as sync_lights above).
     See the module-level comment just above for the actual schedule —
@@ -725,7 +743,7 @@ def sync_lamp(now: datetime) -> None:
     if not st.secrets.get("GOVEE_API_KEY"):
         return
     now_ts = time.time()
-    want_on = _wake_window_active(now) or _wind_down_window_active(now)
+    want_on = _wake_window_active(now) or _wind_down_window_active(now) or _leave_window_active(now)
     if _lamp_applied == want_on:
         return
     if now_ts - _lamp_last_call_ts < MIN_CALL_GAP_SECONDS:
