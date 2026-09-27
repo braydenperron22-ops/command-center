@@ -42,6 +42,20 @@ from piper.config import SynthesisConfig
 VOICE_MODEL_PATH = "piper_voices/en_US-hfc_male-medium.onnx"
 VOICE_CONFIG_PATH = "piper_voices/en_US-hfc_male-medium.onnx.json"
 
+# Session request: "add my girlfriend's calendar... any leave-in
+# notifications for Chloe, I want a girl voice." Picked live, the same
+# "actually listen to real candidates" discipline the original voice
+# was chosen with — hfc_female specifically because it's the direct
+# paired sibling of hfc_male above (same voice pack/quality tier, just
+# female), not a mismatched third voice. Keyed by the same "owner"
+# string calendar_client.py already tags every event with, so a caller
+# that has an event/alert in hand can pass its own owner straight
+# through with no translation step.
+VOICE_PATHS = {
+    "brayden": (VOICE_MODEL_PATH, VOICE_CONFIG_PATH),
+    "chloe": ("piper_voices/en_US-hfc_female-medium.onnx", "piper_voices/en_US-hfc_female-medium.onnx.json"),
+}
+
 # Session request, after A/B-ing the model's own default against three
 # real synthesis-parameter variants (rate, and this) side by side:
 # "make the voice quality... noise scale equals zero point five, noise
@@ -59,18 +73,18 @@ _SYNTHESIS_CONFIG = SynthesisConfig(noise_scale=0.5, noise_w_scale=0.5)
 # is ever called; see weather_alerts_bar._spoken_summary/
 # commute_reminder's own docstrings for the one-shot gating that keeps
 # this from re-synthesizing the same toast every 5s rerun).
-_voice: PiperVoice | None = None
+_voices: dict[str, PiperVoice] = {}
 
 
-def _get_voice() -> PiperVoice:
-    global _voice
-    if _voice is None:
-        _voice = PiperVoice.load(VOICE_MODEL_PATH, config_path=VOICE_CONFIG_PATH)
-    return _voice
+def _get_voice(owner: str) -> PiperVoice:
+    if owner not in _voices:
+        model_path, config_path = VOICE_PATHS.get(owner, VOICE_PATHS["brayden"])
+        _voices[owner] = PiperVoice.load(model_path, config_path=config_path)
+    return _voices[owner]
 
 
 @st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
-def synthesize_base64(text: str, length_scale: float | None = None) -> str | None:
+def synthesize_base64(text: str, length_scale: float | None = None, owner: str = "brayden") -> str | None:
     """WAV audio for `text`, base64-encoded — ready to embed directly as
     a data URI (f"data:audio/wav;base64,{this}") in a toast's own HTML,
     for app.py's kiosk script to play via a plain <audio> element
@@ -91,11 +105,17 @@ def synthesize_base64(text: str, length_scale: float | None = None) -> str | Non
     call for every short alert (weather/road-closure/leave-timer), this
     stays optional and defaults to None (the shared _SYNTHESIS_CONFIG,
     unchanged) — only a caller reading something genuinely long, like
-    morning_briefing's own spoken brief, passes a slower override."""
+    morning_briefing's own spoken brief, passes a slower override.
+
+    `owner` — see VOICE_PATHS above. Defaults to "brayden" (the
+    original voice) so every existing caller that doesn't know about
+    Chloe yet keeps sounding exactly as it always has; a caller with a
+    real owner in hand (an event/alert already tagged by calendar_
+    client.py) passes it straight through."""
     if not text:
         return None
     try:
-        voice = _get_voice()
+        voice = _get_voice(owner)
         buffer = io.BytesIO()
         syn_config = (
             SynthesisConfig(length_scale=length_scale, noise_scale=0.5, noise_w_scale=0.5)
