@@ -199,19 +199,20 @@ QUIET_MILESTONE_CUTOFF_HOUR = 5
 QUIET_MILESTONE_MIN_MINUTES = 30
 
 # Session request: "make the leave in alert silent until the one hour
-# mark." Distinct from both quiet-hour gates above: QUIET_MILESTONE_*
-# decides whether a wide-notice milestone fires AT ALL before 5am;
+# mark," later raised: "can we make it ninety minutes instead?"
+# Distinct from both quiet-hour gates above: QUIET_MILESTONE_* decides
+# whether a wide-notice milestone fires AT ALL before 5am;
 # _leave_volume_ceiling decides how LOUD an alert that does fire can
-# get. Neither one made the two widest heads-ups (120/90 minutes out)
-# silent on an ordinary daytime shift — they always played the same
-# chime + spoken line as every other milestone. This is a third,
-# independent gate: those two stay fully visible (the toast, the
-# countdown headline/ticker) but genuinely produce zero sound —
-# chime included, not just the spoken line — until the countdown
-# reaches this threshold. Applied in render_bar via a data-silent
-# attribute the client checks before making any noise at all (see
-# app.py's kioskPlayLeaveVoice), same data-driven shape as data-volume.
-LEAVE_ALERT_SILENT_ABOVE_MINUTES = 60
+# get. Neither one made the widest heads-up (120 minutes out) silent on
+# an ordinary daytime shift — it always played the same chime + spoken
+# line as every other milestone. This is a third, independent gate: the
+# 120-minute milestone stays fully visible (the toast, the countdown
+# headline/ticker) but genuinely produces zero sound — chime included,
+# not just the spoken line — until the countdown reaches this
+# threshold. Applied in render_bar via a data-silent attribute the
+# client checks before making any noise at all (see app.py's
+# kioskPlayLeaveVoice), same data-driven shape as data-volume.
+LEAVE_ALERT_SILENT_ABOVE_MINUTES = 90
 
 # The persistent headline (leave_headline_candidate, below — shown via
 # headline_rotation.py's unified rotation) is deliberately narrower
