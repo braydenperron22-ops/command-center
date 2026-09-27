@@ -20,7 +20,7 @@ if she's spending the night and she's got school the next morning,
 then I want it to appear on the kiosk." Tried automatic detection
 first (network device presence) — ruled out live: "Apple devices hide
 their device data." Landed on the simplest reliable thing instead: a
-plain manual flag, toggled by the C hotkey (app.py's own kiosk-hotkeys
+plain manual flag, toggled by the Q hotkey (app.py's own kiosk-hotkeys
 script) and held in Upstash via persisted_state so it survives a kiosk
 restart — same "don't over-engineer, ask directly" reasoning the
 shopping list page already used."""

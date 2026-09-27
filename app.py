@@ -470,7 +470,7 @@ components.html(
         "    window.kioskTogglePicker();",
         "    return;",
         "  }",
-        "  if (key === 'c') {",
+        "  if (key === 'q') {",
         "    var curl = new URL(window.location.href);",
         "    curl.searchParams.set('chloe_toggle', '1');",
         "    window.location.replace(curl.toString());",
@@ -2269,13 +2269,16 @@ except Exception:
 
 # Session request: "make it so if I press the C hotkey on my keyboard,
 # it activates Chloe is here mode... make sure that it's held through
-# Upstash. That way it holds it status through resets." kiosk-hotkeys
-# (the JS block further down) sets ?chloe_toggle=1 and reloads on 'c' —
-# read here, once, as a one-shot action rather than a page-routing
-# param like ?page=: flips chloe_status's own persisted flag, then
-# clears the param and reruns immediately so it can't re-toggle again
-# on the next natural rerun (the outer autorefresh, a toast fragment
-# tick, anything) finding the same leftover query string still there.
+# Upstash. That way it holds it status through resets." Moved to Q
+# right after shipping — "C, I didn't know this, is the hotkey for
+# clearing the cache" (a real Streamlit built-in, confirmed: C clears
+# cache, R reruns — Q collides with neither). kiosk-hotkeys (the JS
+# block further down) sets ?chloe_toggle=1 and reloads on 'q' — read
+# here, once, as a one-shot action rather than a page-routing param
+# like ?page=: flips chloe_status's own persisted flag, then clears the
+# param and reruns immediately so it can't re-toggle again on the next
+# natural rerun (the outer autorefresh, a toast fragment tick,
+# anything) finding the same leftover query string still there.
 #
 # Session follow-up, same message: "when I press C as well, there's a
 # spoken thing in my voice that says the queen has arrived per her
