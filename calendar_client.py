@@ -93,6 +93,15 @@ def _events_from_one(calendar: dict, today: date) -> list[dict]:
     # matching on titles like "Sales", which has no reliable "this is a
     # shift" marker in the text itself.
     show_end_time = calendar.get("show_end_time", True)
+    # Session request: "add my girlfriend's calendar as well... separate
+    # them." Every event now carries who it actually belongs to and
+    # which of that person's calendars it came from — every existing
+    # caller that ignores these two new keys is unaffected (same
+    # additive-field pattern "description" already used above). Default
+    # "brayden"/None rather than requiring every existing CALENDARS
+    # entry to be edited just to keep working.
+    owner = calendar.get("owner", "brayden")
+    label = calendar.get("label")
     events = []
     for e in occurrences:
         start = e.get("DTSTART").dt
@@ -133,6 +142,8 @@ def _events_from_one(calendar: dict, today: date) -> list[dict]:
             "description": str(e.get("DESCRIPTION")) if e.get("DESCRIPTION") else None,
             "all_day": all_day,
             "show_end_time": show_end_time,
+            "owner": owner,
+            "calendar_label": label,
         })
     return events
 
