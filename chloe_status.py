@@ -25,6 +25,7 @@ script) and held in Upstash via persisted_state so it survives a kiosk
 restart — same "don't over-engineer, ask directly" reasoning the
 shopping list page already used."""
 
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -44,8 +45,36 @@ def is_here() -> bool:
     return _chloe_here
 
 
+# Real bug, found live: "toast alerts stay up for way too long... the
+# Chloe is here toast is still up, probably five or six minutes." The
+# arrival announcement (app.py's own Q-hotkey handler) had zero dedup —
+# a few real Q presses in a row while testing queued that many separate
+# 30-second toasts back to back (toast_queue is process-wide, no size
+# cap), which plays out looking exactly like one toast frozen on screen
+# for minutes. In-memory, not persisted_state — this only needs to
+# survive across reruns within the same running process (exactly what
+# a plain module-level variable in an imported module already does),
+# not across a real restart; a restart-then-genuine-arrival should
+# always get to announce, not be silently suppressed by a stale
+# pre-restart cooldown.
+ANNOUNCE_COOLDOWN_SECONDS = 5 * 60
+_last_announced_at = 0.0
+
+
+def should_announce_arrival(now_ts: float | None = None) -> bool:
+    """True at most once per ANNOUNCE_COOLDOWN_SECONDS — call only on a
+    genuine away->here flip. Stamps the cooldown itself (not a separate
+    "mark" step) so the check and the commit can't drift apart."""
+    global _last_announced_at
+    now_ts = now_ts if now_ts is not None else time.time()
+    if now_ts - _last_announced_at < ANNOUNCE_COOLDOWN_SECONDS:
+        return False
+    _last_announced_at = now_ts
+    return True
+
+
 def set_here(value: bool) -> None:
-    """Called only from app.py's own one-shot C-hotkey handler — never
+    """Called only from app.py's own one-shot Q-hotkey handler — never
     on every rerun (see persisted_state's own "never load() on every
     rerun" rule; this module already respects that by loading once at
     import time above, and only ever writes here, on a real toggle)."""

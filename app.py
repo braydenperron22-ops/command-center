@@ -2288,11 +2288,30 @@ except Exception:
 # does, which is also how this gets Brayden's own voice for free —
 # render_bar's own kiosk_tts.synthesize_base64 call has no owner kwarg,
 # so it already defaults to "brayden" without this needing to say so.
+#
+# Real bug, found during a live audit: "toast alerts stay up for way
+# too long... the Chloe is here toast is still up, probably five or
+# six minutes." This alert had zero dedup, unlike every other one-shot
+# alert in this app (the wake chime's own date-keyed guard, car-prep's
+# per-event set, etc.) — a few real Q presses in a row while testing
+# (each one legitimately toggling away->here->away->here) queued that
+# many separate 30-second toasts back to back (toast_queue is process-
+# wide with no size cap), which plays out looking exactly like one
+# toast frozen on screen for minutes. chloe_status.should_announce_
+# arrival() is the fix: at most one real announcement per its own
+# cooldown, regardless of how many times the flag flips in that window
+# — deliberately living in chloe_status.py, NOT a variable here, since
+# app.py is the actual entry-point script Streamlit re-executes from
+# scratch on every single rerun; a plain module-level variable declared
+# directly in app.py's own top-level body would reset to its initial
+# value every rerun and could never actually hold a cooldown across
+# them. A separately imported module's own state survives correctly
+# because Python only imports it once per process.
 try:
     if st.query_params.get("chloe_toggle") == "1":
         _chloe_now_here = not chloe_status.is_here()
         chloe_status.set_here(_chloe_now_here)
-        if _chloe_now_here:
+        if _chloe_now_here and chloe_status.should_announce_arrival():
             toast_queue.extend([{
                 "headline": "Chloe is here",
                 "category": "Household",
