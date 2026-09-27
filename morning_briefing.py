@@ -68,6 +68,7 @@ import fuel_price_client
 import gemini_client
 import groq_client
 import holidays_client
+import household_reminders
 import market_yf_client
 import ntfy_client
 import payday_schedule
@@ -672,6 +673,43 @@ def _household_clause(now: datetime) -> tuple[int, str] | None:
                     direction = "jumped" if change > 0 else "dropped"
                     return 2, f"gas price {direction} {abs(change):.1f}¢ to {gas['price']:.1f}¢/L overnight"
                 return 2, f"gas price {gas['price']:.1f}¢/L (above average, eco driving recommended)"
+    return None
+
+
+# Same "evening, once it's actually the actionable tomorrow-preview
+# moment" hour app.py's own hero-badge row uses (EVENING_BADGE_HOUR) —
+# duplicated here rather than imported since that constant lives inside
+# app.py's own script body, not a plain module-level export; kept at
+# the same value on purpose so the two can never quietly disagree about
+# when "tomorrow" starts being worth mentioning.
+_EVENING_BADGE_HOUR = 18
+
+
+def _household_reminders_clause(now: datetime) -> tuple[int, str] | None:
+    """Session report: "it's grocery day, and my morning brief is not
+    saying that." household_reminders.py's own Laundry/Groceries hero
+    badges (app.py) were never actually fed to the AI at all —
+    _household_clause above only ever covered garbage/payday/gas, a
+    real gap in the same class as the "make sure the morning brief AI
+    can see all of the hero badges that are live" audit already found
+    and fixed for UV/wind/weather-record/etc (see that audit's own
+    comment above _uv_clause) — just missed this one since household_
+    reminders.py didn't exist yet at that audit's own time.
+
+    Kept as its own clause rather than folded into _household_clause —
+    same reasoning as _cpp_clause/_birthday_clause being kept separate
+    from it: a shared single-return slot would silently drop this fact
+    on a day that's ALSO garbage day or payday, and there's no reason
+    those can't coincide. Same today(morning-only)/evening-tomorrow
+    gating as the hero-row badge itself, so the two can never disagree
+    about whether it's actually laundry/grocery day. due_reminders
+    already returns soonest-first, so the first qualifying entry is the
+    right one even on the rare day more than one could apply."""
+    for reminder in household_reminders.due_reminders(now.date()):
+        if reminder["days_until"] == 0 and now.hour < MORNING_WINDOW_END_HOUR:
+            return 4, f"{reminder['label'].lower()} day today"
+        if reminder["days_until"] == 1 and now.hour >= _EVENING_BADGE_HOUR:
+            return 2, f"{reminder['label'].lower()} day tomorrow"
     return None
 
 
@@ -1565,6 +1603,7 @@ def gather_facts(
         ("agenda", _agenda_clause, (now,)),
         ("email", _email_clause, (now,)),
         ("household", _household_clause, (now,)),
+        ("household_reminders", _household_reminders_clause, (now,)),
         ("cpp", _cpp_clause, (now,)),
         ("birthday", _birthday_clause, (now,)),
         ("td_quarter", _td_quarter_clause, (now,)),
