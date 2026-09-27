@@ -406,10 +406,18 @@ _WAKE_ZERO_TEXT = "Get up now"
 
 
 def _wake_countdown_info(now: datetime) -> tuple[int, str, str] | None:
-    """wake_time_for's own version of _countdown_info above. Active
-    from WAKE_PREVIEW_MINUTES before the real wake time through
-    WAKE_OVERDUE_GRACE_MINUTES after it."""
-    wake = wake_time_for(now)
+    """commute_reminder.get_up_time's own version of _countdown_info
+    above. Active from WAKE_PREVIEW_MINUTES before the real get-up time
+    through WAKE_OVERDUE_GRACE_MINUTES after it — None entirely on a
+    day get_up_time itself is None, whether that's no real commitment
+    at all or (session correction) a first commitment late enough that
+    it "shouldn't even show up... not something I'm going to wake up
+    for automatically by myself" (see get_up_time's own GET_UP_LATEST_
+    HOUR/MINUTE cutoff). Lazy import — see maybe_wake_chime_alert's own
+    comment on why (commute_reminder already imports this module)."""
+    import commute_reminder
+
+    wake = commute_reminder.get_up_time(now)
     if wake is None:
         return None
     now_aware = now.replace(tzinfo=wake.tzinfo) if wake.tzinfo else now
@@ -610,8 +618,8 @@ def maybe_push_wind_down(now: datetime) -> None:
 # JS function pair for one alert.
 _WAKE_CHIME_PUSHED_KEY = "sleep_wake_chime_pushed_dates"
 _wake_chime_pushed_dates: list[str] = persisted_state.load(_WAKE_CHIME_PUSHED_KEY, [])
-# Fires in a short window right AT wake_time_for(), not before it —
-# this is the actual "wake up now" moment, unlike the 60-minute-ahead
+# Fires in a short window right AT the real get-up time, not before it
+# — this is the actual "wake up now" moment, unlike the 60-minute-ahead
 # wake_preview window that just brightens the TV. Small and
 # past-only (never early) so it can't ever announce a wake-up that
 # hasn't happened yet if a rerun lands a few seconds ahead of it.
@@ -622,11 +630,22 @@ def maybe_wake_chime_alert(now: datetime) -> dict | None:
     """Call once per rerun (app.py's _gather_new_alerts, same
     append-to-the-queue shape as commute_reminder.check_car_prep) — a
     single spoken chime in the WAKE_CHIME_GRACE_MINUTES window right at
-    wake_time_for(), never more than one per calendar date. Same
-    date-keyed dedup shape as _pushed_dates above, kept as its own
-    separate list rather than reused — bedtime and wake-up are
-    different moments that can both legitimately fire the same day."""
-    wake_time = wake_time_for(now)
+    commute_reminder.get_up_time(), never more than one per calendar
+    date. Same date-keyed dedup shape as _pushed_dates above, kept as
+    its own separate list rather than reused — bedtime and wake-up are
+    different moments that can both legitimately fire the same day.
+
+    Session correction: "the get up time should be correlated to an
+    hour and a half before my next obligation... when my leave-in
+    timer hits an hour and a half, that should be my wake-up time" —
+    used to anchor to this module's own wake_time_for (commitment start
+    minus a flat 60), a different, earlier-feeling number than the
+    leave countdown the user actually watches. Lazy import (not at
+    module top) since commute_reminder already imports this module —
+    a plain top-level import here would be circular."""
+    import commute_reminder
+
+    wake_time = commute_reminder.get_up_time(now)
     if wake_time is None:
         return None
     now_aware = now.replace(tzinfo=wake_time.tzinfo) if wake_time.tzinfo else now

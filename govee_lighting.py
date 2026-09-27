@@ -28,6 +28,7 @@ from datetime import datetime, timedelta
 
 import streamlit as st
 
+import commute_reminder
 import govee_client
 import market_yf_client
 import scenery
@@ -689,7 +690,16 @@ _lamp_last_call_ts: float = 0.0
 
 
 def _wake_window_active(now: datetime) -> bool:
-    wake = sleep_tracker.wake_time_for(now)
+    """Session correction: "the get up time should be correlated to an
+    hour and a half before my next obligation... when my leave-in
+    timer hits an hour and a half, that should be my wake-up time" —
+    and "if my next event is [late enough]... this shouldn't even show
+    up today." Anchored to commute_reminder.get_up_time (leave_by minus
+    90, suppressed entirely once it's too late in the morning to need
+    prompting) instead of sleep_tracker.wake_time_for directly — same
+    anchor the wake chime and the on-screen countdown now use, so all
+    three physical/visual wake cues agree with each other."""
+    wake = commute_reminder.get_up_time(now)
     if wake is None:
         return False
     now_aware = now.replace(tzinfo=wake.tzinfo) if wake.tzinfo else now

@@ -29,12 +29,12 @@ fully testable today, independent of that gap, the same "prove what
 you can before the hardware arrives" approach this app's own voice/
 package already took with --text-mode."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
-import commute_reminder
 import gemini_client
 import morning_briefing
 import persisted_state
+import sleep_tracker
 from config import USER_FIRST_NAME
 
 # "Camera turns on between 5am and 10am... turns off after the morning
@@ -44,33 +44,32 @@ from config import USER_FIRST_NAME
 WINDOW_START_HOUR = 5
 WINDOW_END_HOUR = 10
 
-# Session follow-up, before a camera exists at all: "can you find a way
-# to reliably detect that I'm awake? without needing a webcam?"
-# commute_reminder.screen_wake_time() already answers almost exactly
-# this question, for a different existing feature (it's what ends
-# night mode and un-pauses the dashboard's own AI features each
-# morning) — a real, calendar-grounded "when is the user expected to
-# actually be up" time (leave-by minus a buffer, or sleep_tracker's own
-# next-commitment estimate), not a guess invented for this feature.
-# Reused here as the trigger moment for a SPOKEN brief specifically —
-# session request: "make the threshold 30 mins so I'm for sure awake
-# when it goes off." screen_wake_time is tuned for waking a SCREEN
-# (silent, easy to ignore if early); an audio announcement playing to
-# someone still actually asleep is a worse failure than firing a little
-# late, so this adds real margin rather than reusing that raw value.
-TRIGGER_BUFFER_MINUTES = 30
+# Session correction: "change it that the morning brief only plays...
+# on the one hour mark of my first obligation of the day." Was
+# screen_wake_time + TRIGGER_BUFFER_MINUTES (leave-by minus 90, plus a
+# 30-minute safety margin, tuned for "make sure I'm for sure awake when
+# it goes off") — replaced entirely with sleep_tracker.wake_time_for's
+# own plain "commitment start minus one hour" moment, no added margin,
+# exactly what was asked for. The old margin's reasoning (a screen
+# lighting up early is easy to ignore, but a voice announcement playing
+# to someone still asleep is a worse failure) no longer applies now
+# that the trigger moment is explicitly defined by the user, not
+# derived from a screen-wake heuristic.
 
 # Session report: "make it so the spoken brief is aware of time, if its
 # stupidly early dont give me the entire shpeel just the necessary
-# stuff." A shift that starts at 6am still means a real wake-and-speak
-# moment around 5:1X am (screen_wake_time + TRIGGER_BUFFER_MINUTES,
-# above) — the full multi-fact rundown is the wrong call at that hour
-# even though every individual fact in it is still true. Below this
-# hour, only genuinely necessary-to-get-out-the-door facts are eligible
-# for the brief at all — an actual filter, not just "keep it short," so
-# the AI can't decide a birthday or a market note is worth mentioning
-# instead of being trusted to leave it out on its own.
-EARLY_HOUR_CUTOFF = 6
+# stuff," later refined: "if it's a really early obligation, give me a
+# shorter version... anything after seven a.m. can get the full brief."
+# Below this hour, only genuinely necessary-to-get-out-the-door facts
+# are eligible for the brief at all — an actual filter, not just "keep
+# it short," so the AI can't decide a birthday or a market note is
+# worth mentioning instead of being trusted to leave it out on its own.
+# Checked against trigger_time's own hour (the real first-obligation-
+# minus-an-hour moment), not whatever the wall clock happens to read
+# when this actually runs — those are normally the same minute, but a
+# polling loop landing a little late right at the boundary shouldn't
+# flip which version gets generated.
+EARLY_HOUR_CUTOFF = 7
 
 # The categories that matter for getting out the door safely and on
 # time: an active alert, real driving conditions, the commute itself,
@@ -82,22 +81,24 @@ EARLY_HOUR_CUTOFF = 6
 _ESSENTIAL_FACT_NAMES = {"alert", "precip", "nowcast", "road_ice", "commute", "agenda"}
 
 
-def is_stupidly_early(now: datetime) -> bool:
-    return now.hour < EARLY_HOUR_CUTOFF
-
-
 def trigger_time(now: datetime) -> datetime | None:
-    """The real moment to fire the spoken brief today — screen_wake_time
-    plus TRIGGER_BUFFER_MINUTES — or None on a day with no real
-    commitment to wake up for at all (screen_wake_time's own contract,
-    inherited from sleep_tracker.wake_time_for: "a genuine day off
-    doesn't get a synthetic bedtime"). Naive, matching every other
-    `now` this app passes around outside sleep_tracker/commute_reminder's
-    own internal aware-datetime math."""
-    wake = commute_reminder.screen_wake_time(now)
+    """The real moment to fire the spoken brief today — the first real
+    commitment's own start time minus one hour (sleep_tracker.
+    wake_time_for), or None on a day with no real commitment to wake up
+    for at all ("a genuine day off doesn't get a synthetic bedtime").
+    Naive, matching every other `now` this app passes around outside
+    sleep_tracker/commute_reminder's own internal aware-datetime math."""
+    wake = sleep_tracker.wake_time_for(now)
     if wake is None:
         return None
-    return wake.replace(tzinfo=None) + timedelta(minutes=TRIGGER_BUFFER_MINUTES)
+    return wake.replace(tzinfo=None) if wake.tzinfo else wake
+
+
+def is_stupidly_early(now: datetime) -> bool:
+    trigger = trigger_time(now)
+    if trigger is None:
+        return False
+    return trigger.hour < EARLY_HOUR_CUTOFF
 
 # Real Gemini call, but no reason to ever generate this twice for the
 # same calendar day — once delivered, the facts it was built from are

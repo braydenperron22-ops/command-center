@@ -17,7 +17,9 @@ asleep through the whole window.
 
 import html
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
+from datetime import time as dtime
+from datetime import timedelta
 
 import streamlit as st
 
@@ -1037,6 +1039,49 @@ def screen_wake_time(now: datetime) -> datetime | None:
         return sleep_tracker.wake_time_for(now)
     except Exception:
         return None
+
+
+# Session report: "it's telling me to get up in fifty-five minutes and
+# thirteen seconds. I don't really know why... the get up time should
+# be correlated to an hour and a half before my next obligation, like
+# when my leave-in timer hits an hour and a half, that should be my
+# wake-up time." That's screen_wake_time's own exact anchor already
+# (leave_by minus SCREEN_WAKE_BEFORE_LEAVE_MINUTES=90 — "when the
+# leave-in timer hits 90" IS that same moment) — the wake chime/lamp/
+# on-screen countdown were using sleep_tracker.wake_time_for instead
+# (commitment start minus a flat 60), a genuinely different, earlier-
+# feeling number that never agreed with the leave countdown the user
+# was actually watching. Those three now call this function instead of
+# wake_time_for directly.
+#
+# Session follow-up, same report: "if I don't have any events... after
+# like 6:30, this shouldn't even show up today... my next event is at
+# 11am, which is not something I'm going to wake up for automatically
+# by myself." A computed get-up moment this late means the day's real
+# first commitment is late enough that natural wake-up already covers
+# it — nothing for an automatic nudge to usefully do. GET_UP_LATEST_
+# HOUR/MINUTE is that cutoff: get_up_time returns None (not just a
+# late timestamp) once screen_wake_time lands at or after it, the same
+# "genuinely nothing to show" contract every other None here already
+# has, so callers don't need their own extra cutoff check.
+GET_UP_LATEST_HOUR = 6
+GET_UP_LATEST_MINUTE = 30
+
+
+def get_up_time(now: datetime) -> datetime | None:
+    """The real moment worth an automatic wake-up nudge (chime, lamp,
+    on-screen countdown) — screen_wake_time's own value, or None if
+    that's genuinely nothing (no real commute/commitment today) or if
+    it lands too late in the morning to actually need prompting (see
+    GET_UP_LATEST_HOUR/MINUTE above)."""
+    wake = screen_wake_time(now)
+    if wake is None:
+        return None
+    wake_naive = wake.replace(tzinfo=None) if wake.tzinfo else wake
+    cutoff = dtime(GET_UP_LATEST_HOUR, GET_UP_LATEST_MINUTE)
+    if wake_naive.time() >= cutoff:
+        return None
+    return wake
 
 
 def check(now: datetime) -> dict | None:
