@@ -4029,6 +4029,7 @@ if not _jumbotron_active and not _night_mode_active and not _terminal_active:
             ("Internet", pages_system_health.network_stats),
             ("Household", pages_system_health.household_stats),
             ("Sources", pages_system_health.data_health_stats),
+            ("Chloe", pages_system_health.chloe_status_stats),
         ]
         _corner_title, _corner_stats_fn = _corner_sections[int(time.time() // STATUS_ROTATE_SECONDS) % len(_corner_sections)]
         # Session request: "it would also be nice if clicking on that
