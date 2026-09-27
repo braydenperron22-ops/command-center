@@ -19,6 +19,7 @@ import air_quality_client
 import aviation_client
 import birthdays_client
 import brayden_index
+import chloe_status
 import commute_reminder
 import cpp_payment_dates
 import dashboard_score
@@ -467,6 +468,12 @@ components.html(
         "  if (e.metaKey || e.ctrlKey || e.altKey || typing) return;",
         "  if (key === 's') {",
         "    window.kioskTogglePicker();",
+        "    return;",
+        "  }",
+        "  if (key === 'c') {",
+        "    var curl = new URL(window.location.href);",
+        "    curl.searchParams.set('chloe_toggle', '1');",
+        "    window.location.replace(curl.toString());",
         "    return;",
         "  }",
         "  var targetPage = key === 'j' ? 'jumbotron' : key === 'd' ? 'maintenance' : "
@@ -2257,6 +2264,43 @@ def _jumbotron_fragment(now: datetime, weather: dict | None) -> None:
 _requested_page = None
 try:
     _requested_page = st.query_params.get("page")
+except Exception:
+    pass
+
+# Session request: "make it so if I press the C hotkey on my keyboard,
+# it activates Chloe is here mode... make sure that it's held through
+# Upstash. That way it holds it status through resets." kiosk-hotkeys
+# (the JS block further down) sets ?chloe_toggle=1 and reloads on 'c' —
+# read here, once, as a one-shot action rather than a page-routing
+# param like ?page=: flips chloe_status's own persisted flag, then
+# clears the param and reruns immediately so it can't re-toggle again
+# on the next natural rerun (the outer autorefresh, a toast fragment
+# tick, anything) finding the same leftover query string still there.
+#
+# Session follow-up, same message: "when I press C as well, there's a
+# spoken thing in my voice that says the queen has arrived per her
+# request." Only on the False->True flip (arriving) — toggling back off
+# has nothing to announce. kind="commute" rides commute_reminder.
+# render_bar/kioskPlayLeaveVoice exactly like the wake chime already
+# does, which is also how this gets Brayden's own voice for free —
+# render_bar's own kiosk_tts.synthesize_base64 call has no owner kwarg,
+# so it already defaults to "brayden" without this needing to say so.
+try:
+    if st.query_params.get("chloe_toggle") == "1":
+        _chloe_now_here = not chloe_status.is_here()
+        chloe_status.set_here(_chloe_now_here)
+        if _chloe_now_here:
+            toast_queue.extend([{
+                "headline": "Chloe is here",
+                "category": "Household",
+                "important": False,
+                "kind": "commute",
+                "label": "Chloe is here",
+                "summary": "The queen has arrived.",
+                "volume": 1.0,
+            }])
+        del st.query_params["chloe_toggle"]
+        st.rerun()
 except Exception:
     pass
 

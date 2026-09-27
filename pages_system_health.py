@@ -225,11 +225,15 @@ def chloe_status_stats() -> str:
     """Public — see dashboard_stats' own comment, same reason. Session
     request: "I want to know like when she's at school and when she
     gets home and when she goes to the gym... nice passive data to
-    know... know if she's at school before calling her type thing."
-    Reuses chloe_status.current_status() directly — no new tracking,
-    just her own already-fetched calendar events read for "is now
-    inside one of them.\""""
+    know... know if she's at school before calling her type thing,"
+    later scoped down: "I only want her events to show if she's here"
+    — chloe_status.current_status() itself now returns None on a night
+    she isn't (see that module's own C-hotkey/is_here() comment), shown
+    here as a plain "AWAY" instead of a school/gym/home reading that
+    wouldn't actually be true."""
     status = chloe_status.current_status(datetime.now(ZoneInfo(TIMEZONE)))
+    if status is None:
+        return _stat_row(_stat("AWAY", "CHLOE"))
     tone = "neutral" if status == chloe_status.HOME_LABEL else "good"
     return _stat_row(_stat(status.upper(), "CHLOE", tone))
 
