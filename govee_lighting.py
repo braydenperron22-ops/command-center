@@ -1,7 +1,7 @@
-"""Reactive policy for the bedroom Govee light, plus a separate fixed-
-schedule policy for the Govee lamp — what state each SHOULD be in.
-app.py calls sync_lights()/sync_lamp() once per rerun; everything here
-decides whether that actually needs an API call.
+"""Reactive policy for the bedroom Govee light, plus a separate policy
+for the bedroom Govee lamp — what state each SHOULD be in. app.py calls
+sync_lights()/sync_lamp() once per rerun; everything here decides
+whether that actually needs an API call.
 
 Govee's API has real per-day rate limits and this script reruns every
 second (clock tick), so desired state is recomputed locally (free) each
@@ -31,6 +31,7 @@ import streamlit as st
 import govee_client
 import market_yf_client
 import scenery
+import sleep_tracker
 from config import AQI_EXTREME, GOVEE_LAMP, GOVEE_LIGHT
 
 MIN_CALL_GAP_SECONDS = 10
@@ -643,27 +644,54 @@ def sync_lights(
 
 # Session request: "the smart plug... is connected to a lamp now...
 # adjust the formula to treat it like a lamp and make rules for it for
-# when to turn on and turn off... full discretion." First pass at this
-# reused wake_time_for/bedtime_for (calendar-commitment math built for
-# the old monitor/screen) — session correction, blunt and fair: "stop
-# trying to treat it like a monitor. It's a fucking lamp." Torn out
-# entirely. This is just a lamp: on for the evening, off at a plain
-# fixed bedtime hour. No calendar, no commute, no "getting ready"
-# window — nothing here cares what day it is or what's on the
-# calendar tomorrow.
+# when to turn on and turn off... full discretion." First pass reused
+# wake_time_for/bedtime_for — session correction, blunt and fair: "stop
+# trying to treat it like a monitor. It's a fucking lamp," so that got
+# torn out for a plain fixed 7pm-11pm schedule instead.
 #
-# Storm override kept — real light in the room during an actual severe
+# Session follow-up, once the plug had actually moved rooms: "could we
+# make it so that the smart plug attached to the lamp is derived on
+# real world data instead of just randomly timing it? I think it
+# should be on in the morning when I wake up. And I also think it
+# should be on before bed." This time the wake_time_for/bedtime_for
+# coupling is exactly what's wanted, not an unwanted monitor-ism — the
+# lamp is physically in the bedroom now (session decision: an "indirect
+# alarm," since the kiosk itself moved to the living room and a
+# purely-audio wake chime risks not being heard from another room; the
+# living-room "mood lighting" alternative was considered and explicitly
+# turned down for being mostly redundant with night mode's own screen
+# treatment there).
+#
+# Two real, data-driven windows:
+#   1. Wake window — ON at wake_time_for(now), OFF WAKE_LAMP_ON_MINUTES
+#      later (== WAKE_BUFFER_MINUTES, i.e. right at the real
+#      commitment's own start time) — a physical light cue alongside
+#      the spoken wake chime (sleep_tracker.maybe_wake_chime_alert),
+#      one that works even if the chime itself isn't heard.
+#   2. Wind-down window — ON LAMP_WIND_DOWN_MINUTES before the real
+#      bedtime_for(now), OFF at bedtime itself. Reuses the same 30-
+#      minute figure app.py's own WARM_TINT_START_MINUTES already uses
+#      for killing the bedroom's OTHER Govee light before bedtime — one
+#      real "wind-down starts now" moment, not two disagreeing ones.
+#
+# Both windows are skipped outright on a genuine day off (wake_time_for
+# /bedtime_for both None) — this whole feature is about REAL data, so
+# there's deliberately no fixed-time fallback to fall back on; a day
+# with nothing to wake up for just doesn't get either cue.
+#
+# Storm override kept, and arguably fits even better now that this is
+# the bedroom specifically — real light during an actual severe
 # thunderstorm/tornado/hurricane/tropical-storm/tsunami is a genuine
-# safety thing, the same reason the bedroom light already flashes awake
-# for this (weather_alerts_bar.current_storm_phase) — unrelated to the
-# monitor-coupling that got torn out above, so it stayed.
-LAMP_ON_HOUR = 19  # 7pm
-LAMP_OFF_HOUR = 23  # 11pm
+# safety wake-up, the same reason the bedroom's OTHER Govee light
+# already flashes awake for this (weather_alerts_bar.current_storm_
+# phase).
+WAKE_LAMP_ON_MINUTES = 60
+LAMP_WIND_DOWN_MINUTES = 30
 # Same "don't cut off the instant a condition ends" idea the old
 # sync_plug's own PLUG_OFF_GRACE_SECONDS used, scoped to just the storm
-# signal (the only flappy one here — the fixed on/off hours are stable)
-# so a storm phase flickering right at its own boundary can't snap the
-# lamp off and on again.
+# signal (the only flappy one here — wake_time_for/bedtime_for are
+# stable within a given day) so a storm phase flickering right at its
+# own boundary can't snap the lamp off and on again.
 LAMP_STORM_GRACE_SECONDS = 5 * 60
 
 _lamp_applied: bool | None = None
@@ -671,12 +699,29 @@ _lamp_last_call_ts: float = 0.0
 _lamp_storm_last_true_at: float | None = None
 
 
+def _wake_window_active(now: datetime) -> bool:
+    wake = sleep_tracker.wake_time_for(now)
+    if wake is None:
+        return False
+    now_aware = now.replace(tzinfo=wake.tzinfo) if wake.tzinfo else now
+    remaining = (wake - now_aware).total_seconds()
+    return -WAKE_LAMP_ON_MINUTES * 60 <= remaining <= 0
+
+
+def _wind_down_window_active(now: datetime) -> bool:
+    bedtime = sleep_tracker.bedtime_for(now)
+    if bedtime is None:
+        return False
+    now_aware = now.replace(tzinfo=bedtime.tzinfo) if bedtime.tzinfo else now
+    remaining = (bedtime - now_aware).total_seconds()
+    return 0 < remaining <= LAMP_WIND_DOWN_MINUTES * 60
+
+
 def sync_lamp(now: datetime, storm_active: bool = False) -> None:
     """Call once per rerun (app.py, same shape as sync_lights above).
-    On from LAMP_ON_HOUR to LAMP_OFF_HOUR, off the rest of the day —
-    that's the whole schedule. Storm override aside, this is just the
-    apply-only-on-change/rate-limited plumbing, same pattern sync_lights
-    and the old sync_plug both used."""
+    See the module-level comment just above for the actual schedule —
+    this is just the apply-only-on-change/rate-limited plumbing, same
+    pattern sync_lights and the old sync_plug both used."""
     global _lamp_applied, _lamp_last_call_ts, _lamp_storm_last_true_at
     if not st.secrets.get("GOVEE_API_KEY"):
         return
@@ -688,7 +733,7 @@ def sync_lamp(now: datetime, storm_active: bool = False) -> None:
         storm_grace_active = (
             _lamp_storm_last_true_at is not None and (now_ts - _lamp_storm_last_true_at) < LAMP_STORM_GRACE_SECONDS
         )
-        want_on = storm_grace_active or (LAMP_ON_HOUR <= now.hour < LAMP_OFF_HOUR)
+        want_on = storm_grace_active or _wake_window_active(now) or _wind_down_window_active(now)
     if _lamp_applied == want_on:
         return
     if now_ts - _lamp_last_call_ts < MIN_CALL_GAP_SECONDS:
