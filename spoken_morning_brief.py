@@ -29,8 +29,9 @@ fully testable today, independent of that gap, the same "prove what
 you can before the hardware arrives" approach this app's own voice/
 package already took with --text-mode."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
+import commute_reminder
 import gemini_client
 import morning_briefing
 import persisted_state
@@ -81,14 +82,33 @@ EARLY_HOUR_CUTOFF = 7
 _ESSENTIAL_FACT_NAMES = {"alert", "precip", "nowcast", "road_ice", "commute", "agenda"}
 
 
+# Session correction, right after the above shipped: "spoken brief
+# should be when the leave-in timer for my first obligation hits an
+# hour, not one hour before my first [obligation]." leave_by_time
+# already accounts for the real commute, so "leave-in timer hits 60"
+# is leave_by minus this, not the raw commitment start minus this —
+# same relationship get_up_time (commute_reminder.py) already has to
+# the countdown the user actually watches, just a 60-minute lead
+# instead of 90.
+TRIGGER_LEAD_MINUTES = 60
+
+
 def trigger_time(now: datetime) -> datetime | None:
-    """The real moment to fire the spoken brief today — the first real
-    commitment's own start time minus one hour (sleep_tracker.
-    wake_time_for), or None on a day with no real commitment to wake up
-    for at all ("a genuine day off doesn't get a synthetic bedtime").
-    Naive, matching every other `now` this app passes around outside
-    sleep_tracker/commute_reminder's own internal aware-datetime math."""
-    wake = sleep_tracker.wake_time_for(now)
+    """The real moment to fire the spoken brief today — TRIGGER_LEAD_
+    MINUTES before today's real leave-by time (when the leave-in
+    countdown itself would read "1:00:00"), or sleep_tracker.
+    wake_time_for as the fallback whenever there's no leave-by
+    available (no shift today, or the commute estimate isn't up —
+    degrading to the commitment's own start time minus the same lead,
+    never nothing). None on a day with no real commitment to wake up
+    for at all. Naive, matching every other `now` this app passes
+    around outside sleep_tracker/commute_reminder's own internal
+    aware-datetime math."""
+    leave_by = commute_reminder.leave_by_time(now)
+    if leave_by is not None:
+        wake = leave_by - timedelta(minutes=TRIGGER_LEAD_MINUTES)
+    else:
+        wake = sleep_tracker.wake_time_for(now)
     if wake is None:
         return None
     return wake.replace(tzinfo=None) if wake.tzinfo else wake
