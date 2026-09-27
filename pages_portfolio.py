@@ -2,17 +2,31 @@
 request: "import portfolio value from wealthsimple into my dashboard").
 Split out to its own page from Markets — session feedback the combined
 tile read too big/heavy sharing a page with the compact instrument
-grid, and this has since grown its own multi-period detail (1D/6M/YTD)
-that deserves the room.
+grid, and this has since grown its own multi-period detail that
+deserves the room.
 
 Wealthsimple has no public API of its own; SnapTrade is the account-
 aggregation layer several consumer portfolio-tracker apps (Blossom
 included) already use to connect to it — see portfolio_client.py for
 the actual fetch/consolidation/period-change logic.
+
+Session request, full page review: "I don't really want the
+transaction log anymore for the most part I just kind of want the
+overall balance the trend... I want to add two weeks, a month, six
+months, year to date, and then one full year. I want to see the
+average trend of my balance... consolidate into one clean dashboard
+that fits in the entire frame." RECENT ACTIVITY is gone entirely; the
+old single 6-month sparkline is now six range cards (1D/2W/1M/6M/YTD/
+1Y), each its own real % change plus a sparkline for exactly that
+window, all sliced from one shared 365-day cached fetch (portfolio_
+client.cached_value_history) — no new API load per range. Same
+review found and fixed a real backend bug in the account breakdown
+itself (see portfolio_client.ACCOUNT_ID_DISPLAY_NAMES's own comment)
+— this page just reads the corrected data.
 """
 
 import html
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import streamlit as st
@@ -21,53 +35,24 @@ import portfolio_client
 import tiles
 from config import TIMEZONE
 
-
 # Kiosk viewed from across a room — bigger than this app's default
 # market-metric sizing (1.3rem/0.85rem), which was tuned for Markets'
 # dense 7-column grid, not a single full-width page like this one.
 _METRIC_LABEL_STYLE = "font-size:1.05rem;"
 _METRIC_VALUE_STYLE = "font-size:1.7rem; font-weight:600;"
 
-# Session feedback: a plain sentence per row ("Invested $18.00 · RRSP ·
-# Jul 16") read as an undifferentiated wall of gray text — no way to
-# tell a dividend from a withdrawal without reading every word. Each
-# type gets its own colored tag instead, scannable at a glance; label
-# text stays short and consistent rather than reusing SnapTrade's own
-# freeform "description" sentences.
-_ACTIVITY_TAGS = {
-    "CONTRIBUTION": ("INVESTED", "#A78BFA"),  # this page's own accent — new money into the portfolio
-    "WITHDRAWAL": ("WITHDRAWAL", "#FF9F0A"),
-    "DIVIDEND": ("DIVIDEND", "#32D74B"),
-    "INTEREST": ("INTEREST", "#30D5C8"),
-    "BUY": ("BUY", "#5AC8FA"),
-    "SELL": ("SELL", "#64D2FF"),
-}
-# Session request: "any withdrawals from that account that are not
-# being deposited into an investment account is me spending" — a
-# WITHDRAWAL/CONTRIBUTION pair that portfolio_client.py has confirmed
-# is really Brayden moving money between his own tracked accounts (see
-# its own _mark_internal_transfers) would otherwise show up here as
-# "WITHDRAWAL" or "INVESTED" — reading exactly like real spending or
-# income when it's neither. Its own neutral tag/color instead, distinct
-# from both, so the log itself is honest about which entries are real
-# money leaving/arriving versus his own money just changing pockets.
-_TRANSFER_TAG = ("TRANSFER", "#ABB2C4")
-
-# Session request: "for my day to day accounts, if there's any money
-# that gets inputted into there, make sure that instead of invested,
-# it says deposited or deposit." A CONTRIBUTION into Spending/Bills/Gas
-# (or the generic "Daily Banking" MSB fallback — see portfolio_client.
-# _MSB_ACCOUNT_LABELS/_ACTIVITY_DISPLAY_NAMES) isn't investment
-# activity at all, just money landing in an everyday account — the
-# same distinction _DAY_TO_DAY_SPENDING_ACCOUNTS already draws in
-# morning_briefing.py, kept as this page's own local set rather than
-# importing that one, since that constant is scoped to spending
-# specifically and deliberately excludes "Daily Banking." Same purple
-# as INVESTED (still fundamentally the same "money added" category,
-# just worded honestly for the account it actually landed in) — only
-# the label text changes.
-_DAY_TO_DAY_ACCOUNTS = {"Spending", "Bills", "Gas", "Daily Banking"}
-_DEPOSIT_TAG = ("DEPOSITED", "#A78BFA")
+# (label, fetch_changes() key, lookback for slicing cached_value_history —
+# an int day-count, "ytd" for calendar-year-to-date, or None for 1-day,
+# which has too few points for a sparkline to mean anything and just
+# uses the existing day-change stat instead). Order is display order.
+_RANGES = [
+    ("1 DAY", "1d", None),
+    ("2 WEEKS", "2w", 14),
+    ("1 MONTH", "1m", 30),
+    ("6 MONTHS", "6m", 182),
+    ("YEAR TO DATE", "ytd", "ytd"),
+    ("1 YEAR", "1y", 365),
+]
 
 
 def _period_metric(label: str, pct: float | None, amount: float | None = None) -> str:
@@ -78,12 +63,6 @@ def _period_metric(label: str, pct: float | None, amount: float | None = None) -
         )
     direction_class = "market-up" if pct >= 0 else "market-down"
     sign = "+" if pct >= 0 else ""
-    # Session request: "the change percent for the day and the dollar
-    # value of that change as well" — only "1 Day" passes a real
-    # amount (see portfolio_client.daily_change) since that's the one
-    # this was actually asked about; 6-month/YTD keep calling this
-    # without one, same as before, since fetch_changes doesn't carry a
-    # dollar figure for those two at all.
     amount_html = (
         f' <span class="market-metric-sub" style="opacity:0.7;">({sign}${abs(amount):,.2f})</span>'
         if amount is not None
@@ -95,47 +74,41 @@ def _period_metric(label: str, pct: float | None, amount: float | None = None) -
     )
 
 
-def _activity_row(activity: dict, today_local) -> str:
-    activity_date = datetime.fromisoformat(activity["date"].replace("Z", "+00:00"))
-    activity_date_local = activity_date.astimezone(ZoneInfo(TIMEZONE))
-    date_label = f"{activity_date_local.strftime('%b')} {activity_date_local.day}"
-    # Already a short display name (FHSA/TFSA/RRSP/EMERGENCY FUND, or
-    # Spending/Bills/Gas for the tracked MSB accounts — see
-    # portfolio_client.ACCOUNT_DISPLAY_NAMES/_MSB_ACCOUNT_LABELS),
-    # nothing left to trim here.
-    account = html.escape(activity["account"])
-    amount = activity["amount"]
-    direction_class = "market-up" if amount >= 0 else "market-down"
-    sign = "+" if amount >= 0 else "-"
-
-    if activity.get("is_transfer"):
-        tag_label, tag_color = _TRANSFER_TAG
-    elif activity["type"] == "CONTRIBUTION" and activity["account"] in _DAY_TO_DAY_ACCOUNTS:
-        tag_label, tag_color = _DEPOSIT_TAG
+def _slice_history(value_history: list[tuple[str, float]], lookback) -> list[float]:
+    """Just the values (portfolio_client's own sparkline shape) from
+    `lookback` days ago (or Jan 1 of this year for "ytd") through now —
+    real calendar-date slicing of the one shared 365-day fetch, not an
+    index guess, so a range with sparser real data points still cuts at
+    the right date instead of the wrong depth."""
+    if not value_history:
+        return []
+    if lookback == "ytd":
+        cutoff = date(datetime.now(ZoneInfo(TIMEZONE)).year, 1, 1).isoformat()
     else:
-        tag_label, tag_color = _ACTIVITY_TAGS.get(activity["type"], (activity["type"], "#ABB2C4"))
-    tag_html = f'<span class="activity-tag" style="color:{tag_color}; border-color:{tag_color};">{tag_label}</span>'
-    # Session request: a pulsing red dot on anything dated today — the
-    # automated-investing accounts do their own thing all day with no
-    # other heads-up, so "did something happen today" needs to be
-    # answerable at a glance rather than by reading every date. Compared
-    # in local time, not the API's own UTC trade_date, so a transaction
-    # late in the evening (well past UTC's own midnight rollover) still
-    # correctly reads as "today."
-    today_dot_html = '<span class="activity-today-dot"></span>' if activity_date_local.date() == today_local else ""
-    # The one piece of detail a bare category tag can't carry — which
-    # security a trade/dividend actually touched. Nothing extra for
-    # CONTRIBUTION/WITHDRAWAL/INTEREST: the tag plus the amount already
-    # says everything there is to say about those.
-    symbol = activity.get("symbol")
-    detail = f" · {html.escape(symbol)}" if symbol else ""
+        cutoff = (date.today() - timedelta(days=lookback)).isoformat()
+    return [v for d, v in value_history if d >= cutoff]
 
+
+def _trend_card(label: str, pct: float | None, values: list[float]) -> str:
+    if pct is None:
+        pct_html = '<span class="market-metric-value" style="font-size:1.25rem;">—</span>'
+    else:
+        direction_class = "market-up" if pct >= 0 else "market-down"
+        sign = "+" if pct >= 0 else ""
+        pct_html = (
+            f'<span class="market-metric-value {direction_class}" '
+            f'style="font-size:1.25rem; font-weight:600;">{sign}{pct:.2f}%</span>'
+        )
+    spark_html = ""
+    if len(values) >= 2:
+        tone = "good" if values[-1] >= values[0] else "bad"
+        spark_html = tiles.sparkline_svg(values, tone, width=120, height=36)
     return (
-        f'<div class="market-metric activity-row">'
-        f'<span class="activity-row-left">{today_dot_html}{tag_html}'
-        f'<span class="market-metric-label">{account}{detail} · {date_label}</span></span>'
-        f'<span class="market-metric-value {direction_class}">{sign}${abs(amount):,.2f}</span>'
-        f"</div>"
+        f'<div class="tile" style="padding:1rem 1.1rem;">'
+        f'<div class="market-metric-label" style="font-size:0.85rem; opacity:0.75; margin-bottom:0.3rem;">{label}</div>'
+        f'{pct_html}'
+        f'<div style="margin-top:0.4rem;">{spark_html}</div>'
+        f'</div>'
     )
 
 
@@ -194,10 +167,6 @@ def render() -> None:
     total_cad = portfolio["total_cad"]
     other = portfolio["other_currency_totals"]
     other_text = " · ".join(f"{amt:,.2f} {cur}" for cur, amt in other.items())
-    # No account count here — the breakdown below only ever lists the 4
-    # tracked accounts (see portfolio_client.ACCOUNT_DISPLAY_NAMES)
-    # while this total still includes MSB, so a literal "N accounts"
-    # count would misleadingly imply the rows below sum to this total.
     subtitle = "Wealthsimple" + (f" · {other_text}" if other_text else "")
 
     # cached_changes(), not fetch_changes() directly — this page render
@@ -205,14 +174,6 @@ def render() -> None:
     # cold-cache) SnapTrade fetch; see portfolio_client's own module
     # comment for the live bug this caused.
     changes = portfolio_client.cached_changes() or {}
-    # Session request: "outsource it by caching yesterday's result and
-    # comparing to today's result" — see portfolio_client.daily_change's
-    # own docstring for why: SnapTrade's own per-account balance-history
-    # endpoint already corrupted a period change once for real (a stale
-    # sub-account's history bleeding in), confirmed live doing it again
-    # right now for 6-month/YTD. Today's own change no longer depends on
-    # that fragile mechanism at all — just this app's own live total
-    # against a value it recorded itself yesterday.
     day_change = portfolio_client.daily_change()
     change_html = ""
     if day_change is not None:
@@ -224,49 +185,27 @@ def render() -> None:
             f'{sign}{day_change_pct:.2f}% ({sign}${abs(day_change_amount):,.2f})</span>'
         )
 
-    # Already just the 4 tracked/renamed accounts, sorted descending by
-    # balance (see portfolio_client.ACCOUNT_DISPLAY_NAMES).
+    # Real, individually-tracked accounts only (see portfolio_client.
+    # ACCOUNT_ID_DISPLAY_NAMES) — sorted descending by balance.
     rows = "".join(
         f'<div class="market-metric"><span class="market-metric-label" style="{_METRIC_LABEL_STYLE}">{a["name"]}</span>'
         f'<span class="market-metric-value" style="{_METRIC_VALUE_STYLE}">${a["amount"]:,.2f}</span></div>'
         for a in portfolio["accounts"]
     )
 
-    # 6 months — same window as the PERFORMANCE tile's own "6 Month"
-    # figure below, so this reads as the shape behind that number
-    # rather than an arbitrarily different lookback. Trend direction
-    # (not the 1-day change) decides the color, since a sparkline this
-    # short-range is about "which way has this actually been going,"
-    # same reasoning tiles.sparkline_svg's other callers already use.
-    value_history = portfolio_client.cached_value_history()
-    sparkline_html = ""
-    if value_history:
-        trend_tone = "good" if value_history[-1] >= value_history[0] else "bad"
-        sparkline_html = tiles.sparkline_svg(value_history, trend_tone)
+    value_history = portfolio_client.cached_value_history() or []
 
-    # Totals (left) and activity (right) side by side — this kiosk's
-    # own page never scrolls, so stacking all three tiles vertically
-    # (session feedback) pushed Recent Activity below the visible
-    # screen on the actual monitor. A 2-column split keeps totals and
-    # transactions both on screen at once.
-    totals_col, activity_col = st.columns(2)
+    # Left: total + account breakdown + holdings. Right: the six trend
+    # range cards. This kiosk page never scrolls, so both columns have
+    # to actually fit — no activity feed competing for room anymore.
+    totals_col, trend_col = st.columns([1, 1.15])
 
     with totals_col:
-        # One flat line, no embedded newlines/indentation — same bug
-        # class fixed in pages_radar.py this session: an interpolated
-        # piece being "" whenever there's nothing to show (no accounts,
-        # no change_html) would leave a blank line mid-HTML on a
-        # multi-line f-string and get the whole tile rendered as
-        # literal text instead of parsed.
-        #
-        # Plain .tile-value (2.6rem), not the market-hero-value override
-        # (1.9rem) that Markets uses to fit 7 columns side by side —
-        # this page has no neighboring tiles to squeeze against.
         st.markdown(
             f'<div class="tile">'
             f'<div class="tile-label">TOTAL VALUE</div>'
             f'<div class="tile-value-row">'
-            f'<div class="tile-value">${total_cad:,.2f}{change_html}</div>{sparkline_html}'
+            f'<div class="tile-value">${total_cad:,.2f}{change_html}</div>'
             f'</div>'
             f'<div class="tile-prev">{subtitle}</div>'
             f'{rows}'
@@ -274,29 +213,6 @@ def render() -> None:
             unsafe_allow_html=True,
         )
 
-        # 6-month/YTD periods exclude any account whose own history
-        # doesn't reach back that far (see
-        # portfolio_client._period_change_pct) — newer accounts just
-        # don't have an opinion yet rather than reading as 0% growth,
-        # which would be a lie about money that was never actually
-        # invested for that long.
-        st.markdown(
-            f'<div class="tile">'
-            f'<div class="tile-label">PERFORMANCE</div>'
-            f'{_period_metric("1 Day", day_change["pct"] if day_change else None, day_change["amount"] if day_change else None)}'
-            f'{_period_metric("6 Month", changes.get("6m"))}'
-            f'{_period_metric("YTD", changes.get("ytd"))}'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-        # Session request the day the account moved from Automated
-        # Investing to Self-Directed: "you should be able to see their
-        # holdings later today when it goes through." No key at all for
-        # an account holding only cash (see portfolio_client.fetch_
-        # positions's own docstring) — the whole tile stays absent
-        # rather than rendering empty, same "if there's nothing, don't
-        # take up screen space" treatment as RECENT ACTIVITY below.
         positions = portfolio_client.cached_positions()
         if positions:
             holdings_html = "".join(
@@ -312,22 +228,15 @@ def render() -> None:
                 unsafe_allow_html=True,
             )
 
-    with activity_col:
-        # PORTFOLIO_INVESTMENT/WRITE_OFF/FEE rows already filtered out
-        # at the source (see portfolio_client._ACTIVITY_TYPES), and
-        # only the 4 tracked accounts are included at all — what's left
-        # is real deposits/withdrawals/trades/dividends/interest, the
-        # things actually worth glancing at. A bigger limit than before
-        # now that activity has its own dedicated column instead of
-        # competing with two other tiles for vertical space.
-        activities = portfolio_client.cached_activities()
-        if activities:
-            today_local = datetime.now(ZoneInfo(TIMEZONE)).date()
-            activity_rows = "".join(_activity_row(a, today_local) for a in activities)
-            st.markdown(
-                f'<div class="tile">'
-                f'<div class="tile-label">RECENT ACTIVITY</div>'
-                f"{activity_rows}"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
+    with trend_col:
+        st.markdown('<div class="market-metric-label" style="opacity:0.7; margin-bottom:0.5rem;">TREND</div>', unsafe_allow_html=True)
+        card_cols = st.columns(3)
+        for i, (label, key, lookback) in enumerate(_RANGES):
+            with card_cols[i % 3]:
+                if key == "1d":
+                    pct = day_change["pct"] if day_change else changes.get("1d")
+                    values: list[float] = []
+                else:
+                    pct = changes.get(key)
+                    values = _slice_history(value_history, lookback)
+                st.markdown(_trend_card(label, pct, values), unsafe_allow_html=True)

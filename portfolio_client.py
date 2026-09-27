@@ -24,22 +24,52 @@ from snaptrade_client import SnapTrade
 import data_health
 import persisted_state
 
-# Wealthsimple's own account names, simplified for the kiosk — session
-# request. PERSONAL specifically renamed to what it's actually used
-# for. Only these four ever get their own balance row in fetch_
-# portfolio's account breakdown, per explicit session request to only
-# show the top 4 there — MSB (a cash/spending sub-account, not an
-# investment one) stays out of that specific breakdown, though TOTAL
-# VALUE's own total still includes it (that number is real net worth,
-# not just "these 4 accounts"). The activity feed is a separate list
-# with its own separate account-name map (see _ACTIVITY_DISPLAY_NAMES
-# below) — MSB does earn a spot there, since day-to-day banking
-# activity is exactly the kind of thing an activity feed is for.
-ACCOUNT_DISPLAY_NAMES = {
-    "Wealthsimple Trade FHSA": "FHSA",
-    "Wealthsimple Trade TFSA": "TFSA",
-    "Wealthsimple Trade RRSP": "RRSP",
-    "Wealthsimple Trade PERSONAL": "EMERGENCY FUND",
+# Session report: "the accounts seem to be getting jumbled and all
+# messed up" — real bug, confirmed live via a direct SnapTrade fetch.
+# Wealthsimple's cash sub-accounts (Spending/Bills/Gas/Groceries/
+# Emergency Fund) all come back from SnapTrade sharing the exact same
+# generic name ("Wealthsimple Trade MSB" or "...PERSONAL") — no
+# per-bucket label at all, only a distinct account id. The OLD name-
+# keyed ACCOUNT_DISPLAY_NAMES grouped by that shared name, which
+# silently summed every same-named sub-account together: every MSB
+# bucket got merged into one blob and dropped entirely (that name was
+# never in the map), and every PERSONAL-type account — the real
+# Emergency Fund AND a completely separate joint fantasy-hockey-league
+# account ("it's group money, not my money") — got summed into one
+# mislabeled "EMERGENCY FUND" row. TFSA/RRSP/FHSA were ALSO inflated
+# the same way, each carrying a stale leftover sub-account balance from
+# a past Wealthsimple account restructuring (same restructuring-leaves-
+# a-duplicate issue _fetch_history_by_account's own docstring already
+# documents for the history endpoint — this balance endpoint had the
+# identical bug and was never fixed to match).
+#
+# Fixed by keying on the account's own stable id instead of its name —
+# confirmed correct against a real live fetch, each value matched
+# exactly what the user reported for that account. A future Wealthsimple
+# restructuring could still mint a new id for one of these and silently
+# leave it looking frozen (same risk description above already flags
+# for the general case) — if a tracked balance ever stops moving when
+# it plainly should, that's the first thing to check.
+ACCOUNT_ID_DISPLAY_NAMES = {
+    "8f0ff7ea-d972-4719-b900-f7b452ba9984": "SPENDING",
+    "97ae16f7-c4a4-4acc-9ef6-6eaf4deb1ceb": "BILLS",
+    "e8611574-696b-44c3-94c4-4bf85f21b078": "GAS",
+    "5109b645-3bd3-46e6-96a6-b9c90fd868ba": "GROCERIES",
+    "17782347-8f7d-446f-a6c9-01d9a8381542": "EMERGENCY FUND",
+    "b46d738f-09ef-48f1-b819-dabbde569135": "TFSA",
+    "5b813a40-1dd0-4f42-99e9-bd3d6bcc5aa9": "FHSA",
+    "3206ffa2-bc62-4b60-97fa-99efdb37e34a": "RRSP",
+}
+
+# Session request: "the fantasy hockey fund with $202.23, ignore it.
+# It's group money. It's not my money." Excluded from total_cad itself
+# (not just the account breakdown) — this is the one account genuinely
+# not part of the user's own net worth, unlike every other untracked
+# sub-account (stale duplicates, a pending misplaced-transfer balance),
+# which are still real personal money and stay folded into the total
+# even without their own breakdown row.
+EXCLUDED_ACCOUNT_IDS = {
+    "64766ea0-3b15-4159-bafc-49c909104844",  # joint fantasy hockey league account
 }
 
 _last_good_portfolio: dict | None = None
@@ -119,40 +149,37 @@ def _fetch_portfolio_raw() -> dict | None:
     # headline number; other_currency_totals holds anything else, shown
     # alongside it rather than folded in.
     #
-    # Grouped by account name (not one row per SnapTrade account) —
-    # Wealthsimple splits each registered account type into several
-    # SnapTrade sub-accounts (e.g. two separate "TFSA" entries), which
-    # read as a mystery duplicate rather than useful detail. A reader
-    # thinks in terms of "my TFSA," not which specific sub-account
-    # SnapTrade happened to split it into.
-    grouped: dict[str, dict] = {}
+    # Keyed by account id, NOT name (see ACCOUNT_ID_DISPLAY_NAMES's own
+    # comment for the real bug this replaced — same-named sub-accounts
+    # used to get silently summed together, mixing stale duplicates and
+    # even a separate joint account into one number).
     total_cad = 0.0
     other_currency_totals: dict[str, float] = {}
+    tracked_by_id: dict[str, dict] = {}
     for acct in resp.body:
+        acct_id = acct.get("id")
+        if acct_id in EXCLUDED_ACCOUNT_IDS:
+            continue
         balance = (acct.get("balance") or {}).get("total")
         if not balance or balance.get("amount") is None:
             continue
         amount, currency = balance["amount"], balance.get("currency", "CAD")
         if amount == 0:
             continue  # empty sub-accounts SnapTrade auto-detects (crypto/MSB shells etc.) — nothing to show
-        name = acct.get("name", "Account")
-        entry = grouped.setdefault(name, {"name": name, "amount": 0.0, "currency": currency})
-        entry["amount"] += amount
         if currency == "CAD":
             total_cad += amount
         else:
             other_currency_totals[currency] = other_currency_totals.get(currency, 0.0) + amount
+        if acct_id in ACCOUNT_ID_DISPLAY_NAMES:
+            tracked_by_id[acct_id] = {"name": ACCOUNT_ID_DISPLAY_NAMES[acct_id], "amount": amount, "currency": currency}
 
-    # Only the four renamed/tracked accounts (see ACCOUNT_DISPLAY_NAMES)
-    # are surfaced by name — total_cad above already summed every real
-    # account, MSB included, so it stays an accurate total even though
-    # MSB itself never appears in this list.
+    # Only the explicitly tracked accounts (see ACCOUNT_ID_DISPLAY_NAMES)
+    # get their own breakdown row — total_cad above already summed
+    # every real (non-excluded) account, so it stays an accurate total
+    # even though plenty of real balances (stale duplicates, a pending
+    # misplaced-transfer amount) never earn their own row here.
     accounts = sorted(
-        (
-            {"name": ACCOUNT_DISPLAY_NAMES[a["name"]], "amount": a["amount"], "currency": a["currency"]}
-            for a in grouped.values()
-            if a["name"] in ACCOUNT_DISPLAY_NAMES
-        ),
+        tracked_by_id.values(),
         key=lambda a: a["amount"],
         reverse=True,
     )
@@ -216,6 +243,11 @@ def _fetch_history_by_account() -> dict[str, list[tuple[str, float]]] | None:
     accounts = client.account_information.list_user_accounts(user_id=user_id, user_secret=user_secret).body
     by_name: dict[str, dict[str, float]] = {}
     for acct in accounts:
+        # Same exclusion as _fetch_portfolio_raw — the joint fantasy
+        # hockey account isn't the user's own money, so it shouldn't
+        # shape the trend line any more than it should the live total.
+        if acct.get("id") in EXCLUDED_ACCOUNT_IDS:
+            continue
         balance = (acct.get("balance") or {}).get("total")
         if not balance or not balance.get("amount") or balance.get("currency") != "CAD":
             continue
@@ -254,18 +286,24 @@ def _fetch_history_by_account() -> dict[str, list[tuple[str, float]]] | None:
     return {name: sorted(by_date.items()) for name, by_date in by_name.items()}
 
 
-_last_good_value_history: list[float] | None = None
+_last_good_value_history: list[tuple[str, float]] | None = None
 
 
-def fetch_value_history(days: int = 180) -> list[float] | None:
-    """Daily total portfolio value (every real account, same scope as
+def fetch_value_history(days: int = 365) -> list[tuple[str, float]] | None:
+    """[(date_str, total_value), ...] sorted oldest first — daily total
+    portfolio value (every real, non-excluded account, same scope as
     fetch_portfolio's own total_cad) over the trailing `days` — for a
-    quick trend sparkline, not a precise figure, so a date before some
-    account's own history begins just sums whatever's actually
-    available for that date rather than being excluded outright (unlike
-    _period_change_pct's stricter all-or-nothing inclusion for a real %
+    trend chart, not a precise figure, so a date before some account's
+    own history begins just sums whatever's actually available for
+    that date rather than being excluded outright (unlike
+    _period_change's stricter all-or-nothing inclusion for a real %
     number). Falls back to the last successful result on any failure —
-    see this module's own warm_cache/cached_value_history for why."""
+    see this module's own warm_cache/cached_value_history for why.
+
+    Dates included (not just bare values, the old shape) so a caller
+    can slice one shared 365-day fetch down to whichever shorter range
+    it actually wants (2w/1m/6m/ytd) by real calendar date instead of
+    assuming every day in between has its own data point."""
     global _last_good_value_history
     try:
         series_by_account = _fetch_history_by_account()
@@ -283,7 +321,7 @@ def fetch_value_history(days: int = 180) -> list[float] | None:
             totals[d] = totals.get(d, 0.0) + v
     if len(totals) < 2:
         return _last_good_value_history
-    result = [v for _, v in sorted(totals.items())]
+    result = sorted(totals.items())
     _last_good_value_history = result
     return result
 
@@ -452,29 +490,39 @@ _ACTIVITY_LIMIT_PER_ACCOUNT = 20
 # field is literally just "Withdrawal of $17.00," nothing more
 # specific), so this can show THAT money moved and how much, never WHO
 # it went to or came from — no "Rogers" in here, just the number.
-# Deliberately its own dict, not an addition to ACCOUNT_DISPLAY_NAMES —
-# that one also drives fetch_portfolio's own 4-tile balance breakdown
-# (session request: "only show the top 4 accounts"), which this isn't
-# touching; MSB earns a spot in the activity feed specifically, not a
-# 5th balance tile nobody asked for.
-_ACTIVITY_DISPLAY_NAMES = {**ACCOUNT_DISPLAY_NAMES, "Wealthsimple Trade MSB": "Daily Banking"}
+# Deliberately its own dict, not an addition to ACCOUNT_ID_DISPLAY_
+# NAMES — that one is id-keyed (see its own comment on why) and drives
+# fetch_portfolio's own balance breakdown specifically; this one is
+# still name-keyed since the activity feed's own account match below
+# is by name (MSB aside, handled separately by id via _MSB_ACCOUNT_
+# LABELS, since MSB is the one type that shares a name across multiple
+# real distinct accounts). MSB earns a spot in the activity feed
+# specifically, not a balance-breakdown tile of its own.
+_ACTIVITY_DISPLAY_NAMES = {
+    "Wealthsimple Trade FHSA": "FHSA",
+    "Wealthsimple Trade TFSA": "TFSA",
+    "Wealthsimple Trade RRSP": "RRSP",
+    "Wealthsimple Trade PERSONAL": "EMERGENCY FUND",
+    "Wealthsimple Trade MSB": "Daily Banking",
+}
 
 # Follow-up session request: "identify what accounts these are... mark
-# them appropriately so the AI knows what's being spent." All three
-# real MSB accounts share the exact same SnapTrade account NAME
+# them appropriately so the AI knows what's being spent." All four real
+# MSB accounts share the exact same SnapTrade account NAME
 # ("Wealthsimple Trade MSB"), so the plain name-keyed dict above can't
 # tell them apart — this keys off the actual account ID instead, which
 # doesn't change even as each account's own balance moves day to day.
-# User-supplied ground truth, matched live against each account's
-# CURRENT real balance at the time this was set up: $209.85 =
-# spending, $100.97 = bills, $137.43 = gas. Takes priority over the
-# generic "Daily Banking" label above for these three specific
-# accounts; any OTHER/future MSB account not in this map still falls
-# back to that generic label rather than being silently dropped.
+# Same ids as ACCOUNT_ID_DISPLAY_NAMES (see that map's own comment for
+# how these were confirmed) — Groceries was missing here even after
+# that fix (this dict predates it), silently falling back to the
+# generic "Daily Banking" label in the activity feed; added now. Any
+# OTHER/future MSB account not in this map still falls back to that
+# generic label rather than being silently dropped.
 _MSB_ACCOUNT_LABELS = {
     "8f0ff7ea-d972-4719-b900-f7b452ba9984": "Spending",
     "97ae16f7-c4a4-4acc-9ef6-6eaf4deb1ceb": "Bills",
     "e8611574-696b-44c3-94c4-4bf85f21b078": "Gas",
+    "5109b645-3bd3-46e6-96a6-b9c90fd868ba": "Groceries",
 }
 
 _last_good_activities: list[dict] | None = None
@@ -628,19 +676,29 @@ def fetch_activities(limit: int = 8) -> list[dict] | None:
     return activities[:limit]
 
 
+_CHANGE_PERIOD_DAYS = {"2w": 14, "1m": 30, "6m": 182, "1y": 365}
+
+
 def fetch_changes() -> dict | None:
-    """{"1d", "6m", "ytd"} % change, each None if that specific window
-    can't be computed yet. "1d" is computed independently via
-    daily_change() — see that function's own docstring on why (a real
-    SnapTrade per-account-history bug already corrupted 6m/ytd once,
-    confirmed live doing it again right now) — so a 6m/ytd fetch
-    failure can't take "1d" down with it, or vice versa; each has its
-    own separate fallback. "6m"/"ytd" are still our own metric end to
-    end from SnapTrade's own per-account balance history — SnapTrade
-    doesn't compute period returns itself (its own return-rates
-    endpoint returned 403 for this account, confirmed live) — a
-    same-day cache can't stand in for genuine multi-month depth the
-    way it can for "1d"."""
+    """{"1d", "2w", "1m", "6m", "ytd", "1y"} % change, each None if that
+    specific window can't be computed yet. "1d" is computed
+    independently via daily_change() — see that function's own
+    docstring on why (a real SnapTrade per-account-history bug already
+    corrupted 6m/ytd once, confirmed live doing it again right now) —
+    so a 6m/ytd fetch failure can't take "1d" down with it, or vice
+    versa; each has its own separate fallback. Every other window is
+    still our own metric end to end from SnapTrade's own per-account
+    balance history — SnapTrade doesn't compute period returns itself
+    (its own return-rates endpoint returned 403 for this account,
+    confirmed live) — a same-day cache can't stand in for genuine
+    multi-week/month/year depth the way it can for "1d".
+
+    Session request: "one way or the one day is good... I want to add
+    two weeks... a month... six months, year to date, and then one
+    full year." 2w/1m/1y added alongside the existing 6m/ytd — same
+    underlying _fetch_history_by_account() call (15-min cached), so
+    this costs nothing extra against SnapTrade beyond the two windows
+    that already existed."""
     global _last_good_changes
     one_day = (daily_change() or {}).get("pct")
     try:
@@ -649,10 +707,17 @@ def fetch_changes() -> dict | None:
         series_by_account = None
     cached = _last_good_changes or {}
     if series_by_account is None:
-        return {"1d": one_day if one_day is not None else cached.get("1d"), "6m": cached.get("6m"), "ytd": cached.get("ytd")}
+        return {
+            "1d": one_day if one_day is not None else cached.get("1d"),
+            **{period: cached.get(period) for period in _CHANGE_PERIOD_DAYS},
+            "ytd": cached.get("ytd"),
+        }
     result = {
         "1d": one_day,
-        "6m": (_period_change(series_by_account, 182, live_total=None) or {}).get("pct"),
+        **{
+            period: (_period_change(series_by_account, days, live_total=None) or {}).get("pct")
+            for period, days in _CHANGE_PERIOD_DAYS.items()
+        },
         "ytd": (_period_change(series_by_account, None, live_total=None) or {}).get("pct"),
     }
     _last_good_changes = result
@@ -674,7 +739,7 @@ def cached_changes() -> dict | None:
     return _last_good_changes
 
 
-def cached_value_history() -> list[float] | None:
+def cached_value_history() -> list[tuple[str, float]] | None:
     return _last_good_value_history
 
 
@@ -800,7 +865,11 @@ def cached_positions() -> dict[str, list[dict]] | None:
 
 def warm_cache() -> None:
     fetch_changes()
-    fetch_value_history(days=180)
+    # 365 (not the old 180) so the cached series covers every range the
+    # page now shows, up to the full 1-year one — pages_portfolio.py
+    # slices this single cached series down to whichever shorter window
+    # each mini-chart needs, rather than fetching per-range.
+    fetch_value_history(days=365)
     # No `limit` here — this call's only job is priming _last_good_
     # activities with the full list (see fetch_activities's own
     # docstring); the actual per-caller row count is decided at read
