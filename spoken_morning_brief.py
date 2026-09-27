@@ -90,7 +90,15 @@ _ESSENTIAL_FACT_NAMES = {"alert", "precip", "nowcast", "road_ice", "commute", "a
 # same relationship get_up_time (commute_reminder.py) already has to
 # the countdown the user actually watches, just a 60-minute lead
 # instead of 90.
-TRIGGER_LEAD_MINUTES = 60
+#
+# Bug report, right after THAT shipped: "if it fires at the one hour
+# mark... it usually gets cut off by the leave in an hour spoken
+# thing." commute_reminder's own leave-timer has its own real spoken
+# alert at the exact 60-minute milestone (MILESTONES_MINUTES) — firing
+# the brief at that identical instant meant the two spoken alerts
+# collided and one cut the other off. 57, not 60, gives the leave-timer
+# alert a real 3-minute head start to finish before the brief starts.
+TRIGGER_LEAD_MINUTES = 57
 
 
 def trigger_time(now: datetime) -> datetime | None:
