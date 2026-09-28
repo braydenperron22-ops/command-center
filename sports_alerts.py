@@ -1398,6 +1398,10 @@ def game_time_active(now: datetime | None = None) -> bool:
     return takeover_state(now) is not None
 
 
+_TAKEOVER_STATE_CACHE_SECONDS = 10
+_takeover_state_cache: tuple[float, "dict | None"] | None = None
+
+
 def takeover_state(now: datetime) -> dict | None:
     """Which game, if any, should take the entire screen over right now
     — {"phase": "pregame"|"live"|"postgame", "league", "status", "game",
@@ -1430,7 +1434,36 @@ def takeover_state(now: datetime) -> dict | None:
     game actually went final, not when this process happened to notice,
     so the elapsed-time check below is just as true across a restart as
     within one continuous run.
-    """
+
+    Real live incident: app.py's own jumbotron check (one call/rerun) is
+    NOT the only caller — groq_client (3 call sites) and gemini_client
+    each independently call game_time_active() to decide whether to
+    pause AI generation during a game, so a single rerun that also
+    touches AI generation could invoke this function's full candidate-
+    gathering loop (a fetch per tracked league, plus 3 more for neutral
+    playoff games) five separate times. Each individual request has its
+    own timeout, but nothing bounded the AGGREGATE — measured 16.78s for
+    one full pass with a cold cache locally; live, with degraded ESPN
+    responses and every call site re-paying that cost independently
+    every rerun, this is the confirmed root cause of a 1.4h+ dashboard
+    stall (System Health page hung reproducibly, 3-for-3, including
+    fresh reboots — see git history same day). A plain, short, in-
+    process cache (not st.cache_data — _LEAGUES entries carry function
+    references, not worth fighting st.cache_data's hashing over) means
+    every call site within the same ~10s window shares one real
+    computation instead of each redundantly re-running it."""
+    global _takeover_state_cache
+    now_ts = time.time()
+    if _takeover_state_cache is not None:
+        cached_at, cached_result = _takeover_state_cache
+        if now_ts - cached_at < _TAKEOVER_STATE_CACHE_SECONDS:
+            return cached_result
+    result = _compute_takeover_state(now)
+    _takeover_state_cache = (now_ts, result)
+    return result
+
+
+def _compute_takeover_state(now: datetime) -> dict | None:
     candidates = []
     for league in _LEAGUES:
         status = league["fetch_status"]()
