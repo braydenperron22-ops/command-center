@@ -28,14 +28,26 @@ REMINDERS = [
     {"label": "Groceries", "weekdays": [SUNDAY]},
 ]
 
+# Genuine one-time household tasks, as opposed to REMINDERS above
+# (every such-and-such weekday, forever) — session request: "set up a
+# reminder for two weeks from now to water the p-trap... do it as a
+# hero badge." Each just needs a "label" and the actual "date" it's
+# due; add more here the same way. Unlike a weekly rule, a one-off
+# reminder has a real expiry — due_reminders below drops it from the
+# list entirely once its date is in the past, rather than it counting
+# down to a negative number forever.
+ONE_OFF_REMINDERS = [
+    {"label": "Water the P-trap", "date": date(2026, 10, 12)},
+]
+
 
 def due_reminders(today: date) -> list[dict]:
-    """{"label", "days_until"} for every reminder above, soonest first.
-    Plural (a list, not just "the next one") — app.py's own hero-badge
-    gating (see the garbage/payday badges it already shows) checks
-    each independently against "today, morning only" / "tomorrow,
-    evening only," and Laundry and Groceries can both legitimately be
-    in that window on the same day."""
+    """{"label", "days_until"} for every reminder above (recurring and
+    one-off alike), soonest first. Plural (a list, not just "the next
+    one") — app.py's own hero-badge gating (see the garbage/payday
+    badges it already shows) checks each independently against
+    "today, morning only" / "tomorrow, evening only," and more than
+    one of these can legitimately be in that window on the same day."""
     out = [
         {
             "label": r["label"],
@@ -43,5 +55,10 @@ def due_reminders(today: date) -> list[dict]:
         }
         for r in REMINDERS
     ]
+    out.extend(
+        {"label": r["label"], "days_until": (r["date"] - today).days}
+        for r in ONE_OFF_REMINDERS
+        if r["date"] >= today
+    )
     out.sort(key=lambda r: r["days_until"])
     return out
