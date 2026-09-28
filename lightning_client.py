@@ -71,8 +71,17 @@ CACHE_TTL_SECONDS = 5 * 60
 # redeploy-reset mechanism above was.)
 _SHARED_CACHE_KEY = "xweather_lightning_closest"
 
+# Kill switch, same shape as brayden_index.py's own ENABLED flag and
+# precip_nowcast_client.py's own (see that module's comment for the
+# full incident) — same shared XWeather account, same live 429, same
+# explicit instruction: off entirely, not just hardened, until someone
+# deliberately flips this back on.
+ENABLED = False
+
 
 def _configured() -> bool:
+    if not ENABLED:
+        return False
     return bool(st.secrets.get("XWEATHER_CLIENT_ID")) and bool(st.secrets.get("XWEATHER_CLIENT_SECRET"))
 
 

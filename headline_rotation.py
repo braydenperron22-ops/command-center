@@ -37,7 +37,6 @@ from datetime import datetime
 
 import streamlit as st
 
-import brayden_index
 import commute_reminder
 import kiosk_hardware
 import market_circuit_breaker
@@ -143,12 +142,6 @@ def _candidates(now: datetime, weather: dict | None) -> dict[str, dict]:
     wake = sleep_tracker.wake_headline_candidate(now)
     if wake is not None:
         out["wake"] = wake
-    # Session request: "the Brayden Index" — a genuinely big single-cycle
-    # move earns the same red-headline treatment as a circuit-breaker
-    # event. Same wiring shape as every other source here.
-    brdn_move = brayden_index.big_move_headline_candidate(now)
-    if brdn_move is not None:
-        out["brdn_move"] = brdn_move
     # Session request: "just have the main status show on the top bar
     # [for] all of the sports I follow... make it rotate for all the
     # active sports right now." One entry per currently-live tracked

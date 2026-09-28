@@ -59,8 +59,21 @@ DEFAULT_THRESHOLD_MM = 0.1
 # one, it has no Upstash credentials configured at all).
 _SHARED_CACHE_KEY = "xweather_precip_nowcast"
 
+# Kill switch, same shape as brayden_index.py's own ENABLED flag —
+# session report: XWeather itself returned a real, live 429 (Too Many
+# Requests) tonight, which (via the retry-storm bug this same session
+# already fixed, see _fetch_minutely_raw's own comment) took down the
+# whole dashboard for hours. Explicit instruction: "if X weather's the
+# problem, just get rid of it" — off entirely, not just hardened,
+# until someone deliberately flips this back on. Checked first, before
+# the real _configured() secrets check, so this can't be bypassed by
+# secrets alone.
+ENABLED = False
+
 
 def _configured() -> bool:
+    if not ENABLED:
+        return False
     return bool(st.secrets.get("XWEATHER_CLIENT_ID")) and bool(st.secrets.get("XWEATHER_CLIENT_SECRET"))
 
 
