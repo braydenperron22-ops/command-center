@@ -11,6 +11,7 @@ recurrence-rule logic (BYDAY, UNTIL, exceptions, timezones), not
 something worth getting subtly wrong via a custom implementation.
 """
 
+import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -23,6 +24,24 @@ import fetch_throttle
 from config import TIMEZONE
 
 CACHE_TTL_SECONDS = 15 * 60
+
+# Real live incident: this app ran fine for a long time on 2 calendars
+# (Brayden's own). Adding Chloe's 5 separate iCloud feeds tonight more
+# than tripled the number of sources todays_events() fetches SERIALLY
+# on a cache miss (every CACHE_TTL_SECONDS) with no shared cap of its
+# own — each call already waits its turn via fetch_throttle (shared
+# across the whole app's ~20 other external calls) and has its own
+# per-request timeout, but nothing bounded the TOTAL for this one
+# function. Worst case before tonight: 2 x 10s = 20s. Worst case now:
+# 7 x 10s = 70s, on its own comfortably exceeding app.py's 65s outer
+# autorefresh — enough to explain reruns that never finish in time,
+# every single attempt, for as long as whatever made even one feed
+# slow stays true. A hard overall budget means one bad calendar (or
+# several) costs this function a fixed, bounded amount instead of a
+# multiple of however many are configured — same "don't let one slow
+# source hold up everything else" reasoning fetch_throttle.run_bounded
+# already applies elsewhere in this app.
+TOTAL_FETCH_BUDGET_SECONDS = 8
 
 # The shift calendar's titles are the raw bulk-imported job title
 # ("Customer Experience Associate - Central, Sales"), not something
@@ -76,7 +95,11 @@ _last_good_events: list[dict] | None = None
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_calendar_raw(ics_url: str) -> bytes:
     fetch_throttle.wait_turn()
-    resp = requests.get(ics_url, timeout=10)
+    # Lowered from 10s alongside TOTAL_FETCH_BUDGET_SECONDS above — with
+    # up to 7 calendars now configured, a single slow feed at the old
+    # 10s timeout could already burn most of the whole function's new
+    # 8s budget by itself.
+    resp = requests.get(ics_url, timeout=6)
     resp.raise_for_status()
     return resp.content
 
@@ -153,11 +176,22 @@ def todays_events(calendars: list[dict], today: date) -> list[dict]:
     merged and sorted all-day-first then by start time. Each source is
     fetched independently — one calendar being down or slow doesn't
     lose events from the others; falls back to the last successful
-    merge only if every source fails this round."""
+    merge only if every source fails this round.
+
+    Stops starting NEW fetches once TOTAL_FETCH_BUDGET_SECONDS has
+    elapsed (see that constant's own comment) — a calendar already in
+    flight when the budget runs out still finishes (st.cache_data will
+    have it warm next time regardless), this just stops piling more
+    cold fetches onto an already-slow rerun. Whatever was gathered
+    before the cutoff is used as-is, same partial-result reasoning
+    _last_good_events already applies when a source fails outright."""
     global _last_good_events
     all_events = []
     any_success = False
+    budget_start = time.time()
     for calendar in calendars:
+        if time.time() - budget_start > TOTAL_FETCH_BUDGET_SECONDS:
+            break
         try:
             all_events.extend(_events_from_one(calendar, today))
         except Exception:
