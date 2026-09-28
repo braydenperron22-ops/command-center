@@ -59,64 +59,32 @@ DEFAULT_THRESHOLD_MM = 0.1
 # one, it has no Upstash credentials configured at all).
 _SHARED_CACHE_KEY = "xweather_precip_nowcast"
 
-# Kill switch, same shape as brayden_index.py's own ENABLED flag —
-# session report: XWeather itself returned a real, live 429 (Too Many
-# Requests) tonight, which (via the retry-storm bug this same session
-# already fixed, see _fetch_minutely_raw's own comment) took down the
-# whole dashboard for hours. Explicit instruction: "if X weather's the
-# problem, just get rid of it" — off entirely, not just hardened,
-# until someone deliberately flips this back on. Checked first, before
-# the real _configured() secrets check, so this can't be bypassed by
-# secrets alone.
-ENABLED = False
-
 
 def _configured() -> bool:
-    if not ENABLED:
-        return False
     return bool(st.secrets.get("XWEATHER_CLIENT_ID")) and bool(st.secrets.get("XWEATHER_CLIENT_SECRET"))
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_minutely_raw() -> dict | None:
-    # Real live incident: st.cache_data does NOT cache a raised
-    # exception — only a real return value. XWeather returning 429
-    # (confirmed live tonight) meant every single call here raised via
-    # raise_for_status(), so this function's body re-ran from scratch
-    # on EVERY 10s toast-fragment tick instead of backing off for
-    # CACHE_TTL_SECONDS like a success would: one extra real Upstash
-    # GET (the shared-cache check below) plus one more failing XWeather
-    # call, every 10 seconds, for as long as the outage lasted. That
-    # alone was enough real Upstash command volume to exhaust this
-    # app's daily budget and degrade every OTHER persisted_state call
-    # in the whole app behind it — a genuinely unrelated-looking
-    # "nothing renders" symptom hours later, traced back to this one
-    # retry storm. Catching the failure and returning None instead lets
-    # st.cache_data hold that "no data this cycle" result for the same
-    # CACHE_TTL_SECONDS a success would get, so an outage costs one
-    # attempt per cycle, not one every single fragment tick.
-    try:
-        cached = persisted_state.load(_SHARED_CACHE_KEY, None)
-        if isinstance(cached, dict) and "at" in cached and time.time() - cached["at"] < CACHE_TTL_SECONDS:
-            data_health.record_success("precip_nowcast")
-            return cached.get("value")
-        resp = requests.get(
-            CONDITIONS_URL,
-            params={
-                "client_id": st.secrets.get("XWEATHER_CLIENT_ID"),
-                "client_secret": st.secrets.get("XWEATHER_CLIENT_SECRET"),
-                "p": f"{WEATHER_LAT},{WEATHER_LON}",
-                "filter": "minutelyprecip",
-            },
-            timeout=10,
-        )
-        resp.raise_for_status()
-        value = resp.json()
-        persisted_state.save(_SHARED_CACHE_KEY, {"at": time.time(), "value": value})
+    cached = persisted_state.load(_SHARED_CACHE_KEY, None)
+    if isinstance(cached, dict) and "at" in cached and time.time() - cached["at"] < CACHE_TTL_SECONDS:
         data_health.record_success("precip_nowcast")
-        return value
-    except Exception:
-        return None
+        return cached.get("value")
+    resp = requests.get(
+        CONDITIONS_URL,
+        params={
+            "client_id": st.secrets.get("XWEATHER_CLIENT_ID"),
+            "client_secret": st.secrets.get("XWEATHER_CLIENT_SECRET"),
+            "p": f"{WEATHER_LAT},{WEATHER_LON}",
+            "filter": "minutelyprecip",
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    value = resp.json()
+    persisted_state.save(_SHARED_CACHE_KEY, {"at": time.time(), "value": value})
+    data_health.record_success("precip_nowcast")
+    return value
 
 
 def minutely_forecast() -> list[dict] | None:

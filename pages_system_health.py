@@ -31,18 +31,14 @@ the ~75-80 minutes per rotation this page isn't the one showing.
 """
 
 import time
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import streamlit as st
 
-import chloe_status
 import dashboard_health
 import dashboard_score
 import data_health
 import kiosk_hardware
 import tiles
-from config import TIMEZONE
 
 
 def _relative_time(ts: float | None) -> str:
@@ -219,23 +215,6 @@ def data_health_stats() -> str:
         _stat(f"{len(statuses) - len(stale)}/{len(statuses)}", "SOURCES OK", tone),
         _stat(str(len(stale)), "STALE", tone),
     )
-
-
-def chloe_status_stats() -> str:
-    """Public — see dashboard_stats' own comment, same reason. Session
-    request: "I want to know like when she's at school and when she
-    gets home and when she goes to the gym... nice passive data to
-    know... know if she's at school before calling her type thing,"
-    later scoped down: "I only want her events to show if she's here"
-    — chloe_status.current_status() itself now returns None on a night
-    she isn't (see that module's own C-hotkey/is_here() comment), shown
-    here as a plain "AWAY" instead of a school/gym/home reading that
-    wouldn't actually be true."""
-    status = chloe_status.current_status(datetime.now(ZoneInfo(TIMEZONE)))
-    if status is None:
-        return _stat_row(_stat("AWAY", "CHLOE"))
-    tone = "neutral" if status == chloe_status.HOME_LABEL else "good"
-    return _stat_row(_stat(status.upper(), "CHLOE", tone))
 
 
 def household_stats() -> str:

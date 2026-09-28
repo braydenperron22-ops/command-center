@@ -71,67 +71,41 @@ CACHE_TTL_SECONDS = 5 * 60
 # redeploy-reset mechanism above was.)
 _SHARED_CACHE_KEY = "xweather_lightning_closest"
 
-# Kill switch, same shape as brayden_index.py's own ENABLED flag and
-# precip_nowcast_client.py's own (see that module's comment for the
-# full incident) — same shared XWeather account, same live 429, same
-# explicit instruction: off entirely, not just hardened, until someone
-# deliberately flips this back on.
-ENABLED = False
-
 
 def _configured() -> bool:
-    if not ENABLED:
-        return False
     return bool(st.secrets.get("XWEATHER_CLIENT_ID")) and bool(st.secrets.get("XWEATHER_CLIENT_SECRET"))
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_closest_raw() -> dict | None:
-    # Real live incident, same root cause and fix as precip_nowcast_
-    # client._fetch_minutely_raw (see that function's own comment for
-    # the full story): st.cache_data never caches a raised exception,
-    # so XWeather returning 429 (confirmed live tonight, shared account
-    # with precip_nowcast_client — see _SHARED_CACHE_KEY's own comment)
-    # meant this function's body, including the real Upstash GET below,
-    # re-ran from scratch on every single 10s toast-fragment tick
-    # instead of backing off for CACHE_TTL_SECONDS like a success would.
-    # Combined with precip_nowcast_client's identical bug, that alone
-    # was enough sustained Upstash command volume to exhaust this app's
-    # daily budget and degrade every OTHER persisted_state call behind
-    # it. Catching the failure and returning None instead lets
-    # st.cache_data hold "no data this cycle" for the same
-    # CACHE_TTL_SECONDS a success would get.
-    try:
-        cached = persisted_state.load(_SHARED_CACHE_KEY, None)
-        if isinstance(cached, dict) and "at" in cached and time.time() - cached["at"] < CACHE_TTL_SECONDS:
-            data_health.record_success("lightning")
-            return cached.get("value")
-        resp = requests.get(
-            LIGHTNING_URL,
-            params={
-                "client_id": st.secrets.get("XWEATHER_CLIENT_ID"),
-                "client_secret": st.secrets.get("XWEATHER_CLIENT_SECRET"),
-                # Session request: "check those" — confirmed live against a
-                # real Xweather account (once XWEATHER_CLIENT_ID/SECRET were
-                # actually added) that separate lat/lon params get a real
-                # "no_location: A location was not provided" error back —
-                # Xweather's "closest" action wants a single combined point
-                # instead, same "p" parameter precip_nowcast_client.py's own
-                # request already used correctly. Verified this exact change
-                # against the live API before shipping it: 200, success,
-                # response returned.
-                "p": f"{WEATHER_LAT},{WEATHER_LON}",
-                "radius": f"{RADIUS_KM}km",
-            },
-            timeout=10,
-        )
-        resp.raise_for_status()
-        value = resp.json()
-        persisted_state.save(_SHARED_CACHE_KEY, {"at": time.time(), "value": value})
+    cached = persisted_state.load(_SHARED_CACHE_KEY, None)
+    if isinstance(cached, dict) and "at" in cached and time.time() - cached["at"] < CACHE_TTL_SECONDS:
         data_health.record_success("lightning")
-        return value
-    except Exception:
-        return None
+        return cached.get("value")
+    resp = requests.get(
+        LIGHTNING_URL,
+        params={
+            "client_id": st.secrets.get("XWEATHER_CLIENT_ID"),
+            "client_secret": st.secrets.get("XWEATHER_CLIENT_SECRET"),
+            # Session request: "check those" — confirmed live against a
+            # real Xweather account (once XWEATHER_CLIENT_ID/SECRET were
+            # actually added) that separate lat/lon params get a real
+            # "no_location: A location was not provided" error back —
+            # Xweather's "closest" action wants a single combined point
+            # instead, same "p" parameter precip_nowcast_client.py's own
+            # request already used correctly. Verified this exact change
+            # against the live API before shipping it: 200, success,
+            # response returned.
+            "p": f"{WEATHER_LAT},{WEATHER_LON}",
+            "radius": f"{RADIUS_KM}km",
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    value = resp.json()
+    persisted_state.save(_SHARED_CACHE_KEY, {"at": time.time(), "value": value})
+    data_health.record_success("lightning")
+    return value
 
 
 def _closest_strike_within_radius() -> dict | None:

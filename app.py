@@ -18,7 +18,7 @@ from streamlit_autorefresh import st_autorefresh
 import air_quality_client
 import aviation_client
 import birthdays_client
-import chloe_status
+import brayden_index
 import commute_reminder
 import cpp_payment_dates
 import dashboard_score
@@ -44,6 +44,8 @@ import market_yf_client
 import morning_briefing
 import news
 import night_mode
+import pages_brayden_index
+import pages_brdn_terminal
 import pages_conflicts
 import pages_email
 import pages_home
@@ -80,6 +82,7 @@ import text_reminders
 import theme
 import toast_queue
 import ufc_client
+import voice.status as voice_status
 import waste_schedule
 import weather_alerts_bar
 import weather_client
@@ -464,12 +467,6 @@ components.html(
         "  if (e.metaKey || e.ctrlKey || e.altKey || typing) return;",
         "  if (key === 's') {",
         "    window.kioskTogglePicker();",
-        "    return;",
-        "  }",
-        "  if (key === 'q') {",
-        "    var curl = new URL(window.location.href);",
-        "    curl.searchParams.set('chloe_toggle', '1');",
-        "    window.location.replace(curl.toString());",
         "    return;",
         "  }",
         "  var targetPage = key === 'j' ? 'jumbotron' : key === 'd' ? 'maintenance' : "
@@ -2263,65 +2260,6 @@ try:
 except Exception:
     pass
 
-# Session request: "make it so if I press the C hotkey on my keyboard,
-# it activates Chloe is here mode... make sure that it's held through
-# Upstash. That way it holds it status through resets." Moved to Q
-# right after shipping — "C, I didn't know this, is the hotkey for
-# clearing the cache" (a real Streamlit built-in, confirmed: C clears
-# cache, R reruns — Q collides with neither). kiosk-hotkeys (the JS
-# block further down) sets ?chloe_toggle=1 and reloads on 'q' — read
-# here, once, as a one-shot action rather than a page-routing param
-# like ?page=: flips chloe_status's own persisted flag, then clears the
-# param and reruns immediately so it can't re-toggle again on the next
-# natural rerun (the outer autorefresh, a toast fragment tick,
-# anything) finding the same leftover query string still there.
-#
-# Session follow-up, same message: "when I press C as well, there's a
-# spoken thing in my voice that says the queen has arrived per her
-# request." Only on the False->True flip (arriving) — toggling back off
-# has nothing to announce. kind="commute" rides commute_reminder.
-# render_bar/kioskPlayLeaveVoice exactly like the wake chime already
-# does, which is also how this gets Brayden's own voice for free —
-# render_bar's own kiosk_tts.synthesize_base64 call has no owner kwarg,
-# so it already defaults to "brayden" without this needing to say so.
-#
-# Real bug, found during a live audit: "toast alerts stay up for way
-# too long... the Chloe is here toast is still up, probably five or
-# six minutes." This alert had zero dedup, unlike every other one-shot
-# alert in this app (the wake chime's own date-keyed guard, car-prep's
-# per-event set, etc.) — a few real Q presses in a row while testing
-# (each one legitimately toggling away->here->away->here) queued that
-# many separate 30-second toasts back to back (toast_queue is process-
-# wide with no size cap), which plays out looking exactly like one
-# toast frozen on screen for minutes. chloe_status.should_announce_
-# arrival() is the fix: at most one real announcement per its own
-# cooldown, regardless of how many times the flag flips in that window
-# — deliberately living in chloe_status.py, NOT a variable here, since
-# app.py is the actual entry-point script Streamlit re-executes from
-# scratch on every single rerun; a plain module-level variable declared
-# directly in app.py's own top-level body would reset to its initial
-# value every rerun and could never actually hold a cooldown across
-# them. A separately imported module's own state survives correctly
-# because Python only imports it once per process.
-try:
-    if st.query_params.get("chloe_toggle") == "1":
-        _chloe_now_here = not chloe_status.is_here()
-        chloe_status.set_here(_chloe_now_here)
-        if _chloe_now_here and chloe_status.should_announce_arrival():
-            toast_queue.extend([{
-                "headline": "Chloe is here",
-                "category": "Household",
-                "important": False,
-                "kind": "commute",
-                "label": "Chloe is here",
-                "summary": "The queen has arrived.",
-                "volume": 1.0,
-            }])
-        del st.query_params["chloe_toggle"]
-        st.rerun()
-except Exception:
-    pass
-
 # Back ON as of 2026-09-20. This was flipped to False on 2026-09-12 as
 # a temporary kill switch — "remove the jumbotron takeover mechanic
 # since the jumbotron isnt working rn. and ill fix it later" — which
@@ -2339,6 +2277,13 @@ except Exception:
 # board appear on its own during a real game again — a correct board
 # still reads as broken if it never shows up.
 JUMBOTRON_AUTO_TAKEOVER_ENABLED = True
+# Session follow-up: "get rid of the terminal one too" — same kill
+# switch shape as JUMBOTRON_AUTO_TAKEOVER_ENABLED just above, applied
+# to the OTHER automatic full-screen hijack (a big BRDN move switching
+# the kiosk to pages_brdn_terminal.py). Manual access is untouched:
+# ?page=terminal and the picker's "BRDN Terminal" entry both still
+# route there directly. Flip back to True to restore it.
+TERMINAL_AUTO_TAKEOVER_ENABLED = False
 
 _takeover, _ufc_takeover = _resolve_takeover(now, _requested_page == "jumbotron")
 
@@ -2356,10 +2301,38 @@ try:
         # — reached only via a direct bookmarked link on a phone, never
         # part of the ambient kiosk rotation. See pages_shopping.py.
         page = "shopping"
+    elif _requested_page == "terminal" and brayden_index.ENABLED:
+        page = "terminal"
+    elif _requested_page == "brdn" and brayden_index.ENABLED:
+        # No longer in PAGES (config.py) — same "not part of the
+        # ambient rotation, still reachable on purpose" treatment as
+        # maintenance/terminal just above, see PAGES' own comment for
+        # why this one page was pulled out.
+        #
+        # brayden_index.ENABLED gate: "Temporarily decommission the
+        # BRDN index. It's broken and I don't feel like fixing it." A
+        # stale ?page=brdn/?page=terminal link (or the picker, whose
+        # own entries for these are hidden below while disabled) now
+        # falls through to the normal scheduled rotation instead of
+        # rendering a page nobody wants to look at right now.
+        page = "brdn"
     elif _requested_page in PAGES:
         page = _requested_page
     elif JUMBOTRON_AUTO_TAKEOVER_ENABLED and (_takeover or _ufc_takeover):
         page = "jumbotron"
+    elif TERMINAL_AUTO_TAKEOVER_ENABLED and brayden_index.big_move_takeover_active(now):
+        # Session request: "during big market-shifting moments... we
+        # can see the dashboard, like the Bloomberg terminal." Only
+        # reached once a real live game (above) has already lost —
+        # sports still wins outright, same as it already does over
+        # everything else. A real live game and a big BRDN move
+        # genuinely competing for the screen at the same instant is
+        # rare enough that "sports wins" is a fine default without
+        # needing its own dedicated tie-break. Night mode's own
+        # precedence (computed further below, still wins over
+        # whatever `page` resolves to here) isn't touched by this at
+        # all — a big move at 2am still doesn't light up the bedroom.
+        page = "terminal"
     else:
         page, _, _ = _scheduled_page(_rotation_epoch)
 except Exception:
@@ -2459,23 +2432,8 @@ except Exception:
 # cached, so calling it here too is a cache hit, not a second real
 # fetch — the real call further down still runs exactly as before and
 # just overwrites this with the identical cached value.
-# Real live incident: fetch_weather() is a plain, direct call here —
-# no bounding beyond requests' own timeout=10 inside weather_client.py.
-# Confirmed live via a faulthandler stack dump that this can hang WELL
-# past that timeout: the SSL handshake itself (ssl.py's do_handshake)
-# doesn't always respect requests'/urllib3's connect timeout on a bad
-# connection, a known class of issue, not something this app's own
-# timeout values control. Since this runs before almost everything
-# else in the script (including night_mode.render() far below), a
-# single stuck handshake here blocked the ENTIRE page — every rerun,
-# indefinitely, until whatever made that one connection stick cleared
-# on its own. run_bounded (already used for weather_client.warm_cache
-# elsewhere in this file) runs it in a background thread and gives up
-# after budget_seconds regardless of what requests' own timeout does;
-# a still-stuck thread is abandoned in the background rather than
-# allowed to hold up the page.
 try:
-    weather = fetch_throttle.run_bounded("weather_fetch", fetch_weather, time.time(), budget_seconds=5, default=None)
+    weather = fetch_weather()
 except Exception:
     weather = None
 
@@ -2811,7 +2769,7 @@ _nav_items = "".join(
     f'href="?page={key}">{_PAGE_LABELS[key]}</a>'
     for key in PAGES
 )
-_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES and _requested_page != "maintenance" else ""
+_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES and _requested_page not in ("maintenance", "terminal", "brdn") else ""
 # Separate from the PAGES loop above (same reasoning as jumbotron —
 # not part of the normal rotation, so it doesn't belong in that list).
 # Session request: "add a maintenance tab for the mobile version."
@@ -2845,7 +2803,13 @@ st.markdown(
 _picker_open = st.query_params.get("picker") == "open"
 _picker_entries = [(key, _PAGE_LABELS[key]) for key in PAGES] + [
     ("jumbotron", "Jumbotron"), ("maintenance", "Dev / Maintenance"),
-]
+] + (
+    # Session request: "Temporarily decommission the BRDN index. It's
+    # broken and I don't feel like fixing it." — see brayden_index.
+    # ENABLED's own comment. No point offering tiles that just bounce
+    # back to the normal rotation (see the routing gate above).
+    [("brdn", "BRDN"), ("terminal", "BRDN Terminal")] if brayden_index.ENABLED else []
+)
 _picker_tiles = "".join(
     f'<a class="screen-picker-item{" screen-picker-item-active" if key == page else ""}" href="?page={key}">{label}</a>'
     for key, label in _picker_entries
@@ -2994,13 +2958,8 @@ if _requested_page not in PAGES and not _jumbotron_active and not _night_mode_ac
 st_autorefresh(interval=65000, key="clock_tick")
 _rerun_started_at = time.time()
 
-# Same real live incident/fix as the early fetch_weather() call above
-# — see that call site's own comment for the full story. Same
-# run_bounded key ("weather_fetch") so this reuses whatever the early
-# call already has in flight/cached instead of racing a second
-# redundant background thread against it.
 try:
-    weather = fetch_throttle.run_bounded("weather_fetch", fetch_weather, _rerun_started_at, budget_seconds=5, default=None)
+    weather = fetch_weather()
 except Exception:
     weather = None
 
@@ -4070,7 +4029,6 @@ if not _jumbotron_active and not _night_mode_active and not _terminal_active:
             ("Internet", pages_system_health.network_stats),
             ("Household", pages_system_health.household_stats),
             ("Sources", pages_system_health.data_health_stats),
-            ("Chloe", pages_system_health.chloe_status_stats),
         ]
         _corner_title, _corner_stats_fn = _corner_sections[int(time.time() // STATUS_ROTATE_SECONDS) % len(_corner_sections)]
         # Session request: "it would also be nice if clicking on that
@@ -4201,6 +4159,85 @@ if FRED_API_KEY:
     except Exception:
         pass
 
+# Session request: "the Brayden Index" — a fictional AI-priced "stock"
+# for Brayden's own life/trajectory (see brayden_index.py's own
+# docstring). maybe_reprice owns its own hourly throttle
+# (gemini_client.generate_periodic), so this is cheap to call every
+# rerun regardless of page — same pattern as sleep_tracker.
+# maybe_push_wind_down further down. Needs `readings` (just computed
+# above) for the optional macro-regime signal fed into its prompt.
+# night_mode_active=_night_mode_active — see NIGHT_REFRESH_SECONDS'
+# own comment in brayden_index.py for the deliberate 3hr-not-fully-
+# paused overnight cadence this drives.
+#
+# Session request: "Temporarily decommission the BRDN index. It's
+# broken and I don't feel like fixing it." Whole cluster below —
+# reprice engine, both one-shot corrections (already true no-ops, see
+# their own comments, but no reason to still call them), the report-
+# history dedup, and both push notifications — gated on one flag
+# rather than six separate edits. See brayden_index.ENABLED's own
+# comment for the full scope of this kill switch (also covers the
+# corner ticker below, the headline/takeover surfaces, and manual
+# page routing further down).
+if brayden_index.ENABLED:
+    try:
+        brayden_index.maybe_reprice(now, readings, night_mode_active=_night_mode_active)
+    except Exception:
+        pass
+
+    # Session request, live: "bump the price back up... tell it to
+    # reprice today based on today's events... from today's opening
+    # price because twenty six percent is a fucking joke." One-shot
+    # admin correction for the real damage the now-fixed feedback-loop
+    # bug did to today's price — see brayden_index.
+    # apply_pending_admin_correction's own docstring/module comment for
+    # the full story, including why this has to ship as real code
+    # rather than run as a one-off local script. True no-op on every
+    # rerun after the one time it actually applies.
+    try:
+        brayden_index.apply_pending_admin_correction(now, readings)
+    except Exception:
+        pass
+
+    # Cleanup for the real duplicate track-record entries a race
+    # condition in the correction above produced the first time it ran
+    # (fixed, see apply_pending_admin_correction's own comment) — also
+    # one-shot, also a true no-op after the one time it actually runs.
+    try:
+        brayden_index.dedupe_pending_report_history()
+    except Exception:
+        pass
+
+    # Session request, live, direct pushback on the first correction's
+    # own result: "Today should have a negative day... it's kinda
+    # silly that I'm up fourteen point seven five percent today...
+    # this is now three days of ten percent gains... it's just not
+    # realistic." A second, distinct one-shot correction — see
+    # brayden_index.apply_pending_volatility_recalibration's own module
+    # comment. True no-op after the one time it actually runs.
+    try:
+        brayden_index.apply_pending_volatility_recalibration(now, readings)
+    except Exception:
+        pass
+
+    # Session request: "every morning... around market open, nine
+    # thirty." maybe_push_morning_brief owns its own once-per-day
+    # window/dedup — see its own docstring.
+    try:
+        brayden_index.maybe_push_morning_brief(now, readings)
+    except Exception:
+        pass
+
+    # Session request: "let's do it, the quarterly notification...
+    # framed as a quarterly employment report." Reminder only — no
+    # scraping, see brayden_index.py's own comment on why.
+    # maybe_push_quarterly_report owns its own once-per-quarter
+    # window/dedup, same shape as the morning brief just above.
+    try:
+        brayden_index.maybe_push_quarterly_report(now)
+    except Exception:
+        pass
+
 # Session request: "when my shift is about over... send me a
 # notification on my phone with the estimated commute time home using
 # the same guardrails and process that we use for the commute there."
@@ -4217,6 +4254,109 @@ except Exception:
 # shape as every push above.
 try:
     commute_reminder.maybe_push_new_gym_session(now)
+except Exception:
+    pass
+
+# Session request: "a little ticker somewhere on the main page
+# regardless of what page I'm on... visible from across the room, but
+# not obstructive... even on the night page." A plain unconditional
+# st.markdown, not the persistent-DOM-clone machinery kiosk-ticker-
+# persist/dashboard-pulse-dot need — those exist to protect a
+# CONTINUOUS per-second animation/countdown from Streamlit's own DOM
+# churn; this is static text that only actually changes once an hour
+# (see brayden_index.maybe_reprice above), so a fresh re-render every
+# outer rerun is already enough, same shape as .ai-status-bar just
+# below. Deliberately NOT gated on _jumbotron_active/_night_mode_active
+# the way that one is — the whole point here was "regardless of what
+# page... even on the night page." Fixed bottom-right, stacked above
+# .ai-status-bar — see theme.py's own .brdn-ticker for why top-right
+# was tried first and didn't work (headline-rotation silently covers
+# it), the "visible from across the room" sizing, and the mobile-only
+# display:none twin to .ai-status-bar's (a position:fixed element on a
+# genuinely scrolling phone page overlaps content, same bug that one
+# already had fixed for it).
+#
+# Session request, after trying the client-side wobble described
+# below for a while: "can we actually remove the little jitter... I
+# don't know if I like it that much. It kinda just adds a bunch of
+# noise. Just showing you when my stock is actually priced at." Back
+# to a plain, static readout of the real server-computed price/change
+# every rerun — no client-side script involved at all anymore (the
+# brdn-jitter script that used to live in the consolidated kiosk script
+# block above is gone, not just disabled).
+# Session request: "Temporarily decommission the BRDN index. It's
+# broken and I don't feel like fixing it." — see brayden_index.
+# ENABLED's own comment. The one element on screen "regardless of
+# page/night-mode/jumbotron" just goes back to not existing at all
+# while disabled, same as before this feature was ever built.
+if brayden_index.ENABLED:
+    try:
+        _brdn_now = brayden_index.current()
+        _brdn_tone_class = "market-up" if _brdn_now["change"] > 0 else "market-down" if _brdn_now["change"] < 0 else ""
+        _brdn_arrow = "▲" if _brdn_now["change"] > 0 else "▼" if _brdn_now["change"] < 0 else "●"
+        _brdn_sign = "+" if _brdn_now["pct_change"] >= 0 else ""
+        # data-brdn-next-reprice-sec — same estimate the BRDN page's own
+        # gauge shows, exposed here too since this corner ticker is the one
+        # element guaranteed visible regardless of page/night-mode/jumbotron
+        # (see the BRDN page for a real visible gauge; this is just the raw
+        # number available for a future readout or a live diagnostic check).
+        _brdn_reprice = brayden_index.next_reprice_estimate(night_mode_active=_night_mode_active)
+        st.markdown(
+            f'<div class="brdn-ticker {_brdn_tone_class}" id="brdn-ticker-live" '
+            f'data-brdn-next-reprice-sec="{_brdn_reprice["seconds_until"]:.0f}">'
+            f'<span class="brdn-ticker-symbol">BRDN</span>'
+            f'<span class="brdn-ticker-price">${_brdn_now["price"]:.2f}</span> '
+            f'{_brdn_arrow} {_brdn_sign}{_brdn_now["pct_change"]:.2f}%'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    except Exception:
+        pass
+
+# Voice assistant status badge — session's own explicit requirement:
+# "a visible dashboard status showing something like MIC: MUTED /
+# LISTENING FOR WAKE WORD / LISTENING / PROCESSING / SPEAKING... always
+# be obvious when the assistant is actively processing a command."
+# Reads voice/status.py's own small persisted_state entry (the same
+# Upstash-backed shared store the kiosk watchdog/night-mode-sync
+# scripts already write to) — the voice service runs as its own
+# separate process on the kiosk box, not here, so this is the one
+# read-only touchpoint between the two. Bottom-left (see theme.py's own
+# .voice-status-badge comment for why not the already-crowded bottom-
+# right corner). Unconditional (not gated on jumbotron/night-mode),
+# same "regardless of what page" reasoning as the BRDN ticker just
+# above — asking Jarvis something is exactly as valid during night mode
+# as any other time. Omitted entirely whenever the voice service has
+# never reported in (see voice.status.current's own docstring) rather
+# than showing a fake default state for a service that may not even be
+# deployed yet.
+_VOICE_STATUS_ICONS = {
+    "listening_for_wake_word": "🎙️",
+    "listening": "🎙️",
+    "processing": "🧠",
+    "speaking": "🔊",
+    "muted": "🔇",
+}
+_VOICE_STATUS_LABELS = {
+    "listening_for_wake_word": "LISTENING FOR WAKE WORD",
+    "listening": "LISTENING...",
+    "processing": "PROCESSING...",
+    "speaking": "SPEAKING...",
+    "muted": "MUTED",
+}
+try:
+    _voice_now = voice_status.current()
+    if _voice_now is not None:
+        _voice_state = _voice_now.get("state", "listening_for_wake_word")
+        st.markdown(
+            f'<div class="voice-status-badge voice-status-{_voice_state}">'
+            f'<span class="voice-status-icon">{_VOICE_STATUS_ICONS.get(_voice_state, "🎙️")}</span>'
+            f'<span class="voice-status-text">'
+            f'<span class="voice-status-name">{html.escape(_voice_now.get("assistant_name") or "JARVIS")}</span>'
+            f'<span class="voice-status-state">{_VOICE_STATUS_LABELS.get(_voice_state, _voice_state.upper())}</span>'
+            f'</span></div>',
+            unsafe_allow_html=True,
+        )
 except Exception:
     pass
 
@@ -4339,6 +4479,8 @@ with st.container(key="page_body"):
         _safe_render(pages_portfolio.render)
     elif page == "predictions":
         _safe_render(pages_predictions.render, readings, FRED_API_KEY)
+    elif page == "brdn":
+        _safe_render(pages_brayden_index.render)
     elif page == "timeline":
         _safe_render(pages_timeline.render, now)
     elif page == "system_health":
@@ -4347,6 +4489,8 @@ with st.container(key="page_body"):
         _safe_render(pages_maintenance.render)
     elif page == "shopping":
         _safe_render(pages_shopping.render)
+    elif page == "terminal":
+        _safe_render(pages_brdn_terminal.render, now, market_primary_symbol, market_intraday_pct)
     else:
         # Every other branch above has a fallback (a real page render,
         # or _safe_render's own error tile) — this is the one path with
@@ -4520,6 +4664,12 @@ def _render_bottom_ticker(now: datetime, readings: dict) -> None:
         portfolio_stat = ticker.build_portfolio_stat_item()
         if portfolio_stat:
             stats.append(portfolio_stat)
+    except Exception:
+        pass
+    try:
+        brdn_stat = ticker.build_brdn_stat_item()
+        if brdn_stat:
+            stats.append(brdn_stat)
     except Exception:
         pass
     try:
