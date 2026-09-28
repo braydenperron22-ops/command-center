@@ -145,13 +145,15 @@ _PERSONALITY_MODES = {
         "point, not just a garnish on the takeaway."
     ),
 }
-# hype weighted heaviest — the session request that added it named loud/
-# hyped as the thing actually wanted most mornings, with the other three
-# modes there so it's a real rotation (see _personality_mode's own
-# docstring on why "your call" alone doesn't reliably produce that) and
-# not hype forced on every single day regardless of whether today
-# actually earns it.
-_PERSONALITY_WEIGHTS = {"professional": 25, "dry_humor": 15, "hype": 55, "full_roast": 5}
+# Session correction, the morning after hype had been dominant for a
+# while: "make the morning brief a little more factual... I just want
+# my facts in the morning, I can't lie." Direct reversal of the
+# previous weighting (professional/dry_humor/hype/full_roast were
+# 25/15/55/5) — professional now dominates, the other three stay in
+# the rotation at low weight so it isn't a single flat monotone voice
+# every single day, but hype/roast are the rare exception now, not the
+# default.
+_PERSONALITY_WEIGHTS = {"professional": 70, "dry_humor": 15, "hype": 10, "full_roast": 5}
 
 
 def _personality_mode(now: datetime) -> str:
