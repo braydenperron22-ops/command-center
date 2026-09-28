@@ -29,7 +29,6 @@ CHECK_INTERVAL_SECONDS = 60
 
 def _tick() -> None:
     now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
-    today = now.date()
     # Upstash cost audit: already_delivered_today is a real Upstash
     # read, and this tick runs every CHECK_INTERVAL_SECONDS around the
     # clock -- checking it BEFORE in_window (a plain local hour
@@ -38,7 +37,10 @@ def _tick() -> None:
     # Cheapest check first.
     if not spoken_morning_brief.in_window(now):
         return
-    if spoken_morning_brief.already_delivered_today(today):
+    # Passes `now`, not just today's date: already_delivered_today is
+    # keyed per shift now (gym vs. work each get their own delivery),
+    # not per calendar day -- see that function's own docstring.
+    if spoken_morning_brief.already_delivered_today(now):
         return
     trigger = spoken_morning_brief.trigger_time(now)
     if trigger is None or now < trigger:
@@ -56,7 +58,7 @@ def _tick() -> None:
     # work" ordering already established in text_reminders.py for the
     # identical reason. A speak() that then fails outright just costs one
     # missed morning -- quieter than a jarring repeat.
-    spoken_morning_brief.mark_delivered(today)
+    spoken_morning_brief.mark_delivered(now)
     # speak_with_pauses, not speak: session report: "make it so the
     # spoken morning brief takes natural pauses" -- Piper has no
     # inter-sentence timing control of its own, so this synthesizes and

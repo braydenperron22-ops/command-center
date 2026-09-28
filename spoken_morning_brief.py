@@ -129,25 +129,64 @@ def is_stupidly_early(now: datetime) -> bool:
     return trigger.hour < EARLY_HOUR_CUTOFF
 
 # Real Gemini call, but no reason to ever generate this twice for the
-# same calendar day — once delivered, the facts it was built from are
-# already "this morning," not something that meaningfully changes
-# again before the window closes. Persisted (not a plain module
+# same SHIFT — once delivered, the facts it was built from are already
+# "this morning," not something that meaningfully changes again before
+# that shift's own window closes. Persisted (not a plain module
 # global) so a restart of whatever script calls this doesn't
-# re-deliver the same morning's brief a second time.
-_LAST_DELIVERED_KEY = "spoken_morning_brief_last_delivered_date"
+# re-deliver the same shift's brief a second time.
+#
+# Session request: "make it so that the shorter brief happens before
+# the gym, and then the bigger brief happens before work." Was keyed
+# by plain calendar date alone — a day with two real obligations (gym,
+# then work) only ever got ONE delivery, whichever fired first, since
+# the whole day shared one flag. commute_reminder.leave_by_time (and
+# therefore trigger_time below) already naturally advances from gym's
+# leave_by to work's once gym's own window closes (see
+# commute_reminder._current_shift) — the missing piece was purely this
+# dedup gate treating the whole day as one slot instead of one slot
+# PER shift. Now keyed by commute_reminder.current_shift_identity
+# (that shift's own start time, stable across a live commute estimate
+# refining by a minute or two — see that function's own docstring for
+# why leave_by itself isn't safe to key off directly), so gym and work
+# each get their own independent delivery, and is_stupidly_early's
+# existing EARLY_HOUR_CUTOFF check naturally gives gym (early) the
+# terse version and work (later) the full one, no separate "which
+# obligation is this" logic needed.
+_LAST_DELIVERED_KEY = "spoken_morning_brief_last_delivered_shift"
 
 
 def in_window(now: datetime) -> bool:
     return WINDOW_START_HOUR <= now.hour < WINDOW_END_HOUR
 
 
-def already_delivered_today(today: date) -> bool:
+def _delivery_identity(now: datetime) -> str | None:
+    identity = commute_reminder.current_shift_identity(now)
+    if identity is not None:
+        return f"{now.date().isoformat()}:{identity}"
+    # No real shift today (a day off, or the commute estimate simply
+    # isn't available) — falls back to sleep_tracker.wake_time_for,
+    # same as trigger_time's own fallback just below. One slot for the
+    # whole day in that case, same as before this change: there's only
+    # ever one real wake moment to key off.
+    wake = sleep_tracker.wake_time_for(now)
+    return f"{now.date().isoformat()}:wake" if wake is not None else None
+
+
+def already_delivered_today(now: datetime) -> bool:
+    """Name kept for continuity with the existing caller (run_spoken_
+    morning_brief.py) — despite the name, this is keyed per shift now,
+    not per calendar day; see _LAST_DELIVERED_KEY's own comment."""
+    identity = _delivery_identity(now)
+    if identity is None:
+        return False
     last = persisted_state.load(_LAST_DELIVERED_KEY, None)
-    return last == today.isoformat()
+    return last == identity
 
 
-def mark_delivered(today: date) -> None:
-    persisted_state.save(_LAST_DELIVERED_KEY, today.isoformat())
+def mark_delivered(now: datetime) -> None:
+    identity = _delivery_identity(now)
+    if identity is not None:
+        persisted_state.save(_LAST_DELIVERED_KEY, identity)
 
 
 def _prompt(facts: list[str], terse: bool = False) -> str:

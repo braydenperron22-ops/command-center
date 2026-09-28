@@ -968,6 +968,22 @@ def leave_by_time(now: datetime) -> datetime | None:
     return current[1] if current else None
 
 
+def current_shift_identity(now: datetime) -> str | None:
+    """A stable id for whichever shift event leave_by_time(now) is
+    currently keyed off — the event's own start time, not its
+    (frequently-refining) computed leave_by. Session request: "make it
+    so that the shorter brief happens before the gym, and then the
+    bigger brief happens before work" — spoken_morning_brief.py needs
+    to tell "still the same shift, just a refined commute estimate"
+    apart from "a genuinely different, later shift today," and
+    leave_by itself isn't safe for that: a live route re-estimate can
+    shift it by a minute or two between polls for the SAME event,
+    which would look like a new shift to a caller keying off leave_by
+    directly. The event's own start time never moves like that."""
+    current = _current_shift(now)
+    return current[0]["start"].isoformat() if current else None
+
+
 def timeline_entries(now: datetime) -> list[dict]:
     """[{"label", "leave_by", "is_home", "road"}] — one entry per real
     shift/commute event today (see _todays_shift_events — plural, a day
