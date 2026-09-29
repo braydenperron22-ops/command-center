@@ -1080,7 +1080,18 @@ def screen_wake_time(now: datetime) -> datetime | None:
 # late timestamp) once screen_wake_time lands at or after it, the same
 # "genuinely nothing to show" contract every other None here already
 # has, so callers don't need their own extra cutoff check.
-GET_UP_LATEST_HOUR = 6
+#
+# Live incident, 2026-09-29: a perfectly ordinary school-run morning
+# ("Take Keira To School" 8:40am, leave-by ~8:07am) computed a
+# screen_wake_time of 6:38am — 8 minutes past the old 6:30 cutoff —
+# and silently suppressed the wake chime/TV nudge on a day that very
+# much needed one. 6:30 was never a deliberate "this is definitionally
+# late" line, just whatever a single 11am-event day happened to land
+# under; it was too tight to safely separate "genuinely nothing to
+# wake up for" from "ordinary early morning." Raised well clear of any
+# normal wake-up hour while still catching the original late-morning
+# case (an 11am event's own screen_wake_time lands closer to 9am).
+GET_UP_LATEST_HOUR = 8
 GET_UP_LATEST_MINUTE = 30
 
 
