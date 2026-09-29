@@ -90,6 +90,23 @@ def next_season_start(today: date) -> dict | None:
     return None
 
 
+def current_season(today: date) -> str:
+    """Which season `today` actually falls in, astronomically — the
+    label of whichever season start is the most recent one on or
+    before today. Session request: a treeline in the kiosk's own sky
+    background that switches to match the real season. Checks LAST
+    year's dates too, not just this year's: a lookup in, say, early
+    January needs December's winter start from the year before, since
+    this year's own season_start_dates won't have anything that early
+    yet."""
+    candidates = season_start_dates(today.year - 1) + season_start_dates(today.year)
+    current = "Winter"
+    for label, d in candidates:
+        if d <= today:
+            current = label
+    return current
+
+
 # Same "today, or coming up within a short window" shape as holidays_
 # client.holiday_clause — a season change is the same kind of rare,
 # genuinely worth-a-line event a statutory holiday is, just on its own
