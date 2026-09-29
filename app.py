@@ -1891,27 +1891,14 @@ components.html(
         "  canvas.dataset.skyRunning = '1';",
         "  var ctx = canvas.getContext('2d');",
         "  var W = 0, H = 0, DPR = Math.min(window.devicePixelRatio || 1, 2);",
-        "  var clouds = [], drops = [], flakes = [], stars = [], fogBands = [], trees = [];",
+        "  var clouds = [], drops = [], flakes = [], stars = [], fogBands = [];",
         "  function buildClouds(){ clouds = []; for (var i=0;i<5;i++){ clouds.push({x:Math.random()*W*1.4-W*0.2, y:H*(0.08+Math.random()*0.32), scale:0.6+Math.random()*1.1, baseSpeed:4+Math.random()*7, puffs:buildPuffs()}); } }",
         "  function buildPuffs(){ var puffs=[]; var n=4+Math.floor(Math.random()*2); for (var i=0;i<n;i++) puffs.push({dx:(Math.random()-0.5)*220, dy:(Math.random()-0.3)*46, r:40+Math.random()*60}); return puffs; }",
         "  function buildRain(){ drops = []; for (var i=0;i<160;i++) drops.push({x:Math.random()*W, y:Math.random()*H, len:14+Math.random()*18, speed:620+Math.random()*380}); }",
         "  function buildSnow(){ flakes = []; for (var i=0;i<80;i++) flakes.push({x:Math.random()*W, y:Math.random()*H, r:1.5+Math.random()*2.8, speed:30+Math.random()*44, sway:Math.random()*Math.PI*2, swaySpeed:0.6+Math.random()*0.8}); }",
         "  function buildStars(){ stars = []; for (var i=0;i<90;i++) stars.push({x:Math.random()*W, y:Math.random()*H*0.75, r:Math.random()*1.6+0.3, phase:Math.random()*Math.PI*2, speed:0.6+Math.random()*1.2}); }",
         "  function buildFogBands(){ fogBands = []; for (var i=0;i<5;i++) fogBands.push({x:Math.random()*W, y:H*(0.35+i*0.13), w:W*0.9, h:90+Math.random()*60, speed:5+Math.random()*8}); }",
-        "  function buildTreeline(){",
-        "    trees = []; var n = Math.max(24, Math.floor(W/34));",
-        "    for (var i=0;i<n;i++){",
-        "      var isConifer = Math.random() < 0.72;",
-        "      trees.push({",
-        "        xFrac: (i + 0.15 + Math.random()*0.7) / n,",
-        "        h: isConifer ? H*(0.05+Math.random()*0.055) : H*(0.035+Math.random()*0.035),",
-        "        w: isConifer ? 16+Math.random()*14 : 12+Math.random()*8,",
-        "        type: isConifer ? 'conifer' : 'birch',",
-        "        sway: Math.random()*Math.PI*2",
-        "      });",
-        "    }",
-        "  }",
-        "  function resize(){ W = window.innerWidth; H = window.innerHeight; canvas.width = W*DPR; canvas.height = H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0); buildClouds(); buildRain(); buildSnow(); buildStars(); buildFogBands(); buildTreeline(); }",
+        "  function resize(){ W = window.innerWidth; H = window.innerHeight; canvas.width = W*DPR; canvas.height = H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0); buildClouds(); buildRain(); buildSnow(); buildStars(); buildFogBands(); }",
         "  window.addEventListener('resize', resize);",
         "  function computeMoonPhase(date){ var synodic=29.530588853; var known=Date.UTC(2000,0,6,18,14,0); var diff=(date.getTime()-known)/86400000; var p=(diff%synodic)/synodic; return p<0?p+1:p; }",
         "  var MOON_PHASE = computeMoonPhase(new Date());",
@@ -1981,13 +1968,6 @@ components.html(
         "  function windFactor(){ var dataEl = document.getElementById('kiosk-sky-data'); var w = dataEl ? parseFloat(dataEl.dataset.wind || '10') : 10; return Math.max(0, Math.min(1, w/45)); }",
         "  function elevationDeg(){ var dataEl = document.getElementById('kiosk-sky-data'); return dataEl ? parseFloat(dataEl.dataset.elevation || '45') : 45; }",
         "  function cloudCoverFrac(){ var dataEl = document.getElementById('kiosk-sky-data'); var c = dataEl ? parseFloat(dataEl.dataset.cloudCover || '40') : 40; return Math.max(0, Math.min(1, c/100)); }",
-        "  var TREE_SEASONS = {",
-        "    spring: {conifer:'#1f3d2b', trunk:'#cfc9bd', canopy:'#7fb56a', snow:0},",
-        "    summer: {conifer:'#173321', trunk:'#c9c2b3', canopy:'#3f7a3d', snow:0},",
-        "    fall:   {conifer:'#1a3826', trunk:'#c9c2b3', canopy:'#d9852f', snow:0},",
-        "    winter: {conifer:'#16301f', trunk:'#9c968b', canopy:null,     snow:1}",
-        "  };",
-        "  function treePalette(){ var dataEl = document.getElementById('kiosk-sky-data'); var s = dataEl ? (dataEl.dataset.season || 'summer') : 'summer'; return TREE_SEASONS[s] || TREE_SEASONS.summer; }",
         "  var WARM_TOP=[64,86,148], WARM_BOTTOM=[247,170,110];",
         "  function warmthFactor(elevDeg){ return Math.max(0, 1 - Math.abs(elevDeg)/18); }",
         "  var current = STATES['clear-day'];",
@@ -2039,37 +2019,6 @@ components.html(
         "    ctx.restore();",
         "  }",
         "  function drawMoon(alpha, phase){ if (alpha<=0.02) return; var x=W*0.80, y=H*0.16, r=Math.min(W,H)*0.055; ctx.save(); var glow=ctx.createRadialGradient(x,y,0,x,y,r*3.6); glow.addColorStop(0,'rgba(215,222,240,'+(0.30*alpha)+')'); glow.addColorStop(1,'rgba(215,222,240,0)'); ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(x,y,r*3.6,0,Math.PI*2); ctx.fill(); ctx.fillStyle='rgba(70,74,92,'+(0.55*alpha)+')'; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); ctx.save(); ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.clip(); ctx.fillStyle='rgba(238,240,248,'+alpha+')'; var rx=r*Math.cos(phase*2*Math.PI); ctx.beginPath(); if (phase<=0.5){ ctx.arc(x,y,r,-Math.PI/2,Math.PI/2,false); ctx.ellipse(x,y,Math.abs(rx),r,0,Math.PI/2,-Math.PI/2,rx<0); } else { ctx.arc(x,y,r,Math.PI/2,Math.PI*1.5,false); ctx.ellipse(x,y,Math.abs(rx),r,0,-Math.PI/2,Math.PI/2,rx>=0); } ctx.closePath(); ctx.fill(); ctx.restore(); ctx.restore(); }",
-        "  function drawTreeline(t){",
-        "    if (!trees.length) return;",
-        "    var pal = treePalette(); var baseline = H;",
-        "    ctx.save();",
-        "    for (var i=0;i<trees.length;i++){",
-        "      var tr = trees[i]; var x = tr.xFrac*W; var sway = Math.sin(t*0.4+tr.sway)*1.6;",
-        "      if (tr.type === 'conifer'){",
-        "        ctx.fillStyle = pal.conifer;",
-        "        var tiers = 3, tierH = tr.h/tiers;",
-        "        for (var ti=0; ti<tiers; ti++){",
-        "          var tw = tr.w*(1-ti/tiers*0.65), ty = baseline-tr.h+ti*tierH*0.82;",
-        "          ctx.beginPath(); ctx.moveTo(x+sway,ty); ctx.lineTo(x-tw/2+sway,ty+tierH*1.1); ctx.lineTo(x+tw/2+sway,ty+tierH*1.1); ctx.closePath(); ctx.fill();",
-        "        }",
-        "        if (pal.snow){",
-        "          ctx.fillStyle = 'rgba(255,255,255,0.55)';",
-        "          for (var si=0; si<tiers; si++){ var stw = tr.w*(1-si/tiers*0.65), sty = baseline-tr.h+si*tierH*0.82; ctx.beginPath(); ctx.arc(x+sway,sty+2,Math.max(1.5,stw*0.12),0,Math.PI*2); ctx.fill(); }",
-        "        }",
-        "      } else {",
-        "        ctx.strokeStyle = pal.trunk; ctx.lineWidth = 2.2;",
-        "        ctx.beginPath(); ctx.moveTo(x,baseline); ctx.lineTo(x+sway*0.6,baseline-tr.h); ctx.stroke();",
-        "        if (pal.canopy){",
-        "          ctx.fillStyle = pal.canopy;",
-        "          ctx.beginPath(); ctx.ellipse(x+sway,baseline-tr.h,tr.w*0.55,tr.h*0.28,0,0,Math.PI*2); ctx.fill();",
-        "        } else {",
-        "          ctx.strokeStyle = pal.trunk; ctx.lineWidth = 1;",
-        "          for (var b=0;b<3;b++){ var by = baseline-tr.h+b*tr.h*0.22; ctx.beginPath(); ctx.moveTo(x+sway*0.6,by); ctx.lineTo(x+sway*0.6+(b%2?1:-1)*tr.w*0.3,by-6); ctx.stroke(); }",
-        "        }",
-        "      }",
-        "    }",
-        "    ctx.restore();",
-        "  }",
         "  var boltCooldown = 0;",
         "  function jaggedBolt(x0,y0,y1){ ctx.beginPath(); var x=x0,y=y0; ctx.moveTo(x,y); while (y<y1){ y+=26+Math.random()*30; x+=(Math.random()-0.5)*46; ctx.lineTo(x,y); } }",
         "  function maybeStrikeLightning(dt, intensity){ if (intensity<=0){ boltCooldown=0; return; } boltCooldown -= dt; if (boltCooldown<=0){ var x0=W*(0.15+Math.random()*0.7); ctx.save(); ctx.strokeStyle='rgba(255,255,255,0.95)'; ctx.lineWidth=2.4; ctx.shadowColor='rgba(200,220,255,0.9)'; ctx.shadowBlur=14; jaggedBolt(x0,0,H*0.72); ctx.stroke(); ctx.lineWidth=1; jaggedBolt(x0+6,0,H*0.5); ctx.stroke(); ctx.restore(); boltCooldown = (2.5+Math.random()*4.5)/Math.max(intensity,0.35); } }",
@@ -2104,7 +2053,6 @@ components.html(
         "    ctx.fillStyle = grad; ctx.fillRect(0,0,W,H);",
         "    drawStars(display.stars, tSec); drawSun(display.sunOpacity, display.warm); drawMoon(display.moonOpacity, MOON_PHASE);",
         "    drawClouds(display.clouds, display.stars>0.3, wind, reduced?0:dt);",
-        "    drawTreeline(reduced?0:tSec);",
         "    if (!reduced){ drawRain(display.rain, dt, wind); drawSnow(display.snow, dt, tSec); drawFog(display.fog, dt, current.fogTint); drawHeatShimmer(display.heat, tSec); maybeStrikeLightning(dt, display.storm); }",
         "    else { if (display.rain>0.3) drawRain(display.rain, 0, wind); if (display.snow>0.3) drawSnow(display.snow, 0, tSec); if (display.fog>0.3) drawFog(display.fog, 0, current.fogTint); if (display.heat>0.3) drawHeatShimmer(display.heat, tSec); }",
         "    requestAnimationFrame(frame);",
@@ -2536,16 +2484,6 @@ try:
         _sky_hazard = weather_alerts_bar.current_hazard_for_sky() or ""
     except Exception:
         _sky_hazard = ""
-    # Session request: "a little treeline similar to the trees seen in
-    # northern Ontario... make them switch for the seasons." Real
-    # astronomical season (seasons_client.py — the same equinox/
-    # solstice math the season hero badge already uses), not a plain
-    # month cutoff, so the treeline agrees with whatever the app
-    # already calls the current season anywhere else it's mentioned.
-    try:
-        _sky_season = seasons_client.current_season(now.date())
-    except Exception:
-        _sky_season = "Summer"
     st.markdown(
         f'<div id="kiosk-sky-data" style="display:none;" '
         f'data-code="{weather["weather_code"] if weather else 2}" '
@@ -2554,8 +2492,7 @@ try:
         f'data-elevation="{_sky_elevation:.2f}" '
         f'data-cloud-cover="{_sky_cloud_cover}" '
         f'data-wind="{(weather.get("wind_speed_kmh") or 10) if weather else 10}" '
-        f'data-hazard="{html.escape(_sky_hazard)}" '
-        f'data-season="{_sky_season.lower()}"></div>',
+        f'data-hazard="{html.escape(_sky_hazard)}"></div>',
         unsafe_allow_html=True,
     )
 except Exception:
