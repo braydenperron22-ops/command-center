@@ -11,6 +11,7 @@ recurrence-rule logic (BYDAY, UNTIL, exceptions, timezones), not
 something worth getting subtly wrong via a custom implementation.
 """
 
+import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -82,7 +83,34 @@ def _fetch_calendar_raw(ics_url: str) -> bytes:
 
 
 def _events_from_one(calendar: dict, today: date) -> list[dict]:
-    raw = _fetch_calendar_raw(calendar["url"])
+    # Real live incident, confirmed via a faulthandler stack dump during
+    # a performance audit: this call was caught stuck for 20+ seconds
+    # inside the socket read, well past the timeout=10 just above --
+    # requests'/urllib3's own timeout does not reliably bound every
+    # phase of an HTTP exchange in this environment (confirmed twice
+    # tonight now, the other time being weather_client.fetch_weather's
+    # SSL handshake). Since this is called from commute_reminder.
+    # leave_headline_active, itself called very early in app.py before
+    # almost everything else, one stuck calendar fetch here blocked the
+    # ENTIRE page -- the direct cause of the kiosk going stale for 4+
+    # minutes and force-reloading. fetch_throttle.run_bounded (this
+    # app's own established fix for exactly this class of problem --
+    # see weather_client's own caller in app.py) runs the fetch in a
+    # background thread and gives up after budget_seconds no matter
+    # what the stuck call is doing; a still-stuck thread is abandoned
+    # in the background rather than allowed to hold up the page. None
+    # back means "timed out or failed" -- raised as a real exception so
+    # the caller's own existing except/continue handles it exactly like
+    # any other fetch failure, not silently as "this calendar has no
+    # events today."
+    raw = fetch_throttle.run_bounded(
+        f"calendar_fetch:{calendar['url']}",
+        lambda: _fetch_calendar_raw(calendar["url"]),
+        time.time(),
+        budget_seconds=8,
+    )
+    if raw is None:
+        raise TimeoutError(f"calendar fetch timed out or failed: {calendar['url']}")
     cal = icalendar.Calendar.from_ical(raw)
     occurrences = recurring_ical_events.of(cal).between(today, today + timedelta(days=1))
     # Trusted per source, not guessed per-event from the title — the
