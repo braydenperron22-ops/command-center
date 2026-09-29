@@ -3242,9 +3242,23 @@ try:
                 # BEDTIME_CTA_MINUTES — same "gradual, not a hard
                 # cutover" preference the old ramp already established,
                 # just relative to bedtime instead of a flat clock time.
+                #
+                # Real live bug, found via a performance audit: DIM_
+                # START_MINUTES (20) and BEDTIME_CTA_MINUTES (20) are
+                # currently equal, so _dim_ramp_span was always exactly
+                # 0 -- a guaranteed ZeroDivisionError on every single
+                # rerun during the ~20 minutes before bedtime, every
+                # night, silently swallowed by this block's own outer
+                # except (see scenery_render_error's own comment) but
+                # still a real, confirmed, recurring System Health
+                # score deduction and a background that simply stopped
+                # updating for that whole window. A zero-or-negative
+                # span means there's no real ramp left to animate
+                # through -- jump straight to fully dim, the sane
+                # degenerate case, instead of dividing by it.
                 _dim_ramp_span = DIM_START_MINUTES - sleep_tracker.BEDTIME_CTA_MINUTES
                 _dim_ramp_progress = DIM_START_MINUTES - _minutes_to_bedtime
-                night_dim = max(0.0, min(1.0, _dim_ramp_progress / _dim_ramp_span))
+                night_dim = 1.0 if _dim_ramp_span <= 0 else max(0.0, min(1.0, _dim_ramp_progress / _dim_ramp_span))
                 warm_tint = 1.0
         # weather_wake_recent True: leave night_dim/warm_tint at their
         # already-bright defaults so a genuinely new severe-weather
