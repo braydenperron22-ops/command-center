@@ -66,25 +66,40 @@ def _configured() -> bool:
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_minutely_raw() -> dict | None:
-    cached = persisted_state.load(_SHARED_CACHE_KEY, None)
-    if isinstance(cached, dict) and "at" in cached and time.time() - cached["at"] < CACHE_TTL_SECONDS:
+    # Real live incident, found again via a performance-audit re-check:
+    # st.cache_data does NOT cache a raised exception — only a real
+    # return value. XWeather returning 429 earlier tonight meant this
+    # function's body (including the real Upstash GET above) re-ran
+    # from scratch on every single 10s toast-fragment tick instead of
+    # backing off for CACHE_TTL_SECONDS like a success would — enough
+    # sustained Upstash command volume on its own to exhaust this app's
+    # daily budget and degrade every other persisted_state call behind
+    # it. Already fixed once tonight; that fix got wiped out by the
+    # later full revert back to the pre-Chloe commit along with
+    # everything else from that stretch. Re-applied here on its own —
+    # pure robustness, zero behavior change under normal conditions.
+    try:
+        cached = persisted_state.load(_SHARED_CACHE_KEY, None)
+        if isinstance(cached, dict) and "at" in cached and time.time() - cached["at"] < CACHE_TTL_SECONDS:
+            data_health.record_success("precip_nowcast")
+            return cached.get("value")
+        resp = requests.get(
+            CONDITIONS_URL,
+            params={
+                "client_id": st.secrets.get("XWEATHER_CLIENT_ID"),
+                "client_secret": st.secrets.get("XWEATHER_CLIENT_SECRET"),
+                "p": f"{WEATHER_LAT},{WEATHER_LON}",
+                "filter": "minutelyprecip",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        value = resp.json()
+        persisted_state.save(_SHARED_CACHE_KEY, {"at": time.time(), "value": value})
         data_health.record_success("precip_nowcast")
-        return cached.get("value")
-    resp = requests.get(
-        CONDITIONS_URL,
-        params={
-            "client_id": st.secrets.get("XWEATHER_CLIENT_ID"),
-            "client_secret": st.secrets.get("XWEATHER_CLIENT_SECRET"),
-            "p": f"{WEATHER_LAT},{WEATHER_LON}",
-            "filter": "minutelyprecip",
-        },
-        timeout=10,
-    )
-    resp.raise_for_status()
-    value = resp.json()
-    persisted_state.save(_SHARED_CACHE_KEY, {"at": time.time(), "value": value})
-    data_health.record_success("precip_nowcast")
-    return value
+        return value
+    except Exception:
+        return None
 
 
 def minutely_forecast() -> list[dict] | None:

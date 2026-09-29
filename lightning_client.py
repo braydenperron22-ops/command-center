@@ -78,34 +78,48 @@ def _configured() -> bool:
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def _fetch_closest_raw() -> dict | None:
-    cached = persisted_state.load(_SHARED_CACHE_KEY, None)
-    if isinstance(cached, dict) and "at" in cached and time.time() - cached["at"] < CACHE_TTL_SECONDS:
+    # Real live incident, found again via a performance-audit re-check
+    # — same root cause and fix as precip_nowcast_client._fetch_
+    # minutely_raw (see that function's own comment for the full
+    # story): st.cache_data never caches a raised exception, so an
+    # XWeather outage meant this function's body, including the real
+    # Upstash GET below, re-ran from scratch on every single 10s toast-
+    # fragment tick instead of backing off for CACHE_TTL_SECONDS like a
+    # success would. Already fixed once tonight; wiped out by the later
+    # full revert back to the pre-Chloe commit along with everything
+    # else from that stretch. Re-applied here on its own — pure
+    # robustness, zero behavior change under normal conditions.
+    try:
+        cached = persisted_state.load(_SHARED_CACHE_KEY, None)
+        if isinstance(cached, dict) and "at" in cached and time.time() - cached["at"] < CACHE_TTL_SECONDS:
+            data_health.record_success("lightning")
+            return cached.get("value")
+        resp = requests.get(
+            LIGHTNING_URL,
+            params={
+                "client_id": st.secrets.get("XWEATHER_CLIENT_ID"),
+                "client_secret": st.secrets.get("XWEATHER_CLIENT_SECRET"),
+                # Session request: "check those" — confirmed live against a
+                # real Xweather account (once XWEATHER_CLIENT_ID/SECRET were
+                # actually added) that separate lat/lon params get a real
+                # "no_location: A location was not provided" error back —
+                # Xweather's "closest" action wants a single combined point
+                # instead, same "p" parameter precip_nowcast_client.py's own
+                # request already used correctly. Verified this exact change
+                # against the live API before shipping it: 200, success,
+                # response returned.
+                "p": f"{WEATHER_LAT},{WEATHER_LON}",
+                "radius": f"{RADIUS_KM}km",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        value = resp.json()
+        persisted_state.save(_SHARED_CACHE_KEY, {"at": time.time(), "value": value})
         data_health.record_success("lightning")
-        return cached.get("value")
-    resp = requests.get(
-        LIGHTNING_URL,
-        params={
-            "client_id": st.secrets.get("XWEATHER_CLIENT_ID"),
-            "client_secret": st.secrets.get("XWEATHER_CLIENT_SECRET"),
-            # Session request: "check those" — confirmed live against a
-            # real Xweather account (once XWEATHER_CLIENT_ID/SECRET were
-            # actually added) that separate lat/lon params get a real
-            # "no_location: A location was not provided" error back —
-            # Xweather's "closest" action wants a single combined point
-            # instead, same "p" parameter precip_nowcast_client.py's own
-            # request already used correctly. Verified this exact change
-            # against the live API before shipping it: 200, success,
-            # response returned.
-            "p": f"{WEATHER_LAT},{WEATHER_LON}",
-            "radius": f"{RADIUS_KM}km",
-        },
-        timeout=10,
-    )
-    resp.raise_for_status()
-    value = resp.json()
-    persisted_state.save(_SHARED_CACHE_KEY, {"at": time.time(), "value": value})
-    data_health.record_success("lightning")
-    return value
+        return value
+    except Exception:
+        return None
 
 
 def _closest_strike_within_radius() -> dict | None:
