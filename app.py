@@ -2432,8 +2432,26 @@ except Exception:
 # cached, so calling it here too is a cache hit, not a second real
 # fetch — the real call further down still runs exactly as before and
 # just overwrites this with the identical cached value.
+# Real live incident, re-found via a continued performance audit after
+# an earlier full revert wiped this fix out along with everything else
+# from that stretch of the session: fetch_weather() is a plain, direct
+# call here — no bounding beyond requests' own timeout=10 inside
+# weather_client.py. Confirmed live (twice now, via a faulthandler
+# stack dump both times) that this can hang WELL past that timeout:
+# the SSL handshake/socket read doesn't always respect requests'/
+# urllib3's own timeout on a bad connection, a known class of issue,
+# not something this app's own timeout values control. Since this runs
+# before almost everything else in the script (including night_mode.
+# render() far below), a single stuck connection here blocked the
+# ENTIRE page -- every rerun, indefinitely, until whatever made that
+# one connection stick cleared on its own. This was the confirmed root
+# cause of tonight's original multi-hour outage. run_bounded (already
+# used for weather_client.warm_cache elsewhere in this file) runs it
+# in a background thread and gives up after budget_seconds regardless
+# of what requests' own timeout does; a still-stuck thread is
+# abandoned in the background rather than allowed to hold up the page.
 try:
-    weather = fetch_weather()
+    weather = fetch_throttle.run_bounded("weather_fetch", fetch_weather, time.time(), budget_seconds=5, default=None)
 except Exception:
     weather = None
 
@@ -2958,8 +2976,13 @@ if _requested_page not in PAGES and not _jumbotron_active and not _night_mode_ac
 st_autorefresh(interval=65000, key="clock_tick")
 _rerun_started_at = time.time()
 
+# Same real live incident/fix as the early fetch_weather() call above
+# — see that call site's own comment for the full story. Same
+# run_bounded key ("weather_fetch") so this reuses whatever the early
+# call already has in flight/cached instead of racing a second
+# redundant background thread against it.
 try:
-    weather = fetch_weather()
+    weather = fetch_throttle.run_bounded("weather_fetch", fetch_weather, _rerun_started_at, budget_seconds=5, default=None)
 except Exception:
     weather = None
 
