@@ -112,6 +112,27 @@ from weather_client import daily_forecast, fetch_weather
 st.set_page_config(page_title="Command Center", layout="wide")
 theme.inject()
 
+# Kiosk box's own OS-level watchdog (~/.local/bin/kiosk-watchdog.sh)
+# only ever checked "does the dashboard URL respond" via a plain curl
+# --head — which a Streamlit app answers with the same static shell
+# HTML whether the real script is running or the session is wedged on
+# its own connecting spinner (confirmed live: the server's own front
+# door was returning 200 the entire time a real stuck-session incident
+# was happening, 2026-09-30). No page fetched outside a real browser
+# can tell those two states apart, since Streamlit renders everything
+# client-side over a websocket after this script actually executes —
+# so the only reliable "is this script genuinely still running" signal
+# has to come from inside the script itself, on every real execution.
+# Throttled (not every single fragment rerun) since the watchdog only
+# checks every 2 minutes anyway — no reason to spend more Upstash
+# writes than that cadence can even use.
+persisted_state.save_throttled(
+    "kiosk_watchdog_app_alive",
+    time.time(),
+    signature="tick",
+    min_interval_seconds=45,
+)
+
 # Kiosk hotkeys: press J to pull the jumbotron up on demand, J again to
 # hand the screen back to the normal rotation — session request, for
 # watching a game outside the automatic takeover window (see
