@@ -34,6 +34,7 @@ import gemini_client
 import groq_client
 import kiosk_hardware
 import persisted_state
+import waste_schedule
 
 _STARTED_AT = time.time()
 
@@ -210,6 +211,23 @@ def _system_rows() -> str:
         rows.append(_row(
             "CPP/OAS schedule", "Current", "good",
             f'covers through {coverage["last_date"].strftime("%b %Y")}',
+        ))
+    # Same reasoning and shape as the CPP/OAS coverage warning right
+    # above — session request: "same thing" for recycling once it too
+    # became a hand-maintained real-dates list (see waste_schedule.py's
+    # own docstring for why: East Ferris's real cadence isn't a
+    # computable rule, and a fragile scraper was never the alternative
+    # on the table here either).
+    waste_coverage = waste_schedule.coverage_status(date.today())
+    if waste_coverage["days_remaining"] < waste_schedule.COVERAGE_WARNING_DAYS:
+        rows.append(_row(
+            "Recycling schedule", "Needs update", "low",
+            f'covers through {waste_coverage["last_date"].strftime("%b %Y")}',
+        ))
+    else:
+        rows.append(_row(
+            "Recycling schedule", "Current", "good",
+            f'covers through {waste_coverage["last_date"].strftime("%b %Y")}',
         ))
     return "".join(rows)
 
