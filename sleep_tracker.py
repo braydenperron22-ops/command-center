@@ -99,9 +99,18 @@ BEDTIME_CTA_MINUTES = 20
 
 
 def _shift_events_for(calendars: list[dict], day: date) -> list[dict]:
+    # Same "Holiday" exact-match exclusion as commute_reminder.
+    # _todays_shift_events, and the same reason: a stat-holiday
+    # placeholder passes this filter exactly like a real shift, which
+    # would otherwise compute a fake early wake-up/bedtime for a day
+    # off.
     events = calendar_client.todays_events(calendars, day)
     return sorted(
-        (e for e in events if not e["all_day"] and not e["show_end_time"]),
+        (
+            e
+            for e in events
+            if not e["all_day"] and not e["show_end_time"] and e["summary"].strip().lower() != "holiday"
+        ),
         key=lambda e: e["start"],
     )
 

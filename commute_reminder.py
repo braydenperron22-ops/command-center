@@ -468,13 +468,27 @@ def _leave_volume_ceiling(now: datetime, leave_by: datetime) -> float:
 def _todays_shift_events(now: datetime) -> list[dict]:
     """Every shift-type event today, sorted by start time — plural,
     since a day can have more than one (an appointment earlier, a
-    shift later)."""
+    shift later).
+
+    Session report, live: a stat-holiday calendar entry ("Holiday" —
+    9am-5pm, timed, no real end time, so it passes the exact same
+    filter as a real shift) fired a genuine "leave in 20 minutes"
+    countdown for a day the user is staying home. Excluded by exact
+    summary match (not a substring) — same precision reasoning as the
+    "saturday night hockey" exact-match a few lines up in this file:
+    a real event that happens to CONTAIN "holiday" (a party, a trip)
+    should still get its own leave-in countdown, only the literal
+    day-off placeholder shouldn't."""
     calendars = st.secrets.get("CALENDARS")
     if not calendars:
         return []
     events = calendar_client.todays_events(calendars, now.date())
     return sorted(
-        (e for e in events if not e["all_day"] and not e["show_end_time"]),
+        (
+            e
+            for e in events
+            if not e["all_day"] and not e["show_end_time"] and e["summary"].strip().lower() != "holiday"
+        ),
         key=lambda e: e["start"],
     )
 
