@@ -288,6 +288,19 @@ _traffic_state: dict = persisted_state.load(_TRAFFIC_STATE_KEY, {"date": None, "
 _CAR_PREP_STATE_KEY = "commute_car_prep_state"
 _car_prep_state: dict = persisted_state.load(_CAR_PREP_STATE_KEY, {"date": None, "events": []})
 
+# Upstash cost audit, 2026-09-30: check()'s own milestone-push dedup
+# below used to call persisted_state.load("commute_milestones", ...)
+# on every single call — unlike _traffic_state/_car_prep_state right
+# above it, which already load once at import and only ever write on a
+# real change. check() runs on the 10s toast fragment (app.py's own
+# _gather_new_alerts), so during the ~2-4 active leave-window hours a
+# real shift day has, that was a genuine Upstash read roughly 360
+# times/hour for no reason — the exact same anti-pattern its two
+# siblings here already avoid. Same fix: load once, write only on a
+# real push.
+_MILESTONES_STATE_KEY = "commute_milestones"
+_milestones_state: dict = persisted_state.load(_MILESTONES_STATE_KEY, {"date": None, "keys": []})
+
 
 def _is_home_event(shift: dict) -> bool:
     """True when this event's own calendar location is just "Home" —
@@ -1140,6 +1153,7 @@ def check(now: datetime) -> dict | None:
     down) — both are persisted now, but kept as two separate tracked
     sets rather than unified into one, matching how independently they
     already behaved before this fix."""
+    global _milestones_state
     current = _current_shift(now)
     if current is None:
         return None
@@ -1213,16 +1227,20 @@ def check(now: datetime) -> dict | None:
     _shown_state["events"][event_key] = sorted(shown_for_event)
     persisted_state.save_per_instance("commute_reminder_shown", _shown_state)
 
-    # Disk-persisted (persisted_state), not a plain module-level global
-    # or st.session_state — session report: "I received the leave for
-    # work [alert] three times," then, after a module-level-global fix,
-    # a duplicate morning brief push traced to a redeploy resetting an
-    # in-memory tracker right back to empty. A module global alone
-    # survives multiple browser sessions but not an actual process
-    # restart; this needs to survive both.
-    pushed = persisted_state.load("commute_milestones", {"date": None, "keys": []})
-    if pushed["date"] != now.date().isoformat():
-        pushed = {"date": now.date().isoformat(), "keys": []}
+    # Disk-persisted (persisted_state), not a plain in-function local —
+    # session report: "I received the leave for work [alert] three
+    # times," then, after a module-level-global fix, a duplicate
+    # morning brief push traced to a redeploy resetting an in-memory
+    # tracker right back to empty. That's why this survives a restart:
+    # _milestones_state loads from Upstash once, at import — which
+    # happens fresh after every redeploy/restart — then only ever
+    # WRITES back on a genuine new push, never re-reads. Upstash cost
+    # audit, 2026-09-30: this used to call persisted_state.load() on
+    # every single call to check() instead (~360 real reads/hour during
+    # an active leave window) — same fix as _traffic_state/_car_prep_
+    # state above, which already got this right.
+    if _milestones_state["date"] != now.date().isoformat():
+        _milestones_state = {"date": now.date().isoformat(), "keys": []}
     push_key = f"{event_key}|{milestone}"
     # is_home: no commute framing (see _is_home_event) — plain "Starts
     # in X" toast/push text, no "Leave soon: " label, and no spoken
@@ -1233,9 +1251,9 @@ def check(now: datetime) -> dict | None:
     is_home = _is_home_event(shift)
     label = _alert_label(shift, is_home)
     headline = _leave_text(milestone, is_home)
-    if push_key not in pushed["keys"]:
-        pushed["keys"].append(push_key)
-        persisted_state.save("commute_milestones", pushed)
+    if push_key not in _milestones_state["keys"]:
+        _milestones_state["keys"].append(push_key)
+        persisted_state.save(_MILESTONES_STATE_KEY, _milestones_state)
         ntfy_client.send(title=label, message=headline, priority="high", tags="clock3")
 
     return {
