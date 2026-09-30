@@ -3774,11 +3774,26 @@ if weather:
     # own docstring), same today(morning-only)/evening-tomorrow gating.
     # Two colors, both otherwise unclaimed in this row: mint for
     # Laundry, blue for Groceries.
+    #
+    # Session correction: "the laundry hero badge should be an all-day
+    # event... make sure it doesn't leave at 10am." This loop was
+    # applying MORNING_BADGE_CUTOFF_HOUR to Laundry too — the exact
+    # thing that comment block just above explicitly says this cutoff
+    # is NOT meant for ("only garbage/recycling and payday... those two
+    # are the only ones this gates"), a real drift between the
+    # documented intent and what the code actually did. Laundry is a
+    # whole-day task (get to it whenever), not a "done by morning" one
+    # like garbage day — scoped to just this label, not Groceries,
+    # since that's what was actually asked.
     _reminder_colors = {"Laundry": "#00C7BE", "Groceries": "#007AFF"}
     for reminder in household_reminders.due_reminders(now.date()):
-        if (reminder["days_until"] == 0 and now.hour < MORNING_BADGE_CUTOFF_HOUR) or (
-            reminder["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR
-        ):
+        if reminder["label"] == "Laundry":
+            _reminder_shows = reminder["days_until"] == 0
+        else:
+            _reminder_shows = (reminder["days_until"] == 0 and now.hour < MORNING_BADGE_CUTOFF_HOUR) or (
+                reminder["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR
+            )
+        if _reminder_shows:
             reminder_when = "today" if reminder["days_until"] == 0 else "tomorrow"
             reminder_color = _reminder_colors.get(reminder["label"], "#8E8E93")
             extras.append(
