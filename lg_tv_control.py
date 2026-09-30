@@ -394,19 +394,29 @@ async def wake_and_switch_if_safe(log=lambda msg: None) -> Result:
     client = await _connect_for_state_check()
     if client is not None:
         current = await _current_app_id(client)
-        if current is not None and current != KIOSK_APP_ID:
-            await client.disconnect()
-            log(f"TV is already on {_label_for(current)} -- leaving it alone, will recheck later")
-            return "deferred"
         if current == KIOSK_APP_ID:
             await _enforce_kiosk_volume(client, log)
             await client.disconnect()
             log("TV already on our input -- nothing to do")
             return "settled"
-        # current is None despite being reachable (e.g. a screensaver
-        # app with no clean appId) -- fall through and just make sure
-        # our input is selected, same as the unreachable/off path below.
+        # Session report, live: "I'm watching Forrest Gump... it keeps
+        # switching inputs back to the dashboard." Real gap -- current
+        # not None (a recognized different app/input, e.g. the Xbox)
+        # already deferred correctly, but a reachable TV reporting NO
+        # clean appId at all (a Blu-ray player, a streaming box, some
+        # HDMI sources just don't report cleanly) used to fall through
+        # BELOW and switch to the kiosk anyway, on the theory that an
+        # ambiguous reading was safe to take over. It isn't -- the TV
+        # being reachable and on, period, is the actual signal that
+        # someone's using it, not whether webOS happens to name what.
+        # "Don't switch over until the TV turns off" -- so "reachable"
+        # alone (current recognized or not) means defer; only a
+        # genuinely off/unreachable TV reaches the wake+switch path
+        # below now.
         await client.disconnect()
+        label = _label_for(current) if current is not None else "something else (no clean appId reported)"
+        log(f"TV is already on {label} -- leaving it alone, will recheck later")
+        return "deferred"
 
     log("waking TV via Wake-on-LAN")
     send_wol()
