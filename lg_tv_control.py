@@ -100,7 +100,8 @@ VOLUME_FLOOR = 8
 # floor, applies regardless of input, only ever raises), this is a
 # fixed value enforced specifically while on the kiosk's own input —
 # see wake_and_switch_if_safe below for where it's applied.
-KIOSK_VOLUME = 20
+# Session request 2026-09-30: "move the kiosk volume down to 15."
+KIOSK_VOLUME = 15
 # Session follow-up: "set the volume to like five when we're going to
 # the Xbox... so it's not blasting at 20 volume... when I'm
 # transferring to the Xbox." A one-time landing value applied only on
