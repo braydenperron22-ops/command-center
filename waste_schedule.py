@@ -1,22 +1,29 @@
-"""North Bay garbage/recycling pickup schedule — a fixed weekly rule
-(garbage every Monday, recycling the 2nd and 4th Wednesday of each
-month), not sourced from a live feed since the city's schedule is
-exactly this simple recurring rule. "Typically" per the person who
-gave me this rule — a stat holiday can shift a real pickup day by
-one, which this doesn't account for; worth revisiting if that ever
-causes a wrong reminder.
+"""Municipality of East Ferris garbage/recycling pickup schedule (Route
+#1 — Wednesday, Center: Corbeil Road, East area, Quae-Quae Road,
+Guillemette Road, Big Moose Road, Bertha Road) — not sourced from a
+live feed since the real schedule is a simple recurring rule, confirmed
+against the municipality's own 2026 recycling calendar.
+
+Session correction 2026-09-30: this used to assume "2nd and 4th
+Wednesday of the calendar month," which reset every month — wrong.
+Real East Ferris recycling runs on a continuous 14-day cycle that
+carries over month boundaries, confirmed against the real 2026
+calendar: Route #1's own highlighted Wednesdays are Sept 16, Sept 30,
+Oct 14, Oct 28, Nov 11, Nov 25 — each exactly 14 days apart. A
+calendar-month-relative rule only happens to match a continuous
+cycle in a month with exactly 4 Wednesdays; September 2026 has 5,
+which is exactly what silently dropped a real Sept 30 pickup off the
+old rule. RECYCLING_ANCHOR is a real, confirmed Route #1 date; the fix
+is a straight (date - anchor) % 14 == 0 check, immune to month
+boundaries and to month Wednesday-count.
 """
 
 from datetime import date, timedelta
 
 MONDAY = 0
 WEDNESDAY = 2
-RECYCLING_WEEKS = (2, 4)
-
-
-def _nth_weekday_of_month(d: date) -> int:
-    """1 for the first occurrence of d's weekday in d's month, 2 for the second, ..."""
-    return (d.day - 1) // 7 + 1
+RECYCLING_ANCHOR = date(2026, 9, 30)
+RECYCLING_INTERVAL_DAYS = 14
 
 
 def next_weekday(today: date, weekday: int) -> date:
@@ -29,7 +36,7 @@ def next_weekday(today: date, weekday: int) -> date:
 
 def _next_recycling_wednesday(today: date) -> date:
     candidate = next_weekday(today, WEDNESDAY)
-    while _nth_weekday_of_month(candidate) not in RECYCLING_WEEKS:
+    while (candidate - RECYCLING_ANCHOR).days % RECYCLING_INTERVAL_DAYS != 0:
         candidate += timedelta(days=7)
     return candidate
 
