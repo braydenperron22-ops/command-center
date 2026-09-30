@@ -371,28 +371,53 @@ async def _set_xbox_landing_volume(client: WebOsClient, log) -> None:
         log(f"Xbox landing volume failed: {e}")
 
 
+# Session report, live: watching Forrest Gump on the Xbox, correctly
+# deferred for 12+ straight minutes ("TV is already on Xbox"), then one
+# single _connect_for_state_check() call -- despite its own 3 internal
+# retries -- came back empty and the very next line read that as "TV's
+# off," woke it via WoL, and switched it away from a real, active
+# session. The TV was never actually off (confirmed: a fresh connect
+# 20s later succeeded immediately) -- a smart TV's own WebSocket API is
+# just not perfectly reliable, and 3 retries inside ~4-6 seconds can
+# all land in the same brief hiccup. Same fix as kiosk-watchdog.sh's
+# own network check (which also requires 3 CONSECUTIVE checks, not 3
+# retries within one check, before concluding a real outage): this
+# counts full, separate calls to this function, spaced by run_lg_tv_
+# sync.py's own CHECK_INTERVAL_SECONDS (20s) -- so "the TV is
+# unreachable" now has to hold for a genuinely sustained ~60s, not one
+# unlucky moment, before ever concluding it's actually off.
+_CONSECUTIVE_UNREACHABLE_TICKS_TO_CONFIRM = 3
+_consecutive_unreachable_ticks = 0
+
+
 async def wake_and_switch_if_safe(log=lambda msg: None) -> Result:
     """Night mode ending: bring the TV back to our input, defaulting to
     HDMI_1 -- but same "don't interrupt" rule, checked BEFORE waking
-    anything. "deferred" only if the TV is already reachable and
-    genuinely on something else (the Xbox); "settled" for every other
-    outcome (already on ours, or a real wake + switch attempt, success
-    or failure -- a failed WoL/reconnect isn't "someone's using it"
-    either, see power_off_if_ours' own reasoning for the same call).
+    anything. "deferred" if the TV is already reachable and genuinely
+    on something else (the Xbox), OR if it looks unreachable but that
+    hasn't been confirmed across enough consecutive ticks yet (see
+    _CONSECUTIVE_UNREACHABLE_TICKS_TO_CONFIRM above); "settled" for
+    every other outcome (already on ours, or a real wake + switch
+    attempt, success or failure -- a failed WoL/reconnect isn't
+    "someone's using it" either, see power_off_if_ours' own reasoning
+    for the same call).
 
     Uses _connect_for_state_check (a few retries) rather than a single
     _connect() attempt for this specific check -- confirmed live, a
     single failed attempt here once misread a TV that was genuinely ON
     and on Xbox as "off," and proceeded to wake + switch it away from a
     real, active session. See that helper's own comment for the full
-    story.
+    story, and this function's own module-level comment just above for
+    why even that wasn't quite enough on its own.
 
     Also enforces KIOSK_VOLUME (see _enforce_kiosk_volume) every time
     the TV is confirmed on our input -- both the already-there case and
     right after a fresh switch -- so it stays at a known level any time
     the kiosk is genuinely what's showing."""
+    global _consecutive_unreachable_ticks
     client = await _connect_for_state_check()
     if client is not None:
+        _consecutive_unreachable_ticks = 0
         current = await _current_app_id(client)
         if current == KIOSK_APP_ID:
             await _enforce_kiosk_volume(client, log)
@@ -416,6 +441,15 @@ async def wake_and_switch_if_safe(log=lambda msg: None) -> Result:
         await client.disconnect()
         label = _label_for(current) if current is not None else "something else (no clean appId reported)"
         log(f"TV is already on {label} -- leaving it alone, will recheck later")
+        return "deferred"
+
+    _consecutive_unreachable_ticks += 1
+    if _consecutive_unreachable_ticks < _CONSECUTIVE_UNREACHABLE_TICKS_TO_CONFIRM:
+        log(
+            f"TV looked unreachable ({_consecutive_unreachable_ticks}/"
+            f"{_CONSECUTIVE_UNREACHABLE_TICKS_TO_CONFIRM} consecutive) -- "
+            "not yet confirmed, waiting for another tick before waking it"
+        )
         return "deferred"
 
     log("waking TV via Wake-on-LAN")
