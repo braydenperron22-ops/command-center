@@ -81,7 +81,24 @@ _DEFAULT_STATE = {
     "ip_check_date": None,  # ISO date lg_tv_control.verify_tv_ip last actually ran
     "notifications_shown_at": 0.0,  # watermark for lg_tv_control.send_pending_notifications
     "next_notification_check_at": 0.0,  # Upstash cost audit -- see NOTIFICATION_CHECK_INTERVAL_SECONDS
+    "next_night_mode_check_at": 0.0,  # Upstash cost audit -- see NIGHT_MODE_CHECK_INTERVAL_SECONDS
 }
+
+# Upstash cost audit, 2026-09-30: night_mode_active was the one read in
+# this loop with NO gate at all -- unconditional every CHECK_INTERVAL_
+# SECONDS (20s) tick, forever, ~129,600 commands/month on its own, same
+# order of magnitude as the notification-queue issue found and fixed
+# below. That WAS deliberate (see this module's own top docstring --
+# "if it means everything will start reacting in real time, that's
+# good"), but real quota pressure ("we hit Upstash A LOT... 401k/500k")
+# makes it worth revisiting: night mode only actually transitions twice
+# a day (engage/disengage), so a 60s worst-case lag on noticing that is
+# not a meaningfully different experience from 20s, for a real 3x cut
+# on this one line. Every OTHER check in _tick() keeps its own existing
+# cadence -- this only slows the raw fetch itself, not the reactive
+# logic below it, which still runs every 20s tick off whatever
+# desired_active value is currently cached in `state`.
+NIGHT_MODE_CHECK_INTERVAL_SECONDS = 60
 
 # Upstash cost audit, live: send_pending_notifications does a real
 # Upstash read (the shared TV notification queue) on every single call
@@ -123,17 +140,27 @@ async def _tick() -> None:
     now_ts = time.time()
     state = _load_state()
 
-    night_mode = persisted_state.load("night_mode_active", None)
-    if night_mode is not None:
-        desired_active = bool(night_mode.get("active"))
-        if state["desired_active"] != desired_active:
-            state["desired_active"] = desired_active
-            state["settled"] = False
-            state["next_check_at"] = 0.0
-            if desired_active:
-                state["night_engaged_at"] = now_ts
-                _log("night mode engaged")
+    # Upstash cost audit -- see NIGHT_MODE_CHECK_INTERVAL_SECONDS.
+    # Real fetch only every NIGHT_MODE_CHECK_INTERVAL_SECONDS; every
+    # other tick reuses state["desired_active"] as-is (already the
+    # thing every branch below actually reads), so the reactive logic
+    # underneath still runs at the full CHECK_INTERVAL_SECONDS cadence,
+    # only the underlying fact refreshes slower.
+    if now_ts >= state["next_night_mode_check_at"]:
+        night_mode = persisted_state.load("night_mode_active", None)
+        state["next_night_mode_check_at"] = now_ts + NIGHT_MODE_CHECK_INTERVAL_SECONDS
+        if night_mode is not None:
+            desired_active = bool(night_mode.get("active"))
+            if state["desired_active"] != desired_active:
+                state["desired_active"] = desired_active
+                state["settled"] = False
+                state["next_check_at"] = 0.0
+                if desired_active:
+                    state["night_engaged_at"] = now_ts
+                    _log("night mode engaged")
 
+    desired_active = state["desired_active"]
+    if desired_active is not None:
         if desired_active:
             # Session bug, live: night mode's own day-window now also
             # engages during the morning wake-preview/overdue span (see
