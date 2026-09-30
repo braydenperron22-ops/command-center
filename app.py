@@ -123,14 +123,19 @@ theme.inject()
 # client-side over a websocket after this script actually executes —
 # so the only reliable "is this script genuinely still running" signal
 # has to come from inside the script itself, on every real execution.
-# Throttled (not every single fragment rerun) since the watchdog only
-# checks every 2 minutes anyway — no reason to spend more Upstash
-# writes than that cadence can even use.
+# Session correction: the first version of this throttled at 45s,
+# which (with the ~75s outer rerun cadence) meant a real Upstash write
+# on nearly every single rerun — ~34,500/month just for this one
+# signal, against the app's own 500k/month cap. The watchdog only ever
+# needs "is this under ~240s old" (see kiosk-watchdog.sh's own
+# APP_ALIVE_MAX_AGE_SECONDS) — writing every 180s instead keeps a wide
+# safety margin under that threshold during normal operation while
+# cutting the write volume by more than half.
 persisted_state.save_throttled(
     "kiosk_watchdog_app_alive",
     time.time(),
     signature="tick",
-    min_interval_seconds=45,
+    min_interval_seconds=180,
 )
 
 # Kiosk hotkeys: press J to pull the jumbotron up on demand, J again to
