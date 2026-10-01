@@ -135,10 +135,21 @@ def _next_commitment(now: datetime) -> dict | None:
     today first (covers the "it's 2am, the shift I'm waking up for is
     technically later today" case) then tomorrow, so this reads
     correctly regardless of what time it is right now when it's
-    called. Skips anything starting at or after WAKE_RELEVANT_CUTOFF_
-    HOUR regardless of which day it falls on — an afternoon commitment
-    is real for commute_reminder's own leave-timer purposes, but never
-    a reason for THIS module to compute an early wake-up/bedtime."""
+    called. Skips anything starting AFTER WAKE_RELEVANT_CUTOFF_HOUR
+    regardless of which day it falls on — an afternoon commitment is
+    real for commute_reminder's own leave-timer purposes, but never a
+    reason for THIS module to compute an early wake-up/bedtime.
+
+    Session report, live: a real noon shift ("Work," 12:00pm) hit this
+    on the boundary — `>= 12` treated exactly-noon the same as the
+    original 2pm-tee-time bug, finding no commitment at all, which
+    collapsed wake_time_for/bedtime_for/screen_sleep_time to None and
+    silently fell back to the OLD flat "TV off 15 min after night mode
+    engages" behavior (run_lg_tv_sync.py's own fallback for exactly
+    this case) instead of the real calculated ~10:30pm bedtime. `> 12`
+    still excludes the 2pm case this cutoff was built for (14 > 12)
+    while including a shift that starts AT noon, which very much still
+    needs a real wake-up/bedtime calculated for it."""
     calendars = st.secrets.get("CALENDARS")
     if not calendars:
         return None
@@ -146,7 +157,7 @@ def _next_commitment(now: datetime) -> dict | None:
         day = (now + timedelta(days=day_offset)).date()
         for event in _shift_events_for(calendars, day):
             start = event["start"]
-            if start.hour >= WAKE_RELEVANT_CUTOFF_HOUR:
+            if start.hour > WAKE_RELEVANT_CUTOFF_HOUR:
                 continue
             now_aware = now.replace(tzinfo=start.tzinfo) if start.tzinfo else now
             if start > now_aware:
