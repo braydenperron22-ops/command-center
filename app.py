@@ -70,6 +70,7 @@ import pages_sports
 import pages_system_health
 import pages_timeline
 import pages_today
+import pages_todoist
 import pages_weather
 import payday_schedule
 import persisted_state
@@ -2337,6 +2338,10 @@ try:
         # treatment pages_timeline.py started with before it graduated
         # into the normal rotation. See pages_net_worth.py.
         page = "net_worth"
+    elif _requested_page == "todoist":
+        # Same "new, not yet lived with" treatment as net_worth just
+        # above. See pages_todoist.py.
+        page = "todoist"
     elif _requested_page == "terminal" and brayden_index.ENABLED:
         page = "terminal"
     elif _requested_page == "brdn" and brayden_index.ENABLED:
@@ -2823,7 +2828,7 @@ _nav_items = "".join(
     f'href="?page={key}">{_PAGE_LABELS[key]}</a>'
     for key in PAGES
 )
-_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES and _requested_page not in ("maintenance", "terminal", "brdn", "net_worth") else ""
+_auto_active = " mobile-nav-item-active" if _requested_page not in PAGES and _requested_page not in ("maintenance", "terminal", "brdn", "net_worth", "todoist") else ""
 # Separate from the PAGES loop above (same reasoning as jumbotron —
 # not part of the normal rotation, so it doesn't belong in that list).
 # Session request: "add a maintenance tab for the mobile version."
@@ -2856,7 +2861,7 @@ st.markdown(
 # route around.
 _picker_open = st.query_params.get("picker") == "open"
 _picker_entries = [(key, _PAGE_LABELS[key]) for key in PAGES] + [
-    ("jumbotron", "Jumbotron"), ("maintenance", "Dev / Maintenance"), ("net_worth", "Net Worth"),
+    ("jumbotron", "Jumbotron"), ("maintenance", "Dev / Maintenance"), ("net_worth", "Net Worth"), ("todoist", "To-Do"),
 ] + (
     # Session request: "Temporarily decommission the BRDN index. It's
     # broken and I don't feel like fixing it." — see brayden_index.
@@ -2873,7 +2878,7 @@ _picker_tiles = "".join(
 # "?": _requested_page already holds the real ?page= value (or None
 # for auto-rotation), same source the mobile-nav's own "Auto" link
 # above is built from.
-_close_href = f"?page={_requested_page}" if _requested_page in PAGES or _requested_page in ("jumbotron", "maintenance", "terminal", "shopping", "net_worth") else "?"
+_close_href = f"?page={_requested_page}" if _requested_page in PAGES or _requested_page in ("jumbotron", "maintenance", "terminal", "shopping", "net_worth", "todoist") else "?"
 st.markdown(
     f'<div class="screen-picker{" screen-picker-open" if _picker_open else ""}">'
     f'<a class="screen-picker-backdrop" href="{_close_href}"></a>'
@@ -2908,7 +2913,7 @@ st.markdown(
 # animation-name always forces a real restart even on the same node,
 # which makes the freshly computed delay actually take effect each
 # time, while the browser still tweens smoothly in between reruns.
-if _requested_page not in PAGES and not _jumbotron_active and not _night_mode_active and page not in ("maintenance", "terminal", "net_worth"):
+if _requested_page not in PAGES and not _jumbotron_active and not _night_mode_active and page not in ("maintenance", "terminal", "net_worth", "todoist"):
     _, _rotation_elapsed, _rotation_page_seconds = _scheduled_page(_rotation_epoch)
     st.session_state["_rotation_bar_tick"] = st.session_state.get("_rotation_bar_tick", 0) + 1
     _bar_variant = "a" if st.session_state["_rotation_bar_tick"] % 2 == 0 else "b"
@@ -4710,6 +4715,8 @@ with st.container(key="page_body"):
         _safe_render(pages_shopping.render)
     elif page == "net_worth":
         _safe_render(pages_net_worth.render)
+    elif page == "todoist":
+        _safe_render(pages_todoist.render)
     elif page == "terminal":
         _safe_render(pages_brdn_terminal.render, now, market_primary_symbol, market_intraday_pct)
     else:
