@@ -70,6 +70,7 @@ import groq_client
 import holidays_client
 import household_reminders
 import market_yf_client
+import net_worth_tracker
 import ntfy_client
 import payday_schedule
 import persisted_state
@@ -895,6 +896,42 @@ def _portfolio_clause(now: datetime) -> tuple[int, str] | None:
     )
 
 
+# Session request: "when there's a new result that comes out, like a
+# new net worth. It should mention it once. So like on the second, it
+# should be allowed to look at it and then no other day. Every month...
+# if there's new data at all, it should be allowed to see it." Keyed
+# off whether THIS specific reported month has already been shown, not
+# a fixed day-of-month — net worth doesn't always get reported exactly
+# on the 1st (see net_worth_tracker.due_badge's own "nags until done"
+# behavior), and the brief generating overnight/early morning means it
+# realistically can't catch a same-day report anyway, only the next
+# morning's run. Loaded once at import, same shape as _gas_tracker
+# above — this module isn't re-exec'd fresh every rerun (only app.py
+# itself is), so the global genuinely persists within one process, and
+# the real guard against a restart losing it is the persisted_state
+# load itself, re-read fresh at the top of every new process.
+_net_worth_shown_month: str | None = persisted_state.load("morning_brief_net_worth_shown_month", None)
+
+
+def _net_worth_clause(now: datetime) -> tuple[int, str] | None:
+    global _net_worth_shown_month
+    latest = net_worth_tracker.latest()
+    if latest is None or latest["month"] == _net_worth_shown_month:
+        return None
+    _net_worth_shown_month = latest["month"]
+    persisted_state.save("morning_brief_net_worth_shown_month", _net_worth_shown_month)
+    change = net_worth_tracker.change_from_previous()
+    if change is None:
+        return (3, f"net worth now ${latest['amount']:,.0f} — first month tracked")
+    amount, pct = change["amount_change"], change["pct_change"]
+    direction = "up" if amount >= 0 else "down"
+    pct_text = f" ({pct:+.1f}%)" if pct is not None else ""
+    return (
+        3,
+        f"net worth {direction} ${abs(amount):,.0f}{pct_text} this month — ${latest['amount']:,.0f} total",
+    )
+
+
 # Same 3 tracked teams as ticker.py's own playoff-odds item — reused
 # here rather than re-deciding which teams count, so this brief and the
 # ticker never quietly disagree about who "the" teams are.
@@ -1611,6 +1648,7 @@ def gather_facts(
         ("td_quarter", _td_quarter_clause, (now,)),
         ("markets", _markets_clause, (now,)),
         ("portfolio", _portfolio_clause, (now,)),
+        ("net_worth", _net_worth_clause, (now,)),
         ("game_today", _game_today_clause, (now,)),
         ("daylight", _daylight_clause, (now, weather)),
         ("holiday", holidays_client.holiday_clause, (now,)),
