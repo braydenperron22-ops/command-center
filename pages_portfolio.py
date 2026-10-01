@@ -31,6 +31,7 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+import net_worth_tracker
 import portfolio_client
 import tiles
 from config import TIMEZONE
@@ -225,6 +226,41 @@ def render() -> None:
                 f'<div class="tile-label">HOLDINGS</div>'
                 f"{holdings_html}"
                 f"</div>",
+                unsafe_allow_html=True,
+            )
+
+        # Session request: "I report my net worth every month... I'd
+        # love to have my net worth show up on one of the pages." Hand-
+        # reported (see net_worth_tracker.py's own docstring for why —
+        # no export/API exists on the phone-app side), so deliberately
+        # a small, separate tile rather than blended into the live
+        # Wealthsimple total above it — different data, different
+        # trust level, shouldn't read as the same live number. Kept to
+        # one compact line (this page's own "fits in the entire frame"
+        # constraint) rather than a full trend card like the real
+        # portfolio history gets.
+        latest = net_worth_tracker.latest()
+        if latest is not None:
+            change = net_worth_tracker.change_from_previous()
+            change_html = ""
+            if change is not None:
+                amt, pct = change["amount_change"], change["pct_change"]
+                direction_class = "market-up" if amt >= 0 else "market-down"
+                sign = "+" if amt >= 0 else ""
+                pct_text = f" ({sign}{pct:.1f}%)" if pct is not None else ""
+                change_html = (
+                    f'<span class="tile-value {direction_class}" style="font-size:1.1rem; margin-left:0.6rem;">'
+                    f'{sign}${amt:,.2f}{pct_text}</span>'
+                )
+            as_of = datetime.strptime(latest["date"], "%Y-%m-%d").strftime("%b %Y")
+            st.markdown(
+                f'<div class="tile">'
+                f'<div class="tile-label">NET WORTH</div>'
+                f'<div class="tile-value-row">'
+                f'<div class="tile-value">${latest["amount"]:,.2f}{change_html}</div>'
+                f'</div>'
+                f'<div class="tile-prev">as of {as_of}, hand-reported</div>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
 

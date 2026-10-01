@@ -42,6 +42,7 @@ import market_internals
 import market_volatility_alert
 import market_yf_client
 import morning_briefing
+import net_worth_tracker
 import news
 import night_mode
 import pages_brayden_index
@@ -3832,6 +3833,21 @@ if weather:
             f'<span class="weather-extra" style="color:#FF375F; '
             f'background:{_badge_bg("#FF375F", 0.22)}; border-color:#FF375F;">'
             f'CPP day {cpp_when}</span>'
+        )
+    # Session request: "I report my net worth every month... set a hero
+    # badge for the first of every month." No "evening tomorrow"
+    # preview (unlike the date-countdown badges above) — this isn't a
+    # single future moment to count down to, it's "due since the 1st,
+    # stays up until you've actually recorded it" (see net_worth_
+    # tracker.due_badge's own docstring), same all-day-until-done shape
+    # as the Laundry badge rather than the morning-only garbage/payday
+    # one. Indigo — every other color already claimed nearby (teal/
+    # green/brown/violet/pink/rose-red/gold/mint/blue) isn't.
+    if net_worth_tracker.due_badge(now.date()):
+        extras.append(
+            f'<span class="weather-extra" style="color:#5E5CE6; '
+            f'background:{_badge_bg("#5E5CE6", 0.22)}; border-color:#5E5CE6;">'
+            f'Track net worth</span>'
         )
     # Session request: "can you include the first day of each season as
     # a hero badge/fact the AI can use" — real astronomical equinox/
