@@ -23,10 +23,12 @@ import commute_reminder
 import cpp_payment_dates
 import dashboard_score
 import data_health
+import dst_schedule
 import ec_forecast
 import email_client
 import fetch_throttle
 import evening_briefing
+import frost_tracker
 import govee_lighting
 import groq_client
 import headline_rotation
@@ -41,6 +43,7 @@ import market_circuit_breaker
 import market_internals
 import market_volatility_alert
 import market_yf_client
+import moon_client
 import morning_briefing
 import net_worth_tracker
 import news
@@ -3793,7 +3796,13 @@ if weather:
     # an all day thing" — extended the same all-day treatment to
     # Groceries too, same reasoning (a whole-day task, not a "done by
     # morning" one like garbage day).
-    _ALL_DAY_REMINDER_LABELS = {"Laundry", "Groceries"}
+    # "Water the P-trap" joins the same all-day treatment once it
+    # became a real recurring biweekly task (see household_reminders.
+    # BIWEEKLY_REMINDERS) rather than a single one-off date — same
+    # "whenever you get to it" reasoning as Laundry/Groceries. No
+    # dedicated color (falls back to the row's own neutral gray below)
+    # — not worth claiming a new hue for a task this infrequent.
+    _ALL_DAY_REMINDER_LABELS = {"Laundry", "Groceries", "Water the P-trap"}
     _reminder_colors = {"Laundry": "#00C7BE", "Groceries": "#007AFF"}
     for reminder in household_reminders.due_reminders(now.date()):
         if reminder["label"] in _ALL_DAY_REMINDER_LABELS:
@@ -4064,6 +4073,53 @@ if weather:
             f'<span class="weather-extra" style="color:#AF52DE; '
             f'background:{_badge_bg("#AF52DE", 0.22)}; border-color:#AF52DE;">'
             f'AI outage</span>'
+        )
+    # Session request: "moon phase, only show if its a full moon or a
+    # moon worth looking at." Same-day flag, not a countdown — see
+    # moon_client.full_moon_tonight's own docstring for why the ~3-day
+    # real "looks full" window, not astral's own much broader bucket.
+    # Pale lavender-silver — reads as "moonlight," distinct from every
+    # other purple/violet already claimed on this row (TD quarter, AI
+    # outage).
+    full_moon = moon_client.full_moon_tonight(now.date())
+    if full_moon is not None:
+        extras.append(
+            f'<span class="weather-extra" style="color:#C7B8EA; '
+            f'background:{_badge_bg("#C7B8EA", 0.22)}; border-color:#C7B8EA;">'
+            f'🌕 Full moon tonight ({full_moon["illumination_pct"]}%)</span>'
+        )
+    # Session request: "first and last frost of the season is good."
+    # Forward-looking (tonight's forecast low, see frost_tracker.py's
+    # own docstring for why) — fires once each, the one real day each
+    # detects. Pale icy cyan — distinct from rain's #64D2FF and black
+    # ice's #0A84FF, both more saturated.
+    first_frost = frost_tracker.first_frost_badge(now.date(), weather.get("forecast_low_c"))
+    if first_frost is not None:
+        extras.append(
+            f'<span class="weather-extra" style="color:#8FD9E8; '
+            f'background:{_badge_bg("#8FD9E8", 0.22)}; border-color:#8FD9E8;">'
+            f'First frost of the season</span>'
+        )
+    last_frost = frost_tracker.last_frost_badge(now.date(), weather.get("forecast_low_c"))
+    if last_frost is not None:
+        last_frost_label = last_frost["date"].strftime("%b %-d")
+        extras.append(
+            f'<span class="weather-extra" style="color:#8FD9E8; '
+            f'background:{_badge_bg("#8FD9E8", 0.22)}; border-color:#8FD9E8;">'
+            f'Last frost was probably {last_frost_label}</span>'
+        )
+    # Session request: "daylight savings time is good" — a real
+    # twice-a-year routine disruption, distinct from the astronomical
+    # season-start badge it sits next to. Same today/evening-tomorrow
+    # gating as every other calendar badge here. Muted bronze-gold —
+    # reads as "clock," distinct from season's brighter #FFD60A.
+    dst = dst_schedule.next_change(now.date())
+    if dst["days_until"] == 0 or (dst["days_until"] == 1 and now.hour >= EVENING_BADGE_HOUR):
+        dst_when = "today" if dst["days_until"] == 0 else "tomorrow"
+        extras.append(
+            f'<span class="weather-extra" style="color:#D4A24C; '
+            f'background:{_badge_bg("#D4A24C", 0.22)}; border-color:#D4A24C;">'
+            f'{dst["label"]} {dst_when}</span>'
         )
     extras_html = f'<div class="weather-extras">{"".join(extras)}</div>' if extras else ""
 

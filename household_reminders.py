@@ -9,13 +9,14 @@ month complexity needed here (unlike recycling): every rule below is
 just "every [weekday(s)]."
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 import waste_schedule
 
 WEDNESDAY = 2
 SATURDAY = 5
 SUNDAY = 6
+MONDAY = 0
 
 # Ordered by label for readability only — due_reminders below re-sorts
 # by actual days_until, since which one is genuinely "next" changes
@@ -28,22 +29,29 @@ REMINDERS = [
     {"label": "Groceries", "weekdays": [SUNDAY]},
 ]
 
-# Genuine one-time household tasks, as opposed to REMINDERS above
-# (every such-and-such weekday, forever) — session request: "set up a
-# reminder for two weeks from now to water the p-trap... do it as a
-# hero badge." Each just needs a "label" and the actual "date" it's
-# due; add more here the same way. Unlike a weekly rule, a one-off
-# reminder has a real expiry — due_reminders below drops it from the
-# list entirely once its date is in the past, rather than it counting
-# down to a negative number forever.
-ONE_OFF_REMINDERS = [
-    {"label": "Water the P-trap", "date": date(2026, 10, 12)},
+# Session correction: originally shipped as a single ONE_OFF_REMINDERS
+# date ("two weeks from now"), but the real request was ongoing —
+# "water the P-trap, biweekly on Monday." Same continuous-cycle shape
+# waste_schedule.py's own recycling fix already uses (a real anchor
+# date + 14-day modulo, immune to month boundaries) rather than a
+# fixed "2nd/4th week" rule — this is the exact same class of bug that
+# one had. Oct 12, 2026 — the original one-off date — is itself a real
+# Monday, so it's kept as the anchor rather than picking a new one.
+BIWEEKLY_REMINDERS = [
+    {"label": "Water the P-trap", "weekday": MONDAY, "anchor": date(2026, 10, 12)},
 ]
 
 
+def _next_biweekly(today: date, weekday: int, anchor: date, interval_days: int = 14) -> date:
+    candidate = waste_schedule.next_weekday(today, weekday)
+    while (candidate - anchor).days % interval_days != 0:
+        candidate += timedelta(days=7)
+    return candidate
+
+
 def due_reminders(today: date) -> list[dict]:
-    """{"label", "days_until"} for every reminder above (recurring and
-    one-off alike), soonest first. Plural (a list, not just "the next
+    """{"label", "days_until"} for every reminder above (weekly and
+    biweekly alike), soonest first. Plural (a list, not just "the next
     one") — app.py's own hero-badge gating (see the garbage/payday
     badges it already shows) checks each independently against
     "today, morning only" / "tomorrow, evening only," and more than
@@ -56,9 +64,11 @@ def due_reminders(today: date) -> list[dict]:
         for r in REMINDERS
     ]
     out.extend(
-        {"label": r["label"], "days_until": (r["date"] - today).days}
-        for r in ONE_OFF_REMINDERS
-        if r["date"] >= today
+        {
+            "label": r["label"],
+            "days_until": (_next_biweekly(today, r["weekday"], r["anchor"]) - today).days,
+        }
+        for r in BIWEEKLY_REMINDERS
     )
     out.sort(key=lambda r: r["days_until"])
     return out
