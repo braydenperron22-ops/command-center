@@ -176,6 +176,23 @@ INDICATORS = {
     ],
     "ca": [
         {"key": "cpi", "label": "CPI (YoY)", "source": "statcan", "vector_id": 41690973, "transform": "yoy", "unit": "%", "release_cadence_days": 30, "good_direction": "down"},
+        # Session request: "Ontario grocery. Or just grocery CPI" —
+        # all-items CPI above blends in shelter/transportation/etc.,
+        # which isn't what actually hits week to week; this is StatCan
+        # table 18-10-0004-01's own "Food purchased from stores" series
+        # for Ontario specifically (vector confirmed live via StatCan's
+        # own getSeriesInfoFromCubePidCoord lookup — geography member
+        # 14 = Ontario, product member 4 = Food purchased from stores).
+        {
+            "key": "grocery_cpi",
+            "label": "Grocery CPI (Ontario, YoY)",
+            "source": "statcan",
+            "vector_id": 41691921,
+            "transform": "yoy",
+            "unit": "%",
+            "release_cadence_days": 30,
+            "good_direction": "down",
+        },
         {"key": "unemployment", "label": "Unemployment Rate", "series_id": "LRUNTTTTCAM156S", "transform": "level", "unit": "%", "release_cadence_days": 30, "good_direction": "down"},
         {"key": "gdp", "label": "Real GDP (YoY)", "series_id": "NGDPRSAXDCCAQ", "transform": "yoy", "unit": "%", "release_cadence_days": 91, "good_direction": "up"},
         {"key": "policy_rate", "label": "BoC Overnight Rate", "series_id": "IRSTCI01CAM156N", "transform": "level", "unit": "%", "release_cadence_days": 49, "good_direction": None},
