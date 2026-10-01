@@ -42,8 +42,22 @@ from config import USER_FIRST_NAME
 # brief has run once." This module only exposes the time-window check
 # and the once-per-day gate — whatever script actually drives the
 # camera decides what "on"/"off" means for the hardware itself.
+#
+# Live bug, confirmed with real numbers: a noon shift (leave_by
+# 11:24am) computes trigger_time at 10:27am — past the old 10am close,
+# so run_spoken_morning_brief.py's own in_window check (the cheap gate
+# checked BEFORE trigger_time is ever computed, see its own Upstash-
+# cost-audit comment for why) would exit before the real trigger moment
+# ever arrived, and the brief would silently never fire that day.
+# Extended to noon — same boundary sleep_tracker.WAKE_RELEVANT_CUTOFF_
+# HOUR already uses elsewhere in this app for "still a real morning
+# commitment worth waking up for," not a new, unrelated number —
+# comfortably covers trigger_time for any shift up to right around
+# noon (TRIGGER_LEAD_MINUTES=57 ahead of leave_by, which itself trails
+# the shift start), consistent with the rest of the app already
+# treating a shift starting well past noon as not morning-relevant.
 WINDOW_START_HOUR = 5
-WINDOW_END_HOUR = 10
+WINDOW_END_HOUR = 12
 
 # Session correction: "change it that the morning brief only plays...
 # on the one hour mark of my first obligation of the day." Was
