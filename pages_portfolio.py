@@ -230,15 +230,15 @@ def render() -> None:
             )
 
         # Session request: "I report my net worth every month... I'd
-        # love to have my net worth show up on one of the pages." Hand-
-        # reported (see net_worth_tracker.py's own docstring for why —
-        # no export/API exists on the phone-app side), so deliberately
-        # a small, separate tile rather than blended into the live
-        # Wealthsimple total above it — different data, different
-        # trust level, shouldn't read as the same live number. Kept to
-        # one compact line (this page's own "fits in the entire frame"
-        # constraint) rather than a full trend card like the real
-        # portfolio history gets.
+        # love to have my net worth show up on one of the pages,"
+        # followed by the real full history to seed it and "build a
+        # chart and like historical stats." Hand-reported (see
+        # net_worth_tracker.py's own docstring for why — no export/API
+        # exists on the phone-app side), so deliberately a separate
+        # tile rather than blended into the live Wealthsimple total
+        # above it — different data, different trust level, shouldn't
+        # read as the same live number.
+        nw_history = net_worth_tracker.history()
         latest = net_worth_tracker.latest()
         if latest is not None:
             change = net_worth_tracker.change_from_previous()
@@ -253,6 +253,58 @@ def render() -> None:
                     f'{sign}${amt:,.2f}{pct_text}</span>'
                 )
             as_of = datetime.strptime(latest["date"], "%Y-%m-%d").strftime("%b %Y")
+
+            # Full-history sparkline — bigger than the quiet 120x36
+            # tiles the TREND column uses for a single range, since this
+            # is the one real multi-month trend line this page has (the
+            # Wealthsimple side only ever shows % change + a small
+            # range sparkline, never the raw dollar history). Same
+            # default tone-color convention as _trend_card just above
+            # (good=trending up since the first entry, bad=down) rather
+            # than a one-off custom palette, so it still reads as part
+            # of this same page.
+            chart_html = ""
+            amounts = [e["amount"] for e in nw_history]
+            if len(amounts) >= 2:
+                tone = "good" if amounts[-1] >= amounts[0] else "bad"
+                chart_html = (
+                    f'<div style="margin:0.6rem 0;">{tiles.sparkline_svg(amounts, tone, width=420, height=90, stroke_width=2.5)}</div>'
+                )
+
+            # Historical stats — the other half of "build... historical
+            # stats," alongside the chart: all-time high/low and the
+            # total change since the very first reported month, same
+            # (reading, label) shape dashboard_score._concerns uses for
+            # its own worst-first list, just good-news here instead.
+            stats_html = ""
+            if len(nw_history) >= 2:
+                first_entry = nw_history[0]
+                high_entry = max(nw_history, key=lambda e: e["amount"])
+                low_entry = min(nw_history, key=lambda e: e["amount"])
+                total_change = latest["amount"] - first_entry["amount"]
+                total_pct = (total_change / first_entry["amount"] * 100) if first_entry["amount"] else None
+                total_sign = "+" if total_change >= 0 else ""
+                total_class = "market-up" if total_change >= 0 else "market-down"
+                first_label = datetime.strptime(first_entry["date"], "%Y-%m-%d").strftime("%b %Y")
+                high_label = datetime.strptime(high_entry["date"], "%Y-%m-%d").strftime("%b %Y")
+                low_label = datetime.strptime(low_entry["date"], "%Y-%m-%d").strftime("%b %Y")
+                # Compact, not full market-metric rows — this is a
+                # secondary summary stacked under an already-full
+                # column (TOTAL VALUE + HOLDINGS tiles above it), not
+                # primary content like the account balance list those
+                # rows were sized for.
+                _stat_style = "font-size:0.85rem; opacity:0.8; display:flex; justify-content:space-between; margin-top:0.2rem;"
+                stats_html = (
+                    f'<div style="{_stat_style}"><span>Since {first_label}</span>'
+                    f'<span class="{total_class}">{total_sign}${total_change:,.2f}'
+                    + (f' ({total_sign}{total_pct:.0f}%)' if total_pct is not None else '')
+                    + '</span></div>'
+                    f'<div style="{_stat_style}"><span>All-time high</span>'
+                    f'<span>${high_entry["amount"]:,.2f} ({high_label})</span></div>'
+                    f'<div style="{_stat_style}"><span>All-time low</span>'
+                    f'<span>${low_entry["amount"]:,.2f} ({low_label})</span></div>'
+                )
+
             st.markdown(
                 f'<div class="tile">'
                 f'<div class="tile-label">NET WORTH</div>'
@@ -260,6 +312,8 @@ def render() -> None:
                 f'<div class="tile-value">${latest["amount"]:,.2f}{change_html}</div>'
                 f'</div>'
                 f'<div class="tile-prev">as of {as_of}, hand-reported</div>'
+                f'{chart_html}'
+                f'{stats_html}'
                 f'</div>',
                 unsafe_allow_html=True,
             )
