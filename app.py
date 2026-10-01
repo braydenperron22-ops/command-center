@@ -3788,13 +3788,15 @@ if weather:
     # thing that comment block just above explicitly says this cutoff
     # is NOT meant for ("only garbage/recycling and payday... those two
     # are the only ones this gates"), a real drift between the
-    # documented intent and what the code actually did. Laundry is a
-    # whole-day task (get to it whenever), not a "done by morning" one
-    # like garbage day — scoped to just this label, not Groceries,
-    # since that's what was actually asked.
+    # documented intent and what the code actually did. Originally
+    # scoped to just Laundry; follow-up request — "groceries should be
+    # an all day thing" — extended the same all-day treatment to
+    # Groceries too, same reasoning (a whole-day task, not a "done by
+    # morning" one like garbage day).
+    _ALL_DAY_REMINDER_LABELS = {"Laundry", "Groceries"}
     _reminder_colors = {"Laundry": "#00C7BE", "Groceries": "#007AFF"}
     for reminder in household_reminders.due_reminders(now.date()):
-        if reminder["label"] == "Laundry":
+        if reminder["label"] in _ALL_DAY_REMINDER_LABELS:
             _reminder_shows = reminder["days_until"] == 0
         else:
             _reminder_shows = (reminder["days_until"] == 0 and now.hour < MORNING_BADGE_CUTOFF_HOUR) or (
@@ -4002,6 +4004,67 @@ if weather:
                 f'background:{_badge_bg("#64D2FF", 0.22)}; border-color:#64D2FF;">'
                 f'{nowcast_text}</span>'
             )
+    # Session follow-up: "the 4 can be upgraded to badges" — market
+    # circuit breaker, storm proximity, kiosk hardware, and AI outage
+    # already feed a toast and/or the headline rotation elsewhere, but
+    # none of them had a standing corner badge the way weather/AQI do.
+    # All four reuse the exact same underlying state their existing
+    # headline/toast surfaces already read, via a small new badge_status-
+    # shaped accessor on each module (market_circuit_breaker.badge_status,
+    # kiosk_hardware.badge_status) or an existing one (weather_alerts_bar.
+    # current_storm_phase, groq_client.outage_episode) — one real fact,
+    # multiple UI surfaces, never able to disagree with each other.
+    #
+    # Pure red — this module's own circuit_breaker_headline_candidate
+    # already uses rotation-critical, its genuine "worse than anything
+    # else on this row" tier; the only badge here with a flat (not
+    # gradient-endpoint) red.
+    cb = market_circuit_breaker.badge_status(now)
+    if cb is not None:
+        pct_str = f"{abs(cb['pct']):.1f}%" if cb["pct"] is not None else "sharp decline"
+        extras.append(
+            f'<span class="weather-extra" style="color:#FF3B30; '
+            f'background:{_badge_bg("#FF3B30", 0.22)}; border-color:#FF3B30;">'
+            f'Circuit breaker: {cb["label"]} ({pct_str})</span>'
+        )
+    # Orange — distinct from the red/blue already used by the storm
+    # toast/lights/headline this mirrors, and from UV/wind's own
+    # gradients which only ever use orange as one endpoint, never a
+    # flat badge color on their own.
+    storm = weather_alerts_bar.current_storm_phase(now)
+    if storm is not None:
+        phase_label = {"approaching": "approaching", "here": "here now", "leaving": "leaving"}[storm["phase"]]
+        extras.append(
+            f'<span class="weather-extra" style="color:#FF9500; '
+            f'background:{_badge_bg("#FF9500", 0.22)}; border-color:#FF9500;">'
+            f'Storm {phase_label}</span>'
+        )
+    # Slate gray — deliberately the one unalarming color on this whole
+    # row. Every other badge here is "notice this," but a hot CPU or a
+    # drive wear warning is a maintenance fact about the box itself,
+    # not something to react to in the moment the way weather/money
+    # badges are — same "needs cleaning, not an ambulance" reasoning
+    # kiosk_hardware.hardware_headline_candidate's own docstring uses
+    # for picking rotation-warning over rotation-critical.
+    hw = kiosk_hardware.badge_status()
+    if hw is not None:
+        extras.append(
+            f'<span class="weather-extra" style="color:#98989D; '
+            f'background:{_badge_bg("#98989D", 0.22)}; border-color:#98989D;">'
+            f'Kiosk: {hw["reading"]}</span>'
+        )
+    # Purple — reads as a distinct "service/tech" signal, not another
+    # money-red or weather-orange. Only the Groq-side outage (ai_status
+    # failing on every tier) counts, same signal groq_client.notify_
+    # if_outage's own phone push already keys off — a transient single
+    # failed call isn't "an outage," a sustained one is.
+    ai_outage = groq_client.outage_episode()
+    if ai_outage.get("since") is not None:
+        extras.append(
+            f'<span class="weather-extra" style="color:#AF52DE; '
+            f'background:{_badge_bg("#AF52DE", 0.22)}; border-color:#AF52DE;">'
+            f'AI outage</span>'
+        )
     extras_html = f'<div class="weather-extras">{"".join(extras)}</div>' if extras else ""
 
     weather_block = f"""<div class="hero-weather">

@@ -202,3 +202,15 @@ def circuit_breaker_headline_candidate(now: datetime) -> dict | None:
     pct_str = f"{abs(pct):.1f}%" if pct is not None else "a real, sharp decline"
     text = f"Circuit Breaker: {label} triggered today — S&P 500 down {pct_str}"
     return {"text": text, "css_class": "rotation-critical", "target_ms": None, "template": "{}", "zero_text": None}
+
+
+def badge_status(now: datetime) -> dict | None:
+    """{"label", "pct"} for app.py's own hero-row badge — session
+    request: "the 4 can be upgraded to badges." Same underlying _state
+    as circuit_breaker_headline_candidate above (one real event, two UI
+    surfaces), so the two can never disagree about whether one
+    triggered today."""
+    _today_reset(now)
+    if _state["level"] <= 0:
+        return None
+    return {"label": _LEVEL_LABELS[_state["level"]], "pct": _state.get("pct")}

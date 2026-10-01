@@ -240,6 +240,23 @@ def hardware_headline_candidate(now) -> dict | None:
     return {"text": text, "css_class": "rotation-warning", "target_ms": None, "template": "{}", "zero_text": None}
 
 
+def badge_status() -> dict | None:
+    """{"reading", "advice", "count"} for app.py's own hero-row badge —
+    session request: "the 4 can be upgraded to badges." Same underlying
+    _concerns() as hardware_headline_candidate above, worst-first,
+    just the raw (reading, advice) pair instead of a prebuilt sentence
+    — the badge's own shorter format doesn't want the full "(also ...)"
+    tail a headline can afford."""
+    perf = load_perf_stats()
+    if perf is None:
+        return None
+    concerns = _concerns(perf, load_boot_status(), load_smart_status())
+    if not concerns:
+        return None
+    reading, advice = concerns[0]
+    return {"reading": reading, "advice": advice, "count": len(concerns)}
+
+
 # Session request: "I want a toast alert... X amount of devices just
 # came online, or people are leaving." The kiosk's own writer script
 # already computes count/delta every 2-minute cycle (see its own
