@@ -196,7 +196,27 @@ INDICATORS = {
         {"key": "unemployment", "label": "Unemployment Rate", "series_id": "LRUNTTTTCAM156S", "transform": "level", "unit": "%", "release_cadence_days": 30, "good_direction": "down"},
         {"key": "gdp", "label": "Real GDP (YoY)", "series_id": "NGDPRSAXDCCAQ", "transform": "yoy", "unit": "%", "release_cadence_days": 91, "good_direction": "up"},
         {"key": "policy_rate", "label": "BoC Overnight Rate", "series_id": "IRSTCI01CAM156N", "transform": "level", "unit": "%", "release_cadence_days": 49, "good_direction": None},
-        {"key": "yield_10y", "label": "10-Year Yield", "series_id": "IRLTLT01CAM156N", "transform": "level", "unit": "%", "release_cadence_days": 30, "good_direction": None},
+        # Session request: "is there already a ten-year yield for
+        # Canada... that's the rate the markets look at." There was
+        # one already (FRED series IRLTLT01CAM156N above) but confirmed
+        # live it's an OECD monthly average, two months stale (showing
+        # August's reading on October 1st) — not what "the rate markets
+        # watch" actually means. Switched to the Bank of Canada's own
+        # DAILY benchmark bond yield instead (see boc_client.py's own
+        # docstring) — real day-to-day movement, published directly by
+        # the source, no API key needed. release_cadence_days dropped
+        # to 1 to match the real daily cadence (was 30, inherited from
+        # the old monthly FRED mirror).
+        {
+            "key": "yield_10y",
+            "label": "10-Year Yield",
+            "source": "boc",
+            "series_code": "BD.CDN.10YR.DQ.YLD",
+            "transform": "level",
+            "unit": "%",
+            "release_cadence_days": 1,
+            "good_direction": None,
+        },
     ],
 }
 

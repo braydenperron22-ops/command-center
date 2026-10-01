@@ -4,6 +4,7 @@ import time
 
 import streamlit as st
 
+import boc_client
 import fetch_throttle
 import fred_client
 import market_client
@@ -73,6 +74,16 @@ def fetch_readings(fred_api_key: str) -> tuple[dict, dict]:
                 reading = fetch_throttle.run_bounded(
                     f"home_reading_{c}_{ind['key']}",
                     lambda ind=ind: statcan_client.build_indicator_reading(ind["vector_id"], ind["transform"]),
+                    _budget_start, budget_seconds=10, default=None,
+                )
+            elif ind.get("source") == "boc":
+                # Session request: a real ten-year yield "that's the
+                # rate the markets look at" — see boc_client.py's own
+                # docstring for why this needed its own source instead
+                # of reusing the existing FRED-mirrored yield_10y entry.
+                reading = fetch_throttle.run_bounded(
+                    f"home_reading_{c}_{ind['key']}",
+                    lambda ind=ind: boc_client.build_indicator_reading(ind["series_code"], ind["transform"]),
                     _budget_start, budget_seconds=10, default=None,
                 )
             else:
