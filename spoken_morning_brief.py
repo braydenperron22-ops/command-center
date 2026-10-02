@@ -206,6 +206,7 @@ def mark_delivered(now: datetime) -> None:
 
 
 def _prompt(
+    now: datetime,
     facts: list[str],
     terse: bool = False,
     holidays_block: str = "",
@@ -213,6 +214,8 @@ def _prompt(
     environment_block: str = "",
     learned_notes_block: str = "",
 ) -> str:
+    weekday = now.strftime("%A")
+    today_date = now.strftime("%B %-d, %Y")
     facts_block = "\n".join(f"- {f}" for f in facts)
     # Session request: "add other facts to it, so it has a bigger pool
     # to pick from, so the brief is higher quality." Reuses the exact
@@ -412,6 +415,32 @@ def _prompt(
         f"{length_instruction}\n\n"
         f"Open with a greeting (\"Good morning, sir.\") and never invent anything beyond what's "
         f"given.\n\n"
+        # Session report, live: the brief called today "Wednesday" when
+        # it was actually Friday — traced to this exact rewrite's own
+        # new "like most Wednesdays" framing plus the learned note's
+        # real "Wednesday morning gym sessions... established" pattern
+        # text: today's real gym+shift combo happened to resemble that
+        # pattern, and the model borrowed the PATTERN's own weekday
+        # label as if it were today's actual weekday instead of treating
+        # the real calendar date as the one authoritative source. Same
+        # bug class morning_briefing._ai_headline_and_body already
+        # fixed once for its own history_block (see that prompt's
+        # "Today is {weekday} — a real, given fact, not a guess" — this
+        # brief never had the equivalent). User's own stated rule,
+        # verbatim: "never infer the current day of the week from my
+        # recurring schedule or routine... the calendar date is
+        # authoritative, my recurring patterns are contextual, not
+        # evidence of what day it is."
+        f"Today's real weekday is {weekday}, the real date is {today_date} — given, verified "
+        f"facts from the actual system clock, never something to infer from anything else below. "
+        f"The long-term notes and any historical pattern may themselves mention a weekday (\"this "
+        f"usually happens on Wednesdays\") — that is real historical context about WHEN a pattern "
+        f"usually occurs, never evidence of what day today actually is, even when today's own "
+        f"schedule happens to resemble that pattern closely. If you name a weekday anywhere in "
+        f"this response to describe today, it must be exactly {weekday} — never a day borrowed "
+        f"from a pattern description. When referencing a historical routine, say it without "
+        f"naming its weekday at all (\"like you usually do,\" \"same as your typical rhythm\") "
+        f"unless that pattern's own weekday happens to genuinely equal {weekday}.\n\n"
         f"{background_sections}"
         f"What you've reviewed this morning:\n{facts_block}\n\n"
         f"Respond with only the spoken paragraph itself, nothing else."
@@ -436,7 +465,7 @@ def generate(now: datetime, weather: dict | None, air_quality: dict | None) -> s
     if not facts:
         return None
     if terse:
-        prompt = _prompt(facts, terse=True)
+        prompt = _prompt(now, facts, terse=True)
     else:
         # Best-effort — a failed holiday/season/environment fetch costs
         # only this one optional background section, never the brief
@@ -459,7 +488,7 @@ def generate(now: datetime, weather: dict | None, air_quality: dict | None) -> s
         except Exception:
             learned_notes_block = ""
         prompt = _prompt(
-            facts, terse=False,
+            now, facts, terse=False,
             holidays_block=holidays_block, seasons_block=seasons_block, environment_block=environment_block,
             learned_notes_block=learned_notes_block,
         )
