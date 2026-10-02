@@ -29,7 +29,7 @@ fully testable today, independent of that gap, the same "prove what
 you can before the hardware arrives" approach this app's own voice/
 package already took with --text-mode."""
 
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 import commute_reminder
 import gemini_client
@@ -219,18 +219,39 @@ def _prompt(facts: list[str], terse: bool = False) -> str:
         if terse else
         "Write it as 3 to 5 short, complete sentences — real full stops for natural spoken "
         "pauses between thoughts, not one long comma-spliced run-on stapled together. This is "
-        "the first thing he hears walking into the room — keep it brief enough to actually "
-        "listen to, not a recitation of every fact below.\n\n"
+        "the first thing he hears walking into the room, over in about 15-30 seconds — keep it "
+        "brief enough to actually listen to, not a recitation of every fact below.\n\n"
+        # Session report: "it kind of reads like a shopping list right
+        # now... I want it to connect the dots legitimately... doesn't "
+        # read off as a checklist." The old instructions below ("pick 3
+        # or 4 facts... move on... round it out") describe a sequence
+        # of facts taken one at a time, which is exactly what produces
+        # that checklist feel even with full sentences and real connecting
+        # words — the fix is telling it to actually relate facts to each
+        # other, not just to pick good ones and recite them in order.
+        "This has to sound like a person actually talking, not a checklist read out loud one "
+        "item at a time. Weave facts together wherever a real connection exists between them — "
+        "the weather affecting how the commute or the day will feel, a packed schedule meaning "
+        "less time tonight, anything that genuinely relates — instead of stating them side by "
+        "side with nothing tying them together. One flowing thought beats a list of unconnected "
+        "facts, even a short one. Still never invent a connection that isn't actually there — a "
+        "real one beats a forced one, same rule as everywhere else.\n\n"
         "Pick whichever 3 or 4 facts genuinely matter most for his day. Something genuinely "
         "urgent — an active weather/road alert, a real commute delay — earns the opening line. "
         "On an ordinary day, though, don't default to opening on the commute and closing on "
         "the schedule (or vice versa): those are two facts among several, not bookends with "
-        "everything else sandwiched in between. Once you've covered whatever work-related "
-        "facts genuinely matter, move on and let something else — weather, a birthday, "
-        "tonight's game, whatever's actually there — round the brief out; don't circle back "
-        "to another commute/schedule mention as the closing line just because the day happens "
-        "to involve work. It's fine, and better, to leave less important facts out entirely "
-        "rather than mention everything."
+        "everything else sandwiched in between. It's fine, and better, to leave less important "
+        "facts out entirely rather than mention everything.\n\n"
+        # Session report: "I want it to have a clean send-off. Whenever
+        # it's done now, it just stops talking... end the conversation
+        # off in a way that feels natural but not overly supportive or
+        # corny." A real gap, not a style note — the prompt never asked
+        # for a close at all, so it had nothing to end on but whichever
+        # fact happened to be picked last.
+        "Close with one short, natural sign-off — something like \"Have a good one\" or \"Enjoy "
+        "your day\" — the kind of thing someone says on their way out the door. Not warm or "
+        "supportive (no \"you've got this,\" no \"I believe in you,\" nothing corny) — just a "
+        "plain, brief close, not a pep talk."
     )
     return (
         f"You are {USER_FIRST_NAME}'s personal assistant, greeting him out loud the moment he "
