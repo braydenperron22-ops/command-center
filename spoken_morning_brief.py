@@ -217,10 +217,21 @@ def _prompt(facts: list[str], terse: bool = False) -> str:
         "pleasantries beyond the greeting itself, no editorializing, nothing beyond what's "
         "strictly useful to know before he leaves."
         if terse else
-        "Write it as 3 to 5 short, complete sentences — real full stops for natural spoken "
-        "pauses between thoughts, not one long comma-spliced run-on stapled together. This is "
-        "the first thing he hears walking into the room, over in about 15-30 seconds — keep it "
-        "brief enough to actually listen to, not a recitation of every fact below.\n\n"
+        # Session report: "my spoken brief was short as fuck... I want
+        # it to be like a podcast of my day... I want to be able to
+        # listen to it. I want it to be at least a minute or two long
+        # so I can listen to it while I'm making breakfast." The old
+        # "3 to 5 short sentences... 15-30 seconds" target was a tight
+        # bulletin by design — directly the opposite of what's wanted
+        # now that there's real time to fill (breakfast), not a reason
+        # to rush. Stupidly-early mode (terse=True, above) is
+        # unchanged on purpose — still short for an actually rushed
+        # morning; this length change is the normal-morning case only.
+        "Write this as a genuine 1 to 2 minutes of natural spoken audio — roughly 180 to 320 "
+        "words. This plays while he's making breakfast; there's real time to fill, this is not "
+        "a quick bulletin. Still short, complete sentences throughout — real full stops for "
+        "natural spoken pauses between thoughts, never one long comma-spliced run-on — just "
+        "more of them than a tight summary would use.\n\n"
         # Session report: "it kind of reads like a shopping list right
         # now... I want it to connect the dots legitimately... doesn't "
         # read off as a checklist." The old instructions below ("pick 3
@@ -234,14 +245,18 @@ def _prompt(facts: list[str], terse: bool = False) -> str:
         "the weather affecting how the commute or the day will feel, a packed schedule meaning "
         "less time tonight, anything that genuinely relates — instead of stating them side by "
         "side with nothing tying them together. One flowing thought beats a list of unconnected "
-        "facts, even a short one. Still never invent a connection that isn't actually there — a "
-        "real one beats a forced one, same rule as everywhere else.\n\n"
-        "Pick whichever 3 or 4 facts genuinely matter most for his day. Something genuinely "
-        "urgent — an active weather/road alert, a real commute delay — earns the opening line. "
-        "On an ordinary day, though, don't default to opening on the commute and closing on "
-        "the schedule (or vice versa): those are two facts among several, not bookends with "
-        "everything else sandwiched in between. It's fine, and better, to leave less important "
-        "facts out entirely rather than mention everything.\n\n"
+        "facts. Still never invent a connection that isn't actually there — a real one beats a "
+        "forced one, same rule as everywhere else.\n\n"
+        "Cover the real shape of the whole day, not just the 2 or 3 biggest things — with this "
+        "much room, walk through what's actually ahead (the commute, the schedule, the weather, "
+        "anything else genuinely relevant below) the way someone would actually fill you in on "
+        "their own day, not a tight highlight reel and not an exhaustive recitation of every "
+        "fact either — real editorial judgment on what earns a mention, just a much lower bar "
+        "for it than a short bulletin would use. Something genuinely urgent — an active weather/ "
+        "road alert, a real commute delay — earns the opening line. On an ordinary day, though, "
+        "don't default to opening on the commute and closing on the schedule (or vice versa): "
+        "those are two facts among several, not bookends with everything else sandwiched in "
+        "between.\n\n"
         # Session report: "I want it to have a clean send-off. Whenever
         # it's done now, it just stops talking... end the conversation
         # off in a way that feels natural but not overly supportive or
@@ -304,8 +319,13 @@ def generate(now: datetime, weather: dict | None, air_quality: dict | None) -> s
     # shared key would risk handing back a stale terse answer once it's
     # no longer stupidly early, or vice versa.
     feature_key = "spoken_morning_brief_terse" if terse else "spoken_morning_brief"
+    # 500, not 250: the full brief now targets 180-320 words (~240-425
+    # tokens at English's usual ~1.33 tokens/word) — 250 was sized for
+    # the old 3-5-sentence bulletin and would have hard-clipped the new
+    # podcast-length target mid-sentence. terse's 90 is untouched, that
+    # mode's own target didn't change.
     text = gemini_client.generate_periodic(
-        feature_key, refresh_seconds=4 * 3600, prompt=prompt, temperature=0.6, max_output_tokens=90 if terse else 250
+        feature_key, refresh_seconds=4 * 3600, prompt=prompt, temperature=0.6, max_output_tokens=90 if terse else 500
     )
     if text is None:
         return None
