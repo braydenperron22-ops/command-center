@@ -33,8 +33,10 @@ from datetime import datetime, timedelta
 
 import commute_reminder
 import gemini_client
+import holidays_client
 import morning_briefing
 import persisted_state
+import seasons_client
 import sleep_tracker
 from config import USER_FIRST_NAME
 
@@ -203,8 +205,53 @@ def mark_delivered(now: datetime) -> None:
         persisted_state.save(_LAST_DELIVERED_KEY, identity)
 
 
-def _prompt(facts: list[str], terse: bool = False) -> str:
+def _prompt(
+    facts: list[str],
+    terse: bool = False,
+    holidays_block: str = "",
+    seasons_block: str = "",
+    environment_block: str = "",
+) -> str:
     facts_block = "\n".join(f"- {f}" for f in facts)
+    # Session request: "add other facts to it, so it has a bigger pool
+    # to pick from, so the brief is higher quality." Reuses the exact
+    # same 3 real, already-computed background sources morning_
+    # briefing._ai_headline_and_body already gives the on-screen brief
+    # (same wording, too — already proven there) — this brief never
+    # received them before, drawing only on gather_facts' own clause
+    # list. None of the three fire unconditionally (unlike moon phase,
+    # which is why this needed its own fix): a holiday only matters
+    # near one, a season change only around an equinox/solstice, an
+    # environment trend only when the real numbers show a genuine
+    # multi-day direction — real, naturally-varying texture, not daily
+    # filler. Skipped entirely in terse mode, same as this brief's
+    # whole background-context philosophy there.
+    background_sections = (
+        ""
+        if terse
+        else (
+            (
+                f"Upcoming Canadian statutory holidays, for context — worth naming whenever it's "
+                f"genuinely relevant to something below, not only the obvious long-weekend case: "
+                f"{holidays_block}\n\n"
+                if holidays_block
+                else ""
+            )
+            + (
+                f"Upcoming season change, for context — worth naming whenever it actually connects "
+                f"to something below, not only on the change day itself: {seasons_block}\n\n"
+                if seasons_block
+                else ""
+            )
+            + (
+                f"Recent environmental trend data, for context — actively worth naming whenever "
+                f"there's a real multi-day direction in it, not only when it's dramatic: "
+                f"{environment_block}\n\n"
+                if environment_block
+                else ""
+            )
+        )
+    )
     length_instruction = (
         # terse=True: facts is already pre-filtered to just the
         # essential categories (see _ESSENTIAL_FACT_NAMES) — this only
@@ -267,14 +314,29 @@ def _prompt(facts: list[str], terse: bool = False) -> str:
         "side with nothing tying them together. One flowing thought beats a list of unconnected "
         "facts. Still never invent a connection that isn't actually there — a real one beats a "
         "forced one, same rule as everywhere else.\n\n"
-        "Use essentially everything in the real facts given below, not just the 2 or 3 biggest "
-        "things — with this much room to fill, there's no reason to leave something out just "
-        "because it's minor. Walk through the day the way someone would actually fill you in on "
-        "it, covering the commute, the schedule, the weather, and anything else genuinely there. "
-        "Something genuinely urgent — an active weather/road alert, a real commute delay — earns "
-        "the opening line. On an ordinary day, though, don't default to opening on the commute "
-        "and closing on the schedule (or vice versa): those are two facts among several, not "
-        "bookends with everything else sandwiched in between.\n\n"
+        # Session follow-up, right after "use essentially everything"
+        # shipped: "it doesn't have to mention the moon phase every
+        # time... I want you to add other facts to it, so it has a
+        # bigger pool to pick from, so the brief is higher quality."
+        # "Use essentially everything" was the wrong instruction for a
+        # fact that's technically available every single day (the moon
+        # phase, always computable) — it forced a daily mention whether
+        # or not it actually added anything that morning. Replaced with
+        # real editorial judgment over a bigger pool instead: the extra
+        # background sections below (holidays/season/environment
+        # trends) exist specifically to make that pool bigger and more
+        # VARIED day to day, not to all be stapled in every time either.
+        "You have a rich pool of real facts and background below — use genuine editorial "
+        "judgment on which ones are actually worth including today, not an obligation to mention "
+        "every single one every single morning. Something that's technically true every day "
+        "(today's moon phase, say) doesn't need a line just because it's available — include it "
+        "when it's genuinely interesting or connects to something else, skip it on a day it "
+        "doesn't add anything. Walk through the day the way someone would actually fill you in "
+        "on it, covering the commute, the schedule, the weather, and whatever else below is "
+        "actually worth knowing. Something genuinely urgent — an active weather/road alert, a "
+        "real commute delay — earns the opening line. On an ordinary day, though, don't default "
+        "to opening on the commute and closing on the schedule (or vice versa): those are two "
+        "facts among several, not bookends with everything else sandwiched in between.\n\n"
         # Session report, same follow-up: "fun fact about the moon, fun
         # fact about the world, fun facts about whatever... anything
         # that can bring value." Real moon-phase data is now one of the
@@ -314,6 +376,7 @@ def _prompt(facts: list[str], terse: bool = False) -> str:
         f"{length_instruction}\n\n"
         f"Open with a greeting (\"Good morning, sir.\") and never invent anything beyond what's "
         f"given.\n\n"
+        f"{background_sections}"
         f"What you've reviewed this morning:\n{facts_block}\n\n"
         f"Respond with only the spoken paragraph itself, nothing else."
     )
@@ -336,7 +399,29 @@ def generate(now: datetime, weather: dict | None, air_quality: dict | None) -> s
     facts = morning_briefing.gather_facts(now, weather, air_quality, only=_ESSENTIAL_FACT_NAMES if terse else None)
     if not facts:
         return None
-    prompt = _prompt(facts, terse=terse)
+    if terse:
+        prompt = _prompt(facts, terse=True)
+    else:
+        # Best-effort — a failed holiday/season/environment fetch costs
+        # only this one optional background section, never the brief
+        # itself (same "degrade, don't block" shape as every other
+        # try/except in this app's own background-context plumbing).
+        try:
+            holidays_block = holidays_client.upcoming_holidays_block(now)
+        except Exception:
+            holidays_block = ""
+        try:
+            seasons_block = seasons_client.upcoming_seasons_block(now)
+        except Exception:
+            seasons_block = ""
+        try:
+            environment_block = morning_briefing.environment_trends_block()
+        except Exception:
+            environment_block = ""
+        prompt = _prompt(
+            facts, terse=False,
+            holidays_block=holidays_block, seasons_block=seasons_block, environment_block=environment_block,
+        )
     # The real "only once per morning" gate is already_delivered_today/
     # mark_delivered above, which whatever drives the camera is expected
     # to check before calling this at all and record right after

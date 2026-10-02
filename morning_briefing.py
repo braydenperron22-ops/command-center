@@ -1471,7 +1471,7 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
     # morning brief a little bit... if it's appropriate, it should be
     # shown... the gas price is dropping off within the last ten days
     # by a little bit, I know it's not within our ten cent pattern."
-    # _environment_trends_block was built for _update_learned_notes'
+    # environment_trends_block was built for _update_learned_notes'
     # own private note (see that function's own docstring) — same real
     # data, now also offered here as optional background, same "worth
     # a line, most days not, never forced" spirit as holidays_section
@@ -1482,7 +1482,7 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
     # still be worth the one synthesized line here even when it never
     # clears that bar, as long as it's a genuine direction in the real
     # numbers below, not invented.
-    environment_block = _environment_trends_block()
+    environment_block = environment_trends_block()
     environment_section = (
         f"Recent environmental trend data, for context — actively worth naming whenever there's a "
         f"real multi-day direction in it, not only when it's dramatic: {environment_block}\n\n"
@@ -2223,7 +2223,16 @@ _GAS_TREND_LOOKBACK_READINGS = 8  # ~2 months of the weekly government CSV
 _MARKET_TREND_LOOKBACK_DAYS = 10  # trading days of day-over-day change
 
 
-def _environment_trends_block() -> str:
+def environment_trends_block() -> str:
+    """Public (not underscore-prefixed) — session request: "add other
+    facts to it, so it has a bigger pool to pick from," for
+    spoken_morning_brief.py specifically. Raw, uninterpreted multi-day
+    readings (real daily highs, market day-over-day %, gas price
+    history) — deliberately not pre-summarized into "a trend," same
+    reasoning as this function's own callers below: only worth naming
+    when there's a genuine multi-day direction in the real numbers, a
+    judgment the AI prompt wrapping this makes itself rather than this
+    function pre-deciding it."""
     lines = []
 
     highs = weather_records_client.recent_daily_highs()
@@ -2366,7 +2375,7 @@ def _update_learned_notes(now: datetime, facts: list[str]) -> None:
     # how does that impact my portfolio... are gas prices running hot
     # or slowing down." Same NOT-filtered reasoning as financial_section
     # — real recent readings, not a single day's snapshot.
-    environment_block = _environment_trends_block()
+    environment_block = environment_trends_block()
     environment_section = (
         f"Environmental trend data, for noticing genuine multi-day streaks only (a real warming/"
         f"cooling run, a market win/loss streak, gas prices actually rising or easing over time) — "
