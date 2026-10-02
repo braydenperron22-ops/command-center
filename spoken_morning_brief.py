@@ -392,8 +392,24 @@ def _prompt(
         f"\"I've reviewed your commute,\" \"I can confirm,\" \"you have,\" never a flat, "
         f"impersonal list. Calm, formal, genuinely dutiful — think a butler or an executive "
         f"assistant who takes real pride in being thorough, not a hype man and not sarcastic. "
-        f"This will be spoken aloud by a text-to-speech voice, not displayed as text: real "
-        f"digits not spelled-out numbers, no headers, no bullet points, no markdown.\n\n"
+        # Session report, live: "all of the numbers in the brief, can
+        # you have them written out as text? And instead of like C, can
+        # you use Celsius? Because it is confused. It's very confused."
+        # Reversed from the original "real digits not spelled-out
+        # numbers" instruction — that rule was written for a kiosk
+        # reading itself on-screen (a different, text-only feature),
+        # never re-examined once this became something a real TTS voice
+        # has to actually pronounce. Piper's phonemizer is live-
+        # confirmed to stumble on bare digits/symbols; spelling
+        # everything out in full words sidesteps that instead of
+        # relying on Piper's own number-to-speech handling to get it
+        # right.
+        f"This will be spoken aloud by a text-to-speech voice that sometimes stumbles over "
+        f"numerals and abbreviated units, not displayed as text: spell every number out in words "
+        f"(\"fifteen\" not \"15,\" \"seven oh seven\" not \"7:07\"), and spell out every unit in "
+        f"full (\"degrees Celsius\" not \"°C\" or \"C,\" \"percent\" not \"%,\" \"cents\" not "
+        f"\"¢,\" \"dollars\" not \"$\") — no digits, no symbols, no abbreviations anywhere in "
+        f"the response. No headers, no bullet points, no markdown.\n\n"
         f"{length_instruction}\n\n"
         f"Open with a greeting (\"Good morning, sir.\") and never invent anything beyond what's "
         f"given.\n\n"
