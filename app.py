@@ -4481,6 +4481,15 @@ try:
 except Exception:
     pass
 
+# Session request: "the dashboard checks early on in the week...
+# whether I work till 7 or 8 on Thursday... let me know I have to text
+# Paul... run until April." Own once-per-ISO-week dedup, October-April
+# only, same shape as every push above.
+try:
+    commute_reminder.maybe_push_hockey_conflict_check(now)
+except Exception:
+    pass
+
 # Session request: "a little ticker somewhere on the main page
 # regardless of what page I'm on... visible from across the room, but
 # not obstructive... even on the night page." A plain unconditional

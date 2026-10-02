@@ -941,6 +941,92 @@ def maybe_push_new_gym_session(now: datetime) -> None:
                 pass
 
 
+# Session request: "we need to make a rule where the dashboard checks
+# early in the week... ideally like Sunday night... whether I work
+# till 7 or 8 on Thursday. If I work till 7 or 8, let me know that I
+# have to text Paul to tell him I will not be at hockey. This
+# automation should run until April." Thursday hockey with Paul isn't
+# a calendar event the way "Saturday Night Hockey" is (see
+# _destination_for_shift's own comment on that one) — nothing to read
+# a location or even an existence check off of — so this reasons about
+# the conflict directly from the real Thursday work shift instead.
+# Seasonal on purpose: October through April is the real season the
+# user named, the rest of the year this is a correct no-op, not a gap.
+HOCKEY_SEASON_START_MONTH = 10  # October
+HOCKEY_SEASON_END_MONTH = 4  # April, inclusive
+# "If I work till 7 or 8" — the user's own stated disqualifying
+# threshold, taken literally rather than guessing at hockey's real
+# start time (never given, and not needed when the user already named
+# the exact shift-end hours that are a problem).
+HOCKEY_CONFLICT_HOUR = 19  # 7pm
+_HOCKEY_CONFLICT_CHECKED_KEY = "hockey_conflict_checked_weeks"
+_hockey_conflict_checked_weeks: list[str] = persisted_state.load(_HOCKEY_CONFLICT_CHECKED_KEY, [])
+# Comfortably over a year of weekly checks — a "have I already checked
+# this ISO week" list, not meaningful history, same flat-cap shape as
+# every other persisted dedup list in this app.
+_HOCKEY_CONFLICT_CHECKED_CAP = 60
+
+
+def _in_hockey_season(now: datetime) -> bool:
+    return HOCKEY_SEASON_START_MONTH <= now.month or now.month <= HOCKEY_SEASON_END_MONTH
+
+
+def maybe_push_hockey_conflict_check(now: datetime) -> None:
+    """Once per week, Sunday, October through April only: looks ahead
+    to the coming Thursday's real work shift (if any) and pushes a
+    reminder to text Paul when that shift runs late enough to conflict
+    with hockey. Thursday's real end time is start + SHIFT_ASSUMED_
+    LENGTH_HOURS — the same real-expected-end-time substitute every
+    other feature in this file already trusts over the calendar's own
+    fake "end" field (see that constant's own comment), not a separate
+    guess for this one feature.
+
+    Dedup is per ISO week, not per calendar day — this only needs to
+    run once a week regardless of which day it actually lands on, so a
+    missed Sunday (the kiosk down, say) still catches up the next time
+    this runs that same week instead of silently skipping it."""
+    if not _in_hockey_season(now) or now.weekday() != 6:  # Sunday
+        return
+    week_key = now.strftime("%G-W%V")
+    if week_key in _hockey_conflict_checked_weeks:
+        return
+
+    calendars = st.secrets.get("CALENDARS")
+    if not calendars:
+        return
+    thursday = now.date() + timedelta(days=4)  # today is Sunday, checked above
+    try:
+        events = calendar_client.todays_events(calendars, thursday)
+    except Exception:
+        return
+
+    # Claimed once the real calendar fetch has actually succeeded, same
+    # "don't mark a check done on a fetch that never really happened"
+    # reasoning as every other dedup-after-a-real-read in this file —
+    # a transient calendar failure this Sunday shouldn't cost the whole
+    # week's only check.
+    _hockey_conflict_checked_weeks.append(week_key)
+    del _hockey_conflict_checked_weeks[:-_HOCKEY_CONFLICT_CHECKED_CAP]
+    persisted_state.save(_HOCKEY_CONFLICT_CHECKED_KEY, _hockey_conflict_checked_weeks)
+
+    shift = next(
+        (e for e in events if e["summary"] == "Work" and not e["all_day"] and not e["show_end_time"]),
+        None,
+    )
+    if shift is None:
+        return
+    shift_end = shift["start"] + timedelta(hours=SHIFT_ASSUMED_LENGTH_HOURS)
+    if shift_end.hour < HOCKEY_CONFLICT_HOUR:
+        return
+
+    end_str = shift_end.strftime("%-I:%M %p")
+    message = f"Thursday's shift runs until ~{end_str} — text Paul you won't make hockey"
+    try:
+        ntfy_client.send(title="Hockey conflict this Thursday", message=message, priority="default", tags="ice_hockey_stick_and_puck")
+    except Exception:
+        pass
+
+
 def _leave_by_for_shift(shift: dict) -> datetime | None:
     """leave_by for one specific shift event — None if the commute
     time to its destination isn't available.
