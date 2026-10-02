@@ -638,7 +638,7 @@ def maybe_push_wind_down(now: datetime) -> None:
 # that same near-top billing, not the effort of a whole new renderer/
 # JS function pair for one alert.
 _WAKE_CHIME_PUSHED_KEY = "sleep_wake_chime_pushed_dates"
-_wake_chime_pushed_dates: list[str] = persisted_state.load(_WAKE_CHIME_PUSHED_KEY, [])
+_wake_chime_fired_keys: list[str] = persisted_state.load(_WAKE_CHIME_PUSHED_KEY, [])
 # Fires in a short window right AT the real get-up time, not before it
 # — this is the actual "wake up now" moment, unlike the 60-minute-ahead
 # wake_preview window that just brightens the TV. Small and
@@ -695,10 +695,10 @@ def maybe_wake_chime_alert(now: datetime) -> dict | None:
     """Call once per rerun (app.py's _gather_new_alerts, same
     append-to-the-queue shape as commute_reminder.check_car_prep) — a
     single spoken chime in the WAKE_CHIME_GRACE_MINUTES window right at
-    commute_reminder.get_up_time(), never more than one per calendar
-    date. Same date-keyed dedup shape as _pushed_dates above, kept as
-    its own separate list rather than reused — bedtime and wake-up are
-    different moments that can both legitimately fire the same day.
+    commute_reminder.get_up_time(), never more than one per real
+    commitment. Own separate key list from _pushed_dates above —
+    bedtime and wake-up are different moments that can both legitimately
+    fire the same day.
 
     Session correction: "the get up time should be correlated to an
     hour and a half before my next obligation... when my leave-in
@@ -707,7 +707,22 @@ def maybe_wake_chime_alert(now: datetime) -> dict | None:
     minus a flat 60), a different, earlier-feeling number than the
     leave countdown the user actually watches. Lazy import (not at
     module top) since commute_reminder already imports this module —
-    a plain top-level import here would be circular."""
+    a plain top-level import here would be circular.
+
+    Live bug, confirmed: "I got the good morning message very early,
+    but I had a late night with hockey, so I deleted the gym obligation
+    and moved to just work... I didn't get the other good morning
+    message." Dedup used to be keyed by plain calendar DATE alone — the
+    exact bug spoken_morning_brief.py's own delivery dedup was already
+    fixed for ("a day with two real obligations only ever got ONE
+    delivery, whichever fired first, since the whole day shared one
+    flag"), just never applied here too. get_up_time is built on the
+    same commute_reminder._current_shift chain current_shift_identity
+    already exposes for that exact purpose, so reused directly: once
+    gym fired and was then deleted, the day's real current shift became
+    a genuinely different commitment (work) with its own identity, and
+    now gets its own independent chime instead of inheriting gym's
+    already-used-up one."""
     import commute_reminder
 
     wake_time = commute_reminder.get_up_time(now)
@@ -718,13 +733,18 @@ def maybe_wake_chime_alert(now: datetime) -> dict | None:
     if not (-WAKE_CHIME_GRACE_MINUTES <= minutes_until <= 0):
         return None
 
-    global _wake_chime_pushed_dates
-    today = now.date().isoformat()
-    if today in _wake_chime_pushed_dates:
+    # Same "no real shift today, fall back to one slot for the whole
+    # day" shape as spoken_morning_brief._delivery_identity's own
+    # fallback — get_up_time can still be non-None here via screen_
+    # wake_time's own wake_time_for fallback, which has no shift
+    # identity of its own to key off.
+    identity = commute_reminder.current_shift_identity(now)
+    chime_key = f"{now.date().isoformat()}:{identity if identity is not None else 'wake'}"
+    if chime_key in _wake_chime_fired_keys:
         return None
-    _wake_chime_pushed_dates.append(today)
-    del _wake_chime_pushed_dates[:-30]
-    persisted_state.save(_WAKE_CHIME_PUSHED_KEY, _wake_chime_pushed_dates)
+    _wake_chime_fired_keys.append(chime_key)
+    del _wake_chime_fired_keys[:-30]
+    persisted_state.save(_WAKE_CHIME_PUSHED_KEY, _wake_chime_fired_keys)
 
     text = f"Good morning, {USER_FIRST_NAME}. It's time to wake up."
     obligation_phrase = _wake_up_obligation_phrase(now)
