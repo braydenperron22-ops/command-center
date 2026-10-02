@@ -71,7 +71,8 @@ def get_new_alerts(now: datetime) -> list[dict]:
 
     pct = quote["intraday"]
     direction = "up" if pct >= 0 else "down"
-    label = "S&P 500 futures" if status == "closed" else "S&P 500"
+    is_futures = status == "closed"
+    label = "S&P 500 futures" if is_futures else "S&P 500"
     headline = f"{label} swinging {direction} {abs(pct):.1f}% — outside its priced-in range"
     # Session request: "make it so that literally all of the important
     # things get an alert." Once-per-trading-day by construction (see
@@ -79,12 +80,21 @@ def get_new_alerts(now: datetime) -> list[dict]:
     # money moving outside what the options market itself expected, not
     # routine noise.
     ntfy_client.send(title="Market Volatility", message=headline, priority="high", tags="bar_chart")
+    # Session report: "VIX implies a 1.0% range, it's already blown
+    # past that. That is so dumb sounding... just make it legit. Say
+    # like S&P futures are trading outside their priced in range." The
+    # old phrasing assumed the listener already knows what "VIX"
+    # means and reads like a dry stats readout; this says the same real
+    # thing (the expected_move_pct figure is unchanged, still the real
+    # VIX/16 math) in the plain sentence shape actually asked for.
+    verb = "are" if is_futures else "is"
+    summary = f"{label} {verb} trading outside the ±{band['expected_move_pct']:.1f}% range the options market priced in for today."
     return [
         {
             "kind": "weather",
             "severity": "warning",
             "label": "Market Volatility",
             "headline": headline,
-            "summary": f"VIX implies a ±{band['expected_move_pct']:.1f}% day; today's move already blew past that.",
+            "summary": summary,
         }
     ]
