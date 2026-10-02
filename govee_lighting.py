@@ -664,11 +664,18 @@ def sync_lights(
 # treatment there).
 #
 # Three real, data-driven windows:
-#   1. Wake window — ON at wake_time_for(now), OFF WAKE_LAMP_ON_MINUTES
-#      later (== WAKE_BUFFER_MINUTES, i.e. right at the real
-#      commitment's own start time) — a physical light cue alongside
-#      the spoken wake chime (sleep_tracker.maybe_wake_chime_alert),
-#      one that works even if the chime itself isn't heard.
+#   1. Wake window — ON at get_up_time(now), OFF at the real
+#      leave_by_time(now) (falling back to a fixed WAKE_LAMP_ON_MINUTES
+#      duration only when leave_by_time itself isn't available) — a
+#      physical light cue alongside the spoken wake chime (sleep_
+#      tracker.maybe_wake_chime_alert), one that works even if the
+#      chime itself isn't heard, and one continuous "on" period
+#      spanning the whole morning routine rather than going dark again
+#      partway through it. Session request: "it'd be nice if the light
+#      ... stays on so I don't have to keep turning it on when I walk
+#      into my room... after the leave-in timer's done, turn the light
+#      off" — this used to go OFF a fixed WAKE_LAMP_ON_MINUTES after
+#      waking regardless of how far off the real leave time still was.
 #   2. Wind-down window — ON LAMP_WIND_DOWN_MINUTES before the real
 #      bedtime_for(now), OFF at bedtime itself. Reuses the same 30-
 #      minute figure app.py's own WARM_TINT_START_MINUTES already uses
@@ -679,8 +686,13 @@ def sync_lights(
 #      when the leave-in timer is below five minutes, make the light
 #      turn on so that way if I'm laying down in bed waiting to leave,
 #      I know that's my cue." ON at commute_reminder.leave_by_time(now)
-#      minus LEAVE_LAMP_LEAD_MINUTES, OFF right at leave_by itself —
-#      the real leave-in countdown's own target, not a separate guess.
+#      minus LEAVE_LAMP_LEAD_MINUTES, OFF right at leave_by itself — the
+#      real leave-in countdown's own target, not a separate guess. Now
+#      mostly subsumed by the wake window's own extension to leave_by
+#      above whenever get_up_time also fired, but still the only cue
+#      for a later-morning commitment that genuinely doesn't need an
+#      early wake nudge (past GET_UP_LATEST_HOUR/MINUTE) yet still
+#      benefits from a last-5-minutes "time to leave" light.
 #
 # All three windows are skipped outright whenever their own underlying
 # real data is missing (no real commitment/commute today) — this whole
@@ -707,13 +719,33 @@ def _wake_window_active(now: datetime) -> bool:
     90, suppressed entirely once it's too late in the morning to need
     prompting) instead of sleep_tracker.wake_time_for directly — same
     anchor the wake chime and the on-screen countdown now use, so all
-    three physical/visual wake cues agree with each other."""
+    three physical/visual wake cues agree with each other.
+
+    Session request: "it'd be nice if the light turns on when I have
+    to get up and it stays on so I don't have to keep turning it on
+    when I walk into my room... after the leave-in timer's done, you
+    can turn the light off." The fixed WAKE_LAMP_ON_MINUTES duration
+    below used to turn the lamp off partway through a normal morning
+    whenever get_up_time + 60 landed before the real leave_by, leaving
+    a real dark gap before the separate leave window's own
+    5-minutes-before-leave trigger picked it back up — exactly the
+    "keep turning it on" complaint. Now runs straight through to the
+    real leave_by_time instead, one continuous "on" period spanning the
+    whole morning routine. WAKE_LAMP_ON_MINUTES stays as the fallback
+    duration for the one case leave_by_time can't cover: get_up_time
+    came from sleep_tracker.wake_time_for's own no-real-commute
+    fallback (no live estimate to anchor an exact leave moment to)."""
     wake = commute_reminder.get_up_time(now)
     if wake is None:
         return False
     now_aware = now.replace(tzinfo=wake.tzinfo) if wake.tzinfo else now
+    if now_aware < wake:
+        return False
+    leave_by = commute_reminder.leave_by_time(now)
+    if leave_by is not None:
+        return now_aware <= leave_by
     remaining = (wake - now_aware).total_seconds()
-    return -WAKE_LAMP_ON_MINUTES * 60 <= remaining <= 0
+    return remaining >= -WAKE_LAMP_ON_MINUTES * 60
 
 
 def _wind_down_window_active(now: datetime) -> bool:
