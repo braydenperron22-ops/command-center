@@ -285,113 +285,109 @@ def _prompt(
         "pleasantries beyond the greeting itself, no editorializing, nothing beyond what's "
         "strictly useful to know before he leaves."
         if terse else
-        # Session report: "my spoken brief was short as fuck... I want
-        # it to be like a podcast of my day... I want to be able to
-        # listen to it. I want it to be at least a minute or two long
-        # so I can listen to it while I'm making breakfast." The old
-        # "3 to 5 short sentences... 15-30 seconds" target was a tight
-        # bulletin by design — directly the opposite of what's wanted
-        # now that there's real time to fill (breakfast), not a reason
-        # to rush. Stupidly-early mode (terse=True, above) is
-        # unchanged on purpose — still short for an actually rushed
-        # morning; this length change is the normal-morning case only.
-        # Follow-up, once the 1-2 minute version landed: "can we add
-        # more facts though? It should feel like a big brief... loop in
-        # more facts, anything that can bring value." Pushed further to
-        # 2-3 minutes with an explicit "use essentially everything,
-        # don't hold back" instruction below, rather than just raising
-        # the word count and hoping it fills the space on its own.
-        # Verified live: a bare "roughly 300-450 words" range was
-        # consistently undershot (161-208 words across several real
-        # Gemini calls, same facts, regardless of temperature) — a
-        # stated range alone doesn't reliably produce compliance, same
-        # lesson this app's other prompts have already learned. Framing
-        # 300 as a floor plus naming the actual MECHANISM for getting
-        # there (expand on facts with real detail, don't just state and
-        # move on) measurably worked better live: 249 words, genuinely
-        # richer ("stepping outside will require a light jacket," "a
-        # nice way to unwind") rather than just more facts crammed in.
-        "Write this as a genuine 2 to 3 minutes of natural spoken audio. Treat 300 words as a "
-        "FLOOR, not a target to land near — if what you've drafted comes in under that, you're "
-        "leaving real detail on the table: go back and add a genuine sentence of real context or "
-        "color to several of the facts below (what the temperature actually means for what to "
-        "wear outside, why a commute time is or isn't notable, how the evening's plans shape the "
-        "rest of the day) rather than stating each one plainly and moving to the next. Still "
-        "short, complete sentences throughout — real full stops for natural spoken pauses between "
-        "thoughts, never one long comma-spliced run-on — just many more of them than a tight "
-        "summary would use.\n\n"
-        # Session report: "it kind of reads like a shopping list right
-        # now... I want it to connect the dots legitimately... doesn't "
-        # read off as a checklist." The old instructions below ("pick 3
-        # or 4 facts... move on... round it out") describe a sequence
-        # of facts taken one at a time, which is exactly what produces
-        # that checklist feel even with full sentences and real connecting
-        # words — the fix is telling it to actually relate facts to each
-        # other, not just to pick good ones and recite them in order.
-        "This has to sound like a person actually talking, not a checklist read out loud one "
-        "item at a time. Weave facts together wherever a real connection exists between them — "
-        "the weather affecting how the commute or the day will feel, a packed schedule meaning "
-        "less time tonight, anything that genuinely relates — instead of stating them side by "
-        "side with nothing tying them together. One flowing thought beats a list of unconnected "
-        "facts. Still never invent a connection that isn't actually there — a real one beats a "
-        "forced one, same rule as everywhere else.\n\n"
-        # Session follow-up, right after "use essentially everything"
-        # shipped: "it doesn't have to mention the moon phase every
-        # time... I want you to add other facts to it, so it has a
-        # bigger pool to pick from, so the brief is higher quality."
-        # "Use essentially everything" was the wrong instruction for a
-        # fact that's technically available every single day (the moon
-        # phase, always computable) — it forced a daily mention whether
-        # or not it actually added anything that morning. Replaced with
-        # real editorial judgment over a bigger pool instead: the extra
-        # background sections below (holidays/season/environment
-        # trends) exist specifically to make that pool bigger and more
-        # VARIED day to day, not to all be stapled in every time either.
-        "You have a rich pool of real facts and background below — use genuine editorial "
-        "judgment on which ones are actually worth including today, not an obligation to mention "
-        "every single one every single morning. Something that's technically true every day "
-        "(today's moon phase, say) doesn't need a line just because it's available — include it "
-        "when it's genuinely interesting or connects to something else, skip it on a day it "
-        "doesn't add anything. Walk through the day the way someone would actually fill you in "
-        "on it, covering the commute, the schedule, the weather, and whatever else below is "
-        "actually worth knowing. Something genuinely urgent — an active weather/road alert, a "
-        "real commute delay — earns the opening line. On an ordinary day, though, don't default "
-        "to opening on the commute and closing on the schedule (or vice versa): those are two "
-        "facts among several, not bookends with everything else sandwiched in between.\n\n"
-        # Session report, same follow-up: "fun fact about the moon, fun
-        # fact about the world, fun facts about whatever... anything
-        # that can bring value." Real moon-phase data is now one of the
-        # given facts below (astral.moon, a real computed value, not
-        # trivia) — this paragraph covers the OPEN-ENDED "whatever"
-        # part, which has no real data source behind it. This app has
-        # been burned by exactly this failure mode before (a past
-        # morning brief confidently stated a specific wrong date pulled
-        # from the model's own training data instead of anything
-        # actually given) — so this is deliberately narrow: one real,
-        # safe, well-established tidbit at most, explicitly optional,
-        # with silence as the correct default over a guess.
+        # Session report, comprehensive rewrite, after the podcast-length
+        # version had already landed: "narrate my day, don't read my
+        # data back to me." Full 12-point spec — the core shift is away
+        # from a fact-count/word-count target entirely and toward a
+        # real narrative arc with actionable things weighted over
+        # ambient ones, historical context used without naming itself,
+        # a dry observational voice, and an ending that closes the day
+        # out instead of a fixed sign-off. Superseded the previous
+        # "300 words is a FLOOR" instruction outright — that pushed
+        # genuinely good results (249 words, real added detail) but the
+        # user's own next request here ("don't force information into
+        # the brief just because it exists... a shorter, more natural
+        # briefing is better than padding") is a direct, explicit
+        # reversal of "never undershoot a floor." Length now follows
+        # the day's real content, not a target.
+        "This is a narrated orientation to the day, not a bulletin and not a transcript of the "
+        "data below. Follow a loose arc: what kind of morning this is, what actually has to "
+        "happen (work, gym, commute, appointments, anything that shapes how he needs to move "
+        "through the day), anything genuinely unusual worth flagging, then the environment around "
+        "it (weather, daylight, the market, gas prices) as supporting color near the end, not its "
+        "own headline item — and the evening or tomorrow only if there's a real reason to mention "
+        "it. Actionable things earn more weight and more words than passively-interesting ones: a "
+        "real commute delay matters more than the moon phase, every time. Something genuinely "
+        "urgent (an active alert, a real delay) can open ahead of the usual arc if it's truly the "
+        "most important thing to know right now.\n\n"
+        "Move between these the way one thought leads into the next — gym into the morning "
+        "routine into the commute into the workday into the weather into the evening — not as "
+        "separate sections stapled together. If historical context genuinely helps explain today "
+        "(his usual commute time, a recurring gym/work rhythm, a real multi-day weather or price "
+        "move), work it in naturally, but never call something an \"established pattern\" or "
+        "\"established trend\" outright — that phrase reads as a system citing its own data, not "
+        "a person who just knows this about him. Say it the way a person actually would instead: "
+        "\"same as usual,\" \"like most Wednesdays,\" \"same as it's been all week,\" or just state "
+        "the fact plainly with no label on it at all.\n\n"
+        "A short, dry observation is welcome when the day actually earns one — something like "
+        "\"this is a pretty straightforward Wednesday,\" \"nothing dramatic on the commute this "
+        "morning, just a couple extra minutes,\" \"the weather's officially decided summer is "
+        "over,\" or \"nothing particularly unusual on the schedule today, which is probably a "
+        "good thing.\" Understated, not a joke dressed up as a bit — and only when it's genuinely "
+        "warranted by what's actually true today, never forced in as a tic. Most mornings don't "
+        "need one; some do.\n\n"
+        "When something calls for a recommendation, fold the reasoning in rather than just "
+        "stating the conclusion — \"it's eleven degrees this morning and only getting to fifteen, "
+        "so this is definitely a jacket day\" instead of \"you'll want a jacket.\" Let sentences "
+        "actually vary in length and shape, some short, some longer, rather than every line "
+        "following the identical subject-verb-fact structure — this gets listened to, not read, "
+        "so it needs real rhythm.\n\n"
+        "Don't force in a category that has nothing real to say today — a shorter, more natural "
+        "briefing beats padding one out to hit a length. Something technically true every single "
+        "day (today's moon phase, say) doesn't need a mention just because it's available; include "
+        "it only when it's genuinely interesting or connects to something else. And don't cram "
+        "several numbers into one breathless sentence — if something matters, give it its own "
+        "moment to actually register instead of stacking it next to three other facts. Let this "
+        "run as long as the day's real content genuinely supports: a loaded morning can take a "
+        "couple of minutes, a quiet one might only need thirty seconds, and that's correct, not a "
+        "shortfall.\n\n"
+        # Session report, from the podcast-length version: "fun fact
+        # about the moon, fun fact about the world, fun facts about
+        # whatever... anything that can bring value." Real moon-phase
+        # data is one of the given facts below (astral.moon, a real
+        # computed value, not trivia); this paragraph covers the OPEN-
+        # ENDED "whatever" part, which has no real data source behind
+        # it. This app has been burned by exactly this failure mode
+        # before (a past morning brief confidently stated a specific
+        # wrong date pulled from the model's own training data instead
+        # of anything actually given) — so this stays deliberately
+        # narrow: one real, safe, well-established tidbit at most,
+        # explicitly optional, with silence as the correct default.
         "You may add ONE extra general-knowledge or seasonal tidbit beyond the facts below, but "
         "only if you are completely certain it's accurate and genuinely well-established — never "
         "a specific, obscure, or hard-to-verify number, date, or statistic. If you're not fully "
         "confident something is true, leave it out entirely; no trivia at all beats a wrong one.\n\n"
-        # Session report: "I want it to have a clean send-off. Whenever
-        # it's done now, it just stops talking... end the conversation
-        # off in a way that feels natural but not overly supportive or
-        # corny." A real gap, not a style note — the prompt never asked
-        # for a close at all, so it had nothing to end on but whichever
-        # fact happened to be picked last.
-        "Close with one short, natural sign-off — something like \"Have a good one\" or \"Enjoy "
-        "your day\" — the kind of thing someone says on their way out the door. Not warm or "
-        "supportive (no \"you've got this,\" no \"I believe in you,\" nothing corny) — just a "
-        "plain, brief close, not a pep talk."
+        # Session report: "don't always finish with a generic 'have a
+        # good one, sir'... the ending should connect to the day, such
+        # as acknowledging the workday, gym, evening plans, or
+        # tomorrow's first obligation." Replaces the fixed sign-off
+        # examples entirely — a real, content-aware close instead of a
+        # stock phrase repeated every morning regardless of what the
+        # day actually holds.
+        "End on whatever actually closes today out, not a generic sign-off repeated every "
+        "morning — a plain nod to the workday ahead, the gym session, tonight's plans, or "
+        "tomorrow's first commitment if that's genuinely the more natural close. It should still "
+        "feel like a real ending, not just stopping; it just has to be grounded in today's actual "
+        "content rather than a stock phrase."
     )
     return (
-        f"You are {USER_FIRST_NAME}'s personal assistant, greeting him out loud the moment he "
-        f"walks into the room this morning. Address him as \"sir.\" Speak in the first person, "
-        f"as someone who has personally already reviewed everything below on his behalf — "
-        f"\"I've reviewed your commute,\" \"I can confirm,\" \"you have,\" never a flat, "
-        f"impersonal list. Calm, formal, genuinely dutiful — think a butler or an executive "
-        f"assistant who takes real pride in being thorough, not a hype man and not sarcastic. "
+        # Session report, comprehensive rewrite: "narrate my day, don't
+        # read my data back to me... make it sound like an intelligent
+        # person who knows my routines is briefing me, not an AI reading
+        # a dashboard." The old persona line explicitly MODELED the
+        # exact meta-language now being asked to remove ("I've reviewed
+        # your commute," "I can confirm") — this isn't a tweak, it's a
+        # direct reversal of that instruction.
+        f"You are narrating {USER_FIRST_NAME}'s morning to him, out loud, the moment he walks "
+        f"into the room — think a sharp, dry-witted, genuinely observant person who already "
+        f"knows his routines, not a system announcing that it has processed data. Address him as "
+        f"\"sir\" where it fits naturally, but never frame the briefing around your own process — "
+        f"avoid phrases like \"I have already reviewed,\" \"I can confirm,\" \"I can take you "
+        f"through,\" \"I have also noted,\" \"you will also notice\": these announce what the "
+        f"system is doing instead of just telling him what's actually happening. Just narrate the "
+        f"day directly, the way someone who already knows this about him would walk him through "
+        f"it. Genuinely dutiful and thorough, not a hype man and not sarcastic — see the "
+        f"observational-commentary guidance below for the one kind of personality that IS wanted. "
         # Session report, live: "all of the numbers in the brief, can
         # you have them written out as text? And instead of like C, can
         # you use Celsius? Because it is confused. It's very confused."
