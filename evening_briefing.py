@@ -53,12 +53,20 @@ def _tomorrow_agenda_block(now: datetime) -> str | None:
     date instead of today's — None if calendars aren't configured or
     tomorrow's calendar is genuinely empty (nothing to preview, so
     render() shows nothing at all rather than an empty "you have
-    nothing tomorrow" filler no one asked for)."""
+    nothing tomorrow" filler no one asked for).
+
+    Filtered to calendar_client.SELF_OWNER — same "this fact is read in
+    first person, so it's only ever Brayden's own calendar" fix as
+    morning_briefing._agenda_clause (see calendar_client.SELF_OWNER's
+    own comment for the full story)."""
     calendars = st.secrets.get("CALENDARS")
     if not calendars:
         return None
     tomorrow = (now + timedelta(days=1)).date()
-    events = [e for e in calendar_client.todays_events(calendars, tomorrow) if not e["all_day"]]
+    events = [
+        e for e in calendar_client.todays_events(calendars, tomorrow)
+        if not e["all_day"] and e.get("owner", calendar_client.SELF_OWNER) == calendar_client.SELF_OWNER
+    ]
     if not events:
         return None
     events.sort(key=lambda e: e["start"])

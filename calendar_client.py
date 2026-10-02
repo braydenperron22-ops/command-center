@@ -25,6 +25,23 @@ from config import TIMEZONE
 
 CACHE_TTL_SECONDS = 15 * 60
 
+# Session report: "the spoken brief is still registering Chloe's
+# calendar. It's saying I have a clinical commitment at 7am, which is
+# true if we're looking at Chloe's schedule, but it's not true for my
+# own." Real bug: CALENDARS secrets already tag each source with a real
+# "owner" ("brayden" or "chloe" — see e.g. the "Clinical"/"Gym"/"Work"
+# entries under owner="chloe") and a human "label", but _events_from_
+# one below silently dropped both when building each event dict —
+# every downstream "is this a real shift/commitment of MINE" check
+# (commute_reminder's shift detection, sleep_tracker's wake/bedtime
+# math, morning_briefing's own agenda fact) had no way to tell whose
+# event it actually was, and happily treated Chloe's "Clinical" shift
+# as Brayden's own. SELF_OWNER is the default for a calendar that
+# doesn't set an owner key at all, matching this app's behavior before
+# this fix existed — adding a new calendar later without an owner key
+# stays safe (treated as your own) rather than silently excluded.
+SELF_OWNER = "brayden"
+
 # The shift calendar's titles are the raw bulk-imported job title
 # ("Customer Experience Associate - Central, Sales"), not something
 # worth reading verbatim on a dashboard every morning — normalized to
@@ -150,6 +167,11 @@ def _events_from_one(calendar: dict, today: date) -> list[dict]:
             "summary": _normalize_summary(raw_summary),
             "start": start,
             "end": end,
+            # See SELF_OWNER's own comment above — this is the real fix
+            # for events from a non-owner calendar getting silently
+            # treated as the dashboard owner's own commitment.
+            "owner": calendar.get("owner", SELF_OWNER),
+            "calendar_label": calendar.get("label"),
             "location": str(e.get("LOCATION")) if e.get("LOCATION") else None,
             # Never parsed before — session request: give the morning
             # brief AI enough to actually reason about a calendar entry

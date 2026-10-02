@@ -491,7 +491,16 @@ def _todays_shift_events(now: datetime) -> list[dict]:
     "saturday night hockey" exact-match a few lines up in this file:
     a real event that happens to CONTAIN "holiday" (a party, a trip)
     should still get its own leave-in countdown, only the literal
-    day-off placeholder shouldn't."""
+    day-off placeholder shouldn't.
+
+    Session report: "the spoken brief is still registering Chloe's
+    calendar... it's saying I have a clinical commitment at 7am." Real
+    bug fix — CALENDARS secrets include Chloe's own calendars (labeled
+    "Clinical"/"Gym"/"Work"/etc, owner="chloe") purely for shared
+    visibility elsewhere (the Today page's agenda, the Timeline's
+    calendar lane), never meant to be treated as Brayden's own shift to
+    commute to/wake up for. Filtered to calendar_client.SELF_OWNER —
+    see that constant's own comment for the full story."""
     calendars = st.secrets.get("CALENDARS")
     if not calendars:
         return []
@@ -500,7 +509,10 @@ def _todays_shift_events(now: datetime) -> list[dict]:
         (
             e
             for e in events
-            if not e["all_day"] and not e["show_end_time"] and e["summary"].strip().lower() != "holiday"
+            if not e["all_day"]
+            and not e["show_end_time"]
+            and e["summary"].strip().lower() != "holiday"
+            and e.get("owner", calendar_client.SELF_OWNER) == calendar_client.SELF_OWNER
         ),
         key=lambda e: e["start"],
     )
@@ -918,6 +930,12 @@ def maybe_push_new_gym_session(now: datetime) -> None:
                 continue
             if "gym" not in event["summary"].lower():
                 continue
+            # Chloe's own calendars include a "Gym" source too (see
+            # calendar_client.SELF_OWNER's own comment) — her gym
+            # sessions don't affect Brayden's own bedtime/wake math,
+            # only his do.
+            if event.get("owner", calendar_client.SELF_OWNER) != calendar_client.SELF_OWNER:
+                continue
             date_key = day.isoformat()
             if date_key in _gym_notified_dates:
                 continue
@@ -1009,8 +1027,17 @@ def maybe_push_hockey_conflict_check(now: datetime) -> None:
     del _hockey_conflict_checked_weeks[:-_HOCKEY_CONFLICT_CHECKED_CAP]
     persisted_state.save(_HOCKEY_CONFLICT_CHECKED_KEY, _hockey_conflict_checked_weeks)
 
+    # Chloe's own calendars include a "Work" source too (owner="chloe",
+    # see calendar_client.SELF_OWNER's own comment) — only Brayden's own
+    # Thursday shift end time is relevant to whether HE can make hockey.
     shift = next(
-        (e for e in events if e["summary"] == "Work" and not e["all_day"] and not e["show_end_time"]),
+        (
+            e for e in events
+            if e["summary"] == "Work"
+            and not e["all_day"]
+            and not e["show_end_time"]
+            and e.get("owner", calendar_client.SELF_OWNER) == calendar_client.SELF_OWNER
+        ),
         None,
     )
     if shift is None:

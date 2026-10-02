@@ -105,12 +105,25 @@ def _shift_events_for(calendars: list[dict], day: date) -> list[dict]:
     # placeholder passes this filter exactly like a real shift, which
     # would otherwise compute a fake early wake-up/bedtime for a day
     # off.
+    #
+    # Session report: "the spoken brief is still registering Chloe's
+    # calendar. It's saying I have a clinical commitment at 7am." This
+    # is the real source of that exact symptom — _next_commitment below
+    # (wake_time_for/bedtime_for/next_commitment_label, and the wake-
+    # chime's own "let's go hit some legs"/"you've got work at 9am"
+    # phrase) was picking up Chloe's "Clinical" shift as if it were
+    # Brayden's own next commitment. Filtered to calendar_client.
+    # SELF_OWNER, same fix as commute_reminder._todays_shift_events —
+    # see that constant's own comment for the full story.
     events = calendar_client.todays_events(calendars, day)
     return sorted(
         (
             e
             for e in events
-            if not e["all_day"] and not e["show_end_time"] and e["summary"].strip().lower() != "holiday"
+            if not e["all_day"]
+            and not e["show_end_time"]
+            and e["summary"].strip().lower() != "holiday"
+            and e.get("owner", calendar_client.SELF_OWNER) == calendar_client.SELF_OWNER
         ),
         key=lambda e: e["start"],
     )

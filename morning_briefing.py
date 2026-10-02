@@ -377,12 +377,24 @@ def _is_work_day(now: datetime) -> bool:
     _WORK_KEYWORDS there), and _is_shift_summary's own "Work"/"working
     at..." check already covers the separately-titled "Work at 3110"
     shift too — so matching on that one function already covers every
-    variant named."""
+    variant named.
+
+    Session report: "the spoken brief is still registering Chloe's
+    calendar... it's saying I have a clinical commitment at 7am." Real
+    bug fix — Chloe's own "Work" calendar (owner="chloe", purely for
+    shared visibility elsewhere) used to count toward THIS check too,
+    which could mark a day "a work day" for Brayden's own commute
+    clause based entirely on her shift. Filtered to calendar_client.
+    SELF_OWNER — see that constant's own comment for the full story."""
     calendars = st.secrets.get("CALENDARS")
     if not calendars:
         return False
     events = calendar_client.todays_events(calendars, now.date())
-    return any(_is_shift_summary(e["summary"]) for e in events if not e["all_day"])
+    return any(
+        _is_shift_summary(e["summary"])
+        for e in events
+        if not e["all_day"] and e.get("owner", calendar_client.SELF_OWNER) == calendar_client.SELF_OWNER
+    )
 
 
 def _commute_clause(now: datetime) -> tuple[int, str] | None:
@@ -543,10 +555,20 @@ def format_agenda_list(events: list[dict], now: datetime) -> str:
 
 
 def _agenda_clause(now: datetime) -> tuple[int, str] | None:
+    """Session report: "the spoken brief is still registering Chloe's
+    calendar... it's saying I have a clinical commitment at 7am, which
+    is true for Chloe's schedule, not my own." This fact is read in
+    first person throughout both briefs ("you have," "I've reviewed
+    your..."), so it only ever belongs to Brayden's own calendar(s) —
+    filtered to calendar_client.SELF_OWNER, same fix as everywhere else
+    this exact bug showed up (see that constant's own comment)."""
     calendars = st.secrets.get("CALENDARS")
     if not calendars:
         return None
-    events = [e for e in calendar_client.todays_events(calendars, now.date()) if not e["all_day"]]
+    events = [
+        e for e in calendar_client.todays_events(calendars, now.date())
+        if not e["all_day"] and e.get("owner", calendar_client.SELF_OWNER) == calendar_client.SELF_OWNER
+    ]
     if not events:
         return 1, "calendar: nothing scheduled today"
     events.sort(key=lambda e: e["start"])
