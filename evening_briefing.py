@@ -73,21 +73,44 @@ def _tomorrow_agenda_block(now: datetime) -> str | None:
     return morning_briefing.format_agenda_list(events, now)
 
 
-def _ai_evening_sentence(agenda_block: str) -> tuple[str, str] | None:
+def _ai_evening_sentence(now: datetime, agenda_block: str) -> tuple[str, str] | None:
     """(headline, body) for tomorrow's preview, or None on any AI
     failure/overnight pause — render() falls back to a plain sentence
     built straight from agenda_block in that case, same "never lose the
     real content just because the phrasing failed" rule
-    morning_briefing.render already follows for its own AI step."""
+    morning_briefing.render already follows for its own AI step.
+
+    Session report: "that's not AI generated... it doesn't have the
+    same charm that the [morning] brief does." It WAS already AI-
+    generated — the real bug was a thin prompt, not a silent fallback:
+    no personality guidance and no "find a real connection" instruction
+    meant the model's safest output was just restating the calendar
+    facts in barely different words ("Unpaid Vacation kicks things off
+    at 9:00 AM, followed by Saturday Night Hockey at 7:30 PM" — nearly
+    identical to the raw agenda_block it was handed). Now reuses
+    morning_briefing's own personality-mode rotation (same `now.date()`
+    seed as that morning's own brief, so the whole day reads as one
+    consistent voice) and an explicit instruction to find a real
+    narrative thread between tomorrow's events instead of reciting them
+    in order."""
     if groq_client.ai_pulls_paused():
         return None
+    mode = morning_briefing.personality_mode(now)
+    mode_instruction = morning_briefing._PERSONALITY_MODES[mode]
     prompt = (
         f"You write a short, casual heads-up for tomorrow, shown as a small text block on "
         f"{USER_FIRST_NAME}'s home dashboard tonight — a quick preview of what's coming, not a "
-        f"full daily brief. Two parts: a short headline (a few words) and one or two sentences "
-        f"naming what's actually on tomorrow's calendar below. Real digits, not spelled-out "
-        f"numbers. Never invent anything beyond what's given below. A little personality is fine, "
-        f"but keep it brief — this gets glanced at, not read closely.\n\n"
+        f"full daily brief.\n\n"
+        f"Today's tone, already decided for you rather than your own call (it rotates day to day "
+        f"on its own fixed schedule, the same one driving tomorrow morning's own brief, so the "
+        f"voice stays consistent across the whole day): {mode_instruction}\n\n"
+        f"Two parts: a short headline (a few words) and one or two sentences naming what's "
+        f"actually on tomorrow's calendar below. Find a real, specific connection or thread "
+        f"between tomorrow's events if one genuinely exists (a slow morning before a late night "
+        f"out, a day off bookended by something else) rather than just restating each one "
+        f"plainly in order — a flat restatement of the calendar isn't what's wanted here, this "
+        f"should read like a real, charming thought, not a list. Still never invent anything "
+        f"beyond what's given below. Real digits, not spelled-out numbers.\n\n"
         f"Tomorrow's calendar: {agenda_block}\n\n"
         f'Respond in exactly this shape, nothing else: a headline, then a blank line, then the body.'
     )
@@ -102,7 +125,7 @@ def render(now: datetime) -> None:
     if agenda_block is None:
         return
 
-    result = _ai_evening_sentence(agenda_block)
+    result = _ai_evening_sentence(now, agenda_block)
     if result is None:
         headline, body = "Tomorrow", agenda_block[0].upper() + agenda_block[1:] + "."
     else:

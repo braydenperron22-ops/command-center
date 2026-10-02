@@ -158,14 +158,23 @@ _PERSONALITY_MODES = {
 _PERSONALITY_WEIGHTS = {"professional": 70, "dry_humor": 15, "hype": 10, "full_roast": 5}
 
 
-def _personality_mode(now: datetime) -> str:
+def personality_mode(now: datetime) -> str:
     """One of _PERSONALITY_MODES, chosen once per calendar day (seeded
     from the date itself, not wall-clock random) — otherwise every ~5s
     rerun would roll a fresh mode even though the actual cached AI
     response only changes once per AI_REFRESH_SECONDS, and a single
     morning's brief should read as one consistent voice, not shift
     tone between a 6am glance and an 8am one. Varies day to day in the
-    weighted proportions above instead."""
+    weighted proportions above instead.
+
+    Public (not underscore-prefixed) — session request: "I think we
+    should do a tomorrow brief... it doesn't have the same charm that
+    the [morning] brief does." evening_briefing.py's own AI step reuses
+    this directly (same `now.date()` seed, so passing in that evening's
+    own `now` — same calendar date as that morning's brief — produces
+    the identical mode) so the dashboard's voice stays consistent for
+    the whole day instead of the evening brief inventing its own,
+    disagreeing personality."""
     modes = list(_PERSONALITY_WEIGHTS)
     weights = [_PERSONALITY_WEIGHTS[m] for m in modes]
     rng = random.Random(now.date().isoformat())
@@ -1511,7 +1520,7 @@ def _ai_headline_and_body(facts_list: list[str], now: datetime) -> tuple[str, st
         if environment_block
         else ""
     )
-    mode = _personality_mode(now)
+    mode = personality_mode(now)
     mode_instruction = _PERSONALITY_MODES[mode]
     prompt = (
         f"You are {USER_FIRST_NAME}'s personal AI assistant — above all an actual partner whose "
