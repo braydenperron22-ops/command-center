@@ -2092,6 +2092,21 @@ def _recent_history_block(now: datetime) -> str:
 _learned_notes: str = persisted_state.load("morning_brief_learned_notes", "")
 _learned_notes_date: str | None = persisted_state.load("morning_brief_learned_notes_date", None)
 
+
+def learned_notes() -> str:
+    """Public accessor — session request: "does the spoken brief have
+    access to the long form learned notes... that's valuable data to
+    have." _update_learned_notes' own prompt below tells the model
+    writing this note it's "never shown to him directly," and that's
+    still true of the raw note itself (the full multi-paragraph
+    document is never dumped verbatim anywhere) — but a SPECIFIC,
+    genuine connection drawn from it surfacing in a differently-voiced
+    brief is already this file's own established pattern (this exact
+    module's _ai_headline_and_body prompt already does this for the
+    on-screen brief), not a new privacy boundary being crossed. Used by
+    spoken_morning_brief.py the same way."""
+    return _learned_notes
+
 # How many recent activity rows to hand the learned-notes AI — enough
 # to actually notice a "withdraws every few days" shape across a real
 # couple of weeks, not so many the prompt balloons. Deliberately not

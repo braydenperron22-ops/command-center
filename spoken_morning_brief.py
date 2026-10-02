@@ -211,6 +211,7 @@ def _prompt(
     holidays_block: str = "",
     seasons_block: str = "",
     environment_block: str = "",
+    learned_notes_block: str = "",
 ) -> str:
     facts_block = "\n".join(f"- {f}" for f in facts)
     # Session request: "add other facts to it, so it has a bigger pool
@@ -248,6 +249,26 @@ def _prompt(
                 f"there's a real multi-day direction in it, not only when it's dramatic: "
                 f"{environment_block}\n\n"
                 if environment_block
+                else ""
+            )
+            # Session request: "does the spoken brief have access to
+            # the long form learned notes from my actual morning brief?
+            # Because that's valuable data to have." Same real note
+            # morning_briefing._ai_headline_and_body already reads for
+            # the on-screen brief, same "actively check for a genuine
+            # connection, never force one" instruction — just voiced in
+            # THIS brief's own dutiful register rather than that one's
+            # sarcastic one. The raw note itself still isn't read back
+            # verbatim; only a specific connection drawn from it is.
+            + (
+                f"Long-term patterns you've picked up about him across many past mornings, for "
+                f"context — actively check this for a real, specific connection to today's facts "
+                f"(a routine it confirms or breaks, a person or interest that comes up again, a "
+                f"schedule pattern that lines up with today) and work it in naturally when there's "
+                f"a genuine one. Never read this note out loud or summarize it as its own topic — "
+                f"only ever surface it as a connection to something actually happening today, and "
+                f"never force one that isn't really there: {learned_notes_block}\n\n"
+                if learned_notes_block
                 else ""
             )
         )
@@ -418,9 +439,14 @@ def generate(now: datetime, weather: dict | None, air_quality: dict | None) -> s
             environment_block = morning_briefing.environment_trends_block()
         except Exception:
             environment_block = ""
+        try:
+            learned_notes_block = morning_briefing.learned_notes()
+        except Exception:
+            learned_notes_block = ""
         prompt = _prompt(
             facts, terse=False,
             holidays_block=holidays_block, seasons_block=seasons_block, environment_block=environment_block,
+            learned_notes_block=learned_notes_block,
         )
     # The real "only once per morning" gate is already_delivered_today/
     # mark_delivered above, which whatever drives the camera is expected
