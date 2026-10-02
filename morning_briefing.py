@@ -46,13 +46,14 @@ regardless of which of the 10 rotating pages happens to be up.
 
 import functools
 import html
+import math
 import random
 import re
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import streamlit as st
-from astral import LocationInfo
+from astral import LocationInfo, moon
 from astral.sun import sun
 
 import air_quality_client
@@ -1002,6 +1003,34 @@ def _daylight_clause(now: datetime, weather: dict) -> tuple[int, str] | None:
     return 1, f"{abs(delta)} {direction} minutes of daylight than yesterday, sunset {sunset_text}"
 
 
+_MOON_PHASE_NAMES = (
+    "New Moon", "Waxing Crescent", "First Quarter", "Waxing Gibbous",
+    "Full Moon", "Waning Gibbous", "Last Quarter", "Waning Crescent",
+)
+
+
+def _moon_phase_clause(now: datetime) -> tuple[int, str] | None:
+    """Session request: "add more facts... fun fact about the moon."
+    astral.moon.phase (already a dependency of this file, used for
+    sunrise/sunset above via astral.sun) returns a real, independently-
+    verifiable astronomical value — 0 to 27.99, how many days into the
+    lunar cycle today is — not a guess or free-form trivia, so this
+    carries zero hallucination risk, same "never invent, only report
+    what's actually computed" rule every other clause here already
+    follows. Illumination is the standard sinusoidal approximation from
+    that same real phase value, not a separate measurement. Priority 1
+    (same tier as _daylight_clause just above) — an ambient detail,
+    never meant to compete with anything actionable."""
+    try:
+        phase_value = moon.phase(now.date())
+    except Exception:
+        return None
+    fraction = phase_value / 28.0
+    illumination_pct = round((1 - math.cos(2 * math.pi * fraction)) / 2 * 100)
+    name = _MOON_PHASE_NAMES[round(fraction * 8) % 8]
+    return 1, f"tonight's moon: {name} ({illumination_pct}% illuminated)"
+
+
 AI_REFRESH_SECONDS = 30 * 60  # widened again from 15 min — session request: "make it generate every 30 mins instead of 15... to account for" the richer, smarter prompt below (more facts, more room to actually connect them) costing more per call than the plain version did; see groq_client's module docstring for the daily-budget guarantee this still contributes to
 
 
@@ -1651,6 +1680,7 @@ def gather_facts(
         ("net_worth", _net_worth_clause, (now,)),
         ("game_today", _game_today_clause, (now,)),
         ("daylight", _daylight_clause, (now, weather)),
+        ("moon", _moon_phase_clause, (now,)),
         ("holiday", holidays_client.holiday_clause, (now,)),
         ("season", seasons_client.season_clause, (now,)),
     ):

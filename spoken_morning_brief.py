@@ -227,11 +227,31 @@ def _prompt(facts: list[str], terse: bool = False) -> str:
         # to rush. Stupidly-early mode (terse=True, above) is
         # unchanged on purpose — still short for an actually rushed
         # morning; this length change is the normal-morning case only.
-        "Write this as a genuine 1 to 2 minutes of natural spoken audio — roughly 180 to 320 "
-        "words. This plays while he's making breakfast; there's real time to fill, this is not "
-        "a quick bulletin. Still short, complete sentences throughout — real full stops for "
-        "natural spoken pauses between thoughts, never one long comma-spliced run-on — just "
-        "more of them than a tight summary would use.\n\n"
+        # Follow-up, once the 1-2 minute version landed: "can we add
+        # more facts though? It should feel like a big brief... loop in
+        # more facts, anything that can bring value." Pushed further to
+        # 2-3 minutes with an explicit "use essentially everything,
+        # don't hold back" instruction below, rather than just raising
+        # the word count and hoping it fills the space on its own.
+        # Verified live: a bare "roughly 300-450 words" range was
+        # consistently undershot (161-208 words across several real
+        # Gemini calls, same facts, regardless of temperature) — a
+        # stated range alone doesn't reliably produce compliance, same
+        # lesson this app's other prompts have already learned. Framing
+        # 300 as a floor plus naming the actual MECHANISM for getting
+        # there (expand on facts with real detail, don't just state and
+        # move on) measurably worked better live: 249 words, genuinely
+        # richer ("stepping outside will require a light jacket," "a
+        # nice way to unwind") rather than just more facts crammed in.
+        "Write this as a genuine 2 to 3 minutes of natural spoken audio. Treat 300 words as a "
+        "FLOOR, not a target to land near — if what you've drafted comes in under that, you're "
+        "leaving real detail on the table: go back and add a genuine sentence of real context or "
+        "color to several of the facts below (what the temperature actually means for what to "
+        "wear outside, why a commute time is or isn't notable, how the evening's plans shape the "
+        "rest of the day) rather than stating each one plainly and moving to the next. Still "
+        "short, complete sentences throughout — real full stops for natural spoken pauses between "
+        "thoughts, never one long comma-spliced run-on — just many more of them than a tight "
+        "summary would use.\n\n"
         # Session report: "it kind of reads like a shopping list right
         # now... I want it to connect the dots legitimately... doesn't "
         # read off as a checklist." The old instructions below ("pick 3
@@ -247,16 +267,30 @@ def _prompt(facts: list[str], terse: bool = False) -> str:
         "side with nothing tying them together. One flowing thought beats a list of unconnected "
         "facts. Still never invent a connection that isn't actually there — a real one beats a "
         "forced one, same rule as everywhere else.\n\n"
-        "Cover the real shape of the whole day, not just the 2 or 3 biggest things — with this "
-        "much room, walk through what's actually ahead (the commute, the schedule, the weather, "
-        "anything else genuinely relevant below) the way someone would actually fill you in on "
-        "their own day, not a tight highlight reel and not an exhaustive recitation of every "
-        "fact either — real editorial judgment on what earns a mention, just a much lower bar "
-        "for it than a short bulletin would use. Something genuinely urgent — an active weather/ "
-        "road alert, a real commute delay — earns the opening line. On an ordinary day, though, "
-        "don't default to opening on the commute and closing on the schedule (or vice versa): "
-        "those are two facts among several, not bookends with everything else sandwiched in "
-        "between.\n\n"
+        "Use essentially everything in the real facts given below, not just the 2 or 3 biggest "
+        "things — with this much room to fill, there's no reason to leave something out just "
+        "because it's minor. Walk through the day the way someone would actually fill you in on "
+        "it, covering the commute, the schedule, the weather, and anything else genuinely there. "
+        "Something genuinely urgent — an active weather/road alert, a real commute delay — earns "
+        "the opening line. On an ordinary day, though, don't default to opening on the commute "
+        "and closing on the schedule (or vice versa): those are two facts among several, not "
+        "bookends with everything else sandwiched in between.\n\n"
+        # Session report, same follow-up: "fun fact about the moon, fun
+        # fact about the world, fun facts about whatever... anything
+        # that can bring value." Real moon-phase data is now one of the
+        # given facts below (astral.moon, a real computed value, not
+        # trivia) — this paragraph covers the OPEN-ENDED "whatever"
+        # part, which has no real data source behind it. This app has
+        # been burned by exactly this failure mode before (a past
+        # morning brief confidently stated a specific wrong date pulled
+        # from the model's own training data instead of anything
+        # actually given) — so this is deliberately narrow: one real,
+        # safe, well-established tidbit at most, explicitly optional,
+        # with silence as the correct default over a guess.
+        "You may add ONE extra general-knowledge or seasonal tidbit beyond the facts below, but "
+        "only if you are completely certain it's accurate and genuinely well-established — never "
+        "a specific, obscure, or hard-to-verify number, date, or statistic. If you're not fully "
+        "confident something is true, leave it out entirely; no trivia at all beats a wrong one.\n\n"
         # Session report: "I want it to have a clean send-off. Whenever
         # it's done now, it just stops talking... end the conversation
         # off in a way that feels natural but not overly supportive or
@@ -319,13 +353,13 @@ def generate(now: datetime, weather: dict | None, air_quality: dict | None) -> s
     # shared key would risk handing back a stale terse answer once it's
     # no longer stupidly early, or vice versa.
     feature_key = "spoken_morning_brief_terse" if terse else "spoken_morning_brief"
-    # 500, not 250: the full brief now targets 180-320 words (~240-425
-    # tokens at English's usual ~1.33 tokens/word) — 250 was sized for
-    # the old 3-5-sentence bulletin and would have hard-clipped the new
-    # podcast-length target mid-sentence. terse's 90 is untouched, that
-    # mode's own target didn't change.
+    # 700, not 500: the full brief now targets 300-450 words (~400-600
+    # tokens at English's usual ~1.33 tokens/word) — raised again along
+    # with the length target itself so the new "use essentially
+    # everything" instruction doesn't get hard-clipped mid-sentence.
+    # terse's 90 is untouched, that mode's own target didn't change.
     text = gemini_client.generate_periodic(
-        feature_key, refresh_seconds=4 * 3600, prompt=prompt, temperature=0.6, max_output_tokens=90 if terse else 500
+        feature_key, refresh_seconds=4 * 3600, prompt=prompt, temperature=0.6, max_output_tokens=90 if terse else 700
     )
     if text is None:
         return None
