@@ -39,6 +39,7 @@ from datetime import date, datetime, time, timedelta
 import streamlit as st
 
 import calendar_client
+import gemini_client
 import ntfy_client
 import persisted_state
 from config import USER_FIRST_NAME
@@ -646,6 +647,50 @@ _wake_chime_pushed_dates: list[str] = persisted_state.load(_WAKE_CHIME_PUSHED_KE
 WAKE_CHIME_GRACE_MINUTES = 3
 
 
+# Session request: "when the AI tells me good morning... I want it to
+# tell me like what I've got going on... good morning Brayden, it's
+# time to get up, let's go hit some legs... or you've got work at 9am.
+# I feel like it could be an LLM thing — it looks at my most recent
+# upcoming obligation." Reuses _next_commitment, the exact same lookup
+# wake_time_for/next_commitment_label already anchor to, so the chime
+# can never name a different commitment than the one it's actually
+# waking him up for. A real small Gemini call (same "cheap, once-a-day,
+# just call generate() directly" shape _update_learned_notes already
+# uses) rather than a hardcoded phrase per commitment type — this app
+# has no fixed, enumerable set of commitment summaries (Work, Gym -
+# Push/Pull/Legs, a golf tee time, anything else on the calendar), so
+# a template ladder would always be one real event behind.
+def _wake_up_obligation_phrase(now: datetime) -> str:
+    """One short, natural spoken clause describing the real commitment
+    the wake-up is for ("Let's go hit some legs." / "You've got work at
+    9am.") — "" if there's nothing on the calendar to wake up for at
+    all (same case _next_commitment already treats as "nothing to
+    report"). Falls back to a plain, ungenerated phrasing (still built
+    only from the one real commitment, never invented) if the AI call
+    itself fails, so a Gemini outage costs only this one nice-to-have
+    clause, never the chime's own actual wake-up line."""
+    commitment = _next_commitment(now)
+    if commitment is None:
+        return ""
+    start_str = commitment["start"].strftime("%-I:%M %p")
+    fallback = f"You've got {commitment['summary']} at {start_str}."
+    prompt = (
+        f"Someone is being woken up right now by a short spoken voice announcement. Their real next "
+        f"commitment this morning is: {commitment['summary']} at {start_str}. Write ONE short, "
+        f"casual, natural-sounding spoken sentence to follow \"Good morning, {USER_FIRST_NAME}. It's "
+        f"time to wake up.\" that tells him what's coming up — like someone who knows him saying it, "
+        f"not a calendar reading itself aloud. Tone examples: \"Let's go hit some legs.\" for a "
+        f"leg-day gym session, \"You've got work at 9am.\" for a work shift — casual and upbeat, not "
+        f"over the top. Under 10 words, no quotation marks, never invent anything beyond the one real "
+        f"commitment given above. Respond with only that one sentence."
+    )
+    try:
+        result = gemini_client.generate(prompt, temperature=0.6, max_output_tokens=40)
+    except Exception:
+        result = None
+    return result.strip() if result else fallback
+
+
 def maybe_wake_chime_alert(now: datetime) -> dict | None:
     """Call once per rerun (app.py's _gather_new_alerts, same
     append-to-the-queue shape as commute_reminder.check_car_prep) — a
@@ -682,6 +727,9 @@ def maybe_wake_chime_alert(now: datetime) -> dict | None:
     persisted_state.save(_WAKE_CHIME_PUSHED_KEY, _wake_chime_pushed_dates)
 
     text = f"Good morning, {USER_FIRST_NAME}. It's time to wake up."
+    obligation_phrase = _wake_up_obligation_phrase(now)
+    if obligation_phrase:
+        text += f" {obligation_phrase}"
     return {
         "headline": "Good morning",
         "category": "Wake up",
