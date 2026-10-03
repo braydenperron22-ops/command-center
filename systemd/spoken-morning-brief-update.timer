@@ -1,0 +1,15 @@
+[Unit]
+Description=Daily pull+restart for the spoken morning brief service, before the day's earliest possible trigger
+
+[Timer]
+# 4am — comfortably before WINDOW_START_HOUR=5 (the earliest hour
+# spoken_morning_brief.py will ever actually trigger a real brief), so
+# the service is always running the latest pulled code before it could
+# matter for that day. Persistent=true: if the kiosk happens to be off
+# or the service down at exactly 4am, this still fires once as soon as
+# it's back up, rather than silently skipping that day entirely.
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

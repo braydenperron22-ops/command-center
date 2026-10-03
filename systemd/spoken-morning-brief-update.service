@@ -1,0 +1,30 @@
+[Unit]
+Description=Pull latest command-center code and restart the spoken morning brief service
+# Session report, live: a comprehensive prompt rewrite (richer
+# narration, weekday-grounding fix, personality) shipped and deployed
+# fine to Streamlit Cloud (the web dashboard auto-redeploys on every
+# git push), but the NEXT morning's spoken brief still spoke the old,
+# flat "shopping list" style -- spoken-morning-brief.service is a
+# separate, long-running systemd process on THIS box, reading from its
+# own local git clone (%h/projects/command-center). It has no mechanism
+# of its own to notice a new commit exists; it just keeps running
+# whatever code was already loaded into memory since it last started.
+# Fixed with a paired .timer unit (see spoken-morning-brief-update.timer)
+# that runs this once a day, well before the earliest possible trigger
+# (WINDOW_START_HOUR=5 in spoken_morning_brief.py), so the service is
+# never more than a day behind main.
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/projects/command-center
+# --ff-only, not a hard reset: if this box's own local checkout has
+# ever diverged (an uncommitted local edit, a manual commit made
+# directly here), this fails loudly and harmlessly instead of silently
+# discarding something — same "never a destructive git operation in an
+# automated path" rule this app's own session discipline already
+# follows everywhere else. The restart only runs if the pull actually
+# succeeded (&&, not a separate ExecStartPost) — a failed pull leaves
+# the service running its current, already-working code rather than
+# restarting it for no reason.
+ExecStart=/bin/sh -c 'git pull --ff-only && systemctl --user restart spoken-morning-brief.service'
